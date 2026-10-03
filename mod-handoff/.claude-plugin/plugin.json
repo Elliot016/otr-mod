@@ -1,0 +1,28 @@
+{
+  "name": "mod-handoff",
+  "version": "0.1.0",
+  "description": "Clear & Continue: summarizes the session into a handoff, clears, and fills it into the fresh prompt for review",
+  "author": {
+    "name": "Amorim"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "max_words": {
+      "type": "number",
+      "title": "Handoff length",
+      "description": "Hard cap, in words, for the handoff message the model writes",
+      "default": 400
+    },
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": [
+        "auto",
+        "nerd",
+        "safe"
+      ],
+      "default": "auto"
+    }
+  }
+}

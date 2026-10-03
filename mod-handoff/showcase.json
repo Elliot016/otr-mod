@@ -1,0 +1,10 @@
+{
+  "tagline": "Clear the session, keep the thread",
+  "features": [
+    { "title": "Clear & Continue", "detail": "A Handoff pill above the prompt asks Clear & continue? with Yes and No, then summarizes the session through a hidden fork, runs /clear, and fills the handoff into the fresh prompt. You review it and press Enter." },
+    { "title": "Handoff skill", "detail": "The session-handoff skill holds the instructions: goal, decisions, state, files, open tasks and the next step, under a word cap." }
+  ],
+  "actions": [
+    { "label": "Clear and continue now", "command": "mod-handoff" }
+  ]
+}
