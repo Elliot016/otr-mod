@@ -1,0 +1,34 @@
+export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+// The glyphs and usage colors of the Moonlight-claude oh-my-posh status line, so both read alike.
+export const LEVEL_LOOK: Record<string, { glyph: string; color: string }> = {
+  low: { glyph: '○', color: '#ACB9E6' },
+  medium: { glyph: '◐', color: '#CDBBE5' },
+  high: { glyph: '●', color: '#EA98EE' },
+  xhigh: { glyph: '◉', color: '#F883C9' },
+  max: { glyph: '◈', color: '#FF6F7A' },
+}
+
+// `claude-opus-5-5` reads `Opus 5.5`, as the oh-my-posh pill shows it; a trailing date is dropped.
+export const displayName = (model: string) => {
+  const match = /^claude-([a-z]+)-(\d+(?:-\d{1,2})*)(?:-\d{8})?$/.exec(model)
+  if (!match) return model
+  return `${match[1]![0]!.toUpperCase()}${match[1]!.slice(1)} ${match[2]!.replace(/-/g, '.')}`
+}
+
+// Sets `modelSettings[model].effortLevel`, the key Alt+P writes; null when the file is not JSON or the edit would touch anything else.
+export function withEffort(text: string, model: string, effort: string): string | null {
+  let before: Record<string, any>
+  try {
+    before = JSON.parse(text)
+  } catch {
+    return null
+  }
+  const after = JSON.parse(text)
+  after.modelSettings = { ...after.modelSettings, [model]: { ...after.modelSettings?.[model], effortLevel: effort } }
+  const indent = /^\{\r?\n([ \t]+)"/.exec(text)?.[1] ?? '  '
+  const out = JSON.stringify(after, null, indent) + '\n'
+  const reparsed = JSON.parse(out)
+  const others = (value: Record<string, any>) => JSON.stringify({ ...value, modelSettings: undefined })
+  return others(before) === others(reparsed) ? out : null
+}
