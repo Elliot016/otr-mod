@@ -1,0 +1,32 @@
+{
+  "name": "mod-filetree",
+  "version": "0.1.0",
+  "description": "A sidebar tree of the files Claude touched this session, marked read, edited, written or created with the latest action lit while it works, and a replay that steps through the last turn's edits one diff at a time. Opens from /mod-filetree or the Files entry in the mod-menu pill",
+  "author": { "name": "Amorim" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": [
+        "auto",
+        "nerd",
+        "safe"
+      ],
+      "default": "auto"
+    },
+    "show_reads": {
+      "type": "boolean",
+      "title": "Show files Claude only read",
+      "description": "The tree lists files Claude read as well as the ones it changed. Off, it lists only changed files",
+      "default": true
+    },
+    "wrap_diff": {
+      "type": "boolean",
+      "title": "Wrap long diff lines",
+      "description": "Long lines in the replay wrap onto the next row. Off, they are cut at the pane edge",
+      "default": true
+    }
+  }
+}

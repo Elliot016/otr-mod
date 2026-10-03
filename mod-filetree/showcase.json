@@ -1,0 +1,33 @@
+{
+  "tagline": "What Claude touched, and a replay of what it changed",
+  "features": [
+    { "title": "File tree", "detail": "Only the files Claude read, edited, wrote or created this session, in folders you can fold, with +/- line counts for edits." },
+    { "title": "Live marker", "detail": "While Claude works, the file it is on right now is lit and says what it is doing: reading, editing, writing, creating." },
+    { "title": "Replay", "detail": "Steps through the edits of the last turn one diff at a time with Prev and Next; a click on a file in the tree opens its latest diff." }
+  ],
+  "actions": [
+    { "label": "Clear the tree and the replay", "command": "mod-filetree", "args": "clear" }
+  ],
+  "previews": {
+    "show_reads": {
+      "true": [
+        { "spans": [{ "text": "▾ ", "color": "muted" }, { "text": "hooks", "color": "onSurface" }] },
+        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "register.tsx      ", "color": "onSurface" }, { "text": "+4 ", "color": "good" }, { "text": "−1 ", "color": "alert" }, { "text": "M", "color": "secondary" }] },
+        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "theme.ts                ", "color": "muted" }, { "text": "R", "color": "muted" }] }
+      ],
+      "false": [
+        { "spans": [{ "text": "▾ ", "color": "muted" }, { "text": "hooks", "color": "onSurface" }] },
+        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "register.tsx      ", "color": "onSurface" }, { "text": "+4 ", "color": "good" }, { "text": "−1 ", "color": "alert" }, { "text": "M", "color": "secondary" }] }
+      ]
+    },
+    "wrap_diff": {
+      "true": [
+        { "spans": [{ "text": "+ ", "color": "good" }, { "text": "const label = withIcon(look, icon,", "color": "onSurface" }] },
+        { "spans": [{ "text": "  ", "color": "good" }, { "text": "name)", "color": "onSurface" }] }
+      ],
+      "false": [
+        { "spans": [{ "text": "+ ", "color": "good" }, { "text": "const label = withIcon(look, icon,…", "color": "onSurface" }] }
+      ]
+    }
+  }
+}
