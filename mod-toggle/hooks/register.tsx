@@ -92,7 +92,8 @@ async function findTranscript($: EngineInterface) {
 const isTurnOpen = (flipped: string[], turn: Turn) => flipped.includes(turn.prompt) === foldTurns
 
 // The running turn draws as Claude Code draws it, every tool row and result in full; it folds once the turn ends.
-const isLive = (turn: Turn | undefined) => expandLive && Boolean(turn) && !isDone(turn!)
+// The transcript is read between turns, so a row it doesn't hold yet belongs to the running turn.
+const isLive = (turn: Turn | undefined) => expandLive && (!turn || !isDone(turn))
 
 // The prompt of the last turn known to have ended. A flag set by turn.start would read idle after a mod reload mid-turn.
 let endedPrompt = ''

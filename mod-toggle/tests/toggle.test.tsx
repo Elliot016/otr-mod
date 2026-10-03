@@ -114,6 +114,11 @@ test('a mod reload mid-turn misses turn.start and still shows the running turn i
   expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
 })
 
+test('a tool row drawn before the transcript holds it counts as the running turn and shows in full', async ($, on) => {
+  const { tool } = await mountTimed($, on, TIMED.split('\n').slice(0, 1).join('\n'), true)
+  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+})
+
 test('with expand_live off, the running turn folds its finished tool rows at once', { options: { expand_live: false } }, async ($, on) => {
   const { tool } = await mountTimed($, on, LIVE, true)
   expect(await tool.find({ type: 'Button', text: /^Bash\(claude plugin test/ })).toBeDefined()
