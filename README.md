@@ -8,10 +8,11 @@ Claude Code mods I develop. A mod is a plugin whose `hooks/hooks.json` points at
 | --- | --- | --- | --- |
 | `mod-app-statusline` | Moonlight status line drawn above the prompt: clock, git, path, cost, context and usage rings | Desktop | Loaded every session |
 | `mod-skill-panel` | Puts a colored single-glyph chip before each skill's description in the slash list, picked from `color-tag:` in its frontmatter; strips the chip from the model's skill list. `/mod-skill-panel` opens a mouse-only sidebar: invocable skills grouped by tag in columns, a card with the clicked skill, and `↵` to add it to the prompt | Terminal | Loaded every session |
-| `mod-manager` | `/mod-manager` opens a pane listing every mod (these and installed ones), toggles each on or off, shows description and an interactive feature showcase | Terminal first | Loaded every session. Toggles take effect with Apply (reload plugins); only a new mod folder needs one restart. Checked live on 2026-10-03 |
-| `mod-effort` | An effort slider in the band above the prompt, after Mods and Skills, drawn as the Moonlight-claude oh-my-posh model pill: model name, then `○ ◐ ● ◉ ◈` lit up to the current level. Click a glyph to set that level, saved for the model in `modelSettings` as Alt+P does; the level word shows for 2 s. Nerd Font caps and icon only when Windows Terminal uses a Nerd Font | Terminal | Loaded every session. Not checked live yet |
+| `mod-manager` | `/mod-manager` or the gear in the pill row opens a pane listing every mod (these and installed ones) and toggles each on or off. A click on a mod opens its page (`< back` returns): description, its settings and actions, its features | Terminal first | Loaded every session. Toggles take effect with Apply (reload plugins); only a new mod folder needs one restart. Checked live on 2026-10-03 |
+| `mod-effort` | An effort slider in the band above the prompt, after Mods and Skills, drawn as the Moonlight-claude oh-my-posh model pill: model name, then `○ ◐ ● ◉ ◈` lit up to the current level. Click a glyph to set that level, saved for the model in `modelSettings` as Alt+P does; the level word shows for 2 s. Nerd Font caps and icon only when Windows Terminal uses a Nerd Font | Terminal | Loaded every session. A click applies to requests right away, but Alt+P and the spinner keep showing Claude Code's own level until the next session (by choice: running `/effort` would add a line per click) |
 | `mod-prompts` | Our take on prompt-rail as a sidebar: every prompt of the session (live branch, so `/rewind`'s abandoned ones drop out). Mouse only: a click on a prompt shows it in the sticky card, `[↵]` jumps the transcript there. Opens from `/mod-prompts` or the Prompts entry in the menu pill | Terminal | Loaded after one restart. Not checked live yet |
 | `mod-menu` | A pill above the prompt, `( Mods │ Skills )` (open bright, closed dim): a click shows that panel and closes the open one, a click on the open one hides it. Each panel mod draws its own entry (panel contract in the standard); mod-menu owns `/mod-menu`, which hides or shows the line | Terminal | Loaded every session. Checked live on 2026-10-03 |
+| `mod-toggle` | Folds each finished turn under its prompt to one line (`+ 12 tools · Edit(path) +3 −1 · Skill(x) · 1m 4s`), keeping the final reply. Unfolded, the turn is a tinted card with a strip down its left: each tool call is one line with its own toggle, and a click on the chip, the line or the strip folds it back. `/mod-toggle settings` opens its panel: two settings with example cards, and its actions | Terminal | Loaded after one restart. Folding, chips, settings panel and actions checked live on 2026-10-03 |
 
 ## Layout
 
@@ -47,16 +48,20 @@ Only mods I write belong in `CLAUDE_CODE_PLUGIN_DIRS`. Installed plugins stay un
 
 References: `~/.claude/skills/mod-builder/` (`SKILL.md`, `references/overview.md`, `references/gotchas.md`, `references/docs/`).
 
-## `showcase.json` (my convention, read only by mod-manager)
+## `showcase.json` (my convention, read by mod-manager and each mod's own settings panel)
 
 Optional file at a mod's root. Without it, mod-manager derives the feature list from the events found in the hooks source.
 
 ```json
 {
   "tagline": "One line shown under the description",
-  "features": [{ "title": "Short name", "detail": "What it does, one or two sentences." }]
+  "features": [{ "title": "Short name", "detail": "What it does, one or two sentences." }],
+  "actions": [{ "label": "Button text", "command": "mod-x", "args": "debug" }],
+  "previews": { "field": { "true": [{ "bar": "accent", "spans": [{ "text": "example", "color": "muted" }] }] } }
 }
 ```
+
+A mod's settings are Claude Code's `userConfig` in its `plugin.json`, not this file. They show in `/config`, in the mod's own `/mod-x settings` panel, and on its page in mod-manager.
 
 ## Standard
 

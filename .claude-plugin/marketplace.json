@@ -18,7 +18,7 @@
     {
       "name": "mod-manager",
       "source": "./mod-manager",
-      "description": "Lists every mod, toggles it on or off, and shows what it does"
+      "description": "Lists every mod and toggles it on or off; a click on a mod opens its page with its settings, actions and features. Opens from the gear in the pill row"
     },
     {
       "name": "mod-menu",
@@ -34,6 +34,11 @@
       "name": "mod-skill-panel",
       "source": "./mod-skill-panel",
       "description": "Colors each skill in the slash list by the color-tag in its frontmatter, and /mod-skill-panel opens a sidebar of skills grouped by tag where pressing one adds it to the prompt"
+    },
+    {
+      "name": "mod-toggle",
+      "source": "./mod-toggle",
+      "description": "Folds each finished turn under its prompt to one summary line and each tool call to one line, unfolded in place as a card by a click; /mod-toggle settings opens its settings"
     }
   ]
 }
