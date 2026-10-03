@@ -58,7 +58,9 @@ const TIMED = [
   row(3, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_bash', content: 'ok' }] }, timestamp: '2026-10-03T14:32:46.000Z' }),
   said(4, [{ type: 'text', text: 'Done.' }]),
   row(5, 'system', { subtype: 'turn_duration', durationMs: 47000 }),
-].join('\n')
+  // The next prompt is what folds the turn before it.
+  row(6, 'user', { message: { role: 'user', content: 'now the docs' }, timestamp: '2026-10-03T14:34:00.000Z' }),
+].join('\n') + '\n'
 
 // isLive writes the transcript after the session starts, so its last turn counts as still running.
 async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsTurn = true) {
@@ -116,6 +118,12 @@ test('a mod reload mid-turn misses turn.start and still shows the running turn i
 
 test('a tool row drawn before the transcript holds it counts as the running turn and shows in full', async ($, on) => {
   const { tool } = await mountTimed($, on, TIMED.split('\n').slice(0, 1).join('\n'), true)
+  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+})
+
+test('a finished turn stays open until the next prompt', async ($, on) => {
+  // Its turn_duration row is read, so the turn has ended; only the next prompt folds it.
+  const { tool } = await mountTimed($, on, TIMED.split('\n').slice(0, 5).join('\n') + '\n')
   expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
 })
 

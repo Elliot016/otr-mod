@@ -27,8 +27,8 @@
     },
     "expand_live": {
       "type": "boolean",
-      "title": "Show the running turn in full",
-      "description": "While Claude works, the current turn shows every tool row and result as Claude Code draws them, and folds once the turn ends. Off, finished tool calls fold right away",
+      "title": "Show the latest turn in full",
+      "description": "The latest turn shows every tool row and result as Claude Code draws them, and folds when your next prompt starts. Off, finished tool calls fold right away",
       "default": true
     },
     "icons": {
