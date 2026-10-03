@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import { displayName, LEVEL_LOOK, withEffort } from './levels'
 import type { MeterMessage } from './meter'
 import { MARK } from './theme'
-import { PILL, pill, pillRow, splitRow } from './pills'
+import { PILL, pill, pillRow, splitRow, tipLine } from './pills'
 
 const homeOf = async ($: EngineInterface) => ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
 
@@ -55,6 +55,9 @@ async function setEffort($: EngineInterface, effort: string) {
 }
 
 
+// True while the pointer is on the effort pill, which then shows its tip above the row.
+let tipShown = false
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     nerd = await hasNerdFont($)
@@ -92,6 +95,10 @@ export const register: Register = on => {
   on('ui.message', async ($, e, next) => {
     const message = e.data as MeterMessage
     if (message?.type === 'set') await setEffort($, message.effort)
+    if (message?.type === 'menu-hover') {
+      tipShown = message.isOver
+      $.ui.invalidate('ui.render')
+    }
 
     return next(e)
   })
@@ -102,11 +109,13 @@ export const register: Register = on => {
     const { Box, Client, Text } = $.ui.resolve(e)
     const current = await $.state.get({ plugin: 'mod-effort', key: 'current' })
     const model = displayName(current.value?.model ?? (await $.session.model()))
-    const { group, row, rest } = splitRow(await next(e))
+    const { group, row, rest, tip } = splitRow(await next(e))
     const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary }} />
     // The level word follows the pill, so it never moves the glyphs under the pointer.
     const word = flash ? <Text key="menu-flash" color={LEVEL_LOOK[flash]?.color}>{flash}</Text> : null
 
-    return pillRow({ Box, Text }, nerd, group, [...row, pill({ Box, Text }, nerd, PILL.secondary, meter), word], rest)
+    const level = current.value?.effort ?? null
+    const hint = `Effort: ${model}${level ? ` at ${level}` : ''}. Hover a level to preview it, click to set it`
+    return pillRow({ Box, Text }, nerd, group, [...row, pill({ Box, Text }, nerd, PILL.secondary, meter), word], rest, tipShown ? tipLine({ Box, Text }, hint) : tip)
   })
 }

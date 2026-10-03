@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { THEME } from '../hooks/theme'
 
 import { displayName, withEffort } from '../hooks/levels'
 
@@ -46,6 +47,17 @@ test('the footer meter follows each request and a click saves that level', async
   expect(drawn).toContain('◐ ')
   expect(drawn).toContain(' Opus 5.5 ')
   expect(drawn).not.toContain('medium')
+
+  // Hovering the fourth level previews it: every glyph up to it lit, the hovered one bold, the fifth still dark.
+  await ui.pointer({ in: 'meter', type: 'move', x: 16, y: 0 })
+  const glyphs = (await ui.drawn({ in: 'meter' })).children.slice(1) as { props: { color: string; bold?: boolean } }[]
+  expect(glyphs.slice(0, 4).every(glyph => glyph.props.color !== THEME.border)).toBe(true)
+  expect(glyphs[4]!.props.color).toBe(THEME.border)
+  expect(glyphs[3]!.props.bold).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /^Effort: Opus 5\.5 at medium\./ })).toBeDefined()
+  await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
+  expect(await ui.find({ type: 'Text', text: /^Effort: / })).toBeUndefined()
+  expect((await ui.drawn({ in: 'meter' })).children[3].props.color).toBe(THEME.border)
 
   // ' Opus 5.5 ' (10 cells) comes first; the fifth glyph sits at x 18.
   await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
