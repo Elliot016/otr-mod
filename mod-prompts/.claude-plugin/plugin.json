@@ -1,0 +1,7 @@
+{
+  "name": "mod-prompts",
+  "version": "0.1.0",
+  "description": "A sidebar of every prompt in this session, with the full text in a card: Enter or click jumps the transcript to it. Opens from /mod-prompts or the Prompts entry in the mod-menu pill",
+  "author": { "name": "Amorim" },
+  "types": "./types/index.d.ts"
+}
