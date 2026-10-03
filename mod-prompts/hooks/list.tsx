@@ -2,7 +2,8 @@ import type { ClientModule } from 'claude-code'
 
 import { THEME } from './theme'
 
-export type Row = { number: string; text: string }
+// time is the clock time the prompt was sent, empty when the transcript has none.
+export type Row = { number: string; time: string; text: string }
 
 export type ListProps = { rows: Row[]; selected: number }
 
@@ -29,6 +30,7 @@ const PromptList: ClientModule<ListProps, number> = (props, surface) => {
         return (
           <Box key={`row-${index}`} flexDirection="row" columnGap={1}>
             <Text color={THEME.muted}>{row.number}</Text>
+            {row.time ? <Text color={THEME.muted}>{row.time}</Text> : null}
             <Text color={isSelected || index === hovered ? THEME.accent : THEME.onSurface} bold={isSelected}>{row.text}</Text>
           </Box>
         )

@@ -2,7 +2,8 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { cardSpace, stickyCard } from './card'
 import type { ListMessage } from './list'
-import { pillRow, splitRow } from './pills'
+import type { EntryMessage } from './entry'
+import { PILL, pillRow, splitRow, tipLine } from './pills'
 import { parseRow, promptsOf, rowKey, targetOf, type Prompt, type Row } from './prompts'
 import { actionColumn } from './rows'
 import { MARK, statusColor, THEME } from './theme'
@@ -94,7 +95,7 @@ async function jump($: EngineInterface, index: number) {
   if (!prompt) return
   selected = index
   const result = await $.ui.scroll({ to: { requestId: targetOf(drawn, prompt.id) }, block: 'start' }).catch((error: Error) => ({ deny: error.message }))
-  note = result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} jumped to #${index + 1}`
+  note = result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} Jumped to #${index + 1}`
   $.ui.invalidate('ui.render')
 }
 
@@ -107,6 +108,9 @@ const clock = (at?: string) => {
   const date = at ? new Date(at) : undefined
   return date && !Number.isNaN(date.getTime()) ? `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : ''
 }
+
+// True while the pointer is on this mod's pill entry, which then shows its tip above the row.
+let tipShown = false
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -176,19 +180,31 @@ export const register: Register = on => {
     if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
     const nerd = (await $.state.get({ plugin: 'mod-menu', key: 'nerd' })).value === true
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-prompts', key: 'pane' })
     const shown = await isOpen($)
-    const { group, row, rest } = splitRow(await next(e))
-    // Buttons take no color, so closed is dim; opening the pane here queues nothing, so it stays live mid-turn.
+    const { group, row, rest, tip } = splitRow(await next(e))
+    // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = (
-      <Box key="menu-pad" paddingX={1}>
-        <Button key="menu-entry" label="Prompts" plain dimColor={!shown} hover={{ scope: 'menu-entry', color: THEME.accent }} onPress={() => togglePane($)} />
+      <Box key="menu-pad-prompts">
+        <Client key="menu-entry-prompts" module="./entry.tsx" height={1} props={{ id: 'prompts', label: 'Prompts', isOpen: shown, bg: PILL.primary, idle: THEME.pill }} />
       </Box>
     )
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, rest)
+    return pillRow({ Box, Text }, nerd, [entry, ...group], row, rest, tipShown ? tipLine({ Box, Text }, 'Prompts: every prompt this session, click one to jump to it') : tip)
+  })
+
+  on('ui.message', async ($, e, next) => {
+    const hover = e.data as { type?: string; id?: string; isOver?: boolean }
+    if (hover?.type === 'menu-hover' && hover.id === 'prompts') {
+      tipShown = hover.isOver === true
+      $.ui.invalidate('ui.render')
+    }
+    const message = e.data as EntryMessage
+    if (message?.type === 'menu-entry' && message.id === 'prompts') await togglePane($)
+
+    return next(e)
   })
 
   // The list reports clicks on a prompt's text, which select it into the card.
@@ -230,7 +246,7 @@ export const register: Register = on => {
             key="list"
             module="./list.tsx"
             height={prompts.length}
-            props={{ rows: prompts.map((prompt, index) => ({ number: String(index + 1).padStart(number), text: oneLine(prompt.text, width - number - 1) })), selected }}
+            props={{ rows: prompts.map((prompt, index) => ({ number: String(index + 1).padStart(number), time: clock(prompt.at), text: oneLine(prompt.text, width - number - 1 - (prompt.at ? 6 : 0)) })), selected }}
           />
         </Box>
         {current

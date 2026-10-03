@@ -69,6 +69,10 @@ test('the sidebar lists prompts, a click shows one in the sticky card, and [↵]
   expect(spawned).toEqual(['/t/s1.jsonl'])
   expect(await ui.find({ type: 'Text', text: '▸ Prompts · 3' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'second prompt' })).toBeDefined()
+  // A row shows the clock time its prompt was sent; the queued fixture row has no timestamp, so it shows none.
+  const sent = new Date('2026-10-03T11:58:00Z')
+  const hhmm = `${String(sent.getHours()).padStart(2, '0')}:${String(sent.getMinutes()).padStart(2, '0')}`
+  expect(JSON.stringify(await ui.drawn({ in: 'list' })).split(`"${hhmm}"`).length - 1).toBe(2)
 
   // A click on the text selects it into the card; [↵] jumps.
   await ui.pointer({ in: 'list', type: 'down', button: 'left', x: 3, y: 0 })
