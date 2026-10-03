@@ -160,8 +160,10 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.panes', () => ({ value: [] }))
-  on('ui.render', ($$, e) => {
-    const { Text } = $$.ui.resolve(e)
+  on('config.list', () => ({ value: [] }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
     return <Text>base</Text>
   })
 
@@ -176,23 +178,107 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   } as never)
 
   const dirs = () => String(JSON.parse(files[settingsPath]!).env.CLAUDE_CODE_PLUGIN_DIRS)
-  expect(await ui.find({ type: 'Text', text: /alpha does a thing/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^▸ Mods · 2 of 3 on$/ })).toBeDefined()
+  // Rows group by source, and nothing toggled yet means nothing to reload.
+  expect(await ui.find({ type: 'Text', text: /^Yours$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Installed$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^No changes to apply$/ })).toBeDefined()
 
-  // A click on the name selects and never toggles; the row's [◉] action toggles.
-  await ui.pointer({ in: 'list', type: 'down', button: 'left', x: 2, y: 1 })
-  expect(dirs()).not.toContain('beta')
-  expect(await ui.find({ type: 'Text', text: /beta does a thing/ })).toBeDefined()
-
-  await ui.press({ key: 'mods-action-1' })
+  // The row's [◉] action toggles; the list itself shows no details.
+  await ui.press({ key: 'mods-dir-action-1' })
   expect(dirs()).toContain('beta')
-
-  // The first row's action turns alpha off; a click on its name selects it into the card.
-  await ui.press({ key: 'mods-action-0' })
-  await ui.pointer({ in: 'list', type: 'down', button: 'left', x: 2, y: 0 })
-  expect(await ui.find({ type: 'Text', text: /alpha does a thing/ })).toBeDefined()
+  await ui.press({ key: 'mods-dir-action-0' })
   expect(JSON.parse(files[settingsPath]!).enabledPlugins['alpha@inline']).toBe(false)
-  expect(dirs()).toContain('alpha')
-  expect(await ui.find({ type: 'Text', text: /alpha disabled, Apply to reload/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /alpha disabled, reload plugins to apply/ })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: /^Reload plugins to apply 2 changes$/ })).toBeDefined()
+  // Toggling alpha back leaves one change pending.
+  await ui.press({ key: 'mods-dir-action-0' })
+  expect(await ui.find({ type: 'Button', text: /^Reload plugins to apply 1 change$/ })).toBeDefined()
+  // While Claude works the reload would only queue as a prompt, so it waits.
+  await $.turn.start({ turnId: 't1' } as never)
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /^Reload plugins to apply 1 change · available once Claude is idle$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /alpha does a thing/ })).toBeUndefined()
+
+  // A click on a name opens that mod's page, and < back returns to the list.
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 2, y: 1 })
+  expect(await ui.find({ type: 'Text', text: /beta does a thing/ })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: /^< Back$/ })).toBeDefined()
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ type: 'Text', text: /^▸ Mods · 3 of 3 on$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a mod page changes its settings, runs its actions, and holds them while Claude works', async ($, on) => {
+  const { files } = disk({
+    '/h/.claude/mods/alpha/showcase.json': JSON.stringify({
+      tagline: 'Alpha tagline',
+      actions: [{ label: 'Say hi', command: 'alpha', args: 'hi' }],
+      previews: { loud: { false: [{ bar: 'border', spans: [{ text: 'quiet example' }] }] } },
+    }),
+    '/h/.claude/mods/alpha/.claude-plugin/plugin.json': JSON.stringify({ name: 'alpha', description: 'alpha does a thing', version: '1.0.0', userConfig: { loud: { type: 'boolean', title: 'Loud', description: 'Shouts', default: false } } }),
+  })
+  const saved: unknown[] = []
+  const ran: string[] = []
+  on('fs.read', (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.list', () => ({ value: [{ name: 'alpha', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({
+    value: [
+      { key: 'alpha.loud', label: 'Loud', description: 'Shouts', kind: 'boolean', value: false, provider: { kind: 'plugin', name: 'alpha' }, isLocked: false },
+      { key: 'other.loud', label: 'Not alpha', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'other' }, isLocked: false },
+    ],
+  }))
+  on('config.set', (_$, e) => {
+    saved.push([e.key, e.value])
+    return { value: e.value }
+  })
+  on('command.run', (_$, e) => {
+    ran.push(`${e.command} ${e.args}`)
+    return { text: '' }
+  })
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+
+  await $.command.run({ command: 'mod-manager' })
+  const ui = await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  } as never)
+  // A mod that declares settings carries the gear in the list; a mod without settings does not.
+  const listed = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
+  expect(listed).toContain('⚙')
+  expect(listed.split('⚙').length).toBe(2)
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 2, y: 0 })
+
+  // Only alpha's own rows show, and a click saves through /config.
+  expect(await ui.find({ type: 'Text', text: /^Loud$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Not alpha$/ })).toBeUndefined()
+  // The example card for the current value comes from the mod's showcase.json, as in its own panel.
+  expect(await ui.find({ type: 'Text', text: /^quiet example$/ })).toBeDefined()
+  await ui.press({ key: 'setting-0-flip' })
+  expect(saved).toEqual([['alpha.loud', true]])
+  expect(await ui.find({ type: 'Text', text: /Loud saved/ })).toBeDefined()
+
+  await ui.press({ key: 'action-0' })
+  expect(ran).toEqual(['alpha hi'])
+
+  // Another mod's command would only queue mid-turn, so its action waits.
+  await $.turn.start({ turnId: 't1' } as never)
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /Say hi · available once Claude is idle/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -219,37 +305,6 @@ test('the command toggles: it opens a closed pane and closes an open one', async
   await $.command.run({ command: 'mod-manager' })
   await $.command.run({ command: 'mod-manager' })
   expect(calls).toEqual(['open manager', 'close manager'])
-})
-
-test('while Claude works Apply is inert and says why', async ($, on) => {
-  on('fs.read', () => {
-    throw new Error('ENOENT')
-  })
-  on('fs.list', () => ({ value: [] }))
-  on('env.get', () => ({ value: '/h' }))
-  on('ui.render', ($$, e) => {
-    const { Text } = $$.ui.resolve(e)
-    return <Text>base</Text>
-  })
-  const pane = {
-    plugin: 'mod-manager',
-    surface: 'terminal',
-    component: 'Pane',
-    requestId: 'manager',
-    props: { title: 'Mods', isFocused: true, bodyColumns: 80, placement: 'above', scroll: { offset: 0, bodyRows: 20 }, view: {} },
-  } as never
-
-  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
-  on('turn.complete', () => ({ text: '' }))
-  await $.turn.start({ turnId: 't1' } as never)
-  const busy = await $.ui.mount(pane)
-  expect(await busy.find({ type: 'Text', text: /available once it is idle/ })).toBeDefined()
-  await busy.unmount()
-
-  await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false, usage: null } as never)
-  const idle = await $.ui.mount(pane)
-  expect(await idle.find({ type: 'Text', text: /available once it is idle/ })).toBeUndefined()
-  await idle.unmount()
 })
 
 test('its footer entry opens the pane on a press and closes it on the next', async ($, on) => {
@@ -289,4 +344,56 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
   await busy.press({ key: 'menu-entry' })
   expect(opened).toEqual(['manager', 'close manager'])
   await busy.unmount()
+})
+
+const iconsPane = async ($: any, on: any) => {
+  const { files } = disk()
+  on('fs.read', (_$: unknown, e: { path: string }) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.list', () => ({ value: [{ name: 'alpha', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: [] }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  await $.command.run({ command: 'mod-manager' })
+  const ui = await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  } as never)
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 2, y: 0 })
+  return ui
+}
+
+const SWITCH_ON = String.fromCodePoint(0xf205)
+const PILL_CAP = String.fromCodePoint(0xe0b6)
+
+test('icons=nerd draws Nerd controls and pill headings', { options: { icons: 'nerd' } }, async ($, on) => {
+  const ui = await iconsPane($, on)
+  expect(await ui.find({ type: 'Text', text: PILL_CAP })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Features$/ })).toBeDefined()
+  expect(await ui.find({ key: 'features-head' })).toBeDefined()
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ type: 'Button', text: SWITCH_ON })).toBeDefined()
+  await ui.unmount()
+})
+
+test('icons=safe keeps the common Unicode glyphs and plain headings', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await iconsPane($, on)
+  expect(await ui.find({ type: 'Text', text: PILL_CAP })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Features$/ })).toBeDefined()
+  expect(await ui.find({ key: 'features-head' })).toBeDefined()
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ type: 'Button', text: /^\[◉\]$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: SWITCH_ON })).toBeUndefined()
+  await ui.unmount()
 })

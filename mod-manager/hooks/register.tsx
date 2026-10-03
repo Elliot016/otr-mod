@@ -1,10 +1,11 @@
-import type { EngineInterface, Register } from 'claude-code'
+import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
 import { MARK, statusColor, THEME } from './theme'
-import { cardSpace, stickyCard } from './card'
 import { actionColumn } from './rows'
 import { pillRow, splitRow } from './pills'
+import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode } from './look'
+import { settingsBody, type Action } from './settings'
 import type { ListMessage } from './list'
 
 // `$` cannot cross an import, so the registry gets plain functions instead.
@@ -15,11 +16,26 @@ const ioOf = ($: EngineInterface): Io => ({
   home: async () => (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '',
 })
 
-// Lines the card gives a description before cutting it.
-const DESC_ROWS = 2
+// The icons setting (userConfig), fixed per activation: a change reloads the mod.
+let iconMode: IconMode = 'auto'
+let look = lookFor(false)
+
+// Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
+async function detectLook($: EngineInterface) {
+  if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
+  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
+  for (const path of terminalSettings(local)) {
+    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
+  }
+  return lookFor(false)
+}
 
 let mods: ModInfo[] = []
-let selected = 0
+// Mods toggled since the last reload, by name, with the state they had then; toggling back drops one.
+const changed = new Map<string, boolean>()
+// The mod whose page fills the pane, or -1 for the list.
+let page = -1
 let note = ''
 let working = false
 
@@ -27,8 +43,12 @@ async function toggleMod($: EngineInterface, index: number) {
   const mod = mods[index]
   if (!mod) return
   const outcome = await setEnabled(ioOf($), mod, !mod.enabled)
+  if (outcome.ok) {
+    if (changed.get(mod.name) === !mod.enabled) changed.delete(mod.name)
+    else if (!changed.has(mod.name)) changed.set(mod.name, mod.enabled)
+  }
   // Only a folder new to the dirs list waits for a restart; every other toggle lands with /reload-plugins.
-  const howToApply = outcome.ok && outcome.needsRestart ? 'new folder, restart with claude -c once to load it' : 'Apply to reload'
+  const howToApply = outcome.ok && outcome.needsRestart ? 'new folder, restart with claude -c once to load it' : 'reload plugins to apply'
   note = outcome.ok
     ? `${MARK.ok} ${mod.name} ${mod.enabled ? 'disabled' : 'enabled'}, ${howToApply}`
     : `${MARK.warn} ${outcome.reason}`
@@ -57,16 +77,26 @@ async function togglePane($: EngineInterface) {
     return
   }
   mods = await discover(ioOf($))
-  selected = 0
+  page = -1
   note = ''
   const opened = await $.ui.open({ id: 'manager', title: 'Mods', closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(`Mods panel waiting: ${opened.reason}`)
   await $.state.set({ plugin: 'mod-manager', key: 'pane' }, opened.isPlaced)
 }
 
+const openPage = ($: EngineInterface, index: number) => {
+  page = index
+  note = ''
+  $.ui.invalidate('ui.render')
+}
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  iconMode = (options.icons as IconMode | undefined) ?? 'auto'
+  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  look = lookFor(iconMode === 'nerd')
+
   on('session.start', async ($, e, next) => {
+    look = await detectLook($)
     await $.command.register({ name: 'mod-manager', description: 'Open the mod manager' })
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
     await $.state.set({ plugin: 'mod-manager', key: 'pane' }, await isOpen($))
@@ -125,8 +155,6 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
-    const nerd = (await $.state.get({ plugin: 'mod-menu', key: 'nerd' })).value === true
-
     const { Box, Button, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-manager', key: 'pane' })
@@ -135,20 +163,17 @@ export const register: Register = on => {
     // Buttons take no color, so closed is dim; opening the pane here queues nothing, so it stays live mid-turn.
     const entry = (
       <Box key="menu-pad" paddingX={1}>
-        <Button key="menu-entry" label="Mods" plain dimColor={!shown} hover={{ scope: 'menu-entry', color: THEME.accent }} onPress={() => togglePane($)} />
+        <Button key="menu-entry" label={look.glyph.gear} plain dimColor={!shown} hover={{ scope: 'menu-entry', color: THEME.accent }} onPress={() => togglePane($)} />
       </Box>
     )
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, rest)
+    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, rest)
   })
 
-  // The list reports clicks on a mod's text, which select it into the card.
+  // A click on a mod's name opens its page.
   on('ui.message', { requestId: 'manager' }, async ($, e, next) => {
     const message = e.data as ListMessage
-    if (message.type === 'select' && message.index !== selected) {
-      selected = message.index
-      $.ui.invalidate('ui.render')
-    }
+    if (message.type === 'select') openPage($, message.index)
 
     return next(e)
   })
@@ -161,79 +186,138 @@ export const register: Register = on => {
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const redraw = () => $.ui.invalidate('ui.render')
-    const current = mods[selected]
-    const features = current ? featuresOf(current) : []
-    // One height for every mod, set by the one with most features, so the list below never moves.
-    const cardRows = 2 + 1 + DESC_ROWS + 1 + 1 + Math.max(1, ...mods.map(mod => featuresOf(mod).length))
+    const frame = (children: unknown) => (
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        {children}
+      </Box>
+    )
+
+    const mod = mods[page]
+    if (mod) {
+      // /config lists a plugin's settings as `<plugin>.<field>`, and only while the plugin is on.
+      const rows = mod.enabled ? (await $.config.list()).filter(row => row.key.startsWith(`${mod.name}.`)) : []
+      const actions: Action[] = mod.enabled ? (mod.showcase?.actions ?? []) : []
+      // A saved change reloads that mod, which redraws this page with the new value.
+      const set = async (row: ConfigRow, value: ConfigValue) => {
+        const result = await $.config.set({ key: row.key, value })
+        note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${row.label} saved`
+        redraw()
+      }
+      const run = async (action: Action) => {
+        note = await $.command
+          .run({ command: action.command, args: action.args ?? '' })
+          .then(() => `${MARK.ok} ran /${[action.command, action.args].filter(Boolean).join(' ')}`)
+          .catch(error => `${MARK.warn} ${String(error)}`)
+        redraw()
+      }
+      const back = () => {
+        page = -1
+        note = ''
+        redraw()
+      }
+      const hint = rows.length || actions.length ? `click a control to change it ${MARK.sep} saved at once, the mod reloads` : 'click Back to return to the list'
+      const features = featuresOf(mod).map((item, index) => (
+        <Box key={`feature-${index}`} flexDirection="row" columnGap={1}>
+          <Text color={THEME.accent}>{MARK.bullet}</Text>
+          <Box flexShrink={0}>
+            <Text color={THEME.onSurface}>{item.title}</Text>
+          </Box>
+          <Text color={THEME.muted} wrap="truncate-end">{item.detail}</Text>
+        </Box>
+      ))
+
+      return frame([
+        <Box key="back-row">
+          <Button key="back" label={`${look.glyph.back} Back`} plain hover={{ scope: 'back-row', color: THEME.accent }} onPress={back} />
+        </Box>,
+        <Box key="page-head" flexDirection="row" columnGap={2} marginTop={1}>
+          {paneTitle({ Box, Text }, look, 'mod', `${mod.name} ${MARK.sep} ${mod.version}`)}
+          <Text color={mod.enabled ? THEME.good : THEME.muted}>{mod.enabled ? 'On' : 'Off'}</Text>
+        </Box>,
+        <Text key="page-note" color={statusColor(note)}>{note || hint}</Text>,
+        <Box key="page-about" flexDirection="column" marginTop={1}>
+          <Text color={THEME.onSurface}>{mod.description}</Text>
+          {mod.showcase?.tagline ? <Text color={THEME.secondary}>{mod.showcase.tagline}</Text> : null}
+        </Box>,
+        mod.enabled || mod.settings === 0 ? (
+          settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews: mod.showcase?.previews })
+        ) : (
+          <Box key="page-off" marginTop={1}>
+            <Text color={THEME.muted}>{`Turn ${mod.name} on to change its settings and run its actions.`}</Text>
+          </Box>
+        ),
+        section({ Box, Text }, look, 'features', 'features', 'Features', features.length ? features : <Text color={THEME.muted}>No features detected.</Text>),
+      ])
+    }
 
     const apply = async () => {
       await settingsCaughtUp($)
       note = await $.command
         .run({ command: 'reload-plugins' })
-        .then(() => `${MARK.ok} reloading plugins`)
+        .then(() => {
+          changed.clear()
+          return `${MARK.ok} reloading plugins`
+        })
         .catch(error => `${MARK.warn} reload failed: ${String(error)}`)
       redraw()
     }
 
-    return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        <Text color={THEME.accent} bold>{`${MARK.stage} Mods ${MARK.sep} ${mods.length}`}</Text>
-        <Text color={statusColor(note)}>
-          {note || `click [◉] to turn a mod on or off ${MARK.sep} click a name to read it`}
-        </Text>
-        {mods.length === 0 ? <Text color={THEME.muted}>No mods found.</Text> : null}
-        {current ? cardSpace({ Box }, cardRows) : null}
-        <Box marginTop={1} flexDirection="row" columnGap={1}>
+    // One section per source, so a row needs no "yours" or "installed" label of its own.
+    const group = (source: ModInfo['source'], title: string, icon: string) => {
+      const members = mods.map((item, index) => ({ item, index })).filter(({ item }) => item.source === source)
+      if (members.length === 0) return null
+      return section(
+        { Box, Text },
+        look,
+        `list-${source}`,
+        icon,
+        title,
+        <Box key={`rows-${source}`} flexDirection="row" columnGap={1}>
           {actionColumn(
             { Box, Button, Text },
-            'mods',
-            mods.map((mod, index) => ({ label: mod.enabled ? '[◉]' : '[○]', isInactive: !mod.enabled, onPress: () => toggleMod($, index) })),
+            `mods-${source}`,
+            members.map(({ item, index }) => ({ label: item.enabled ? look.glyph.on : look.glyph.off, isInactive: !item.enabled, onPress: () => toggleMod($, index) })),
           )}
           <Client
-            key="list"
+            key={`list-${source}`}
             module="./list.tsx"
-            height={mods.length}
-            props={{ rows: mods.map(mod => ({ name: mod.name, enabled: mod.enabled, source: mod.source, commands: mod.commands })), selected }}
+            height={members.length}
+            props={{
+              rows: members.map(({ item, index }) => ({
+                index,
+                name: item.name,
+                enabled: item.enabled,
+                // A command named after its mod repeats the name, so only other commands show.
+                commands: item.commands.filter(name => name !== item.name),
+                hasSettings: item.settings > 0,
+              })),
+              gear: look.glyph.gear,
+              icon: look.glyph.icon[icon] ?? '',
+            }}
           />
-        </Box>
-        <Box marginTop={1}>
-          {/* While Claude works, a command run would only queue as a prompt, so Apply goes inert. */}
-          {working ? (
-            <Text color={THEME.muted}>{`Apply: reload plugins ${MARK.sep} Claude is working, available once it is idle`}</Text>
-          ) : (
-            <Button key="apply" label="Apply: reload plugins" onPress={apply} />
-          )}
-        </Box>
-        {current
-          ? stickyCard({ Box }, e.props.scroll.offset, e.props.bodyColumns, cardRows, (
-              <Box key="card-body" flexDirection="column">
-                <Box flexDirection="row" columnGap={2} flexShrink={0}>
-                  <Text color={THEME.onSurface} bold>{`${current.name} ${current.version}`}</Text>
-                  <Text color={current.enabled ? THEME.good : THEME.muted}>{current.enabled ? 'On' : 'Off'}</Text>
-                </Box>
-                <Box height={DESC_ROWS} overflow="hidden" flexShrink={0}>
-                  <Text color={THEME.muted}>{current.description}</Text>
-                </Box>
-                <Box height={1} overflow="hidden" flexShrink={0}>
-                  {current.showcase?.tagline ? <Text color={THEME.secondary}>{current.showcase.tagline}</Text> : null}
-                </Box>
-                {/* Read-only: a feature is information, so it adds no focus stop. */}
-                <Box flexDirection="column" marginTop={1} flexShrink={0}>
-                  {features.length === 0 ? <Text color={THEME.muted}>No features detected.</Text> : null}
-                  {features.map((item, index) => (
-                    <Box key={`feature-${index}`} flexDirection="row" columnGap={1}>
-                      <Text color={THEME.accent}>{MARK.bullet}</Text>
-                      <Box flexShrink={0}>
-                        <Text color={THEME.onSurface}>{item.title}</Text>
-                      </Box>
-                      <Text color={THEME.muted} wrap="truncate-end">{item.detail}</Text>
-                    </Box>
-                  ))}
-                </Box>
-              </Box>
-            ))
-          : null}
-      </Box>
-    )
+        </Box>,
+      )
+    }
+    const pending = changed.size
+    const applyLabel = `Reload plugins to apply ${pending} ${pending === 1 ? 'change' : 'changes'}`
+    const onCount = mods.filter(item => item.enabled).length
+
+    return frame([
+      paneTitle({ Box, Text }, look, 'mod', `Mods ${MARK.sep} ${onCount} of ${mods.length} on`),
+      <Text key="list-note" color={statusColor(note)}>{note || `click ${look.glyph.on.trim()} to turn a mod on or off ${MARK.sep} click a name to open its page`}</Text>,
+      mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>No mods found.</Text> : null,
+      group('dir', 'Yours', 'mod'),
+      group('installed', 'Installed', 'installed'),
+      <Box key="list-apply" marginTop={1}>
+        {/* Nothing pending means nothing to reload; while Claude works, a reload would only queue as a prompt. */}
+        {pending === 0 ? (
+          <Text color={THEME.muted}>No changes to apply</Text>
+        ) : working ? (
+          <Text color={THEME.muted}>{`${applyLabel} ${MARK.sep} available once Claude is idle`}</Text>
+        ) : (
+          <Button key="apply" label={applyLabel} onPress={apply} />
+        )}
+      </Box>,
+    ])
   })
 }

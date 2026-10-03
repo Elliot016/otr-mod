@@ -5,5 +5,18 @@
   "author": {
     "name": "Amorim"
   },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": [
+        "auto",
+        "nerd",
+        "safe"
+      ],
+      "default": "auto"
+    }
+  }
 }

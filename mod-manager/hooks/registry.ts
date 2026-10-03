@@ -1,3 +1,5 @@
+import type { Previews } from './settings'
+
 export type Io = {
   read: (path: string) => Promise<string>
   write: (path: string, text: string) => Promise<void>
@@ -6,7 +8,8 @@ export type Io = {
 }
 
 export type Feature = { title: string; detail: string }
-export type Showcase = { tagline?: string; features?: Feature[] }
+export type ShowcaseAction = { label: string; command: string; args?: string }
+export type Showcase = { tagline?: string; features?: Feature[]; actions?: ShowcaseAction[]; previews?: Previews }
 
 export type ModInfo = {
   id: string
@@ -20,6 +23,8 @@ export type ModInfo = {
   calls: string[]
   commands: string[]
   showcase: Showcase | null
+  // How many settings its manifest declares (userConfig); /config lists them only while it is on.
+  settings: number
 }
 
 export type Outcome = { ok: true; needsRestart?: boolean } | { ok: false; reason: string }
@@ -100,6 +105,7 @@ const inspect = async (
     enabled,
     ...scan(text),
     showcase: (await readJson(io, `${root}/showcase.json`)) as Showcase | null,
+    settings: Object.keys(manifest.userConfig ?? {}).length,
   }
 }
 
