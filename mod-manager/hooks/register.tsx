@@ -3,8 +3,9 @@ import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-c
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
 import { MARK, statusColor, THEME } from './theme'
 import { actionColumn } from './rows'
-import { pillRow, splitRow } from './pills'
-import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode } from './look'
+import type { EntryMessage } from './entry'
+import { PILL, pillRow, splitRow, tipLine } from './pills'
+import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action } from './settings'
 import type { ListMessage } from './list'
 
@@ -90,6 +91,9 @@ const openPage = ($: EngineInterface, index: number) => {
   $.ui.invalidate('ui.render')
 }
 
+// True while the pointer is on this mod's pill entry, which then shows its tip under the row.
+let tipShown = false
+
 export const register: Register = (on, options) => {
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto waits for session.start to read the terminal font.
@@ -155,19 +159,31 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-manager', key: 'pane' })
     const shown = await isOpen($)
-    const { group, row, rest } = splitRow(await next(e))
-    // Buttons take no color, so closed is dim; opening the pane here queues nothing, so it stays live mid-turn.
+    const { group, row, rest, tip } = splitRow(await next(e))
+    // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = (
-      <Box key="menu-pad" paddingX={1}>
-        <Button key="menu-entry" label={look.glyph.gear} plain dimColor={!shown} hover={{ scope: 'menu-entry', color: THEME.accent }} onPress={() => togglePane($)} />
+      <Box key="menu-pad-manager">
+        <Client key="menu-entry-manager" module="./entry.tsx" height={1} props={{ id: 'manager', label: look.glyph.gear, isOpen: shown, bg: PILL.primary, idle: THEME.pill }} />
       </Box>
     )
 
-    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, rest)
+    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, rest, tipShown ? tipLine({ Box, Text }, 'Mods: turn each mod on or off and open its settings') : tip)
+  })
+
+  on('ui.message', async ($, e, next) => {
+    const hover = e.data as { type?: string; id?: string; isOver?: boolean }
+    if (hover?.type === 'menu-hover' && hover.id === 'manager') {
+      tipShown = hover.isOver === true
+      $.ui.invalidate('ui.render')
+    }
+    const message = e.data as EntryMessage
+    if (message?.type === 'menu-entry' && message.id === 'manager') await togglePane($)
+
+    return next(e)
   })
 
   // A click on a mod's name opens its page.
@@ -206,7 +222,7 @@ export const register: Register = (on, options) => {
       const run = async (action: Action) => {
         note = await $.command
           .run({ command: action.command, args: action.args ?? '' })
-          .then(() => `${MARK.ok} ran /${[action.command, action.args].filter(Boolean).join(' ')}`)
+          .then(() => `${MARK.ok} Ran /${[action.command, action.args].filter(Boolean).join(' ')}`)
           .catch(error => `${MARK.warn} ${String(error)}`)
         redraw()
       }
@@ -234,7 +250,7 @@ export const register: Register = (on, options) => {
           {paneTitle({ Box, Text }, look, 'mod', `${mod.name} ${MARK.sep} ${mod.version}`)}
           <Text color={mod.enabled ? THEME.good : THEME.muted}>{mod.enabled ? 'On' : 'Off'}</Text>
         </Box>,
-        <Text key="page-note" color={statusColor(note)}>{note || hint}</Text>,
+        <Text key="page-note" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
         <Box key="page-about" flexDirection="column" marginTop={1}>
           <Text color={THEME.onSurface}>{mod.description}</Text>
           {mod.showcase?.tagline ? <Text color={THEME.secondary}>{mod.showcase.tagline}</Text> : null}
@@ -256,15 +272,15 @@ export const register: Register = (on, options) => {
         .run({ command: 'reload-plugins' })
         .then(() => {
           changed.clear()
-          return `${MARK.ok} reloading plugins`
+          return `${MARK.ok} Reloading plugins`
         })
-        .catch(error => `${MARK.warn} reload failed: ${String(error)}`)
+        .catch(error => `${MARK.warn} Reload failed: ${String(error)}`)
       redraw()
     }
 
     // One section per source, so a row needs no "yours" or "installed" label of its own.
     const group = (source: ModInfo['source'], title: string, icon: string) => {
-      const members = mods.map((item, index) => ({ item, index })).filter(({ item }) => item.source === source)
+      const members = mods.map((item, index) => ({ item, index })).filter(({ item }) => item.isOwn === (source === 'dir'))
       if (members.length === 0) return null
       return section(
         { Box, Text },
@@ -304,7 +320,7 @@ export const register: Register = (on, options) => {
 
     return frame([
       paneTitle({ Box, Text }, look, 'mod', `Mods ${MARK.sep} ${onCount} of ${mods.length} on`),
-      <Text key="list-note" color={statusColor(note)}>{note || `click ${look.glyph.on.trim()} to turn a mod on or off ${MARK.sep} click a name to open its page`}</Text>,
+      <Text key="list-note" color={statusColor(note)}>{withMark(look, note) || `click ${look.glyph.on.trim()} to turn a mod on or off ${MARK.sep} click a name to open its page`}</Text>,
       mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>No mods found.</Text> : null,
       group('dir', 'Yours', 'mod'),
       group('installed', 'Installed', 'installed'),

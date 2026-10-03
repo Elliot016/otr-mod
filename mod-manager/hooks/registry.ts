@@ -18,6 +18,8 @@ export type ModInfo = {
   version: string
   root: string
   source: 'dir' | 'installed'
+  // Lives in ~/.claude/mods: listed as the person's own even when installed from their local marketplace.
+  isOwn: boolean
   enabled: boolean
   events: string[]
   calls: string[]
@@ -96,6 +98,7 @@ const inspect = async (
     text += await io.read(`${root}/hooks/${String(module).replace(/^\.\//, '')}`).catch(() => '')
   }
   return {
+    isOwn: false,
     id,
     name: String(manifest.name ?? root.split('/').pop()),
     description: String(manifest.description ?? ''),
@@ -122,19 +125,39 @@ export async function discover(io: Io): Promise<ModInfo[]> {
     if (entry.kind === 'dir') roots.add(`${claudeDir}/mods/${entry.name}`)
   }
 
+  // A folder installed from the local marketplace loads in place: its installed entry is the one that loads and toggles.
+  const installed = await readJson(io, `${claudeDir}/plugins/installed_plugins.json`)
+  const entries = Object.entries<any[]>(installed?.plugins ?? {}).map(([id, list]) => ({ id, entry: list.find(candidate => candidate.scope === 'user') ?? list[0] }))
+  const same = (a: string, b: string) => slashes(a).replace(/\/+$/, '').toLowerCase() === slashes(b).replace(/\/+$/, '').toLowerCase()
+  const isOwnPath = (path: string) => slashes(path).toLowerCase().startsWith(`${claudeDir}/mods/`.toLowerCase())
+
+  // A local marketplace over ~/.claude/mods loads its plugins in place, though the install record names a cache path.
+  const markets = (await readJson(io, `${claudeDir}/plugins/known_marketplaces.json`)) ?? {}
+  const ownMarkets = new Set(
+    Object.entries<any>(markets)
+      .filter(([, market]) => [market?.source?.path, market?.installLocation].some(path => typeof path === 'string' && same(path, `${claudeDir}/mods`)))
+      .map(([name]) => name),
+  )
+  const folderOf = (id: string) => {
+    const [name, market] = id.split('@')
+    return market && ownMarkets.has(market) ? `${claudeDir}/mods/${name}` : null
+  }
+  const installedFolders = entries.map(({ id }) => folderOf(id)).filter((folder): folder is string => folder !== null)
+
   const mods: ModInfo[] = []
   for (const root of roots) {
+    if (!active.includes(root) && installedFolders.some(folder => same(folder, root))) continue
+    if (!active.includes(root) && entries.some(({ entry }) => entry?.installPath && same(entry.installPath, root))) continue
     const mod = await inspect(io, root, 'dir', `dir:${root}`, active.includes(root))
     // A listed dir loads as `<name>@inline`, which enabledPlugins can switch off without unlisting it.
-    if (mod) mods.push({ ...mod, enabled: mod.enabled && settings.enabledPlugins?.[inlineId(mod)] !== false })
+    if (mod) mods.push({ ...mod, isOwn: true, enabled: mod.enabled && settings.enabledPlugins?.[inlineId(mod)] !== false })
   }
 
-  const installed = await readJson(io, `${claudeDir}/plugins/installed_plugins.json`)
-  for (const [id, entries] of Object.entries<any[]>(installed?.plugins ?? {})) {
-    const entry = entries.find(candidate => candidate.scope === 'user') ?? entries[0]
+  for (const { id, entry } of entries) {
     if (!entry?.installPath) continue
-    const mod = await inspect(io, slashes(entry.installPath), 'installed', id, settings.enabledPlugins?.[id] === true)
-    if (mod) mods.push(mod)
+    const folder = folderOf(id)
+    const mod = await inspect(io, folder ?? slashes(entry.installPath), 'installed', id, settings.enabledPlugins?.[id] === true)
+    if (mod) mods.push({ ...mod, isOwn: folder !== null || isOwnPath(entry.installPath) })
   }
   return mods.sort((a, b) => a.name.localeCompare(b.name))
 }

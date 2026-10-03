@@ -15,6 +15,11 @@ const SAFE = {
   down: '[−]',
   up: '[+]',
   locked: '[■]',
+  close: '[×]',
+  warn: '!',
+  ok: '✓',
+  expanded: '▾',
+  collapsed: '▸',
   back: '<',
   title: '▸',
   gear: '⚙',
@@ -30,6 +35,11 @@ const NERD: typeof SAFE = {
   down: ` ${nf(0xf068)} `,
   up: ` ${nf(0xf067)} `,
   locked: ` ${nf(0xf023)} `,
+  close: ` ${nf(0xf00d)} `,
+  warn: nf(0xea6c),
+  ok: nf(0xeab2),
+  expanded: nf(0xeab4),
+  collapsed: nf(0xeab6),
   back: nf(0xf053),
   title: nf(0xf054),
   gear: nf(0xf013),
@@ -42,6 +52,20 @@ const NERD: typeof SAFE = {
     skill: nf(0xf0d0),
     prompt: nf(0xf075),
     fold: nf(0xf066),
+    // VS Code's own sets: codicons for chrome, seti for file types.
+    files: nf(0xeb86),
+    replay: nf(0xea82),
+    folder: nf(0xea83),
+    'folder-open': nf(0xeaf7),
+    file: nf(0xea7b),
+    'ext-ts': nf(0xe628),
+    'ext-react': nf(0xe625),
+    'ext-js': nf(0xe781),
+    'ext-json': nf(0xe60b),
+    'ext-md': nf(0xe609),
+    'ext-py': nf(0xe73c),
+    'ext-config': nf(0xe615),
+    'ext-sh': nf(0xf489),
     Edit: nf(0xf040),
     MultiEdit: nf(0xf040),
     NotebookEdit: nf(0xf040),
@@ -77,6 +101,13 @@ export const isNerdFace = (settingsText: string) => /"face"\s*:\s*"[^"]*(nerd|\b
 
 // `text` led by its icon in Nerd mode; the text alone in safe mode or when the name has no icon.
 export const withIcon = (look: Look, name: string, text: string) => (look.glyph.icon[name] ? `${look.glyph.icon[name]} ${text}` : text)
+
+// A status note with its leading mark (MARK.warn or MARK.ok from theme.ts) drawn as this look's glyph.
+export function withMark(look: Look, note: string) {
+  if (note.startsWith('! ')) return `${look.glyph.warn} ${note.slice(2)}`
+  if (note.startsWith('✓ ')) return `${look.glyph.ok} ${note.slice(2)}`
+  return note
+}
 
 type Elements = { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 

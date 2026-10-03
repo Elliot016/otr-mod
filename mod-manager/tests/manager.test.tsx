@@ -70,6 +70,31 @@ test('discovery finds dir and installed mods with their facts', async () => {
   expect(found[2]).toMatchObject({ source: 'installed', enabled: true, id: 'inst@m' })
 })
 
+test('a mod folder installed from the local marketplace shows once, as the installed entry, among your own', async () => {
+  const { io } = disk({
+    'C:/H/.claude/settings.json': JSON.stringify(SETTINGS),
+    'C:/H/.claude/plugins/installed_plugins.json': JSON.stringify({
+      plugins: {
+        // The real record: a cache path, though the plugin loads in place from the marketplace folder.
+        'beta@claude-mods': [{ scope: 'user', installPath: 'C:\\H\\.claude\\plugins\\cache\\claude-mods\\beta\\0.1.0' }],
+        'inst@m': [{ scope: 'user', installPath: '\\cache\\inst' }],
+      },
+    }),
+    'C:/H/.claude/plugins/known_marketplaces.json': JSON.stringify({ 'claude-mods': { source: { source: 'directory', path: 'C:\\H\\.claude\\mods' } } }),
+    'C:/H/.claude/mods/beta/.claude-plugin/plugin.json': manifest('beta'),
+    'C:/H/.claude/mods/beta/hooks/hooks.json': hooks,
+    'C:/H/.claude/mods/beta/hooks/register.tsx': source,
+  })
+  io.home = async () => 'C:/H'
+  io.list = async path => {
+    if (path !== 'C:/H/.claude/mods') throw new Error('ENOENT')
+    return [{ name: 'beta', kind: 'dir' }]
+  }
+  const found = (await discover(io)).filter(mod => mod.name === 'beta')
+  expect(found.length).toBe(1)
+  expect(found[0]).toMatchObject({ source: 'installed', id: 'beta@claude-mods', isOwn: true })
+})
+
 test('skips plugins without a hooks module', async () => {
   const { io } = disk()
 
@@ -336,12 +361,12 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
 
   const idle = await $.ui.mount(band)
   expect(await idle.find({ type: 'Text', text: 'other mod' })).toBeDefined()
-  await idle.press({ key: 'menu-entry' })
+  await idle.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-manager' })
   expect(opened).toEqual(['manager'])
   await idle.unmount()
 
   const busy = await $.ui.mount(band)
-  await busy.press({ key: 'menu-entry' })
+  await busy.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-manager' })
   expect(opened).toEqual(['manager', 'close manager'])
   await busy.unmount()
 })
