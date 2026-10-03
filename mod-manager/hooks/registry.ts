@@ -1,0 +1,193 @@
+export type Io = {
+  read: (path: string) => Promise<string>
+  write: (path: string, text: string) => Promise<void>
+  list: (path: string) => Promise<{ name: string; kind: string }[]>
+  home: () => Promise<string>
+}
+
+export type Feature = { title: string; detail: string }
+export type Showcase = { tagline?: string; features?: Feature[] }
+
+export type ModInfo = {
+  id: string
+  name: string
+  description: string
+  version: string
+  root: string
+  source: 'dir' | 'installed'
+  enabled: boolean
+  events: string[]
+  calls: string[]
+  commands: string[]
+  showcase: Showcase | null
+}
+
+export type Outcome = { ok: true; needsRestart?: boolean } | { ok: false; reason: string }
+
+export const SELF = 'mod-manager'
+
+const BLURBS: Record<string, string> = {
+  'session.start': 'Runs once when a session starts, usually to register commands or start timers.',
+  'session.end': 'Runs when the session ends.',
+  'turn.start': 'Runs when a turn begins.',
+  'turn.complete': 'Runs when a turn ends.',
+  'tool.call': 'Sees every tool call before it runs and can deny or answer it.',
+  'tool.check': 'Decides allow, ask or deny after the permission rules.',
+  'prompt.submit': 'Sees the prompt before it is sent and can rewrite or drop it.',
+  'command.run': 'Answers a slash command the mod registered.',
+  'ui.render': 'Draws its own interface in a render site.',
+}
+
+type Json = Record<string, any>
+
+const readJson = async (io: Io, path: string): Promise<Json | null> => {
+  try {
+    return JSON.parse(String(await io.read(path))) as Json
+  } catch {
+    return null
+  }
+}
+
+const slashes = (path: string) => path.replace(/\\/g, '/')
+
+const homeDir = async (io: Io) => slashes(await io.home())
+
+const expand = (path: string, home: string) => slashes(path.startsWith('~') ? home + path.slice(1) : path)
+
+const tildeForm = (path: string, home: string) => (path.startsWith(home) ? '~' + path.slice(home.length) : path)
+
+const separatorFor = (home: string) => (/^[A-Za-z]:/.test(home) ? ';' : ':')
+
+const splitDirs = (value: string, separator: string) =>
+  value
+    .split(separator)
+    .map(entry => entry.trim())
+    .filter(Boolean)
+
+const scan = (source: string) => {
+  const events = new Set<string>()
+  const calls = new Set<string>()
+  for (const found of source.matchAll(/\bon\(\s*['"]([\w.*]+)['"](?:\s*,\s*\{\s*component:\s*['"](\w+)['"])?/g)) {
+    events.add(found[2] ? `${found[1]}:${found[2]}` : found[1]!)
+  }
+  for (const found of source.matchAll(/\$\.(\w+\.\w+)\(/g)) calls.add(found[1]!)
+  const commands = [...source.matchAll(/command\.register\(\{\s*name:\s*['"]([\w-]+)['"]/g)].map(found => found[1]!)
+  return { events: [...events], calls: [...calls], commands }
+}
+
+const inspect = async (
+  io: Io,
+  root: string,
+  source: ModInfo['source'],
+  id: string,
+  enabled: boolean,
+): Promise<ModInfo | null> => {
+  const hooks = await readJson(io, `${root}/hooks/hooks.json`)
+  const modules: unknown = hooks?.modules
+  if (!Array.isArray(modules)) return null
+  const manifest = (await readJson(io, `${root}/.claude-plugin/plugin.json`)) ?? {}
+  let text = ''
+  for (const module of modules) {
+    text += await io.read(`${root}/hooks/${String(module).replace(/^\.\//, '')}`).catch(() => '')
+  }
+  return {
+    id,
+    name: String(manifest.name ?? root.split('/').pop()),
+    description: String(manifest.description ?? ''),
+    version: String(manifest.version ?? ''),
+    root,
+    source,
+    enabled,
+    ...scan(text),
+    showcase: (await readJson(io, `${root}/showcase.json`)) as Showcase | null,
+  }
+}
+
+export async function discover(io: Io): Promise<ModInfo[]> {
+  const home = await homeDir(io)
+  const claudeDir = `${home}/.claude`
+  const settings = (await readJson(io, `${claudeDir}/settings.json`)) ?? {}
+  const active = splitDirs(String(settings.env?.CLAUDE_CODE_PLUGIN_DIRS ?? ''), separatorFor(home)).map(entry =>
+    expand(entry, home),
+  )
+
+  const roots = new Set(active)
+  for (const entry of await io.list(`${claudeDir}/mods`).catch(() => [])) {
+    if (entry.kind === 'dir') roots.add(`${claudeDir}/mods/${entry.name}`)
+  }
+
+  const mods: ModInfo[] = []
+  for (const root of roots) {
+    const mod = await inspect(io, root, 'dir', `dir:${root}`, active.includes(root))
+    // A listed dir loads as `<name>@inline`, which enabledPlugins can switch off without unlisting it.
+    if (mod) mods.push({ ...mod, enabled: mod.enabled && settings.enabledPlugins?.[inlineId(mod)] !== false })
+  }
+
+  const installed = await readJson(io, `${claudeDir}/plugins/installed_plugins.json`)
+  for (const [id, entries] of Object.entries<any[]>(installed?.plugins ?? {})) {
+    const entry = entries.find(candidate => candidate.scope === 'user') ?? entries[0]
+    if (!entry?.installPath) continue
+    const mod = await inspect(io, slashes(entry.installPath), 'installed', id, settings.enabledPlugins?.[id] === true)
+    if (mod) mods.push(mod)
+  }
+  return mods.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export const featuresOf = (mod: ModInfo): Feature[] =>
+  mod.showcase?.features ??
+  mod.events.map(event => ({
+    title: event,
+    detail: BLURBS[event.split(':')[0]!] ?? `Reacts to ${event}.`,
+  }))
+
+const refuse = (reason: string): Outcome => ({ ok: false, reason })
+
+const inlineId = (mod: ModInfo) => `${mod.name}@inline`
+
+const untouched = (before: Json, after: Json, edited: string[]) =>
+  Object.keys(before).every(key => edited.includes(key) || JSON.stringify(before[key]) === JSON.stringify(after[key])) &&
+  Object.keys(after).every(key => edited.includes(key) || key in before)
+
+export async function setEnabled(io: Io, mod: ModInfo, enabled: boolean): Promise<Outcome> {
+  if (mod.name === SELF) return refuse('the manager cannot disable itself')
+
+  const home = await homeDir(io)
+  const path = `${home}/.claude/settings.json`
+  let text: string
+  try {
+    text = String(await io.read(path))
+  } catch {
+    return refuse('cannot read settings.json')
+  }
+  let before: Json
+  try {
+    before = JSON.parse(text)
+  } catch {
+    return refuse('settings.json is not valid JSON, left untouched')
+  }
+
+  const after: Json = JSON.parse(text)
+  const edited = ['enabledPlugins']
+  let needsRestart = false
+  if (mod.source === 'installed') {
+    after.enabledPlugins = { ...after.enabledPlugins, [mod.id]: enabled }
+  } else {
+    // /reload-plugins applies `<name>@inline`, but reads the dirs list only at startup: a dir stays listed and only a new one forces a restart.
+    after.enabledPlugins = { ...after.enabledPlugins, [inlineId(mod)]: enabled }
+    const separator = separatorFor(home)
+    const entries = splitDirs(String(after.env?.CLAUDE_CODE_PLUGIN_DIRS ?? ''), separator)
+    if (enabled && !entries.some(entry => expand(entry, home) === mod.root)) {
+      after.env = { ...after.env, CLAUDE_CODE_PLUGIN_DIRS: [...entries, tildeForm(mod.root, home)].join(separator) }
+      edited.push('env')
+      needsRestart = true
+    }
+  }
+
+  const indent = /^\{\r?\n([ \t]+)"/.exec(text)?.[1] ?? '  '
+  const out = JSON.stringify(after, null, indent) + '\n'
+  if (!untouched(before, JSON.parse(out), edited)) return refuse('write would change other settings, refused')
+
+  await io.write(`${path}.mod-manager.bak`, text)
+  await io.write(path, out)
+  return mod.source === 'dir' ? { ok: true, needsRestart } : { ok: true }
+}

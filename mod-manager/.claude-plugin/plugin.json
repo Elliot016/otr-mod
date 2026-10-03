@@ -1,0 +1,9 @@
+{
+  "name": "mod-manager",
+  "version": "0.1.0",
+  "description": "Lists every mod, toggles it on or off, and shows what it does",
+  "author": {
+    "name": "Amorim"
+  },
+  "types": "./types/index.d.ts"
+}
