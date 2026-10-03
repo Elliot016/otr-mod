@@ -14,10 +14,22 @@ const BAND = (isWorking = false) =>
   }) as const
 
 // Stubs every op the flow reaches and records the order they were called in.
-function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: '' })) {
+function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: '' }), messages: unknown[] = []) {
   const calls: string[] = []
   const filled: string[] = []
   const forks: string[] = []
+  const toasts: string[] = []
+  const completes: string[] = []
+  on('ui.toast', (_$: unknown, e: { text: string }) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('session.messages', () => ({ value: messages }))
+  on('model.complete', (_$: unknown, e: { prompt: string }) => {
+    completes.push(e.prompt)
+    calls.push('complete')
+    return { value: answered }
+  })
   on('fs.read', (_$: unknown, e: { path: string }) => ({ value: e.path.replace(/\\/g, '/').endsWith('skills/session-handoff/SKILL.md') ? SKILL : '' }))
   on('model.fork', (_$: unknown, e: { prompt: string }) => {
     forks.push(e.prompt)
@@ -41,7 +53,7 @@ function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: 
   const clock = mock.clock(on)
   mock.store(on)
   mock.env(on, {})
-  return { calls, filled, forks, clock }
+  return { calls, filled, forks, toasts, completes, clock }
 }
 
 const answered = { isAnswered: true, text: '  Goal: ship it.  ', usage: USAGE }
@@ -121,26 +133,38 @@ test('Yes forks, clears, then fills the handoff without sending it', async ($, o
   await band.unmount()
 })
 
-test('nothing-to-fork stops before the clear and says why', async ($, on) => {
+test('an empty session stops before the clear and says why in a toast', async ($, on) => {
   const w = world(on, { isAnswered: false, reason: 'nothing-to-fork' })
   const band = await $.ui.mount(BAND())
   await confirmYes(band)
 
   expect(w.calls).toEqual(['fork'])
-  expect(await band.find({ type: 'Text', text: /nothing to hand off yet/ })).toBeDefined()
-  await w.clock.advance(5000)
-  expect(await band.find({ type: 'Text', text: /nothing to hand off yet/ })).toBeUndefined()
+  expect(w.toasts).toEqual(['Nothing to hand off yet, send a message first'])
+  expect(await band.find({ type: 'Text', text: /hand off yet/ })).toBeUndefined()
   expect(await band.find({ key: 'handoff-entry' })).toBeDefined()
+  await band.unmount()
+})
+
+test('a resumed session with nothing to fork summarizes the transcript instead', async ($, on) => {
+  const resumed = [
+    { role: 'user', text: 'fix the build', toolUses: [] },
+    { role: 'assistant', text: 'Looking.', toolUses: [{ tool_use_id: 't', tool: 'Bash', input: { command: 'npm   run build' } }] },
+  ]
+  const w = world(on, { isAnswered: false, reason: 'nothing-to-fork' }, undefined, resumed)
+  const band = await $.ui.mount(BAND())
+  await confirmYes(band)
+
+  expect(w.calls).toEqual(['fork', 'complete', 'run:clear', 'fill'])
+  expect(w.completes[0]).toContain('USER: fix the build')
+  expect(w.completes[0]).toContain('[Bash: npm run build]')
+  expect(w.completes[0]).toContain('The cap for this run is 400 words')
+  expect(w.filled).toEqual(['Goal: ship it.'])
   await band.unmount()
 })
 
 test('while Claude works the pill stays muted and a click explains in a toast', async ($, on) => {
   const w = world(on, answered)
-  const toasts: string[] = []
-  on('ui.toast', (_$: unknown, e: { text: string }) => {
-    toasts.push(e.text)
-    return { value: undefined }
-  })
+  const toasts = w.toasts
   on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
   await $.turn.start({ turnId: 't1' } as never)
   const band = await $.ui.mount(BAND(true))
@@ -161,7 +185,7 @@ test('a refused /clear falls back to /clear in the composer and keeps the handof
   await confirmYes(band)
 
   expect(w.filled).toEqual(['/clear'])
-  expect(await band.find({ type: 'Text', text: /Could not run \/clear/ })).toBeDefined()
+  expect(w.toasts[0]).toMatch(/^Could not run \/clear/)
 
   // The person runs /clear: session.end carries the waiting handoff over.
   await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)

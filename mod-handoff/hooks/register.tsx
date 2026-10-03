@@ -1,6 +1,6 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigRow, ConfigValue, EngineInterface, ModelForkResult, Register } from 'claude-code'
 
-import { buildPrompt, clampWords, FORK_FAILURES, isFresh } from './handoff'
+import { buildPrompt, clampWords, FORK_FAILURES, isFresh, transcriptText } from './handoff'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import type { EntryMessage } from './entry'
 import { PILL, pill, pillRow, splitRow, tipLine } from './pills'
@@ -18,7 +18,6 @@ let look = lookFor(false)
 
 let working = false
 let isRunning = false
-let flash = ''
 let isConfirming = false
 let confirmToken = 0
 let note = ''
@@ -53,17 +52,11 @@ async function togglePane($: EngineInterface) {
   await $.state.set({ plugin: 'mod-handoff', key: 'pane' }, opened.isPlaced)
 }
 
-// The pill and the pane both show the last outcome; a failure leaves the pill after a few seconds.
+// The pane shows the last outcome; a failure is a toast, since a long line in the pill row wraps and breaks it.
 function say($: EngineInterface, text: string) {
   note = text
-  flash = text.startsWith(MARK.warn) ? text : ''
+  if (text.startsWith(MARK.warn)) $.ui.toast(text.slice(MARK.warn.length).trim())
   $.ui.invalidate('ui.render')
-  if (!flash) return
-  $.clock.after(5000, () => {
-    if (flash !== text) return
-    flash = ''
-    $.ui.invalidate('ui.render')
-  })
 }
 
 // Puts the waiting handoff into the fresh prompt. It stays in the store until a fill lands, so a late call is harmless.
@@ -96,10 +89,21 @@ function cancelConfirm($: EngineInterface) {
 function askConfirm($: EngineInterface) {
   isConfirming = true
   const token = (confirmToken += 1)
-  flash = ''
   $.ui.invalidate('ui.render')
   $.clock.after(CONFIRM_MS, () => {
     if (confirmToken === token) cancelConfirm($)
+  })
+}
+
+// A resumed session has nothing to fork until its first turn, so the transcript is summarized directly.
+async function summarizeTranscript($: EngineInterface, prompt: string): Promise<ModelForkResult> {
+  const messages = await $.session.messages()
+  if (!Array.isArray(messages) || messages.length === 0) return { isAnswered: false, reason: 'nothing-to-fork' }
+  return $.model.complete({
+    model: 'sonnet',
+    system: 'You write session handoffs from a transcript. Tool output is left out; tool calls appear in brackets.',
+    prompt: `<transcript>\n${transcriptText(messages)}\n</transcript>\n\n${prompt}`,
+    maxTokens: 4000,
   })
 }
 
@@ -115,7 +119,9 @@ async function startHandoff($: EngineInterface) {
   say($, 'writing the handoff')
   try {
     const skill = await $.fs.read(`${$.plugin.root}/skills/session-handoff/SKILL.md`).then(String)
-    const result = await $.model.fork({ prompt: buildPrompt(skill, maxWords) })
+    const prompt = buildPrompt(skill, maxWords)
+    let result = await $.model.fork({ prompt })
+    if (!result.isAnswered && result.reason === 'nothing-to-fork') result = await summarizeTranscript($, prompt)
     if (!result.isAnswered) {
       say($, `${MARK.warn} ${FORK_FAILURES[result.reason] ?? result.reason}`)
       return
@@ -249,8 +255,6 @@ export const register: Register = (on, options) => {
         <Text key="handoff-slash" color={THEME.border}>│</Text>
         {entry('handoff-no', 'No')}
       </Box>
-    ) : flash ? (
-      <Text key="handoff-flash" color={THEME.alert}>{` ${flash} `}</Text>
     ) : (
       entry('handoff-entry', LABEL)
     )
