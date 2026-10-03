@@ -8,14 +8,18 @@ export type ListProps = { rows: Row[]; selected: number }
 
 export type ListMessage = { type: 'select'; index: number }
 
-// The text of each prompt row; a click anywhere on it selects. The [↵] jump sits in the pane's action column.
-const PromptList: ClientModule<ListProps> = (props, surface) => {
+// The text of each prompt row; a click anywhere on it selects, and the row under the pointer lights up. The [↵] jump sits in the pane's action column.
+const PromptList: ClientModule<ListProps, number> = (props, surface) => {
   const { Box, Text } = surface.elements
   const { rows, selected } = props
 
+  // A Client takes no hover prop, so it tracks the row under the pointer itself.
+  const hovered = surface.state ?? -1
+
   surface.onPointer(event => {
-    if (event.type !== 'down' || event.button !== 'left' || event.y < 0 || event.y >= rows.length) return
-    surface.post({ type: 'select', index: event.y } satisfies ListMessage)
+    const row = event.type !== 'leave' && event.y >= 0 && event.y < rows.length ? event.y : -1
+    if (row !== hovered) surface.setState(row)
+    if (event.type === 'down' && event.button === 'left' && row >= 0) surface.post({ type: 'select', index: row } satisfies ListMessage)
   })
 
   return (
@@ -25,7 +29,7 @@ const PromptList: ClientModule<ListProps> = (props, surface) => {
         return (
           <Box key={`row-${index}`} flexDirection="row" columnGap={1}>
             <Text color={THEME.muted}>{row.number}</Text>
-            <Text color={isSelected ? THEME.accent : THEME.onSurface} bold={isSelected}>{row.text}</Text>
+            <Text color={isSelected || index === hovered ? THEME.accent : THEME.onSurface} bold={isSelected}>{row.text}</Text>
           </Box>
         )
       })}
