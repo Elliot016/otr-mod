@@ -1,0 +1,22 @@
+{
+  "tagline": "Next prompts one click away, never sent for you",
+  "features": [
+    { "title": "Suggestions", "detail": "After a finished turn, up to three one-line next prompts appear above the input, muted until the pointer is over one." },
+    { "title": "Click to fill", "detail": "A click puts the suggestion in the input for you to edit; nothing is sent." },
+    { "title": "Stays out of the way", "detail": "They clear when you send a prompt or a new turn starts, and a failed or interrupted turn shows nothing." }
+  ],
+  "actions": [
+    { "label": "Clear the current suggestions", "command": "mod-nextsteps", "args": "clear" }
+  ],
+  "previews": {
+    "enabled": {
+      "true": [
+        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "add a test for the empty case", "color": "muted" }] },
+        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "run the full suite", "color": "muted" }] }
+      ],
+      "false": [
+        { "spans": [{ "text": "No suggestions, no extra request", "color": "muted" }] }
+      ]
+    }
+  }
+}

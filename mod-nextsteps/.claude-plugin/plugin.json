@@ -1,0 +1,30 @@
+{
+  "name": "mod-nextsteps",
+  "version": "0.1.0",
+  "description": "After each finished turn, up to three short next-prompt suggestions sit above the input as one-line rows; a click fills the prompt without sending",
+  "author": { "name": "Amorim" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Suggest next steps",
+      "description": "After each finished turn, ask the model for a few next prompts and list them above the input. Off, no request is made",
+      "default": true
+    },
+    "count": {
+      "type": "number",
+      "title": "Suggestions",
+      "description": "How many suggestions to show, 1 to 3",
+      "default": 3,
+      "min": 1,
+      "max": 3
+    },
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": ["auto", "nerd", "safe"],
+      "default": "auto"
+    }
+  }
+}
