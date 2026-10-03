@@ -10,16 +10,19 @@ export type ListProps = { lines: Line[]; selected: number }
 
 export type ListMessage = { type: 'select'; index: number }
 
-// The text of each row; a click anywhere on a skill selects it. The [↵] action sits in the pane's action column.
-const SkillList: ClientModule<ListProps> = (props, surface) => {
+// The text of each row; a click anywhere on a skill selects it, and the skill under the pointer lights up. The [↵] action sits in the pane's action column.
+const SkillList: ClientModule<ListProps, number> = (props, surface) => {
   const { Box, Text } = surface.elements
   const { lines, selected } = props
 
+  // A Client takes no hover prop, so it tracks the skill under the pointer itself.
+  const hovered = surface.state ?? -1
+
   surface.onPointer(event => {
-    if (event.type !== 'down' || event.button !== 'left') return
-    const line = lines[event.y]
-    if (line?.kind !== 'skill') return
-    surface.post({ type: 'select', index: line.index } satisfies ListMessage)
+    const line = event.type === 'leave' ? undefined : lines[event.y]
+    const index = line?.kind === 'skill' ? line.index : -1
+    if (index !== hovered) surface.setState(index)
+    if (event.type === 'down' && event.button === 'left' && index >= 0) surface.post({ type: 'select', index } satisfies ListMessage)
   })
 
   return (
@@ -37,7 +40,7 @@ const SkillList: ClientModule<ListProps> = (props, surface) => {
         return (
           <Box key={`line-${row}`} flexDirection="row" columnGap={1}>
             <Text backgroundColor={line.hex} color={THEME.bg}>{` ${line.icon} `}</Text>
-            <Text color={isSelected ? THEME.accent : THEME.onSurface} bold={isSelected}>{`/${line.name}`}</Text>
+            <Text color={isSelected || line.index === hovered ? THEME.accent : THEME.onSurface} bold={isSelected}>{`/${line.name}`}</Text>
           </Box>
         )
       })}
