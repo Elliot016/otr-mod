@@ -1,0 +1,9 @@
+{
+  "name": "mod-app-statusline",
+  "version": "0.1.0",
+  "description": "Moonlight status line drawn above the prompt on the desktop app",
+  "author": {
+    "name": "Amorim"
+  },
+  "types": "./types/index.d.ts"
+}
