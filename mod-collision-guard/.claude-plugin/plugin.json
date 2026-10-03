@@ -1,0 +1,34 @@
+{
+  "name": "mod-collision-guard",
+  "version": "0.1.0",
+  "description": "Pauses an edit when another open session edited the same file moments ago, and asks whether to proceed, move to a worktree, cancel or say something else",
+  "author": {
+    "name": "Amorim"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Guard edits",
+      "description": "Ask before an edit lands on a file another open session edited recently. Off, edits are still recorded for other sessions but never paused",
+      "default": true
+    },
+    "window_minutes": {
+      "type": "number",
+      "title": "Window (minutes)",
+      "description": "How long another session's edit counts as recent",
+      "default": 30
+    },
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": [
+        "auto",
+        "nerd",
+        "safe"
+      ],
+      "default": "auto"
+    }
+  }
+}
