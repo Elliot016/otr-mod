@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { rowKey, turnSummary, TurnLog } from '../hooks/turns'
+import { callTime, elapsed, rowKey, timeOfDay, turnSummary, TurnLog } from '../hooks/turns'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
@@ -37,6 +37,104 @@ test('the transcript splits into turns at each prompt, with tools, diff counts, 
   expect(log.turnOf('toolu_edit')).toBe(first)
   expect(log.turnOf(`${ID(2).slice(0, 24)}000000000003`)).toBe(first)
   expect(log.turnAt(ID(10))).toBe(log.turns[1])
+})
+
+test('times: a prompt keeps when it was sent, a call its start and how long it took', () => {
+  const at = (s: string) => ({ timestamp: `2026-10-03T14:${s}.000Z` })
+  const log = logOf([
+    row(1, 'user', { message: { role: 'user', content: 'run the tests' }, ...at('32:00') }),
+    row(2, 'assistant', { message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_bash', name: 'Bash', input: { command: 'claude plugin test .' } }] }, ...at('32:05') }),
+    row(3, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_bash', content: 'ok' }] }, ...at('32:46') }),
+  ].join('\n'))
+  expect(log.turns[0]!.at).toBe(Date.parse('2026-10-03T14:32:00.000Z'))
+  expect(callTime(log.callOf('toolu_bash'))).toBe(`${timeOfDay(Date.parse('2026-10-03T14:32:05.000Z'), true)} · 41s`)
+  expect([elapsed(400), elapsed(41_000), elapsed(372_000), elapsed(3_780_000)]).toEqual(['0.4s', '41s', '6m 12s', '1h 3m'])
+  expect(callTime({ id: 'x', name: 'Bash', input: {}, added: 0, removed: 0, startedAt: 1 })).toBe('')
+})
+
+const TIMED = [
+  row(1, 'user', { message: { role: 'user', content: 'run the tests' }, timestamp: '2026-10-03T14:32:00.000Z' }),
+  row(2, 'assistant', { message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_bash', name: 'Bash', input: { command: 'claude plugin test .' } }] }, timestamp: '2026-10-03T14:32:05.000Z' }),
+  row(3, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_bash', content: 'ok' }] }, timestamp: '2026-10-03T14:32:46.000Z' }),
+  said(4, [{ type: 'text', text: 'Done.' }]),
+  row(5, 'system', { subtype: 'turn_duration', durationMs: 47000 }),
+].join('\n')
+
+// isLive starts a turn after the transcript loads, so its last turn counts as still running.
+async function mountTimed($: any, on: any, text = TIMED, isLive = false) {
+  on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: text.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: text }))
+  mock.clock(on)
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{`base ${e.component}`}</Text>
+  })
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  if (isLive) await $.turn.start({ turnId: 't1' } as never)
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  return {
+    prompt: await mount('UserMessage', ID(1), { text: 'run the tests', origin: { kind: 'composer' }, isExpanded: true }),
+    tool: await mount('ToolUse', 'toolu_bash', { tool_use_id: 'toolu_bash', tool: 'Bash', input: { command: 'claude plugin test .' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }),
+  }
+}
+
+test('the prompt row shows when it was sent and the tool line its start and duration', async ($, on) => {
+  const { prompt, tool } = await mountTimed($, on)
+  expect(await prompt.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:00.000Z'))} ` })).toBeDefined()
+  // The finished turn starts folded; its tool line shows once it opens.
+  await prompt.press({ key: 'toggle-turn-button' })
+  expect(await tool.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:05.000Z'), true)} · 41s` })).toBeDefined()
+})
+
+// The same turn still running: no turn_duration row yet, and Claude is working.
+const LIVE = TIMED.split('\n').slice(0, 4).join('\n')
+
+test('the running turn shows its tool rows in full, then folds once it ends', async ($, on) => {
+  const { tool } = await mountTimed($, on, LIVE, true)
+  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  expect(await tool.find({ type: 'Button', text: /^Bash\(claude plugin test/ })).toBeUndefined()
+})
+
+test('with expand_live off, the running turn folds its finished tool rows at once', { options: { expand_live: false } }, async ($, on) => {
+  const { tool } = await mountTimed($, on, LIVE, true)
+  expect(await tool.find({ type: 'Button', text: /^Bash\(claude plugin test/ })).toBeDefined()
+})
+
+test('icons=nerd draws the times as rounded pills', { options: { icons: 'nerd' } }, async ($, on) => {
+  const { prompt, tool } = await mountTimed($, on)
+  const drawn = JSON.stringify(await prompt.drawn())
+  expect(drawn).toContain(String.fromCodePoint(0xe0b6))
+  expect(await prompt.find({ type: 'Text', text: timeOfDay(Date.parse('2026-10-03T14:32:00.000Z')) })).toBeDefined()
+  await prompt.press({ key: 'toggle-turn-button' })
+  expect(await tool.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:05.000Z'), true)} · 41s` })).toBeDefined()
+})
+
+test('with timestamps off, rows show no times', { options: { timestamps: false } }, async ($, on) => {
+  const { prompt, tool } = await mountTimed($, on)
+  expect(await prompt.find({ type: 'Text', text: /^\d\d:\d\d $/ })).toBeUndefined()
+  await prompt.press({ key: 'toggle-turn-button' })
+  expect(await tool.find({ type: 'Button', text: /^Bash\(claude plugin test/ })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: /· 41s$/ })).toBeUndefined()
+})
+
+test('a subagent report opens its own turn, so the prompt keeps its own reply; a mid-turn report does not', () => {
+  const log = logOf([
+    row(1, 'user', { message: { role: 'user', content: 'plan the layout' } }),
+    said(2, [{ type: 'text', text: 'Here is the layout.' }]),
+    row(3, 'user', { isMeta: true, origin: { kind: 'peer' }, message: { role: 'user', content: 'Another Claude session sent a message: report' } }),
+    said(4, [{ type: 'text', text: 'Collision Guard is done.' }]),
+    row(5, 'attachment', { attachment: { type: 'queued_command', prompt: '<agent-message from="a1">report</agent-message>', isMeta: true } }),
+    said(6, [{ type: 'text', text: 'Noted.' }]),
+  ].join('\n'))
+  expect(log.turns.map(turn => turn.prompt)).toEqual([ID(1), ID(3)])
+  expect(log.turns[0]!.reply).toBe(rowKey(ID(2)))
+  expect(log.turns[1]!.reply).toBe(rowKey(ID(6)))
 })
 
 test('a finished turn folds under its prompt, keeps its reply, and a click unfolds it', async ($, on) => {

@@ -7,9 +7,12 @@ export type Turn = {
   reply?: string
   tools: ToolCall[]
   durationMs?: number
+  // When the prompt was sent, in epoch ms.
+  at?: number
 }
 
-export type ToolCall = { id: string; name: string; input: any; added: number; removed: number }
+// startedAt is when Claude asked for the call, endedAt when its result came back, both epoch ms.
+export type ToolCall = { id: string; name: string; input: any; added: number; removed: number; startedAt?: number; endedAt?: number }
 
 const WRAPPER = /^<(command-|local-command-|bash-|system-reminder|task-notification|user-prompt-submit-hook)/
 const INTERRUPTED = /^\[Request interrupted by user/
@@ -21,6 +24,11 @@ export const rowKey = (id: string) => (UUID.test(id) ? id.slice(0, 24) : id)
 const isPrompt = (text: string) => {
   const trimmed = text.trim()
   return Boolean(trimmed) && !WRAPPER.test(trimmed) && !INTERRUPTED.test(trimmed) && !trimmed.startsWith('/')
+}
+
+const timeOf = (row: any) => {
+  const at = Date.parse(String(row?.timestamp ?? ''))
+  return Number.isNaN(at) ? undefined : at
 }
 
 const userText = (content: unknown) =>
@@ -64,12 +72,18 @@ export class TurnLog {
     const content = row.message?.content
     const current = this.turns[this.turns.length - 1]
 
-    if (row.type === 'user' && !row.isMeta && !row.isCompactSummary && !(Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result'))) {
-      if (isPrompt(userText(content))) this.start(row.uuid)
+    // A subagent's report is a meta row, yet Claude answers it in a turn of its own.
+    if (row.type === 'user' && row.isMeta && row.origin?.kind === 'peer') {
+      this.start(row.uuid, timeOf(row))
       return
     }
+    if (row.type === 'user' && !row.isMeta && !row.isCompactSummary && !(Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result'))) {
+      if (isPrompt(userText(content))) this.start(row.uuid, timeOf(row))
+      return
+    }
+    // A meta queued command is a report delivered mid-turn, which stays in the running turn.
     if (row.type === 'attachment' && row.attachment?.type === 'queued_command' && typeof row.attachment.prompt === 'string') {
-      if (isPrompt(row.attachment.prompt)) this.start(row.uuid)
+      if (!row.attachment.isMeta && isPrompt(row.attachment.prompt)) this.start(row.uuid, timeOf(row))
       return
     }
     if (!current) return
@@ -79,7 +93,7 @@ export class TurnLog {
       for (const block of content) {
         if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim()) current.reply = rowKey(row.uuid)
         if (block?.type === 'tool_use' && typeof block.id === 'string') {
-          const call = { id: block.id, name: String(block.name), input: block.input, added: 0, removed: 0 }
+          const call: ToolCall = { id: block.id, name: String(block.name), input: block.input, added: 0, removed: 0, startedAt: timeOf(row) }
           current.tools.push(call)
           this.calls.set(block.id, call)
           this.add(current, block.id)
@@ -91,7 +105,7 @@ export class TurnLog {
       this.add(current, rowKey(row.uuid))
       for (const block of content) {
         const call = block?.type === 'tool_result' ? this.calls.get(block.tool_use_id) : undefined
-        if (call) Object.assign(call, diffStat(call.name, call.input, row.toolUseResult))
+        if (call) Object.assign(call, diffStat(call.name, call.input, row.toolUseResult), { endedAt: timeOf(row) })
       }
       return
     }
@@ -108,14 +122,18 @@ export class TurnLog {
     return this.byId.get(id) ?? this.byId.get(rowKey(id))
   }
 
+  callOf(toolUseId: string) {
+    return this.calls.get(toolUseId)
+  }
+
   // The turn a prompt row opens.
   turnAt(requestId: string) {
     const key = rowKey(requestId)
     return this.turns.find(turn => rowKey(turn.prompt) === key)
   }
 
-  private start(uuid: string) {
-    const turn: Turn = { prompt: uuid, ids: new Set(), tools: [] }
+  private start(uuid: string, at: number | undefined) {
+    const turn: Turn = { prompt: uuid, ids: new Set(), tools: [], at }
     this.turns.push(turn)
   }
 
@@ -142,6 +160,27 @@ const clock = (ms: number) => {
   const seconds = Math.round(ms / 1000)
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
+
+const two = (n: number) => String(n).padStart(2, '0')
+
+// Local wall-clock time: `14:32` for a prompt, `14:32:05` for a tool call.
+export const timeOfDay = (at: number, withSeconds = false) => {
+  const date = new Date(at)
+  const time = `${two(date.getHours())}:${two(date.getMinutes())}`
+  return withSeconds ? `${time}:${two(date.getSeconds())}` : time
+}
+
+// How long a call took: `0.4s` under a second, then `41s`, `6m 12s`, `1h 3m`.
+export const elapsed = (ms: number) => {
+  if (ms < 1000) return `${(Math.max(0, ms) / 1000).toFixed(1)}s`
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 3600) return clock(ms)
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
+}
+
+// A call's start and duration for its line, or nothing while either end is unknown.
+export const callTime = (call: ToolCall | undefined) =>
+  call?.startedAt === undefined || call.endedAt === undefined ? '' : `${timeOfDay(call.startedAt, true)} · ${elapsed(call.endedAt - call.startedAt)}`
 
 // The folded turn's line: tool count, then each file change, skill and agent, then the time it took.
 export function turnSummary(turn: Turn) {

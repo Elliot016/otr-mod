@@ -2,7 +2,9 @@
   "name": "mod-toggle",
   "version": "0.1.0",
   "description": "Folds each finished turn under its prompt to one summary line (tools, file changes, skills, agents), keeping the final reply, and folds each finished tool row to one line. A click unfolds either in place",
-  "author": { "name": "Amorim" },
+  "author": {
+    "name": "Amorim"
+  },
   "types": "./types/index.d.ts",
   "userConfig": {
     "fold_turns": {
@@ -16,6 +18,29 @@
       "title": "Fold tool rows",
       "description": "Each finished tool row is one line with its own toggle. Off, tool rows draw as Claude Code draws them",
       "default": true
+    },
+    "timestamps": {
+      "type": "boolean",
+      "title": "Show times",
+      "description": "Each prompt shows when you sent it, and each tool line when it started and how long it took. Off, rows show no times",
+      "default": true
+    },
+    "expand_live": {
+      "type": "boolean",
+      "title": "Show the running turn in full",
+      "description": "While Claude works, the current turn shows every tool row and result as Claude Code draws them, and folds once the turn ends. Off, finished tool calls fold right away",
+      "default": true
+    },
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": [
+        "auto",
+        "nerd",
+        "safe"
+      ],
+      "default": "auto"
     }
   }
 }

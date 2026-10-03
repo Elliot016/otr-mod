@@ -1,9 +1,10 @@
 import type { ConfigRow, ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { BarMessage, BarProps } from './bar'
+import { isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action, type Previews } from './settings'
 import { MARK, statusColor, THEME } from './theme'
-import { diffStat, rowKey, toolLabel, turnSummary, TurnLog, type Turn } from './turns'
+import { callTime, diffStat, rowKey, timeOfDay, toolLabel, turnSummary, TurnLog, type Turn } from './turns'
 
 let transcript = ''
 let log = new TurnLog()
@@ -14,6 +15,10 @@ let working = false
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let foldTurns = true
 let foldTools = true
+let showTimes = true
+let expandLive = true
+let iconMode: IconMode = 'auto'
+let look = lookFor(false)
 type Kind = 'turns' | 'tools'
 // Spike only: each drawn row's component and id, and whether the transcript parse placed it in a turn.
 const seen = new Map<string, boolean>()
@@ -86,6 +91,9 @@ async function findTranscript($: EngineInterface) {
 // The turns list holds the turns flipped away from what fold_turns sets for all of them.
 const isTurnOpen = (flipped: string[], turn: Turn) => flipped.includes(turn.prompt) === foldTurns
 
+// The running turn draws as Claude Code draws it, every tool row and result in full; it folds once the turn ends.
+const isLive = (turn: Turn | undefined) => expandLive && Boolean(turn) && !isDone(turn!)
+
 const isDone = (turn: Turn) => turn !== log.turns[log.turns.length - 1] || turn.durationMs !== undefined || !working
 
 // Reading the lists subscribes the row to redraws when a click changes them.
@@ -106,7 +114,10 @@ const fit = (text: string, width: number) => {
   return flat.length > width ? `${flat.slice(0, Math.max(0, width - 1))}…` : flat
 }
 
-const widthOf = (e: { viewport?: { columns: number } }) => Math.max(20, (e.viewport?.columns ?? 100) - 6)
+// `11:32:05 · 6m 12s` with its two caps and a space: the widest start-and-duration a tool line shows.
+const WHEN_WIDTH = 21
+
+const widthOf =(e: { viewport?: { columns: number } }) => Math.max(20, (e.viewport?.columns ?? 100) - 6)
 
 // How a turn's row draws: hidden while its turn is folded, inside the card while unfolded, as is in the live turn or as the reply.
 async function placeOf($: EngineInterface, turn: Turn | undefined, requestId: string) {
@@ -180,11 +191,39 @@ async function answer($: EngineInterface, args: string) {
   return isAnyOpen ? 'Folded every finished turn' : 'Unfolded every finished turn'
 }
 
+// Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
+async function detectLook($: EngineInterface) {
+  if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
+  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
+  for (const path of terminalSettings(local)) {
+    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
+  }
+  return lookFor(false)
+}
+
+// A time as a rounded pill, like the omp transient prompt; plain muted text where the font has no caps.
+function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }, key: string, time: string) {
+  if (!look.nerd) return <Box key={key} flexShrink={0}><Text color={THEME.muted}>{`${time} `}</Text></Box>
+  return (
+    <Box key={key} flexDirection="row" flexShrink={0}>
+      <Text color={THEME.surface2}>{String.fromCodePoint(0xe0b6)}</Text>
+      <Box key={`${key}-body`} backgroundColor={THEME.surface2}><Text color={THEME.muted}>{time}</Text></Box>
+      <Text color={THEME.surface2}>{`${String.fromCodePoint(0xe0b4)} `}</Text>
+    </Box>
+  )
+}
+
 export const register: Register = (on, options) => {
+  iconMode = (options.icons as IconMode | undefined) ?? 'auto'
+  look = lookFor(iconMode === 'nerd')
   foldTurns = options.fold_turns !== false
   foldTools = options.fold_tools !== false
+  showTimes = options.timestamps !== false
+  expandLive = options.expand_live !== false
 
   on('session.start', async ($, e, next) => {
+    look = await detectLook($)
     await $.command.register({
       name: 'mod-toggle',
       description: 'Fold or unfold every finished turn; `settings` opens its settings panel, `debug` writes the drawn row ids to %TEMP%',
@@ -246,7 +285,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         <Text color={THEME.accent} bold>{`${MARK.stage} mod-toggle ${MARK.sep} settings`}</Text>
-        <Text color={statusColor(note)}>{note || `click a control to change it ${MARK.sep} saved at once, the mod reloads`}</Text>
+        <Text color={statusColor(note)}>{withMark(look, note) || `click a control to change it ${MARK.sep} saved at once, the mod reloads`}</Text>
         <Box marginTop={1}>{settingsBody({ Box, Button, Text }, { rows, actions, working, set, run, previews })}</Box>
       </Box>
     )
@@ -290,14 +329,25 @@ export const register: Register = (on, options) => {
     if (e.surface !== 'terminal' || e.props.origin.kind !== 'composer') return next(e)
     const turn = log.turnAt(e.requestId)
     seen.set(`UserMessage ${e.requestId}`, Boolean(turn))
-    if (!turn || !isDone(turn) || turn.tools.length === 0) return next(e)
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
+    const prompt = await next(e)
+    const row =
+      showTimes && turn?.at !== undefined ? (
+        <Box key="toggle-prompt-row" flexDirection="row">
+          {/* Claude Code draws a prompt with a blank row above it, so the time steps down one row to sit beside the text. */}
+          <Box key="toggle-prompt-time-row" marginTop={1} flexShrink={0}>{timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at))}</Box>
+          <Box key="toggle-prompt-text" flexGrow={1} flexShrink={1}>{prompt}</Box>
+        </Box>
+      ) : (
+        <Box key="toggle-prompt-row">{prompt}</Box>
+      )
+    if (!turn || !isDone(turn) || turn.tools.length === 0) return row
 
-    const { Box, Button, Client } = $.ui.resolve(e)
     const isOpen = isTurnOpen(await opened($, 'turns'), turn)
     const head = toggleLine({ Box, Button }, 'toggle-turn', THEME.accent, isOpen, fit(turnSummary(turn), widthOf(e) - 4), () => flip($, 'turns', turn.prompt))
     return (
       <Box key="toggle-prompt" flexDirection="column">
-        <Box key="toggle-prompt-row">{await next(e)}</Box>
+        {row}
         {slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, head, { kind: 'turns', id: turn.prompt })}
       </Box>
     )
@@ -322,11 +372,12 @@ export const register: Register = (on, options) => {
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const place = await placeOf($, turn, e.requestId)
     if (place === 'hidden') return <Box key="toggle-hidden" />
-    if (e.props.isRunning || !foldTools) return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt }) : next(e)
+    if (e.props.isRunning || !foldTools || isLive(turn)) return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt }) : next(e)
 
     const { added, removed } = diffStat(e.props.tool, e.props.input, e.props.output)
     const isOpen = (await opened($, 'tools')).includes(e.props.tool_use_id)
     const isFailed = e.props.isErrored || e.props.isInterrupted
+    const when = showTimes ? callTime(log.callOf(e.props.tool_use_id)) : ''
     const stats = [
       added ? <Box key="toggle-tool-added"><Text color={THEME.good}>{`+${added}`}</Text></Box> : null,
       removed ? <Box key="toggle-tool-removed"><Text color={THEME.alert}>{`−${removed}`}</Text></Box> : null,
@@ -336,11 +387,18 @@ export const register: Register = (on, options) => {
       'toggle-tool',
       isFailed ? THEME.alert : THEME.border,
       isOpen,
-      fit(toolLabel(e.props.tool, e.props.input, 0, 0), widthOf(e) - 16),
+      fit(toolLabel(e.props.tool, e.props.input, 0, 0), widthOf(e) - 16 - (when ? WHEN_WIDTH : 0)),
       () => flip($, 'tools', e.props.tool_use_id),
       stats,
     )
-    const body = isOpen ? [line, nested({ Box, Client }, 'toggle-tool-row', await next(e), { kind: 'tools', id: e.props.tool_use_id })] : line
+    // Start time and duration lead the line, in a fixed-width column so the labels stay aligned.
+    const timed = when ? (
+      <Box key="toggle-tool-timed" flexDirection="row">
+        <Box key="toggle-tool-time-col" flexShrink={0} width={WHEN_WIDTH}>{timePill({ Box, Text }, 'toggle-tool-time', when)}</Box>
+        {line}
+      </Box>
+    ) : line
+    const body = isOpen ? [timed, nested({ Box, Client }, 'toggle-tool-row', await next(e), { kind: 'tools', id: e.props.tool_use_id })] : timed
     return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, body, { kind: 'turns', id: turn!.prompt }) : <Box key="toggle-tool-plain" flexDirection="column">{body}</Box>
   })
 
@@ -350,7 +408,7 @@ export const register: Register = (on, options) => {
     seen.set(`ToolResult ${e.requestId}`, Boolean(turn))
     const { Box, Client } = $.ui.resolve(e)
     const place = await placeOf($, turn, e.requestId)
-    if (place === 'hidden' || (foldTools && !(await opened($, 'tools')).includes(e.props.tool_use_id))) return <Box key="toggle-hidden" />
+    if (place === 'hidden' || (foldTools && !isLive(turn) && !(await opened($, 'tools')).includes(e.props.tool_use_id))) return <Box key="toggle-hidden" />
 
     const body = nested({ Box, Client }, 'toggle-result', await next(e), { kind: 'tools', id: e.props.tool_use_id })
     return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, body, { kind: 'turns', id: turn!.prompt }) : body
