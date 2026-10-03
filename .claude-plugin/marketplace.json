@@ -1,0 +1,39 @@
+{
+  "name": "claude-mods",
+  "description": "Claude Code mods in the Moonlight look: a mod manager, skill and prompt sidebars, a clickable effort pill, and the pill bar that switches between them",
+  "owner": {
+    "name": "Amorim"
+  },
+  "plugins": [
+    {
+      "name": "mod-app-statusline",
+      "source": "./mod-app-statusline",
+      "description": "Moonlight status line drawn above the prompt on the desktop app"
+    },
+    {
+      "name": "mod-effort",
+      "source": "./mod-effort",
+      "description": "A clickable effort meter in the prompt footer, five squares from low to max: click one to set that level, saved for the model like Alt+P does"
+    },
+    {
+      "name": "mod-manager",
+      "source": "./mod-manager",
+      "description": "Lists every mod, toggles it on or off, and shows what it does"
+    },
+    {
+      "name": "mod-menu",
+      "source": "./mod-menu",
+      "description": "Owns /mod-menu, which hides or shows the panel pills above the prompt; each panel mod draws its own entry there"
+    },
+    {
+      "name": "mod-prompts",
+      "source": "./mod-prompts",
+      "description": "A sidebar of every prompt in this session, with the full text in a card: Enter or click jumps the transcript to it. Opens from /mod-prompts or the Prompts entry in the mod-menu pill"
+    },
+    {
+      "name": "mod-skill-panel",
+      "source": "./mod-skill-panel",
+      "description": "Colors each skill in the slash list by the color-tag in its frontmatter, and /mod-skill-panel opens a sidebar of skills grouped by tag where pressing one adds it to the prompt"
+    }
+  ]
+}
