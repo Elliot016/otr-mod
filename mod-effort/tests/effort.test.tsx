@@ -47,8 +47,11 @@ test('the footer meter follows each request and a click saves that level', async
   expect(drawn).toContain('◐ ')
   expect(drawn).toContain(' Opus 5.5 ')
   expect(drawn).not.toContain('medium')
+  // At rest only the current level shows.
+  expect((await ui.drawn({ in: 'meter' })).children.filter(Boolean)).toHaveLength(2)
 
-  // Hovering the fourth level previews it: every glyph up to it lit, the hovered one bold, the fifth still dark.
+  // The pointer opens every level; hovering the fourth previews it: every glyph up to it lit, the hovered one bold, the fifth still dark.
+  await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
   await ui.pointer({ in: 'meter', type: 'move', x: 16, y: 0 })
   const glyphs = (await ui.drawn({ in: 'meter' })).children.slice(1) as { props: { color: string; bold?: boolean } }[]
   expect(glyphs.slice(0, 4).every(glyph => glyph.props.color !== THEME.border)).toBe(true)
@@ -57,16 +60,60 @@ test('the footer meter follows each request and a click saves that level', async
   expect(await ui.find({ type: 'Text', text: /^Effort: Opus 5\.5 at medium\./ })).toBeDefined()
   await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: /^Effort: / })).toBeUndefined()
-  expect((await ui.drawn({ in: 'meter' })).children[3].props.color).toBe(THEME.border)
+  expect((await ui.drawn({ in: 'meter' })).children.filter(Boolean)).toHaveLength(2)
 
-  // ' Opus 5.5 ' (10 cells) comes first; the fifth glyph sits at x 18.
+  // ' Opus 5.5 ' (10 cells) comes first; once open, the fifth glyph sits at x 18.
+  await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
   await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
   expect(JSON.parse(files['/h/.claude/settings.json']!).modelSettings['claude-opus-5-5'].effortLevel).toBe('max')
   expect(files['/h/.claude/settings.json.mod-effort.bak']).toContain('"medium"')
-  // The level word shows on a click, then leaves.
+  // The level word shows on a click, then leaves. The pointer leaves too, so the tip naming the level is gone.
   expect(await ui.find({ type: 'Text', text: 'max' })).toBeDefined()
+  await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
   await clock.advance(2000)
   expect(await ui.find({ type: 'Text', text: 'max' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a click on the model name lists the models used before, and a pick switches through /model', async ($, on) => {
+  const ran: string[] = []
+  const store: Record<string, unknown> = { models: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-newmodel-6-0'] }
+  on('env.get', () => ({ value: undefined }))
+  on('settings.read', () => ({ value: {} }))
+  on('store.get', (_$, e) => ({ value: store[e.key] }))
+  on('store.set', (_$, e) => {
+    store[e.key] = e.value
+    return { value: undefined }
+  })
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('command.run', (_$, e) => {
+    ran.push(`${e.command} ${e.args}`)
+    return { text: '' }
+  })
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  const ui = await $.ui.mount({ plugin: 'mod-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never)
+  expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
+
+  // The current model leads, then the others in the order they were used; a model never seen before still shows.
+  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))).toContain('✓ Opus 5.5')
+  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-1' }))).toContain('Sonnet 5.5')
+  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-2' }))).toContain('Newmodel 6.0')
+  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-all' }))).toContain('All models')
+
+  await ui.pointer({ in: 'effort-model-1', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(ran).toEqual(['model claude-sonnet-5-5'])
+  expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(' Sonnet 5.5 ')
+  expect(store.models).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-newmodel-6-0'])
+
+  // All models opens Claude Code's own picker.
+  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  await ui.pointer({ in: 'effort-model-all', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(ran).toEqual(['model claude-sonnet-5-5', 'model '])
   await ui.unmount()
 })
 
@@ -106,6 +153,7 @@ test('a clicked level rides on each request until Alt+P saves another', async ($
 
   await step(0)
   const ui = await $.ui.mount({ plugin: 'mod-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
   await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
   await step(1)
 

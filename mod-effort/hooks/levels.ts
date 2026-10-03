@@ -9,6 +9,12 @@ export const LEVEL_LOOK: Record<string, { glyph: string; color: string }> = {
   max: { glyph: '◈', color: '#FF6F7A' },
 }
 
+// The model menu lists the models requests have used, newest first; no API lists them, and a fixed list goes stale.
+export const MAX_MODELS = 6
+
+export const withModel = (models: unknown, id: string) =>
+  [id, ...(Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string' && model !== id) : [])].slice(0, MAX_MODELS)
+
 // `claude-opus-5-5` reads `Opus 5.5`, as the oh-my-posh pill shows it; a trailing date is dropped.
 export const displayName = (model: string) => {
   const match = /^claude-([a-z]+)-(\d+(?:-\d{1,2})*)(?:-\d{8})?$/.exec(model)
