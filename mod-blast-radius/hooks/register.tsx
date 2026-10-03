@@ -1,0 +1,545 @@
+import type { ConfigRow, ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
+
+import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode, type Look } from './look'
+import type { EntryMessage } from './entry'
+import { pillRow, splitRow, tipLine } from './pills'
+import { actionLabels, cardRows, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
+import { describePrompt, parseDescribed, SYSTEM, type Described } from './haiku'
+import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from './syntax'
+import { measure, tilde, type Io, type Report } from './preview'
+import { CHECKS, compileRules, evaluate, type Risk, type UserRule } from './risk'
+import { settingsBody, type Action, type Previews } from './settings'
+import { MARK, statusColor, SYNTAX, THEME } from './theme'
+
+const SETTINGS_PANE = 'blast-radius-settings'
+const LIST_PANE = 'blast-radius-list'
+const RULES_FILE = '.claude/mod-blast-radius/rules.json'
+const DESTRUCTIVE_ASK = 'Destructive operation detected'
+const BUILT_IN = [...new Set(CHECKS.map(check => check.reason))]
+
+type Decision = 'run' | 'cancel' | 'interrupted' | 'error'
+type Held = { command: string; risk: Risk; report: Report | null; plain: Plain | null; decision: Decision | null; described?: Described }
+
+// The person's settings (userConfig), fixed per activation: a change reloads the mod.
+let isEnabled = true
+let iconMode: IconMode = 'auto'
+let look: Look = lookFor(false)
+
+// One hold at a time: Bash calls in a turn run in order, but a subagent's can overlap.
+let held: Held | null = null
+let note = ''
+let working = false
+let actions: Action[] = []
+let previews: Previews | undefined
+
+const ioOf = ($: EngineInterface): Io => ({
+  cwd: () => $.session.cwd(),
+  home: async () => (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '',
+  run: (argv, cwd) => $.process.run(argv[0] === 'git' ? ['git', '--no-optional-locks', ...argv.slice(1)] : argv, { cwd, timeoutMs: 15000 }),
+  list: path => $.fs.list(path),
+  stat: path => $.fs.stat(path),
+  env: name => folderVar($, name),
+})
+
+// The validator wants literal names, and only folder variables are ever read: see FOLDER_VARS in preview.ts.
+async function folderVar($: EngineInterface, name: string) {
+  switch (name.toUpperCase()) {
+    case 'TEMP': return $.env.get('TEMP')
+    case 'TMP': return $.env.get('TMP')
+    case 'TMPDIR': return $.env.get('TMPDIR')
+    case 'HOME': return (await $.env.get('HOME')) ?? $.env.get('USERPROFILE')
+    case 'USERPROFILE': return $.env.get('USERPROFILE')
+    case 'APPDATA': return $.env.get('APPDATA')
+    case 'LOCALAPPDATA': return $.env.get('LOCALAPPDATA')
+    default: return undefined
+  }
+}
+
+// Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
+async function detectLook($: EngineInterface) {
+  if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
+  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
+  for (const path of terminalSettings(local)) {
+    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
+  }
+  return lookFor(false)
+}
+
+type Rules = { path: string; mtimeMs: number; rules: UserRule[]; notes: string[] }
+let rulesCache: Rules | null = null
+
+// rules.json, re-read only when its mtime moves; a missing or broken file never disables the built-in checks.
+async function loadRules($: EngineInterface): Promise<Rules> {
+  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+  const path = `${home}/${RULES_FILE}`
+  try {
+    const stat = await $.fs.stat(path).catch(() => null)
+    if (!stat) return (rulesCache = { path, mtimeMs: -1, rules: [], notes: [] })
+    if (rulesCache?.path === path && rulesCache.mtimeMs === stat.mtimeMs) return rulesCache
+    const compiled = compileRules(String(await $.fs.read(path)))
+    return (rulesCache = { path, mtimeMs: stat.mtimeMs, ...compiled })
+  } catch (error) {
+    return { path, mtimeMs: -1, rules: [], notes: [`could not read rules.json (${String((error as Error)?.message ?? error).slice(0, 60)})`] }
+  }
+}
+
+const judge = async ($: EngineInterface, value: unknown) => evaluate(value, (await loadRules($)).rules)
+
+// VS Code chat, -p and SDK sessions list no surface that draws a pane or a band.
+// Haiku rewrites the card's words once per command; the rule's own text shows until it answers, and stays when it fails.
+const describedCache = new Map<string, Described>()
+
+async function describe($: EngineInterface, mine: Held) {
+  const rules = (await loadRules($)).rules
+  const risky = segmentsOf(mine.command, rules).filter(step => step.risk)
+  let found = describedCache.get(mine.command)
+  if (!found) {
+    const prompt = describePrompt(mine.command, mine.risk.reason, mine.report?.summary ?? '', risky.map(step => step.text))
+    const reply = await $.model.complete({ model: 'haiku', system: SYSTEM, prompt, maxTokens: 400, timeoutMs: 15000 }).catch(() => null)
+    found = reply?.isAnswered ? parseDescribed(reply.text, risky.length) ?? undefined : undefined
+    if (!found) return
+    describedCache.set(mine.command, found)
+  }
+  if (held !== mine || mine.decision !== null || !mine.plain) return
+  mine.described = found
+  mine.plain = { ...mine.plain, verb: found.verb, subject: undefined, does: found.does, undo: found.undo }
+  $.ui.invalidate('ui.render')
+}
+
+async function canDraw($: EngineInterface) {
+  const surfaces = await $.session.surfaces().catch(() => ['terminal' as const])
+  return surfaces.some(surface => surface === 'terminal' || surface === 'desktop')
+}
+
+// What Run approved, by tool_use_id and by command text, so the settings hook's own prompt is not asked a second time.
+const approved = new Set<string>()
+const approvedCommands = new Set<string>()
+
+const isApproved = (id: unknown, command: unknown) => approved.has(String(id)) || approvedCommands.has(String(command))
+
+// The settings hook's ask, wherever the engine carries it; matched loosely because a prefix may precede its text.
+const isDestructiveAsk = (text: unknown) => typeof text === 'string' && text.includes(DESTRUCTIVE_ASK)
+
+const isPaneOpen = async ($: EngineInterface, id: string) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
+
+// One of this mod's panels at a time; `pane` tells other mods that a panel of this one is open.
+async function closePanes($: EngineInterface, except = '') {
+  for (const id of [SETTINGS_PANE, LIST_PANE]) {
+    if (id !== except && (await isPaneOpen($, id))) await $.ui.close({ id })
+  }
+}
+
+// The Details entry on the card: a read-only pane with everything about the held command.
+async function toggleList($: EngineInterface) {
+  if (await isPaneOpen($, LIST_PANE)) {
+    await $.ui.close({ id: LIST_PANE })
+    await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false)
+    return
+  }
+  if (!held?.report) return
+  await closePanes($, LIST_PANE)
+  const opened = await $.ui.open({ id: LIST_PANE, title: 'Details', closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(`List waiting: ${opened.reason}`)
+  await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, opened.isPlaced)
+}
+
+// A hook's own time is 10 s, but time inside a `$` call is free, so the hold waits on a short child process.
+const PAUSES = {
+  windows: [['sleep', '0.25'], ['powershell', '-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Milliseconds 250'], ['ping', '-n', '1', '-w', '250', '192.0.2.1']],
+  other: [['sleep', '0.25'], ['perl', '-e', 'select(undef,undef,undef,0.25)']],
+}
+let pauseAt = 0
+let isWindows: boolean | undefined
+
+async function pause($: EngineInterface) {
+  if (isWindows === undefined) isWindows = (await $.env.get('OS')) === 'Windows_NT'
+  const choices = isWindows ? PAUSES.windows : PAUSES.other
+  for (; pauseAt < choices.length; pauseAt++) {
+    try {
+      const waited = await $.process.run(choices[pauseAt]!, { timeoutMs: 5000 })
+      if (waited.exitCode === 0) return
+    } catch {
+      // that waiter is not installed; try the next one
+    }
+  }
+  throw new Error('no way to wait')
+}
+
+const isSettingsOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === SETTINGS_PANE && pane.isPlaced)
+
+// `/mod-blast-radius settings` toggles the panel; an unplaced pane is waiting, not open.
+async function toggleSettings($: EngineInterface) {
+  if (await isSettingsOpen($)) {
+    await $.ui.close({ id: SETTINGS_PANE })
+    await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false)
+    return
+  }
+  await closePanes($, SETTINGS_PANE)
+  note = ''
+  const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
+  previews = showcase?.previews
+  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-blast-radius' }))
+  const opened = await $.ui.open({ id: SETTINGS_PANE, title: 'mod-blast-radius', closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(`Settings panel waiting: ${opened.reason}`)
+  await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, opened.isPlaced)
+}
+
+// What `/mod-blast-radius <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
+async function answer($: EngineInterface, args: string) {
+  if (args.trim() === 'settings') {
+    await toggleSettings($)
+    return ''
+  }
+  const { rules, notes } = await loadRules($)
+  const mine = rules.length ? `, ${rules.length} of yours` : ''
+  const bad = notes.length ? `, ${notes.length} problem(s) in rules.json` : ''
+  return isEnabled ? `Blast radius is on: ${BUILT_IN.length} built-in checks${mine}${bad}` : 'Blast radius is off'
+}
+
+const refusal = (decision: Decision | null) =>
+  ({
+    cancel: 'the person pressed Cancel',
+    interrupted: 'the turn was interrupted',
+    error: 'Blast radius hit an error while holding it',
+  })[decision ?? 'error'] ?? 'no answer was recorded'
+
+type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement; Text: (props: any) => RenderElement }
+
+// Counts and sizes in a line get the warning color.
+const FIGURE = /(\d[\d.,]*\s(?:[KMGT]?B|files?|folders?|commits?|paths?|entr(?:y|ies)|branch(?:es)?|statements?)\b)/
+const NOT_LOST = ['Searches under', 'Reaches', 'Statements']
+
+function figures(Text: Elements['Text'], text: string, key: string) {
+  return text.split(FIGURE).map((part, index) => (index % 2 ? <Text key={`${key}-${index}`} color={THEME.warn}>{part}</Text> : part))
+}
+
+// Moonlight syntax roles for a shell command; the risky part reads as risk.
+const roleProps = (role: Role) => {
+  if (role === 'command') return { color: SYNTAX.command, bold: true }
+  if (role === 'option') return { color: SYNTAX.option }
+  if (role === 'text') return { color: SYNTAX.text }
+  if (role === 'variable') return { color: SYNTAX.variable }
+  if (role === 'number') return { color: SYNTAX.number }
+  if (role === 'operator') return { color: SYNTAX.operator }
+  if (role === 'risk') return { color: THEME.alert, bold: true }
+  if (role === 'muted') return { color: THEME.muted }
+  return { color: THEME.onSurface }
+}
+
+// One row of colored spans; a row of a single color is one plain Text.
+function spansText(Text: Elements['Text'], spans: Span[], key: string) {
+  if (spans.length === 1) return <Text key={key} wrap="wrap" {...roleProps(spans[0]!.role)}>{spans[0]!.text}</Text>
+  return <Text key={key} wrap="wrap">{spans.map((span, index) => <Text key={`${key}-${index}`} {...roleProps(span.role)}>{span.text}</Text>)}</Text>
+}
+
+// The held command as a card above the pills: what happens in plain words, what it touches, then Cancel, Details and the consequence. Every row fits the band.
+function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number, maxRows: number) {
+  const width = Math.max(20, columns - 4)
+  // The card's rows are what is left after its border, its action row and the pill row below.
+  const rows = cardRows(state.plain!, state.report!, width, Math.max(1, maxRows - 2 - 3))
+  const labels = actionLabels(state.plain!, width)
+  const body = rows.map((row, index) => {
+    const key = `hold-row-${index}`
+    if (row.kind === 'head') return <Text key={key} color={THEME.warn} bold>{`${look.glyph.warn} ${row.text}`}</Text>
+    if (row.kind === 'does') return <Text key={key} color={THEME.onSurface}>{row.text}</Text>
+    if (row.kind === 'path') {
+      return (
+        <Text key={key}>
+          <Text key={`${key}-path`} color={THEME.alert}>{row.text}</Text>
+          <Text key={`${key}-gap`} color={THEME.onSurface}>{'   '}</Text>
+          {figures(Text, row.stats ?? '', key)}
+        </Text>
+      )
+    }
+    if (row.kind === 'line') return <Text key={key} color={THEME.alert}>{figures(Text, row.text, key)}</Text>
+    return <Text key={key} color={THEME.muted}>{row.text}</Text>
+  })
+  const entry = (id: string, label: string, color?: string) => (
+    <Box key={`${id}-pad`}>
+      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface2, ...(color ? { color } : {}) }} />
+    </Box>
+  )
+
+  return (
+    <Box key="blast-card" flexDirection="column" borderStyle="round" borderColor={THEME.alert} backgroundColor={THEME.surface1} paddingX={1}>
+      {body}
+      <Box key="hold-actions" flexDirection="row" columnGap={1}>
+        {entry('blast-cancel', labels.cancel)}
+        <Text key="hold-sep-details" color={THEME.border}>│</Text>
+        {entry('blast-details', labels.details)}
+        <Text key="hold-sep-run" color={THEME.border}>│</Text>
+        {entry('blast-run', labels.run, THEME.alert)}
+      </Box>
+    </Box>
+  )
+}
+
+export const register: Register = (on, options) => {
+  isEnabled = options.enabled !== false
+  iconMode = (options.icons as IconMode | undefined) ?? 'auto'
+  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  look = lookFor(iconMode === 'nerd')
+
+  on('session.start', async ($, e, next) => {
+    look = await detectLook($)
+    await $.command.register({
+      name: 'mod-blast-radius',
+      description: 'Show what blast radius holds; `settings` opens its settings panel',
+      argumentHint: '[settings]',
+    })
+    await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, await isSettingsOpen($))
+    $.ui.invalidate('ui.render')
+
+    return next(e)
+  })
+
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    if (!isEnabled) return next(e)
+    const { risk, command } = await judge($, e.command)
+    if (!risk) return next(e)
+    // Without a surface that draws, nothing could answer a hold: tool.check puts the call to the permission system instead.
+    if (!(await canDraw($))) return next(e)
+
+    // `held` is claimed with no await between the check and the claim, so two waiting calls cannot both pass.
+    while (held !== null) {
+      if (next.signal.aborted) return { deny: `Blast radius held this command and did not run it: ${refusal('interrupted')}. Do not retry it unless the person asks you to.` }
+      try {
+        await pause($)
+      } catch {
+        return { deny: `Blast radius held this command and did not run it: ${refusal('error')}. Do not retry it unless the person asks you to.` }
+      }
+    }
+    const mine: Held = { command, risk, report: null, plain: null, decision: null }
+    held = mine
+    let isSilent = false
+    try {
+      mine.report = await measure(ioOf($), risk)
+      mine.plain = plainFor(risk, mine.report)
+      if (mine.report.isHarmless) {
+        isSilent = true
+        mine.decision = 'run'
+      } else {
+        // Other band mods can read this to step aside while the card is up.
+        await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, true)
+        $.clock.after(0, () => describe($, mine))
+        $.ui.invalidate('ui.render')
+        // No timeout: the hold stays until the person answers, or the turn is interrupted.
+        while (mine.decision === null) {
+          if (next.signal.aborted) mine.decision = 'interrupted'
+          else await pause($)
+        }
+      }
+    } catch {
+      mine.decision = 'error'
+    } finally {
+      if (held === mine) held = null
+      await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, false).catch(() => undefined)
+      // The list pane belongs to the hold: when the hold ends it goes too.
+      if (await isPaneOpen($, LIST_PANE).catch(() => false)) {
+        await $.ui.close({ id: LIST_PANE }).catch(() => undefined)
+        await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false).catch(() => undefined)
+      }
+      $.ui.invalidate('ui.render')
+    }
+
+    if (mine.decision === 'run') {
+      if (!isSilent) {
+        approved.add(String(e.tool_use_id))
+        approvedCommands.add(command)
+        if (approved.size > 100) approved.delete(approved.values().next().value as string)
+        $.ui.toast('Blast radius: running it')
+      }
+      return next(e)
+    }
+    return { deny: `Blast radius held this command and did not run it: ${refusal(mine.decision)}. Reason: ${mine.risk.reason}. It would have: ${mine.report?.summary ?? mine.risk.label}. Do not retry it unless the person asks you to.` }
+  })
+
+  // The settings hook's ask arrives here as the verdict; with no surface that draws, a hold cannot be answered, so the permission system asks.
+  on('tool.check', { tool: 'Bash' }, async ($, e, next) => {
+    const verdict = await next(e)
+    const command = (e.input as { command?: unknown } | null)?.command
+    const answered = isApproved(e.tool_use_id, command) && verdict.decision === 'ask' && isDestructiveAsk(verdict.reason)
+    // What Run approved is not asked again.
+    if (answered) return { decision: 'allow' }
+    if (!isEnabled || verdict.decision === 'deny' || (await canDraw($))) return verdict
+    const { risk } = await judge($, command)
+
+    return risk ? { decision: 'ask', reason: `Blast radius: ${risk.reason}` } : verdict
+  })
+
+  on('ui.close', async ($, e, next) => {
+    if (e.id === SETTINGS_PANE || e.id === LIST_PANE) await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false)
+
+    return next(e)
+  })
+
+  // One panel at a time: another mod's pane opening closes this mod's panels, deferred past that plugin's dispatch.
+  on('state.set', async ($, e, next) => {
+    if (e.key === 'pane' && e.plugin !== 'mod-blast-radius' && e.value === true) {
+      $.clock.after(0, async () => {
+        await closePanes($)
+        await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false)
+      })
+    }
+
+    return next(e)
+  })
+
+  on('turn.start', async ($, e, next) => {
+    if (!e.agentId) {
+      working = true
+      $.ui.invalidate('ui.render')
+    }
+
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (!e.agentId) {
+      working = false
+      approved.clear()
+      approvedCommands.clear()
+      $.ui.invalidate('ui.render')
+    }
+
+    return next(e)
+  })
+
+  on('command.run', { command: 'mod-blast-radius' }, async ($, e) => ({ text: await answer($, e.args) }))
+
+  on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+
+    if (e.requestId === LIST_PANE) {
+      if (!held?.report || !held.plain) return next(e)
+      const { report, plain, risk, command } = held
+      const { source } = whyOf(risk)
+      const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
+      const text = (key: string, value: string, color: string, extra: Record<string, unknown> = {}) => <Text key={key} color={color} wrap="wrap" {...extra}>{value}</Text>
+      const rules = (await loadRules($)).rules
+      const { shown, rest } = stepsView(segmentsOf(command, rules))
+      // Haiku's step sentences line up with the risky steps only, so a shown step maps to its place among them.
+      const riskyIndex = (index: number) => shown.slice(0, index).filter(step => step.risk).length
+      // Risky steps and scripts get a row each; the harmless rest is one muted line.
+      const does = [
+        ...shown.map((step, index) => (
+          <Box key={`does-${index}`} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
+            {spansText(Text, colorStep(step.text, rules), `does-${index}-text`)}
+            {text(`does-${index}-says`, (step.risk && held!.described?.steps[riskyIndex(index)]) || step.says, step.risk ? THEME.alert : THEME.muted)}
+          </Box>
+        )),
+        rest ? text('does-rest', rest, THEME.muted) : null,
+      ]
+      const full = wrapSpans(colorLines(command, rules), Math.max(20, e.props.bodyColumns - 6), 12)
+      const fullRows = [
+        ...full.rows.map((row, index) => spansText(Text, row.length ? row : [{ text: ' ', role: 'plain' }], `full-${index}`)),
+        full.more ? <Text key="full-more" color={THEME.muted}>{`and ${full.more} more lines`}</Text> : null,
+      ]
+      const legend = <Text key="legend" wrap="wrap">{LEGEND.map((span, index) => <Text key={`legend-${index}`} {...roleProps(span.role)}>{span.text}</Text>)}</Text>
+
+      const touches: unknown[] = [
+        <Text key="touch-total" color={THEME.onSurface} wrap="wrap">{figures(Text, report.listTitle ?? `Would ${report.summary}`, 'touch-total')}</Text>,
+      ]
+      report.groups.forEach((group, index) => {
+        const color = NOT_LOST.includes(group.title) ? THEME.onSurface : THEME.alert
+        touches.push(text(`touch-${index}-title`, group.title, THEME.muted, { bold: true }))
+        if (group.entries) {
+          // Grouped by folder, in the order the preview found them.
+          const byDir = new Map<string, { name: string; detail: string }[]>()
+          for (const entry of group.entries) byDir.set(entry.dir, [...(byDir.get(entry.dir) ?? []), entry])
+          let drawn = 0
+          for (const [dir, files] of byDir) {
+            if (drawn >= 400) break
+            touches.push(text(`dir-${index}-${drawn}`, `${tilde(dir, home)}/`, THEME.muted))
+            for (const file of files) {
+              touches.push(
+                <Text key={`file-${index}-${drawn}`} wrap="wrap">
+                  <Text key={`file-${index}-${drawn}-name`} color={color}>{`  ${file.name}`}</Text>
+                  <Text key={`file-${index}-${drawn}-size`} color={THEME.warn}>{`  ${file.detail}`}</Text>
+                </Text>,
+              )
+              drawn++
+            }
+          }
+          if (group.entries.length > drawn) touches.push(text(`touch-${index}-rest`, `and ${group.entries.length - drawn} more not shown`, THEME.muted))
+        } else {
+          ;(group.all ?? group.lines).forEach((line, at) => touches.push(<Text key={`line-${index}-${at}`} color={color} wrap="wrap">{figures(Text, line, `line-${index}-${at}`)}</Text>))
+        }
+      })
+      if (report.isUnknown && report.note) touches.push(text('touch-note', report.note, THEME.muted))
+
+      return (
+        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+          {paneTitle({ Box, Text }, look, 'Bash', `${plain.run} ${MARK.sep} details`)}
+          <Text color={THEME.muted} wrap="wrap">{`read-only ${MARK.sep} answer on the card above the prompt: Cancel or ${plain.run}`}</Text>
+          {section({ Box, Text }, look, 'does', 'Bash', 'What this command does', [...does, text('why-source', `Held by: ${source.replace(/\.$/, '')}`, THEME.muted, { key: 'why-source' })])}
+          {section({ Box, Text }, look, 'touches', 'tool', 'What it touches', touches)}
+          {section({ Box, Text }, look, 'undo', 'actions', 'Can it be undone', [text('undo-text', plain.undo, THEME.onSurface)])}
+          {section({ Box, Text }, look, 'full', 'prompt', 'Full command', fullRows)}
+          <Box key="legend-row" marginTop={1}>{legend}</Box>
+        </Box>
+      )
+    }
+    if (e.requestId !== SETTINGS_PANE) return next(e)
+
+    const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-blast-radius.'))
+    // A saved change reloads this mod, which redraws the panel with the new value.
+    const set = async (row: ConfigRow, value: ConfigValue) => {
+      const result = await $.config.set({ key: row.key, value })
+      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${row.label} saved`
+      $.ui.invalidate('ui.render')
+    }
+    const run = async (action: Action) => {
+      const said = action.command === 'mod-blast-radius' ? answer($, action.args ?? '') : $.command.run({ command: action.command, args: action.args ?? '' }).then(() => `ran /${action.command}`)
+      note = await said.then(text => `${MARK.ok} ${text || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
+      $.ui.invalidate('ui.render')
+    }
+    const patterns = BUILT_IN.map((name, index) => (
+      <Box key={`built-in-${index}`} flexDirection="row" columnGap={1}>
+        <Text color={THEME.accent}>{MARK.bullet}</Text>
+        <Text color={THEME.onSurface} wrap="truncate-end">{name}</Text>
+      </Box>
+    ))
+    const loaded = await loadRules($)
+    const bad = loaded.notes.length ? `${MARK.warn} ${loaded.notes[0]}${loaded.notes.length > 1 ? ` (+${loaded.notes.length - 1} more)` : ''}` : ''
+    const ruleLines = [
+      <Text key="rules-path" color={THEME.onSurface} wrap="truncate-end">{`~/${RULES_FILE}`}</Text>,
+      <Text key="rules-format" color={THEME.muted} wrap="truncate-end">{'[{ "pattern": "terraform\\s+destroy", "reason": "Destroys infrastructure", "flags": "i" }]'}</Text>,
+      <Text key="rules-count" color={THEME.muted}>{`${loaded.rules.length} ${loaded.rules.length === 1 ? 'rule' : 'rules'} loaded ${MARK.sep} JS regexes on the whole command, read again when the file changes`}</Text>,
+    ]
+
+    return (
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        {paneTitle({ Box, Text }, look, 'settings', `Blast radius ${MARK.sep} settings`)}
+        <Text color={statusColor(note || bad)}>{note || bad || `click a control to change it ${MARK.sep} saved at once, the mod reloads`}</Text>
+        {settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}
+        {section({ Box, Text }, look, 'rules', 'Bash', 'Your rules', ruleLines)}
+        {section({ Box, Text }, look, 'built-in', 'Bash', 'Held commands', patterns)}
+      </Box>
+    )
+  })
+
+  // Cancel, Details and Run are entry Clients in the card; a click posts the entry's id.
+  on('ui.message', async ($, e, next) => {
+    const message = e.data as EntryMessage
+    if (message?.type === 'menu-entry' && held && held.decision === null) {
+      if (message.id === 'blast-run') held.decision = 'run'
+      if (message.id === 'blast-cancel') held.decision = 'cancel'
+      if (message.id === 'blast-details') await toggleList($)
+      $.ui.invalidate('ui.render')
+    }
+
+    return next(e)
+  })
+
+  // The hold is a card above the pill row, so it draws wherever the band does, desktop included.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (!held || !held.report || !held.plain || held.decision !== null) return next(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
+    const { group, row, tip } = splitRow(await next(e))
+
+    // While a call is held only the card and the pill row draw, so other rows cannot fill the band and cut the card off.
+    return pillRow({ Box, Text }, look.nerd, group, row, [holdCard({ Box, Client, Text }, held, e.props.bodyColumns, e.props.maxRows)], tip)
+  })
+}

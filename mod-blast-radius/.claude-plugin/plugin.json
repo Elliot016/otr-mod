@@ -1,0 +1,28 @@
+{
+  "name": "mod-blast-radius",
+  "version": "0.1.0",
+  "description": "Holds a risky Bash command (rm, git reset --hard, force push, SQL DROP and more) before it runs, shows what it would change, and lets you Run or Cancel",
+  "author": {
+    "name": "Amorim"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Hold risky commands",
+      "description": "On, a risky Bash command waits for your Run or Cancel. Off, every command runs as usual",
+      "default": true
+    },
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": [
+        "auto",
+        "nerd",
+        "safe"
+      ],
+      "default": "auto"
+    }
+  }
+}
