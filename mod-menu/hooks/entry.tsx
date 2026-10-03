@@ -10,17 +10,29 @@ export type EntryProps = { id: string; label: string; isOpen: boolean; bg: strin
 // menu-hover tells the owning mod the pointer arrived or left, so it can show its tip under the row.
 export type EntryMessage = { type: 'menu-entry'; id: string } | { type: 'menu-hover'; id: string; isOver: boolean }
 
+// A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
+const HOVER_QUIET_MS = 5000
+
+type Hover = { isOver: boolean; at: number }
+
 // A Button inverts under the pointer, so the entry is plain text that lights up like a sidebar row.
-const Entry: ClientModule<EntryProps, boolean> = (props, surface) => {
+const Entry: ClientModule<EntryProps, Hover> = (props, surface) => {
   const { Text } = surface.elements
-  const hovered = surface.state === true
+  const hovered = surface.state?.isOver === true
+
+  if (!surface.state) {
+    surface.setState({ isOver: false, at: 0 })
+    surface.every(1000, () => {
+      if (!surface.state?.isOver || Date.now() - surface.state.at < HOVER_QUIET_MS) return
+      surface.setState({ isOver: false, at: Date.now() })
+      surface.post({ type: 'menu-hover', id: props.id, isOver: false } satisfies EntryMessage)
+    })
+  }
 
   surface.onPointer(event => {
     const over = event.type !== 'leave'
-    if (over !== hovered) {
-      surface.setState(over)
-      surface.post({ type: 'menu-hover', id: props.id, isOver: over } satisfies EntryMessage)
-    }
+    if (over !== hovered) surface.post({ type: 'menu-hover', id: props.id, isOver: over } satisfies EntryMessage)
+    surface.setState({ isOver: over, at: Date.now() })
     if (event.type === 'down' && event.button === 'left') surface.post({ type: 'menu-entry', id: props.id } satisfies EntryMessage)
   })
 

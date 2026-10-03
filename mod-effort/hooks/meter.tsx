@@ -10,23 +10,34 @@ export type MeterMessage = { type: 'set'; effort: string } | { type: 'menu-hover
 // The inside of the Moonlight-claude oh-my-posh model pill; the caps come from pills.tsx.
 const PILL_FG = '#7E86A4'
 
+// A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
+const HOVER_QUIET_MS = 5000
+
+type Hover = { level: number; at: number }
+
 // Mouse-only slider: a level glyph and the space after it set that level.
-const Meter: ClientModule<MeterProps, number> = (props, surface) => {
+const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
   const reached = props.effort ? LEVELS.indexOf(props.effort as (typeof LEVELS)[number]) : -1
   const head = ` ${props.model} `
   const start = head.length
 
   // The level under the pointer previews what a click would set: -1 on the model name, -2 off the pill.
-  const hovered = surface.state ?? -2
+  const hovered = surface.state?.level ?? -2
+  if (!surface.state) {
+    surface.setState({ level: -2, at: 0 })
+    surface.every(1000, () => {
+      if (surface.state?.level === -2 || Date.now() - (surface.state?.at ?? 0) < HOVER_QUIET_MS) return
+      surface.setState({ level: -2, at: Date.now() })
+      surface.post({ type: 'menu-hover', id: 'effort', isOver: false } satisfies MeterMessage)
+    })
+  }
   surface.onPointer(event => {
     const slot = event.x - start
     const level = event.type === 'leave' ? -2 : slot >= 0 && slot < LEVELS.length * 2 ? Math.floor(slot / 2) : -1
-    if (level !== hovered) {
-      surface.setState(level)
-      // The tip above the row shows while the pointer is anywhere on the pill.
-      if ((level === -2) !== (hovered === -2)) surface.post({ type: 'menu-hover', id: 'effort', isOver: level !== -2 } satisfies MeterMessage)
-    }
+    // The tip above the row shows while the pointer is anywhere on the pill.
+    if ((level === -2) !== (hovered === -2)) surface.post({ type: 'menu-hover', id: 'effort', isOver: level !== -2 } satisfies MeterMessage)
+    surface.setState({ level, at: Date.now() })
     if (event.type === 'down' && event.button === 'left' && level >= 0) surface.post({ type: 'set', effort: LEVELS[level]! } satisfies MeterMessage)
   })
   const lit = hovered >= 0 ? hovered : reached
