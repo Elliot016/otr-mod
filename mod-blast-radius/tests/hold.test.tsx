@@ -561,7 +561,7 @@ for (const [name, command, setup] of FIT_CASES) {
         const rows = (await band.findAll({ type: 'Text' })) as { text: string }[]
         for (const row of rows) expect(row.text.length, row.text).toBeLessThanOrEqual(width)
         // The sentence, the paths and the command go to Details; the figures stay in the heading and the Run label.
-        expect(rows.filter(row => !row.text.startsWith('!') && row.text !== '│').map(row => row.text)).toEqual([])
+        expect(rows.filter(row => !row.text.startsWith('!') && row.text !== '│' && row.text.trim() !== '').map(row => row.text)).toEqual([])
         expect(await labelOf(band, 'blast-run')).toBeTruthy()
       }, bandOf(6, columns))
     })

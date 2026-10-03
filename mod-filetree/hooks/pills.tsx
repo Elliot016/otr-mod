@@ -32,7 +32,7 @@ export function splitRow(others: unknown) {
   }
 }
 
-// The one-line tip above the pill row, shown while the pointer is on an entry.
+// The one-line tip above the pill row, filled while the pointer is on an entry.
 export const tipLine = ({ Box, Text }: Elements, text: string) => (
   <Box key="menu-tip" paddingLeft={2}>
     <Text color="#9BA3C4">{text}</Text>
@@ -68,8 +68,8 @@ export function pillRow(elements: Elements, nerd: boolean, group: unknown[], row
   return (
     <Box key="menu-rows" flexDirection="column">
       {rest}
-      {/* Above the row: a tip that appears there grows the band upward, so the pills and the input never move. */}
-      {tip}
+      {/* Above the row, kept even when empty so nothing above jumps when a tip appears. */}
+      {tip ?? tipLine(elements, ' ')}
       <Box key="menu-row" flexDirection="row" columnGap={1}>
         {group.length > 0 ? pill(elements, nerd, PILL.primary, entries, 'menu-group') : null}
         {row}

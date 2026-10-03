@@ -213,8 +213,9 @@ test('its entry joins the row another panel opened, above the hint line', async 
     props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} },
   } as never)
   const tree = (await ui.drawn()) as { children: { children: unknown[] }[] }
-  expect(tree.children.length).toBe(2)
-  expect(JSON.stringify(tree.children[1])).toMatch(/Skills.*Mods/)
+  // The hint, the tip row (kept while empty) and the pill row.
+  expect(tree.children.length).toBe(3)
+  expect(JSON.stringify(tree.children[2])).toMatch(/Skills.*Mods/)
   expect(JSON.stringify(tree.children[0])).toContain('? for shortcuts')
   await ui.unmount()
 })
