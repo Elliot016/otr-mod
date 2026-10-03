@@ -39,6 +39,31 @@
       "name": "mod-toggle",
       "source": "./mod-toggle",
       "description": "Folds each finished turn under its prompt to one summary line and each tool call to one line, unfolded in place as a card by a click; /mod-toggle settings opens its settings"
+    },
+    {
+      "name": "mod-handoff",
+      "source": "./mod-handoff",
+      "description": "A Handoff pill that, after a confirm, writes a handoff of the chat, runs /clear and pastes the handoff into the fresh prompt"
+    },
+    {
+      "name": "mod-collision-guard",
+      "source": "./mod-collision-guard",
+      "description": "Pauses a file edit when another open session edited the same file recently, and asks whether to proceed, move to a worktree or cancel"
+    },
+    {
+      "name": "mod-filetree",
+      "source": "./mod-filetree",
+      "description": "A sidebar tree of the files Claude touched, lit live while it works, with a replay that steps through the last turn's diffs"
+    },
+    {
+      "name": "mod-nextsteps",
+      "source": "./mod-nextsteps",
+      "description": "Suggests up to three next prompts above the input after each turn; a click puts one in the prompt"
+    },
+    {
+      "name": "mod-blast-radius",
+      "source": "./mod-blast-radius",
+      "description": "Holds a risky shell command and shows what it would change before it runs, with your own rules in a JSON file"
     }
   ]
 }
