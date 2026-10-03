@@ -4,6 +4,7 @@ import { cardSpace, stickyCard } from './card'
 import type { ListMessage } from './list'
 import type { EntryMessage } from './entry'
 import { PILL, pillRow, splitRow, tipLine } from './pills'
+import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { parseRow, promptsOf, rowKey, targetOf, type Prompt, type Row } from './prompts'
 import { actionColumn } from './rows'
 import { MARK, statusColor, THEME } from './theme'
@@ -112,7 +113,20 @@ const clock = (at?: string) => {
 // True while the pointer is on this mod's pill entry, which then shows its tip above the row.
 let tipShown = false
 
+const toasts = new ToastList('prompts')
+
 export const register: Register = on => {
+  // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
+  on('ui.toast', async ($, e) => {
+    const id = toasts.add(e.text)
+    $.ui.invalidate('ui.render')
+    $.clock.after(e.timeoutMs ?? TOAST_MS, () => {
+      toasts.drop(id)
+      $.ui.invalidate('ui.render')
+    })
+    return { value: undefined }
+  })
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'mod-prompts', description: 'Open the prompts sidebar: every prompt of this session, Enter or click jumps to it' })
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
@@ -177,7 +191,12 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
-    if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    if (hidden.value === true) {
+      if (toasts.items.length === 0) return next(e)
+      const { Box, Client, Text } = $.ui.resolve(e)
+      return <Box key="toasts-prompts" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+    }
     const nerd = (await $.state.get({ plugin: 'mod-menu', key: 'nerd' })).value === true
 
     const { Box, Client, Text } = $.ui.resolve(e)
@@ -192,10 +211,17 @@ export const register: Register = on => {
       </Box>
     )
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, rest, tipShown ? tipLine({ Box, Text }, 'Prompts: every prompt this session, click one to jump to it') : tip)
+    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, 'Prompts: every prompt this session, click one to jump to it') : tip)
   })
 
   on('ui.message', async ($, e, next) => {
+    const clicked = e.data as EntryMessage
+    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+    if (dismissed !== undefined) {
+      toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const hover = e.data as { type?: string; id?: string; isOver?: boolean }
     if (hover?.type === 'menu-hover' && hover.id === 'prompts') {
       tipShown = hover.isOver === true

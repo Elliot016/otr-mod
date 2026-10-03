@@ -7,6 +7,7 @@ import { MARK, statusColor, THEME } from './theme'
 import { cardSpace, stickyCard } from './card'
 import type { EntryMessage } from './entry'
 import { PILL, pillRow, splitRow, tipLine } from './pills'
+import { TOAST_MS, ToastList, toastCards } from './toasts'
 
 const PANE = 'skill-panel'
 
@@ -56,7 +57,20 @@ async function togglePane($: EngineInterface) {
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
 
+const toasts = new ToastList('skills')
+
 export const register: Register = on => {
+  // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
+  on('ui.toast', async ($, e) => {
+    const id = toasts.add(e.text)
+    $.ui.invalidate('ui.render')
+    $.clock.after(e.timeoutMs ?? TOAST_MS, () => {
+      toasts.drop(id)
+      $.ui.invalidate('ui.render')
+    })
+    return { value: undefined }
+  })
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'mod-skill-panel', description: 'Open the skills sidebar' })
     const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
@@ -122,7 +136,12 @@ export const register: Register = on => {
   // The bar entry lives here, not in mod-menu: only a press in this mod counts as the person asking for this pane.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
-    if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    if (hidden.value === true) {
+      if (toasts.items.length === 0) return next(e)
+      const { Box, Client, Text } = $.ui.resolve(e)
+      return <Box key="toasts-skills" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+    }
     const nerd = (await $.state.get({ plugin: 'mod-menu', key: 'nerd' })).value === true
 
     const { Box, Client, Text } = $.ui.resolve(e)
@@ -137,10 +156,17 @@ export const register: Register = on => {
       </Box>
     )
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, rest, tipShown ? tipLine({ Box, Text }, 'Skills: browse your skills and add one to the prompt') : tip)
+    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, 'Skills: browse your skills and add one to the prompt') : tip)
   })
 
   on('ui.message', async ($, e, next) => {
+    const clicked = e.data as EntryMessage
+    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+    if (dismissed !== undefined) {
+      toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const hover = e.data as { type?: string; id?: string; isOver?: boolean }
     if (hover?.type === 'menu-hover' && hover.id === 'skills') {
       tipShown = hover.isOver === true

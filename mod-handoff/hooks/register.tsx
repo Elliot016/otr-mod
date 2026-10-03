@@ -4,6 +4,7 @@ import { buildPrompt, clampWords, FORK_FAILURES, isFresh, transcriptText } from 
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import type { EntryMessage } from './entry'
 import { PILL, pill, pillRow, splitRow, tipLine } from './pills'
+import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingsBody, type Action, type Previews } from './settings'
 import { MARK, statusColor, THEME } from './theme'
 
@@ -167,7 +168,20 @@ async function answer($: EngineInterface, args: string) {
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
 
+const toasts = new ToastList('handoff')
+
 export const register: Register = (on, options) => {
+  // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
+  on('ui.toast', async ($, e) => {
+    const id = toasts.add(e.text)
+    $.ui.invalidate('ui.render')
+    $.clock.after(e.timeoutMs ?? TOAST_MS, () => {
+      toasts.drop(id)
+      $.ui.invalidate('ui.render')
+    })
+    return { value: undefined }
+  })
+
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   maxWords = clampWords(options.max_words)
   look = lookFor(iconMode === 'nerd')
@@ -235,7 +249,12 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
-    if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    if (hidden.value === true) {
+      if (toasts.items.length === 0) return next(e)
+      const { Box, Client, Text } = $.ui.resolve(e)
+      return <Box key="toasts-handoff" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+    }
 
     const { Box, Client, Text } = $.ui.resolve(e)
     const { group, row, rest, tip } = splitRow(await next(e))
@@ -259,10 +278,17 @@ export const register: Register = (on, options) => {
       entry('handoff-entry', LABEL)
     )
 
-    return pillRow({ Box, Text }, look.nerd, group, [...row, pill({ Box, Text }, look.nerd, PILL.secondary, body, 'handoff-pill')], rest, tipShown ? tipLine({ Box, Text }, 'Handoff: summarize, clear the chat and continue fresh') : tip)
+    return pillRow({ Box, Text }, look.nerd, group, [...row, pill({ Box, Text }, look.nerd, PILL.secondary, body, 'handoff-pill')], [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, 'Handoff: summarize, clear the chat and continue fresh') : tip)
   })
 
   on('ui.message', async ($, e, next) => {
+    const clicked = e.data as EntryMessage
+    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+    if (dismissed !== undefined) {
+      toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const hover = e.data as { type?: string; id?: string; isOver?: boolean }
     if (hover?.type === 'menu-hover' && hover.id === 'handoff-entry') {
       tipShown = hover.isOver === true

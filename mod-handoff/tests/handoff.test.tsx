@@ -133,13 +133,15 @@ test('Yes forks, clears, then fills the handoff without sending it', async ($, o
   await band.unmount()
 })
 
-test('an empty session stops before the clear and says why in a toast', async ($, on) => {
+test('an empty session stops before the clear and says why in a card, not the pill row', async ($, on) => {
   const w = world(on, { isAnswered: false, reason: 'nothing-to-fork' })
   const band = await $.ui.mount(BAND())
   await confirmYes(band)
 
   expect(w.calls).toEqual(['fork'])
-  expect(w.toasts).toEqual(['Nothing to hand off yet, send a message first'])
+  expect(w.toasts).toEqual([])
+  expect(await band.find({ type: 'Text', text: 'Nothing to hand off yet, send a message first' })).toBeDefined()
+  await w.clock.advance(4000)
   expect(await band.find({ type: 'Text', text: /hand off yet/ })).toBeUndefined()
   expect(await band.find({ key: 'handoff-entry' })).toBeDefined()
   await band.unmount()
@@ -162,16 +164,16 @@ test('a resumed session with nothing to fork summarizes the transcript instead',
   await band.unmount()
 })
 
-test('while Claude works the pill stays muted and a click explains in a toast', async ($, on) => {
+test('while Claude works the pill stays muted and a click explains in a card', async ($, on) => {
   const w = world(on, answered)
-  const toasts = w.toasts
   on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
   await $.turn.start({ turnId: 't1' } as never)
   const band = await $.ui.mount(BAND(true))
   expect(await label(band, 'handoff-entry')).toContain(THEME.muted)
   await click(band, 'handoff-entry')
 
-  expect(toasts).toEqual(['Claude is working, Handoff is available once it is idle'])
+  expect(w.toasts).toEqual([])
+  expect(await band.find({ type: 'Text', text: 'Claude is working, Handoff is available once it is idle' })).toBeDefined()
   expect(await band.find({ key: 'handoff-yes' })).toBeUndefined()
   expect(w.calls).toEqual([])
   await band.unmount()
@@ -185,7 +187,7 @@ test('a refused /clear falls back to /clear in the composer and keeps the handof
   await confirmYes(band)
 
   expect(w.filled).toEqual(['/clear'])
-  expect(w.toasts[0]).toMatch(/^Could not run \/clear/)
+  expect(await band.find({ type: 'Text', text: /^Could not run \/clear/ })).toBeDefined()
 
   // The person runs /clear: session.end carries the waiting handoff over.
   await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)

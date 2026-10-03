@@ -4,6 +4,7 @@ import type { ListMessage, Row as ListRow } from './list'
 import { isNerdFace, lookFor, paneTitle, section, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
 import type { EntryMessage } from './entry'
 import { PILL, pillRow, splitRow, tipLine } from './pills'
+import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingsBody, type Action, type Previews } from './settings'
 import { MARK, statusColor, THEME } from './theme'
 import { commit, diffLines, emptyLog, fit, iconOf, latestStepOf, relPath, rootOf, rowsOf, stepsOfTurn, touch, type Entry, type Kind, type Line, type Log } from './tree'
@@ -203,7 +204,20 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
 
+const toasts = new ToastList('filetree')
+
 export const register: Register = (on, options) => {
+  // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
+  on('ui.toast', async ($, e) => {
+    const id = toasts.add(e.text)
+    $.ui.invalidate('ui.render')
+    $.clock.after(e.timeoutMs ?? TOAST_MS, () => {
+      toasts.drop(id)
+      $.ui.invalidate('ui.render')
+    })
+    return { value: undefined }
+  })
+
   showReads = options.show_reads !== false
   wrapDiff = options.wrap_diff !== false
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
@@ -295,7 +309,12 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
-    if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    if (hidden.value === true) {
+      if (toasts.items.length === 0) return next(e)
+      const { Box, Client, Text } = $.ui.resolve(e)
+      return <Box key="toasts-filetree" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+    }
 
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
@@ -309,10 +328,17 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
-    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, rest, tipShown ? tipLine({ Box, Text }, 'Files: what Claude read and changed, with a replay of each edit') : tip)
+    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, 'Files: what Claude read and changed, with a replay of each edit') : tip)
   })
 
   on('ui.message', async ($, e, next) => {
+    const clicked = e.data as EntryMessage
+    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+    if (dismissed !== undefined) {
+      toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const hover = e.data as { type?: string; id?: string; isOver?: boolean }
     if (hover?.type === 'menu-hover' && hover.id === 'filetree') {
       tipShown = hover.isOver === true

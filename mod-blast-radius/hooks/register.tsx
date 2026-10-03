@@ -3,6 +3,7 @@ import type { ConfigRow, ConfigValue, EngineInterface, Register, RenderElement }
 import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode, type Look } from './look'
 import type { EntryMessage } from './entry'
 import { pillRow, splitRow, tipLine } from './pills'
+import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { actionLabels, cardRows, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
 import { describePrompt, parseDescribed, SYSTEM, type Described } from './haiku'
 import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from './syntax'
@@ -275,7 +276,20 @@ function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number,
   )
 }
 
+const toasts = new ToastList('blast')
+
 export const register: Register = (on, options) => {
+  // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
+  on('ui.toast', async ($, e) => {
+    const id = toasts.add(e.text)
+    $.ui.invalidate('ui.render')
+    $.clock.after(e.timeoutMs ?? TOAST_MS, () => {
+      toasts.drop(id)
+      $.ui.invalidate('ui.render')
+    })
+    return { value: undefined }
+  })
+
   isEnabled = options.enabled !== false
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto waits for session.start to read the terminal font.
@@ -522,6 +536,13 @@ export const register: Register = (on, options) => {
 
   // Cancel, Details and Run are entry Clients in the card; a click posts the entry's id.
   on('ui.message', async ($, e, next) => {
+    const clicked = e.data as EntryMessage
+    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+    if (dismissed !== undefined) {
+      toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && held && held.decision === null) {
       if (message.id === 'blast-run') held.decision = 'run'
@@ -535,8 +556,20 @@ export const register: Register = (on, options) => {
 
   // The hold is a card above the pill row, so it draws wherever the band does, desktop included.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (!held || !held.report || !held.plain || held.decision !== null) return next(e)
     const { Box, Client, Text } = $.ui.resolve(e)
+    if (!held || !held.report || !held.plain || held.decision !== null) {
+      if (toasts.items.length === 0) return next(e)
+      const others = await next(e)
+      const { group, row, rest, tip } = splitRow(others)
+      const cards = toastCards({ Box, Client, Text }, toasts)
+      if (group.length > 0 || row.length > 0) return pillRow({ Box, Text }, look.nerd, group, row, [...cards, ...rest], tip)
+      return (
+        <Box key="toasts-blast" flexDirection="column">
+          {cards}
+          {others}
+        </Box>
+      )
+    }
     const { group, row, tip } = splitRow(await next(e))
 
     // While a call is held only the card and the pill row draw, so other rows cannot fill the band and cut the card off.

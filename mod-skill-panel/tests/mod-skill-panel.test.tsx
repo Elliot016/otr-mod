@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 import { groupSkills, markDescription, readFrontmatter, stripBadges, swatchFor } from '../hooks/tags'
 
@@ -193,6 +193,47 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
   await busy.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(opened).toEqual(['skill-panel', 'close skill-panel'])
   await busy.unmount()
+})
+
+test('a pane that waits says why in a wrapped card above the row, not in Claude Code toast box', async ($, on) => {
+  const engineToasts: string[] = []
+  on('fs.read', () => {
+    throw new Error('ENOENT')
+  })
+  on('env.get', () => ({ value: '/h' }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: false, reason: 'unasked below 144 columns (99 now)' } }))
+  on('ui.toast', (_$, e) => {
+    engineToasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>other mod</Text>
+  })
+  const clock = mock.clock(on)
+  const band = await $.ui.mount({
+    plugin: 'mod-skill-panel',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  })
+
+  await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
+  expect(await band.find({ type: 'Text', text: 'Skills panel waiting: unasked below 144 columns (99 now)' })).toBeDefined()
+  expect(engineToasts).toEqual([])
+  // Hovering the × leaves the card; a click on it dismisses.
+  await band.pointer({ type: 'move', x: 0, y: 0, in: 'toast-skills-1' })
+  expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeDefined()
+  await band.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'toast-skills-1' })
+  expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeUndefined()
+
+  // A second one leaves on its own after the timeout.
+  await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
+  expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeDefined()
+  await clock.advance(4000)
+  expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeUndefined()
+  await band.unmount()
 })
 
 test('its entry joins the row another panel opened, above the hint line', async ($, on) => {

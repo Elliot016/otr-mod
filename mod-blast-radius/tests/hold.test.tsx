@@ -255,11 +255,13 @@ test('Run runs the command, and nothing else answers the hold', async ($, on) =>
   expect(seen.ran).toBe(0)
   await click(band, 'blast-run')
   const result = await call
+  // The toast is this mod's own card above the row, not Claude Code's box.
+  expect(await band.find({ type: 'Text', text: /running it/ })).toBeDefined()
+  expect(seen.toasts).toEqual([])
   await band.unmount()
 
   expect(seen.ran).toBe(1)
   expect(JSON.stringify(result)).toContain('ran')
-  expect(seen.toasts.join()).toContain('running it')
 })
 
 test('Cancel refuses the call with a reason Claude reads, and the command never runs', async ($, on) => {

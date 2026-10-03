@@ -5,6 +5,7 @@ import { MARK, statusColor, THEME } from './theme'
 import { actionColumn } from './rows'
 import type { EntryMessage } from './entry'
 import { PILL, pillRow, splitRow, tipLine } from './pills'
+import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action } from './settings'
 import type { ListMessage } from './list'
@@ -94,7 +95,20 @@ const openPage = ($: EngineInterface, index: number) => {
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
 
+const toasts = new ToastList('manager')
+
 export const register: Register = (on, options) => {
+  // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
+  on('ui.toast', async ($, e) => {
+    const id = toasts.add(e.text)
+    $.ui.invalidate('ui.render')
+    $.clock.after(e.timeoutMs ?? TOAST_MS, () => {
+      toasts.drop(id)
+      $.ui.invalidate('ui.render')
+    })
+    return { value: undefined }
+  })
+
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto waits for session.start to read the terminal font.
   look = lookFor(iconMode === 'nerd')
@@ -158,7 +172,12 @@ export const register: Register = (on, options) => {
   // The bar entry lives here, not in mod-menu: only a press in this mod counts as the person asking for this pane.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
-    if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    if (hidden.value === true) {
+      if (toasts.items.length === 0) return next(e)
+      const { Box, Client, Text } = $.ui.resolve(e)
+      return <Box key="toasts-manager" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+    }
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-manager', key: 'pane' })
@@ -171,10 +190,17 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
-    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, rest, tipShown ? tipLine({ Box, Text }, 'Mods: turn each mod on or off and open its settings') : tip)
+    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, 'Mods: turn each mod on or off and open its settings') : tip)
   })
 
   on('ui.message', async ($, e, next) => {
+    const clicked = e.data as EntryMessage
+    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+    if (dismissed !== undefined) {
+      toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const hover = e.data as { type?: string; id?: string; isOver?: boolean }
     if (hover?.type === 'menu-hover' && hover.id === 'manager') {
       tipShown = hover.isOver === true
