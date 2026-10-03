@@ -1,0 +1,40 @@
+{
+  "tagline": "A folded transcript: one line per turn, one line per tool call",
+  "features": [
+    { "title": "Turn line", "detail": "Under each prompt, a line names what the turn did: tool count, file changes with lines added and removed, skills, agents and time." },
+    { "title": "Tool lines", "detail": "Inside an open turn, each finished tool call is one line; a click shows its full row and diff." },
+    { "title": "Card", "detail": "An open turn draws as one tinted card with a bar down its left edge; the final reply stays outside it." }
+  ],
+  "actions": [
+    { "label": "Fold or unfold every turn", "command": "mod-toggle" },
+    { "label": "Write the drawn row ids to %TEMP%", "command": "mod-toggle", "args": "debug" }
+  ],
+  "previews": {
+    "fold_turns": {
+      "true": [
+        { "spans": [{ "text": "> fix the bug", "color": "muted" }] },
+        { "bar": "border", "spans": [{ "text": " + ", "bg": "accent" }, { "text": " 2 tools · Edit(hooks/a.ts) +2 −1 · 1m 4s", "color": "muted" }] },
+        { "spans": [{ "text": "● Fixed." }] }
+      ],
+      "false": [
+        { "spans": [{ "text": "> fix the bug", "color": "muted" }] },
+        { "bar": "accent", "spans": [{ "text": " − ", "bg": "accent" }, { "text": " 2 tools · Edit(hooks/a.ts) +2 −1 · 1m 4s" }] },
+        { "bar": "accent", "spans": [{ "text": "● Looking." }] },
+        { "bar": "accent", "spans": [{ "text": " + ", "bg": "border" }, { "text": " Edit(hooks/a.ts) ", "color": "muted" }, { "text": "+2", "color": "good" }, { "text": " −1", "color": "alert" }] },
+        { "spans": [{ "text": "● Fixed." }] }
+      ]
+    },
+    "fold_tools": {
+      "true": [
+        { "bar": "accent", "spans": [{ "text": " + ", "bg": "border" }, { "text": " Edit(hooks/a.ts) ", "color": "muted" }, { "text": "+2", "color": "good" }, { "text": " −1", "color": "alert" }] }
+      ],
+      "false": [
+        { "bar": "accent", "spans": [{ "text": "● Edit(hooks/a.ts)" }] },
+        { "bar": "accent", "spans": [{ "text": "  ⎿ Added 2 lines, removed 1 line", "color": "muted" }] },
+        { "bar": "accent", "spans": [{ "text": "    - old", "color": "alert" }] },
+        { "bar": "accent", "spans": [{ "text": "    + new", "color": "good" }] },
+        { "bar": "accent", "spans": [{ "text": "    + added", "color": "good" }] }
+      ]
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "mod-toggle",
+  "version": "0.1.0",
+  "description": "Folds each finished turn under its prompt to one summary line (tools, file changes, skills, agents), keeping the final reply, and folds each finished tool row to one line. A click unfolds either in place",
+  "author": { "name": "Amorim" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "fold_turns": {
+      "type": "boolean",
+      "title": "Fold finished turns",
+      "description": "Each finished turn starts folded to one summary line under its prompt. Off, turns start open and the line folds them",
+      "default": true
+    },
+    "fold_tools": {
+      "type": "boolean",
+      "title": "Fold tool rows",
+      "description": "Each finished tool row is one line with its own toggle. Off, tool rows draw as Claude Code draws them",
+      "default": true
+    }
+  }
+}

@@ -1,0 +1,191 @@
+import { expect, mock, test } from 'claude-code/testing'
+
+import { rowKey, turnSummary, TurnLog } from '../hooks/turns'
+
+const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
+const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
+const said = (n: number, content: unknown[]) => row(n, 'assistant', { message: { role: 'assistant', content } })
+const PATCH = [{ lines: [' keep', '-old', '+new', '+added'] }]
+
+// One turn that edits a file and runs a skill, then a second prompt still running.
+const TRANSCRIPT = [
+  row(1, 'user', { message: { role: 'user', content: 'fix the bug' } }),
+  said(2, [{ type: 'text', text: 'Looking.' }]),
+  said(3, [{ type: 'tool_use', id: 'toolu_edit', name: 'Edit', input: { file_path: 'C:\\repo\\hooks\\a.ts' } }]),
+  row(4, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_edit', content: 'ok' }] }, toolUseResult: { structuredPatch: PATCH } }),
+  said(5, [{ type: 'tool_use', id: 'toolu_skill', name: 'Skill', input: { skill: 'tidy' } }]),
+  row(6, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_skill', content: 'ok' }] } }),
+  said(7, [{ type: 'text', text: 'Fixed.' }]),
+  row(8, 'system', { subtype: 'turn_duration', durationMs: 64000 }),
+  row(9, 'user', { message: { role: 'user', content: '<system-reminder>noise</system-reminder>' } }),
+  row(10, 'user', { message: { role: 'user', content: 'now the docs' } }),
+  '{"torn',
+].join('\n')
+
+const logOf = (text: string) => {
+  const log = new TurnLog()
+  for (const line of text.split('\n')) log.feed(line)
+  return log
+}
+
+test('the transcript splits into turns at each prompt, with tools, diff counts, reply and time', () => {
+  const log = logOf(TRANSCRIPT)
+  expect(log.turns.map(turn => turn.prompt)).toEqual([ID(1), ID(10)])
+  const [first] = log.turns
+  expect(turnSummary(first!)).toBe('2 tools · Edit(hooks/a.ts) +2 \u22121 · Skill(tidy) · 1m 4s')
+  expect(first!.reply).toBe(rowKey(ID(7)))
+  expect(log.turnOf('toolu_edit')).toBe(first)
+  expect(log.turnOf(`${ID(2).slice(0, 24)}000000000003`)).toBe(first)
+  expect(log.turnAt(ID(10))).toBe(log.turns[1])
+})
+
+test('a finished turn folds under its prompt, keeps its reply, and a click unfolds it', async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: TRANSCRIPT }))
+  mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{`base ${e.component}`}</Text>
+  })
+
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
+  const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
+  const reply = await mount('AssistantMessage', ID(7), { text: 'Fixed.', isFirstOfReply: false })
+  const edit = await mount('ToolUse', 'toolu_edit', { tool_use_id: 'toolu_edit', tool: 'Edit', input: { file_path: '/repo/hooks/a.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: { structuredPatch: PATCH } })
+  const result = await mount('ToolResult', 'toolu_edit', { tool_use_id: 'toolu_edit', tool: 'Edit', output: { structuredPatch: PATCH }, isErrored: false })
+
+  // Folded: the prompt and its summary line, the reply; the step, the tool row and its result draw nothing.
+  expect(await prompt.find({ type: 'Text', text: 'base UserMessage' })).toBeDefined()
+  expect(await prompt.find({ type: 'Button', text: /^2 tools · Edit\(hooks\/a\.ts\) \+2 \u22121 · Skill\(tidy\) · 1m 4s$/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Button', text: /^ \+ $/ })).toBeDefined()
+  expect(await reply.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
+  expect(await step.find({ type: 'Text' })).toBeUndefined()
+  expect(await edit.find({ type: 'Button' })).toBeUndefined()
+  expect(await result.find({ type: 'Text' })).toBeUndefined()
+
+  // Unfolded: the step draws again, the tool row is one line of its own, and its result stays hidden.
+  await prompt.press({ key: 'toggle-turn-button' })
+  expect(await prompt.find({ type: 'Button', text: /^ \u2212 $/ })).toBeDefined()
+  expect(await step.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
+  // Unfolded rows sit in the turn's card; the reply stays outside it.
+  expect(await step.find({ key: 'toggle-card-bar' })).toBeDefined()
+  expect(await reply.find({ key: 'toggle-card-bar' })).toBeUndefined()
+  expect(await edit.find({ type: 'Button', text: /^Edit\(hooks\/a\.ts\)$/ })).toBeDefined()
+  expect(await edit.find({ type: 'Text', text: /^\+2$/ })).toBeDefined()
+  expect(await edit.find({ type: 'Text', text: /^\u22121$/ })).toBeDefined()
+  expect(await result.find({ type: 'Text' })).toBeUndefined()
+
+  // A click on the tool line shows Claude Code's own row under it, and the result.
+  await edit.press({ key: 'toggle-tool-button' })
+  expect(await edit.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  expect(await result.find({ type: 'Text', text: 'base ToolResult' })).toBeDefined()
+
+  // A click on the card's strip folds the turn back.
+  await step.pointer({ in: 'toggle-card-strip', type: 'down', button: 'left', x: 0, y: 0 })
+  expect(await prompt.find({ type: 'Button', text: /^ \+ $/ })).toBeDefined()
+  expect(await step.find({ type: 'Text' })).toBeUndefined()
+
+  for (const ui of [prompt, step, reply, edit, result]) await ui.unmount()
+})
+
+test('with fold_turns off, finished turns start open and the line folds them', { options: { fold_turns: false } }, async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: TRANSCRIPT }))
+  mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{`base ${e.component}`}</Text>
+  })
+
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
+  const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
+
+  expect(await prompt.find({ type: 'Button', text: /^ − $/ })).toBeDefined()
+  expect(await step.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
+
+  await prompt.press({ key: 'toggle-turn-button' })
+  expect(await prompt.find({ type: 'Button', text: /^ \+ $/ })).toBeDefined()
+  expect(await step.find({ type: 'Text' })).toBeUndefined()
+
+  for (const ui of [prompt, step]) await ui.unmount()
+})
+
+test('/mod-toggle settings opens its own panel: a click saves a setting, an action runs, and actions wait while Claude works', async ($, on) => {
+  const saved: unknown[] = []
+  const ran: string[] = []
+  const ROWS = [
+    { key: 'mod-toggle.fold_turns', label: 'Fold finished turns', description: 'Starts folded', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'mod-toggle' }, isLocked: false },
+  ]
+  on('store.get', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', (_$, e) =>
+    String(e.path).endsWith('showcase.json') ? { value: JSON.stringify({
+            actions: [{ label: 'Say hi', command: 'other', args: 'hi' }, { label: 'Fold all', command: 'mod-toggle' }],
+            previews: { fold_turns: { true: [{ bar: 'border', spans: [{ text: ' + ', bg: 'accent' }, { text: ' 2 tools · Edit', color: 'muted' }] }, { spans: [{ text: '● Fixed.' }] }] } },
+          }) } : { value: '' },
+  )
+  on('fs.list', () => ({ value: [] }))
+  on('env.get', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('config.list', () => ({ value: ROWS }))
+  on('config.set', (_$, e) => {
+    saved.push([e.key, e.value])
+    return { value: e.value }
+  })
+  on('command.run', (_$, e) => {
+    ran.push(`${e.command} ${e.args}`)
+    return { text: '' }
+  })
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  mock.clock(on)
+
+  await $.command.run({ command: 'mod-toggle', args: 'settings' })
+  const ui = await $.ui.mount({
+    plugin: 'mod-toggle',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'toggle-settings',
+    props: { title: 'mod-toggle', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} },
+  } as never)
+  expect(await ui.find({ type: 'Text', text: /^Fold finished turns$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^On$/ })).toBeDefined()
+  // The example card shows the folded turn this value draws: the prompt, its + line, the reply.
+  expect(await ui.find({ key: 'setting-preview-0' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ 2 tools · Edit$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^● Fixed.$/ })).toBeDefined()
+
+  await ui.press({ key: 'setting-0-flip' })
+  expect(saved).toEqual([['mod-toggle.fold_turns', false]])
+
+  await ui.press({ key: 'action-0' })
+  expect(ran).toEqual(['other hi'])
+  // Its own command skips $.command.run, which never reaches the calling plugin, and answers in the status line.
+  await ui.press({ key: 'action-1' })
+  expect(ran).toEqual(['other hi'])
+  expect(await ui.find({ type: 'Text', text: /every finished turn/ })).toBeDefined()
+
+  await $.turn.start({ turnId: 't1', prompt: 'x' } as never)
+  await ui.redraw()
+  expect(await ui.find({ type: 'Button', text: /Say hi/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Say hi · available once Claude is idle/ })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: /Fold all/ })).toBeDefined()
+  await ui.unmount()
+})
