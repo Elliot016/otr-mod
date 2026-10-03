@@ -5,7 +5,8 @@ import { actionColumn } from './rows'
 import { groupSkills, markDescription, readFrontmatter, stripBadges, type Skill } from './tags'
 import { MARK, statusColor, THEME } from './theme'
 import { cardSpace, stickyCard } from './card'
-import { pillRow, splitRow } from './pills'
+import type { EntryMessage } from './entry'
+import { PILL, pillRow, splitRow, tipLine } from './pills'
 
 const PANE = 'skill-panel'
 
@@ -31,7 +32,7 @@ async function addSkill($: EngineInterface, index: number) {
   if (!text.split(/\s+/).includes(`/${skill.name}`)) {
     const gap = text === '' || /\s$/.test(text) ? '' : ' '
     const filled = await $.prompt.fill({ text: `${gap}/${skill.name} `, mode: 'append' })
-    note = filled.isFilled ? `${MARK.ok} added /${skill.name}` : `${MARK.warn} the prompt is busy, try again`
+    note = filled.isFilled ? `${MARK.ok} Added /${skill.name}` : `${MARK.warn} The prompt is busy, try again`
   }
   $.ui.invalidate('ui.render')
 }
@@ -51,6 +52,9 @@ async function togglePane($: EngineInterface) {
   await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, opened.isPlaced)
 }
 
+
+// True while the pointer is on this mod's pill entry, which then shows its tip under the row.
+let tipShown = false
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -121,19 +125,31 @@ export const register: Register = on => {
     if (e.surface !== 'terminal' || e.props.hasSurvey || hidden.value === true) return next(e)
     const nerd = (await $.state.get({ plugin: 'mod-menu', key: 'nerd' })).value === true
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-skill-panel', key: 'pane' })
     const shown = await isOpen($)
-    const { group, row, rest } = splitRow(await next(e))
-    // Buttons take no color, so closed is dim; opening the pane here queues nothing, so it stays live mid-turn.
+    const { group, row, rest, tip } = splitRow(await next(e))
+    // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = (
-      <Box key="menu-pad" paddingX={1}>
-        <Button key="menu-entry" label="Skills" plain dimColor={!shown} hover={{ scope: 'menu-entry', color: THEME.accent }} onPress={() => togglePane($)} />
+      <Box key="menu-pad-skills">
+        <Client key="menu-entry-skills" module="./entry.tsx" height={1} props={{ id: 'skills', label: 'Skills', isOpen: shown, bg: PILL.primary, idle: THEME.pill }} />
       </Box>
     )
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, rest)
+    return pillRow({ Box, Text }, nerd, [entry, ...group], row, rest, tipShown ? tipLine({ Box, Text }, 'Skills: browse your skills and add one to the prompt') : tip)
+  })
+
+  on('ui.message', async ($, e, next) => {
+    const hover = e.data as { type?: string; id?: string; isOver?: boolean }
+    if (hover?.type === 'menu-hover' && hover.id === 'skills') {
+      tipShown = hover.isOver === true
+      $.ui.invalidate('ui.render')
+    }
+    const message = e.data as EntryMessage
+    if (message?.type === 'menu-entry' && message.id === 'skills') await togglePane($)
+
+    return next(e)
   })
 
   // The list reports clicks: the add glyph adds, the rest of the row shows the skill in the card.

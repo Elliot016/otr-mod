@@ -180,12 +180,17 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
 
   const idle = await $.ui.mount(band)
   expect(await idle.find({ type: 'Text', text: 'other mod' })).toBeDefined()
-  await idle.press({ key: 'menu-entry' })
+  // The pointer on the entry shows its tip under the row, and leaving takes it away.
+  await idle.pointer({ type: 'move', x: 1, y: 0, in: 'menu-entry-skills' })
+  expect(await idle.find({ type: 'Text', text: /^Skills: browse your skills/ })).toBeDefined()
+  await idle.pointer({ type: 'leave', x: 0, y: 0, in: 'menu-entry-skills' })
+  expect(await idle.find({ type: 'Text', text: /^Skills: browse your skills/ })).toBeUndefined()
+  await idle.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(opened).toEqual(['skill-panel'])
   await idle.unmount()
 
   const busy = await $.ui.mount(band)
-  await busy.press({ key: 'menu-entry' })
+  await busy.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(opened).toEqual(['skill-panel', 'close skill-panel'])
   await busy.unmount()
 })
