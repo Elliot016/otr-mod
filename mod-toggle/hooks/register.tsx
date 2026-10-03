@@ -345,20 +345,20 @@ export const register: Register = (on, options) => {
     const prompt = await next(e)
     const row =
       showTimes && turn?.at !== undefined ? (
-        <Box key="toggle-prompt-row" flexDirection="row">
+        <Box key="toggle-prompt-row" flexDirection="row" width="100%">
           {/* Claude Code draws a prompt with a blank row above it, so the time steps down one row to sit beside the text. */}
           <Box key="toggle-prompt-time-row" marginTop={1} flexShrink={0}>{timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at))}</Box>
-          <Box key="toggle-prompt-text" flexGrow={1} flexShrink={1}>{prompt}</Box>
+          <Box key="toggle-prompt-text" flexDirection="column" flexGrow={1} flexShrink={1}>{prompt}</Box>
         </Box>
       ) : (
-        <Box key="toggle-prompt-row">{prompt}</Box>
+        <Box key="toggle-prompt-row" flexDirection="column" width="100%">{prompt}</Box>
       )
     if (!turn || !isDone(turn) || turn.tools.length === 0) return row
 
     const isOpen = isTurnOpen(await opened($, 'turns'), turn)
     const head = toggleLine({ Box, Button }, 'toggle-turn', THEME.accent, isOpen, fit(turnSummary(turn), widthOf(e) - 4), () => flip($, 'turns', turn.prompt))
     return (
-      <Box key="toggle-prompt" flexDirection="column">
+      <Box key="toggle-prompt" flexDirection="column" width="100%">
         {row}
         {slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, head, { kind: 'turns', id: turn.prompt })}
       </Box>
