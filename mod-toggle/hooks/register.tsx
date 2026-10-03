@@ -94,7 +94,14 @@ const isTurnOpen = (flipped: string[], turn: Turn) => flipped.includes(turn.prom
 // The running turn draws as Claude Code draws it, every tool row and result in full; it folds once the turn ends.
 const isLive = (turn: Turn | undefined) => expandLive && Boolean(turn) && !isDone(turn!)
 
-const isDone = (turn: Turn) => turn !== log.turns[log.turns.length - 1] || turn.durationMs !== undefined || !working
+// The prompt of the last turn known to have ended. A flag set by turn.start would read idle after a mod reload mid-turn.
+let endedPrompt = ''
+
+const isDone = (turn: Turn) => turn !== log.turns[log.turns.length - 1] || turn.durationMs !== undefined || turn.prompt === endedPrompt
+
+const markEnded = () => {
+  endedPrompt = log.turns[log.turns.length - 1]?.prompt ?? ''
+}
 
 // Reading the lists subscribes the row to redraws when a click changes them.
 async function opened($: EngineInterface, kind: Kind) {
@@ -299,6 +306,8 @@ export const register: Register = (on, options) => {
     lastSize = -1
     await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
     await load($)
+    // SessionStart comes between turns, so whatever the transcript holds has ended.
+    markEnded()
 
     return next(e)
   })
@@ -316,6 +325,7 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       working = false
       await load($)
+      markEnded()
       $.ui.invalidate('ui.render')
     }
 

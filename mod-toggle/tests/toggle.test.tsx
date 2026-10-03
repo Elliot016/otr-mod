@@ -60,22 +60,30 @@ const TIMED = [
   row(5, 'system', { subtype: 'turn_duration', durationMs: 47000 }),
 ].join('\n')
 
-// isLive starts a turn after the transcript loads, so its last turn counts as still running.
-async function mountTimed($: any, on: any, text = TIMED, isLive = false) {
+// isLive writes the transcript after the session starts, so its last turn counts as still running.
+async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsTurn = true) {
+  let written = isLive ? '' : text
   on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
   on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
-  on('fs.stat', () => ({ value: { kind: 'file', size: text.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: text }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: written.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: written }))
   mock.clock(on)
+  on('session.start', (_$: unknown, e: unknown) => e)
+  on('command.register', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [] }))
+  mock.env(on, {})
   on('ui.render', ($$: any, e: any) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
-  if (isLive) await $.turn.start({ turnId: 't1' } as never)
+  written = text
+  if (isLive && startsTurn) await $.turn.start({ turnId: 't1' } as never)
+  // A reload fires session.start, not turn.start.
+  if (isLive && !startsTurn) await $.session.start({ cwd: '/w' } as never)
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   return {
@@ -99,6 +107,11 @@ test('the running turn shows its tool rows in full, then folds once it ends', as
   const { tool } = await mountTimed($, on, LIVE, true)
   expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
   expect(await tool.find({ type: 'Button', text: /^Bash\(claude plugin test/ })).toBeUndefined()
+})
+
+test('a mod reload mid-turn misses turn.start and still shows the running turn in full', async ($, on) => {
+  const { tool } = await mountTimed($, on, LIVE, true, false)
+  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
 })
 
 test('with expand_live off, the running turn folds its finished tool rows at once', { options: { expand_live: false } }, async ($, on) => {
