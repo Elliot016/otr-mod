@@ -167,16 +167,60 @@ test('a read-only file has no diff to replay', async ($, on) => {
   await ui.unmount()
 })
 
+// The commands the mod runs, each answered with the given exit code; `code` is not on PATH here.
+const launches = (on: Parameters<Parameters<typeof test>[1]>[1]) => {
+  const ran: string[] = []
+  on('process.run', (_$, e) => {
+    const argv = (e as unknown as { argv: string[] }).argv
+    ran.push(argv.join(' '))
+    return { value: { exitCode: argv[0] === 'code' ? 1 : 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } as never
+  })
+  return ran
+}
+
 test("a file row ends in the open mark; a click on it opens the file instead of the row's diff", async ($, on) => {
   stubs(on)
+  const ran = launches(on)
   await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
   const ui = await $.ui.mount(PANE)
-  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
-  expect(drawn).toContain(' ↗')
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(' ↗')
   // The pane is 70 columns, the rows 66 cells: the mark is the last one.
   await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
-  expect(await ui.find({ type: 'Text', text: /^. Opened only\.md/ })).toBeDefined()
+  // VS Code first; without it, the system's opener.
+  expect(ran).toEqual(['code /w/only.md', 'open /w/only.md'])
+  expect(await ui.find({ type: 'Text', text: /^. Opened only\.md in its default app/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /only\.md was only read/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a folder row and the footer open their folder in the file manager; a failed start says why', async ($, on) => {
+  stubs(on)
+  const ran = launches(on)
+  await $.tool.call({ tool: 'Read', file_path: '/w/hooks/a.ts' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/w/src/b.ts' } as never)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(' ⊞')
+  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
+  expect(await ui.find({ type: 'Text', text: /^. Opened hooks in the file manager/ })).toBeDefined()
+  // A click on the mark opens the folder; it does not fold it.
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('a.ts')
+  // The footer's mark opens the session's own folder.
+  await ui.pointer({ in: 'session-reveal', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(ran).toEqual(['open /w/hooks', 'open /w'])
+  expect(await ui.find({ type: 'Text', text: /^. Opened w in the file manager/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('an opener that cannot start says why in the status line', async ($, on) => {
+  stubs(on)
+  on('process.run', () => {
+    throw new Error('spawn open ENOENT')
+  })
+  await $.tool.call({ tool: 'Read', file_path: '/w/hooks/a.ts' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/w/src/b.ts' } as never)
+  const ui = await $.ui.mount(PANE)
+  await ui.pointer({ in: 'session-reveal', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: /Could not open w: \S/ })).toBeDefined()
   await ui.unmount()
 })
 

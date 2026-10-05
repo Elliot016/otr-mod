@@ -22,8 +22,8 @@ export type Row = {
   pad: number
   // When this file's latest edit landed, so the row glows and fades back.
   changedAt?: number
-  // A file row ends in the open mark, which opens the file in VS Code or the default app.
-  canOpen: boolean
+  // The mark the row ends in: a file's opens it in VS Code or the default app, a folder's opens it in the file manager.
+  endMark: string
 }
 
 // offset is the first row's index in the whole tree: a long tree draws as several lists.
@@ -110,7 +110,7 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
     const next = props.still ? (row >= 0 ? { [row]: HOVER_STEPS } : {}) : fadeLevels(levels, row)
     if (row !== hovered) surface.setState({ hovered: row, phase, levels: next })
     if (event.type !== 'down' || event.button !== 'left' || row < 0) return
-    const isOpenMark = rows[row]!.canOpen && event.x >= props.width - OPEN_CELLS
+    const isOpenMark = rows[row]!.endMark !== '' && event.x >= props.width - OPEN_CELLS
     surface.post({ type: isOpenMark ? 'open' : 'select', index: (props.offset ?? 0) + row } satisfies ListMessage)
   })
 
@@ -140,7 +140,7 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
             {isLive && row.status ? livePill(Text, row.status, props.nerd === true) : null}
             {isLive && row.status && (row.add > 0 || row.del > 0) ? <Text> </Text> : null}
             {row.add > 0 || row.del > 0 ? countsPill(Text, row.add, row.del, props.nerd === true) : null}
-            {row.canOpen ? <Text key="open" color={index === hovered ? THEME.accent : style.colors.pills.separator}>{` ${style.marks.open}`}</Text> : null}
+            {row.endMark ? <Text key="open" color={index === hovered ? THEME.accent : style.colors.pills.separator}>{` ${row.endMark}`}</Text> : null}
           </Box>
         )
       })}

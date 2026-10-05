@@ -194,37 +194,52 @@ async function answer($: EngineInterface, args: string) {
   return ''
 }
 
-// Opens the file's latest diff in the replay; a file Claude only read has none.
-// Runs a command to its end and answers its exit code; null when it could not start.
-async function exitCode($: EngineInterface, argv: string[]) {
+// Runs a command to its end: its exit code, or null and the reason when it could not start.
+async function launch($: EngineInterface, argv: string[]) {
   try {
-    const stream = $.process.spawn({ argv })
-    for (;;) {
-      const step = await stream.next()
-      if (step.done) return step.value.code
-    }
-  } catch {
-    return null
+    const result = await $.process.run(argv, { timeoutMs: 15_000 })
+    return { code: result.exitCode as number | null, reason: result.stderr.trim() }
+  } catch (error) {
+    return { code: null, reason: String(error) }
   }
+}
+
+// Explorer, Finder or the desktop's file manager on a folder, the default app on a file. Only a failed start counts as failing.
+async function openWithSystem($: EngineInterface, isWindows: boolean, native: string) {
+  // A mod's child starts with its window hidden, which Explorer honors, so `start` launches it with a normal window instead.
+  if (isWindows) return launch($, ['cmd', '/c', 'start', 'explorer', native])
+  const opened = await launch($, ['open', native])
+  return opened.code === 0 ? opened : launch($, ['xdg-open', native])
+}
+
+// A row's path as the system writes it: joined to the session's folder when relative, with backslashes on Windows.
+async function nativePath($: EngineInterface, path: string) {
+  const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
+  const full = /^([A-Za-z]:)?\//.test(path) ? path : `${cwd}/${path}`
+  const isWindows = /^[A-Za-z]:/.test(full)
+  return { isWindows, native: isWindows ? full.replace(/\//g, '\\') : full }
+}
+
+async function openFolder($: EngineInterface, path: string, name = path) {
+  const { isWindows, native } = await nativePath($, path)
+  const opened = await openWithSystem($, isWindows, native)
+  note = opened.code === null ? `${MARK.warn} ${fill(text.openFailed, { path: name, reason: opened.reason })}` : `${MARK.ok} ${fill(text.openedFolder, { path: name })}`
+  $.ui.invalidate('ui.render')
 }
 
 // VS Code when its `code` command is on PATH, otherwise the system's default app for the file's type.
 async function openFile($: EngineInterface, path: string) {
-  const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
-  const full = /^([A-Za-z]:)?\//.test(path) ? path : `${cwd}/${path}`
-  const isWindows = /^[A-Za-z]:/.test(full)
-  const native = isWindows ? full.replace(/\//g, '\\') : full
-  if ((await exitCode($, isWindows ? ['cmd', '/c', 'code', native] : ['code', native])) === 0) {
+  const { isWindows, native } = await nativePath($, path)
+  if ((await launch($, isWindows ? ['cmd', '/c', 'code', native] : ['code', native])).code === 0) {
     note = `${MARK.ok} ${fill(text.openedInCode, { path })}`
   } else {
-    // explorer answers 1 even when it opened the file, so its code says nothing.
-    if (isWindows) await exitCode($, ['explorer', native])
-    else if ((await exitCode($, ['open', native])) !== 0) await exitCode($, ['xdg-open', native])
-    note = `${MARK.ok} ${fill(text.opened, { path })}`
+    const opened = await openWithSystem($, isWindows, native)
+    note = opened.code === null ? `${MARK.warn} ${fill(text.openFailed, { path, reason: opened.reason })}` : `${MARK.ok} ${fill(text.opened, { path })}`
   }
   $.ui.invalidate('ui.render')
 }
 
+// Opens the file's latest diff in the replay; a file Claude only read has none.
 async function openDiff($: EngineInterface, path: string) {
   const current = viewOf(await hydrate($))
   const step = latestStepOf(current, path)
@@ -324,7 +339,7 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
     // The counts' pill adds a cap on each side where the font has them.
     const stats = counts.length + (counts && glyphs.nerd ? 2 : 0) + (status && counts ? 1 : 0)
     // The live word sits in a pill, one cell wider on each side.
-    const used = guides.length + (mark ? [...mark].length + 1 : 0) + stats + status.length + (isLive ? 2 : 0) + (row.isDir ? 0 : OPEN_CELLS)
+    const used = guides.length + (mark ? [...mark].length + 1 : 0) + stats + status.length + (isLive ? 2 : 0) + OPEN_CELLS
     const shown = fit(name, Math.max(6, width - used - 1))
     return {
       guides,
@@ -335,7 +350,7 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
       del,
       status,
       pad: width - used - shown.length,
-      canOpen: !row.isDir,
+      endMark: row.isDir ? glyphs.glyph.reveal : MARK.open,
       ...(done ? { changedAt: done.at } : {}),
     }
   })
@@ -575,6 +590,10 @@ export const register: Register = (on, options) => {
       note = ''
       $.ui.invalidate('ui.render')
     }
+    if (message.id === 'session-reveal') {
+      const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
+      await openFolder($, cwd, cwd.split('/').pop() || text.rootFallback)
+    }
     if (message.id === 'replay-prev' || message.id === 'replay-next') {
       walk($, message.id === 'replay-prev' ? -1 : 1, stepsOfTurn(viewOf(await hydrate($)), replayTurn).length)
     }
@@ -594,7 +613,8 @@ export const register: Register = (on, options) => {
     if (message.type === 'open') {
       const current = viewOf(await hydrate($))
       const row = rowsOf(current, foldsOf(current), showReads)[message.index]
-      if (row && !row.isDir) await openFile($, row.key)
+      if (row?.isDir) await openFolder($, row.key)
+      else if (row) await openFile($, row.key)
     }
 
     return next(e)
@@ -731,6 +751,9 @@ export const register: Register = (on, options) => {
               {(['changed', 'added', 'read'] as const).map(tone =>
                 pill({ Box, Text }, look.nerd, mix(NAME_COLOR[tone], THEME.bg, LEGEND_WASH), <Text color={NAME_COLOR[tone]}>{look.nerd ? text.legend[tone] : ` ${text.legend[tone]} `}</Text>, `legend-${tone}`, THEME.bg),
               )}
+              <Box key="legend-gap" flexGrow={1} />
+              {/* The session's own folder opens from a pill at the footer's right end, with the folder rows' mark. */}
+              {pill({ Box, Text }, look.nerd, THEME.surface3, entry('session-reveal', `${look.glyph.reveal} ${text.sessionFolder}`, false, THEME.surface3), 'session-reveal-pill', THEME.bg)}
             </Box>
           </Box>
         ) : null}
