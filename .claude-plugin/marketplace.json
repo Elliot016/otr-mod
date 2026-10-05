@@ -6,13 +6,13 @@
   },
   "plugins": [
     {
-      "name": "mod-app-statusline",
-      "source": "./mod-app-statusline",
+      "name": "mod-desktop-status-line",
+      "source": "./mod-desktop-status-line",
       "description": "Moonlight status line drawn above the prompt on the desktop app"
     },
     {
-      "name": "mod-effort",
-      "source": "./mod-effort",
+      "name": "mod-model-effort",
+      "source": "./mod-model-effort",
       "description": "A clickable effort meter in the prompt footer, five squares from low to max: click one to set that level, saved for the model like Alt+P does"
     },
     {
@@ -36,9 +36,9 @@
       "description": "Colors each skill in the slash list by the color-tag in its frontmatter, and /mod-skill-panel opens a sidebar of skills grouped by tag where pressing one adds it to the prompt"
     },
     {
-      "name": "mod-toggle",
-      "source": "./mod-toggle",
-      "description": "Folds each finished turn under its prompt to one summary line and each tool call to one line, unfolded in place as a card by a click; /mod-toggle settings opens its settings"
+      "name": "mod-turn-fold",
+      "source": "./mod-turn-fold",
+      "description": "Folds each finished turn under its prompt to one summary line and each tool call to one line, unfolded in place as a card by a click; /mod-turn-fold settings opens its settings"
     },
     {
       "name": "mod-handoff",
@@ -51,13 +51,13 @@
       "description": "Pauses a file edit when another open session edited the same file recently, and asks whether to proceed, move to a worktree or cancel"
     },
     {
-      "name": "mod-filetree",
-      "source": "./mod-filetree",
+      "name": "mod-file-tree",
+      "source": "./mod-file-tree",
       "description": "A sidebar tree of the files Claude touched, lit live while it works, with a replay that steps through the last turn's diffs"
     },
     {
-      "name": "mod-nextsteps",
-      "source": "./mod-nextsteps",
+      "name": "mod-next-steps",
+      "source": "./mod-next-steps",
       "description": "Suggests up to three next prompts above the input after each turn; a click puts one in the prompt"
     },
     {
