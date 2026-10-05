@@ -6,6 +6,7 @@ export default {
       "surface1": "#141726",
       "surface2": "#1C2033",
       "surface3": "#252A42",
+      "lifted": "#3D4258",
       "border": "#3A3F5C",
       "onSurface": "#EEEEFA",
       "muted": "#9BA3C4",
@@ -50,6 +51,16 @@ export default {
       "menuBackground": "#1C1D24",
       "divergence": "#B86CB3",
       "behind": "#8A9BE0"
+    },
+    "kinds": {
+      "thinking": { "hue": "#C3A6FF", "wash": "#494267" },
+      "read": { "hue": "#B9C6F5", "wash": "#464C64" },
+      "search": { "hue": "#A5CFFF", "wash": "#404E67" },
+      "edit": { "hue": "#CED9FF", "wash": "#4C5167" },
+      "shell": { "hue": "#FFCB6B", "wash": "#5B4D3B" },
+      "web": { "hue": "#79C0FF", "wash": "#324A67" },
+      "agent": { "hue": "#F99BD1", "wash": "#593F59" },
+      "tool": { "hue": "#9BA3C4", "wash": "#3D4155" }
     }
   },
   "tags": {
