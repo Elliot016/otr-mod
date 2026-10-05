@@ -1,6 +1,5 @@
 import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
 
-import { actionColumn } from './rows'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action, type Previews } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
@@ -43,11 +42,12 @@ const question = (limit: number) =>
   `Each is one line under 80 characters, written the way I would type it. ` +
   `Reply with the prompts only, one per line, no numbering, no quotes, no commentary.`
 
-// One suggestion per line, bullets and numbering stripped, long or empty lines dropped.
+// One suggestion per line, bullets and numbering stripped, first letter capitalized, long or empty lines dropped.
 function parseSteps(text: string, limit: number) {
   const lines = text
     .split(/\r?\n/)
     .map(line => line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/^["'`]+|["'`]+$/g, '').trim())
+    .map(line => line.charAt(0).toUpperCase() + line.slice(1))
     .filter(line => line.length > 0 && line.length <= MAX_CHARS)
   return [...new Set(lines)].slice(0, limit)
 }
@@ -90,7 +90,8 @@ async function fillFrom($: EngineInterface, index: number) {
   const text = steps[index]
   if (!text) return
   const draft = await $.prompt.read()
-  if (draft.text.trim() === '') await $.prompt.fill({ text, mode: 'replace' })
+  // The digit that pressed it may still sit in the prompt; the suggestion takes its place.
+  if (draft.text.trim() === '' || draft.text.trim() === String(index + 1)) await $.prompt.fill({ text, mode: 'replace' })
   else await $.prompt.fill({ text: ` ${text}`, mode: 'append' })
 }
 
@@ -254,11 +255,19 @@ export const register: Register = (on, options) => {
     return above(below, [
         ...cards,
         <Box key="nextsteps-rows" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-          {actionColumn(
-            { Box, Button, Text },
-            'steps',
-            steps.map((_, index) => ({ label: look.glyph.go, onPress: () => fillFrom($, index) })),
-          )}
+          {/* Each suggestion's digit, typed alone into the empty prompt, fills it; the keycap shows it and a Button nobody sees carries the hotkey. */}
+          <Box key="steps-keys" flexDirection="column" flexShrink={0}>
+            {steps.map((_, index) => (
+              <Box key={`steps-key-${index}`} flexDirection="row">
+                <Box key={`steps-cap-${index}`} backgroundColor={THEME.surface3}>
+                  <Text color={THEME.accent} bold>{` ${index + 1} `}</Text>
+                </Box>
+                <Box key={`steps-hotkey-${index}`} width={0} height={0} overflow="hidden">
+                  <Button key={`steps-hotkey-button-${index}`} label={steps[index]} hotkey={String(index + 1)} plain onPress={() => fillFrom($, index)} />
+                </Box>
+              </Box>
+            ))}
+          </Box>
           <Box key="nextsteps-list" flexGrow={1} flexShrink={1}>
             <Client key="steps-list" module="./list.tsx" height={steps.length} props={{ rows: steps }} />
           </Box>

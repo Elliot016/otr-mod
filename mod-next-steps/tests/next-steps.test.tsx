@@ -49,14 +49,14 @@ test('while the suggestions are being written, a shimmering line says they are c
   release(answered('add a test'))
   await clock.settle()
   expect(await ui.find({ key: 'steps-waiting' })).toBeUndefined()
-  expect(await rowsOf(ui)).toContain('add a test')
+  expect(await rowsOf(ui)).toContain('Add a test')
   await ui.unmount()
 })
 
 test('suggestions appear after turn.complete, tidied and capped at the count', async ($, on) => {
   const { clock, asked } = setup(on, () => answered('1. add a test\n- run the suite\n"ship it"\nfourth one'))
   const empty = await mount($)
-  expect(await empty.find({ key: 'steps-action-0' })).toBeUndefined()
+  expect(await empty.find({ key: 'steps-hotkey-button-0' })).toBeUndefined()
   await empty.unmount()
 
   await $.turn.complete(DONE as never)
@@ -64,13 +64,13 @@ test('suggestions appear after turn.complete, tidied and capped at the count', a
   expect(asked.length).toBe(1)
 
   const ui = await mount($)
-  expect(await ui.find({ key: 'steps-action-2' })).toBeDefined()
-  expect(await ui.find({ key: 'steps-action-3' })).toBeUndefined()
+  expect(await ui.find({ key: 'steps-hotkey-button-2' })).toBeDefined()
+  expect(await ui.find({ key: 'steps-hotkey-button-3' })).toBeUndefined()
   const drawn = await rowsOf(ui)
-  expect(drawn).toContain('add a test')
-  expect(drawn).toContain('run the suite')
-  expect(drawn).toContain('ship it')
-  expect(drawn).not.toContain('fourth')
+  expect(drawn).toContain('Add a test')
+  expect(drawn).toContain('Run the suite')
+  expect(drawn).toContain('Ship it')
+  expect(drawn).not.toContain('Fourth')
   expect(JSON.stringify(await ui.drawn({ in: 'steps-dismiss' }))).toContain('[×]')
   await ui.unmount()
 })
@@ -89,7 +89,7 @@ test('with a shared pill row below, the card joins that row instead of wrapping 
   const tree = (await ui.drawn()) as { props?: { key?: string } }
   expect(tree.props?.key).toBe('menu-rows')
   expect(JSON.stringify(tree).split('"menu-rows"').length - 1).toBe(1)
-  expect(await ui.find({ key: 'steps-action-0' })).toBeDefined()
+  expect(await ui.find({ key: 'steps-hotkey-button-0' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Files' })).toBeDefined()
   await ui.unmount()
 })
@@ -99,27 +99,33 @@ test('count 1 asks for and shows one suggestion', { options: { count: 1 } }, asy
   await $.turn.complete(DONE as never)
   await clock.settle()
   const ui = await mount($)
-  expect(await ui.find({ key: 'steps-action-0' })).toBeDefined()
-  expect(await ui.find({ key: 'steps-action-1' })).toBeUndefined()
+  expect(await ui.find({ key: 'steps-hotkey-button-0' })).toBeDefined()
+  expect(await ui.find({ key: 'steps-hotkey-button-1' })).toBeUndefined()
   await ui.unmount()
 })
 
-test('a click fills the prompt without sending, on the button and on the text', async ($, on) => {
+test('a digit or a click fills the prompt without sending; the digit itself never stays', async ($, on) => {
   const { clock, fills, setDraft } = setup(on, () => answered('alpha\nbeta'))
   await $.turn.complete(DONE as never)
   await clock.settle()
   const ui = await mount($)
 
-  await ui.press({ key: 'steps-action-1' })
-  expect(fills).toEqual([{ text: 'beta', mode: 'replace' }])
+  await ui.press({ key: 'steps-hotkey-button-1' })
+  expect(fills).toEqual([{ text: 'Beta', mode: 'replace' }])
+
+  // A digit still in the prompt when the hotkey lands is replaced, not kept in front of the suggestion.
+  setDraft('2')
+  await ui.press({ key: 'steps-hotkey-button-1' })
+  expect(fills.pop()).toEqual({ text: 'Beta', mode: 'replace' })
+  setDraft('')
 
   await ui.pointer({ in: 'steps-list', type: 'down', button: 'left', x: 3, y: 0 })
-  expect(fills[1]).toEqual({ text: 'alpha', mode: 'replace' })
+  expect(fills[1]).toEqual({ text: 'Alpha', mode: 'replace' })
 
   // A draft already in the box is kept: the suggestion is appended.
   setDraft('please')
-  await ui.press({ key: 'steps-action-0' })
-  expect(fills[2]).toEqual({ text: ' alpha', mode: 'append' })
+  await ui.press({ key: 'steps-hotkey-button-0' })
+  expect(fills[2]).toEqual({ text: ' Alpha', mode: 'append' })
   await ui.unmount()
 })
 
@@ -139,7 +145,7 @@ test('submitting a prompt, a new turn or the dismiss control clears them', async
   const { clock } = setup(on, () => answered('alpha\nbeta'))
   const showing = async () => {
     const ui = await mount($)
-    const there = (await ui.find({ key: 'steps-action-0' })) !== undefined
+    const there = (await ui.find({ key: 'steps-hotkey-button-0' })) !== undefined
     await ui.unmount()
     return there
   }
@@ -170,7 +176,7 @@ test('a reply that arrives after a new prompt is dropped', async ($, on) => {
   await $.prompt.submit({ text: 'next' } as never)
   await clock.settle()
   const ui = await mount($)
-  expect(await ui.find({ key: 'steps-action-0' })).toBeUndefined()
+  expect(await ui.find({ key: 'steps-hotkey-button-0' })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -183,7 +189,7 @@ test('failure shows nothing: no reply, an api error, a throw, an abort, an error
   })
   const none = async () => {
     const ui = await mount($)
-    const there = (await ui.find({ key: 'steps-action-0' })) !== undefined
+    const there = (await ui.find({ key: 'steps-hotkey-button-0' })) !== undefined
     await ui.unmount()
     return there
   }
@@ -219,25 +225,18 @@ test('desktop falls back to built-in drawing', async ($, on) => {
   await $.turn.complete(DONE as never)
   await clock.settle()
   const ui = await $.ui.mount({ plugin: 'mod-next-steps', surface: 'desktop', ...BAND } as never)
-  expect(await ui.find({ key: 'steps-action-0' })).toBeUndefined()
+  expect(await ui.find({ key: 'steps-hotkey-button-0' })).toBeUndefined()
   await ui.unmount()
 })
 
-test('icons=nerd draws the chevron action', { options: { icons: 'nerd' } }, async ($, on) => {
-  const { clock } = setup(on, () => answered('alpha'))
+test('each suggestion leads with its digit as a keycap, in either icon mode', { options: { icons: 'safe' } }, async ($, on) => {
+  const { clock } = setup(on, () => answered('alpha\nbeta'))
   await $.turn.complete(DONE as never)
   await clock.settle()
   const ui = await mount($)
-  expect((await ui.find({ key: 'steps-action-0' }))?.text).toBe(` ${String.fromCodePoint(0xf054)} `)
-  await ui.unmount()
-})
-
-test('icons=safe draws the return action', { options: { icons: 'safe' } }, async ($, on) => {
-  const { clock } = setup(on, () => answered('alpha'))
-  await $.turn.complete(DONE as never)
-  await clock.settle()
-  const ui = await mount($)
-  expect((await ui.find({ key: 'steps-action-0' }))?.text).toBe('[↵]')
+  expect(await ui.find({ type: 'Text', text: ' 1 ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' 2 ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' 3 ' })).toBeUndefined()
   await ui.unmount()
 })
 
