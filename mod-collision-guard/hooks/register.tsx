@@ -1,8 +1,9 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, pathOf, recordEdit, type Io } from './guard'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
-import { settingsBody, type Action, type Previews } from './settings'
+import { tabRow } from './pills'
+import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 
@@ -91,7 +92,24 @@ async function decide($: EngineInterface, path: string, at: number, now: number)
   return { deny: `Another open session is editing ${path}. The user says: ${picked}` }
 }
 
+// A settings card's click: its row, saved through /config; a saved change reloads this mod.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  if (!row) return
+  const result = await $.config.set({ key: row.key, value })
+  note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
+  $.ui.invalidate('ui.render')
+}
+
 export const register: Register = (on, options) => {
+  // A settings card's click arrives as a message.
+  on('ui.message', async ($, e, next) => {
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
+
+    return next(e)
+  })
+
   enabled = options.enabled !== false
   const minutes = Number(options.window_minutes)
   windowMinutes = minutes > 0 ? minutes : 30
@@ -165,14 +183,9 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-collision-guard.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
-    const set = async (row: ConfigRow, value: ConfigValue) => {
-      const result = await $.config.set({ key: row.key, value })
-      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
-      $.ui.invalidate('ui.render')
-    }
     const run = async (action: Action) => {
       note = await answer($, action.args ?? '')
         .then(text => `${MARK.ok} ${text || action.label}`)
@@ -182,9 +195,9 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {paneTitle({ Box, Text }, look, 'settings', `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-collision-guard-settings-tab', label: `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`, icon: look.glyph.gear, isOpen: true }], false)}
         <Text key="settings-note" color={statusColor(note)}>{withMark(look, note) || `${text.defaultNote} ${MARK.sep} ${text.defaultNoteTail}`}</Text>
-        {settingsBody({ Box, Button, Text }, look, { rows, actions, working: false, set, run, previews })}
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews , still: false })}
       </Box>
     )
   })

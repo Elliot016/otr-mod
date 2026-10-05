@@ -207,7 +207,7 @@ test('/mod-model-effort settings opens the pane and the pane draws a setting row
   expect(opened).toEqual(['model-effort-settings'])
 
   const pane = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'Pane', requestId: 'model-effort-settings', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
-  expect(await pane.find({ type: 'Text', text: '▸ Effort · Settings' })).toBeDefined()
+  expect(JSON.stringify(await pane.drawn({ in: 'mod-model-effort-settings-tab' }))).toContain('Effort · Settings')
   expect(await pane.find({ type: 'Text', text: 'Animations' })).toBeDefined()
   await pane.unmount()
 })

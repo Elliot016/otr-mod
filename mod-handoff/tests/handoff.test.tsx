@@ -290,7 +290,7 @@ test('the settings pane draws its title, status line and settings', { options: {
     requestId: 'handoff',
     props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 },
   } as never)
-  expect(await pane.find({ type: 'Text', text: '▸ Handoff · Settings' })).toBeDefined()
+  expect(JSON.stringify(await pane.drawn({ in: 'mod-handoff-settings-tab' }))).toContain('Handoff · Settings')
   expect(await pane.find({ type: 'Text', text: /Click a control to change it/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'Handoff length' })).toBeDefined()
   await pane.unmount()

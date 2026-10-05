@@ -487,13 +487,13 @@ test('/mod-turn-fold settings opens its own panel: a click saves a setting, an a
     props: { title: 'mod-turn-fold', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} },
   } as never)
   expect(await ui.find({ type: 'Text', text: /^Fold finished turns$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^On$/ })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'setting-0-flip' }))).toContain('On')
   // The example card shows the folded turn this value draws: the prompt, its + line, the reply.
   expect(await ui.find({ key: 'setting-preview-0' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^ 2 tools · Edit$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^● Fixed.$/ })).toBeDefined()
 
-  await ui.press({ key: 'setting-0-flip' })
+  await ui.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
   expect(saved).toEqual([['mod-turn-fold.fold_turns', false]])
 
   await ui.press({ key: 'action-0' })

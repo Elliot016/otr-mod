@@ -1,11 +1,11 @@
-import type { ConfigRow, ConfigValue, EngineInterface, ModelForkResult, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, ModelForkResult, Register } from 'claude-code'
 
 import { buildPrompt, clampWords, FORK_FAILURES, isFresh, parseThreads, pickedThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText } from './handoff'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import type { EntryMessage } from './entry'
-import { PILL, pill, pillRow, splitRow, tipLine } from './pills'
+import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { settingsBody, type Action, type Previews } from './settings'
+import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 
@@ -204,6 +204,14 @@ const toasts = new ToastList('handoff')
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 
+// A settings card's click: its row, saved through /config; a saved change reloads this mod.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  if (!row) return
+  const result = await $.config.set({ key: row.key, value })
+  say($, 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`)
+}
+
 export const register: Register = (on, options) => {
   still = options.animations === false
   toasts.isStill = still
@@ -320,6 +328,8 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.message', async ($, e, next) => {
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
     const clicked = e.data as EntryMessage
     const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
     if (dismissed !== undefined) {
@@ -347,19 +357,15 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-handoff.'))
-    const set = async (row: ConfigRow, value: ConfigValue) => {
-      const result = await $.config.set({ key: row.key, value })
-      say($, 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`)
-    }
     const run = (_action: Action) => startHandoff($)
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {paneTitle({ Box, Text }, look, 'fold', `${text.label} ${MARK.sep} ${text.paneSettings}`)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-handoff-settings-tab', label: `${text.label} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true }], still)}
         <Text color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
-        {settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still })}
       </Box>
     )
   })

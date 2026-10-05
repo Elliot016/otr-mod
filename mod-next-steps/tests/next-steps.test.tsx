@@ -269,14 +269,16 @@ for (const icons of ['nerd', 'safe']) {
       requestId: 'nextsteps',
       props: { title: 'mod-next-steps', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
     } as never)
-    const lead = icons === 'nerd' ? String.fromCodePoint(0xf075) : '▸'
-    expect(await ui.find({ type: 'Text', text: `${lead} Next steps · Settings` })).toBeDefined()
+    const lead = icons === 'nerd' ? String.fromCodePoint(0xf013) : '⊛'
+    const tab = JSON.stringify(await ui.drawn({ in: 'mod-next-steps-settings-tab' }))
+    expect(tab).toContain('Next steps · Settings')
+    expect(tab).toContain(lead)
     expect(await ui.find({ type: 'Text', text: /Suggest next steps/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Not mine/ })).toBeUndefined()
 
-    await ui.press({ key: 'setting-1-up' })
+    await ui.pointer({ in: 'setting-1-up', type: 'down', button: 'left', x: 1, y: 0 })
     expect(saved).toEqual([['mod-next-steps.count', 3]])
-    await ui.press({ key: 'setting-0-flip' })
+    await ui.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
     expect(saved[1]).toEqual(['mod-next-steps.enabled', false])
     await ui.unmount()
   })

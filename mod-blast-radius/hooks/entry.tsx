@@ -2,11 +2,25 @@
 import type { ClientModule } from 'claude-code'
 
 import style from './style'
-import { THEME } from './theme'
+import { CAPS, THEME } from './theme'
 
 // color: open text (a red Run); idle: closed text, muted unless set; isBusy shimmers the label until the click's result lands.
 // still: the mod's animations setting is off, so nothing shimmers and the hover color switches at once.
-export type EntryProps = { id: string; label: string; isOpen: boolean; bg: string; color?: string; idle?: string; isBusy?: boolean; still?: boolean }
+// lead: a glyph before the label in leadColor; badge: a count after it in its own pill, capped where `nerd` has the caps.
+export type EntryProps = {
+  id: string
+  label: string
+  isOpen: boolean
+  bg: string
+  color?: string
+  idle?: string
+  isBusy?: boolean
+  still?: boolean
+  lead?: string
+  leadColor?: string
+  badge?: { text: string; color: string; bg: string }
+  nerd?: boolean
+}
 
 // menu-hover tells the owning mod the pointer arrived or left, so it can show its tip under the row.
 export type EntryMessage = { type: 'menu-entry'; id: string } | { type: 'menu-hover'; id: string; isOver: boolean }
@@ -93,23 +107,37 @@ const Entry: ClientModule<EntryProps, State> = (props, surface) => {
   })
 
   const text = ` ${props.label} `
-  if (!props.still && (props.isBusy || isPressed(surface.state, props))) {
-    const phase = surface.state?.phase ?? 0
-    return (
-      <Box flexDirection="row">
-        {[...text].map((char, at) => (
-          <Text key={`c${at}`} color={shimmerColor(at, phase, text.length)} backgroundColor={props.bg}>
-            {char}
-          </Text>
-        ))}
-      </Box>
-    )
-  }
-
-  return (
-    <Text color={hoverMix(props.isOpen ? (props.color ?? THEME.onSurface) : (props.idle ?? THEME.muted), THEME.accent, surface.state?.level ?? 0)} bold={props.isOpen && Boolean(props.idle)} backgroundColor={props.bg}>
+  const isShimmering = !props.still && (props.isBusy || isPressed(surface.state, props))
+  const phase = surface.state?.phase ?? 0
+  const label = isShimmering ? (
+    <Box key="label" flexDirection="row">
+      {[...text].map((char, at) => (
+        <Text key={`c${at}`} color={shimmerColor(at, phase, text.length)} backgroundColor={props.bg}>
+          {char}
+        </Text>
+      ))}
+    </Box>
+  ) : (
+    <Text key="label" color={hoverMix(props.isOpen ? (props.color ?? THEME.onSurface) : (props.idle ?? THEME.muted), THEME.accent, surface.state?.level ?? 0)} bold={props.isOpen && Boolean(props.idle)} backgroundColor={props.bg}>
       {text}
     </Text>
+  )
+  if (!props.lead && !props.badge) return isShimmering ? <Box flexDirection="row">{label}</Box> : label
+
+  const { badge } = props
+  return (
+    <Box flexDirection="row">
+      {props.lead ? <Text key="lead" color={props.leadColor ?? THEME.accent} backgroundColor={props.bg}>{` ${props.lead}`}</Text> : null}
+      {label}
+      {badge ? (
+        <Box key="badge" flexDirection="row">
+          {props.nerd ? <Text key="badge-left" color={badge.bg} backgroundColor={props.bg}>{CAPS.left}</Text> : null}
+          <Text key="badge-text" color={badge.color} backgroundColor={badge.bg} bold>{props.nerd ? badge.text : ` ${badge.text} `}</Text>
+          {props.nerd ? <Text key="badge-right" color={badge.bg} backgroundColor={props.bg}>{CAPS.right}</Text> : null}
+          <Text key="badge-pad" backgroundColor={props.bg}>{' '}</Text>
+        </Box>
+      ) : null}
+    </Box>
   )
 }
 

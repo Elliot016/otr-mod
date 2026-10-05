@@ -15,8 +15,8 @@
     "enabled": {
       "true": [
         { "spans": [{ "text": "rm -rf build", "color": "onSurface" }] },
-        { "spans": [{ "text": "Would delete 142 files and 12 folders (3.1 MB)", "color": "alert" }] },
-        { "spans": [{ "text": " ↵ Run it ", "bg": "accent" }, { "text": "  " }, { "text": " ■ Cancel ", "bg": "border" }] }
+        { "spans": [{ "text": "Would delete 142 files and 12 folders (3.1 MB)", "color": "muted" }] },
+        { "spans": [{ "text": " 1 ", "color": "accent", "bg": "surface3" }, { "text": " Cancel  ", "color": "onSurface" }, { "text": " 2 ", "color": "accent", "bg": "surface3" }, { "text": " Details  ", "color": "onSurface" }, { "text": " 3 ", "color": "accent", "bg": "surface3" }, { "text": " Delete folders", "color": "alert" }] }
       ],
       "false": [
         { "spans": [{ "text": "rm -rf build", "color": "muted" }] },

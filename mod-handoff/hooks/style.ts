@@ -52,6 +52,12 @@ export default {
       "divergence": "#B86CB3",
       "behind": "#8A9BE0"
     },
+    "models": {
+      "opus": "#C3A6FF",
+      "sonnet": "#79C0FF",
+      "haiku": "#7CD591",
+      "inherit": "#9BA3C4"
+    },
     "kinds": {
       "thinking": { "hue": "#C3A6FF", "wash": "#494267" },
       "read": { "hue": "#B9C6F5", "wash": "#464C64" },
@@ -134,7 +140,10 @@ export default {
     "bullet": "•",
     "ok": "✓",
     "warn": "!",
-    "sep": "·"
+    "sep": "·",
+    "stop": "○",
+    "stopOpen": "●",
+    "rail": "│"
   },
   "caps": {
     "left": "{U+E0B6}",
@@ -156,13 +165,13 @@ export default {
       "collapsed": "▸",
       "back": "<",
       "title": "▸",
-      "gear": "⚙",
+      "gear": "⊛",
       "icon": {},
       "mark": {
         "thinking": "∴",
         "read": "≡",
         "search": "?",
-        "edit": "✎",
+        "edit": "±",
         "shell": "$",
         "web": "@",
         "agent": "◆",
@@ -215,8 +224,8 @@ export default {
         "Bash": "{U+F120}",
         "Grep": "{U+F002}",
         "Glob": "{U+F002}",
-        "Agent": "{U+F06A9}",
-        "Task": "{U+F06A9}",
+        "Agent": "{U+EBBC}",
+        "Task": "{U+EBBC}",
         "Skill": "{U+F0D0}",
         "WebFetch": "{U+F0AC}",
         "WebSearch": "{U+F0AC}",
@@ -230,7 +239,7 @@ export default {
         "edit": "{U+F040}",
         "shell": "{U+F120}",
         "web": "{U+F0AC}",
-        "agent": "{U+F06A9}",
+        "agent": "{U+EBBC}",
         "tool": "{U+F0AD}"
       }
     }

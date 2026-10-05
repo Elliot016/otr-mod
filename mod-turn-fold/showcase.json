@@ -12,16 +12,15 @@
   "previews": {
     "fold_turns": {
       "true": [
-        { "spans": [{ "text": "> fix the bug", "color": "muted" }] },
-        { "bar": "border", "spans": [{ "text": " + ", "bg": "accent" }, { "text": " 2 tools · Edit(hooks/a.ts) +2 −1 · 1m 4s", "color": "muted" }] },
-        { "spans": [{ "text": "● Fixed." }] }
+        { "spans": [{ "text": "> fix the bug", "color": "onSurface" }] },
+        { "bar": "border", "spans": [{ "text": " + ", "color": "onSurface", "bg": "border" }, { "text": " Edit(hooks/a.ts) ", "color": "onSurface" }, { "text": " +2 ", "color": "good", "bg": "surface3" }, { "text": "−1 ", "color": "alert", "bg": "surface3" }, { "text": " " }, { "text": " 1m 4s ", "color": "muted", "bg": "surface3" }] },
+        { "spans": [{ "text": "● Fixed.", "color": "onSurface" }] }
       ],
       "false": [
-        { "spans": [{ "text": "> fix the bug", "color": "muted" }] },
-        { "bar": "accent", "spans": [{ "text": " − ", "bg": "accent" }, { "text": " 2 tools · Edit(hooks/a.ts) +2 −1 · 1m 4s" }] },
-        { "bar": "accent", "spans": [{ "text": "● Looking." }] },
-        { "bar": "accent", "spans": [{ "text": " + ", "bg": "border" }, { "text": " Edit(hooks/a.ts) ", "color": "muted" }, { "text": "+2", "color": "good" }, { "text": " −1", "color": "alert" }] },
-        { "spans": [{ "text": "● Fixed." }] }
+        { "spans": [{ "text": "> fix the bug", "color": "onSurface" }] },
+        { "bar": "accent", "spans": [{ "text": " − ", "color": "onSurface", "bg": "accent" }, { "text": " Edit(hooks/a.ts) ", "color": "onSurface" }, { "text": " +2 ", "color": "good", "bg": "surface3" }, { "text": "−1 ", "color": "alert", "bg": "surface3" }, { "text": " " }, { "text": " 1m 4s ", "color": "muted", "bg": "surface3" }] },
+        { "bar": "accent", "spans": [{ "text": " Thought ", "color": "onSurface", "bg": "lifted" }, { "text": " " }, { "text": " Edited ", "color": "muted", "bg": "surface3" }, { "text": " 1 ", "color": "accent", "bg": "surface3" }, { "text": " " }, { "text": " Ran ", "color": "muted", "bg": "surface3" }, { "text": " 1 ", "color": "accent", "bg": "surface3" }] },
+        { "spans": [{ "text": "● Fixed.", "color": "onSurface" }] }
       ]
     },
     "fold_tools": {

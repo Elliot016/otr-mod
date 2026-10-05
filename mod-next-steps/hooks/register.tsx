@@ -1,11 +1,11 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
-import { settingsBody, type Action, type Previews } from './settings'
+import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
 import type { EntryMessage } from './entry'
 import type { ListMessage } from './list'
-import { pillRow, splitRow } from './pills'
+import { pillRow, splitRow, tabRow } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import text from './text'
 
@@ -127,6 +127,16 @@ const toasts = new ToastList('nextsteps')
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 
+// A settings card's click: its row, saved through /config; a saved change reloads this mod.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  if (!row) return
+  const clamped = row.key === 'mod-next-steps.count' && typeof value === 'number' ? Math.min(3, Math.max(1, value)) : value
+  const result = await $.config.set({ key: row.key, value: clamped })
+  note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
+  $.ui.invalidate('ui.render')
+}
+
 export const register: Register = (on, options) => {
   still = options.animations === false
   toasts.isStill = still
@@ -192,6 +202,8 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.message', async ($, e, next) => {
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
     const clicked = e.data as EntryMessage
     const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
     if (dismissed !== undefined) {
@@ -281,15 +293,9 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-next-steps.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
-    const set = async (row: ConfigRow, value: ConfigValue) => {
-      const clamped = row.key === 'mod-next-steps.count' && typeof value === 'number' ? Math.min(3, Math.max(1, value)) : value
-      const result = await $.config.set({ key: row.key, value: clamped })
-      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
-      $.ui.invalidate('ui.render')
-    }
     const run = async (action: Action) => {
       const said = action.command === 'mod-next-steps' ? answer($, action.args ?? '') : Promise.resolve('')
       note = await said.then(text => `${MARK.ok} ${text || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
@@ -298,9 +304,9 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {paneTitle({ Box, Text }, look, 'prompt', `${text.paneHeading} ${MARK.sep} ${text.paneHeadingSettings}`)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-next-steps-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneHeadingSettings}`, icon: look.glyph.gear, isOpen: true }], still)}
         <Text key="status" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusReload}`}</Text>
-        {settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: still })}
       </Box>
     )
   })

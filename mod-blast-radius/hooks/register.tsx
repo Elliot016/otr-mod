@@ -1,15 +1,15 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode, type Look } from './look'
 import type { EntryMessage } from './entry'
-import { pillRow, splitRow, tipLine } from './pills'
+import { pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { actionLabels, cardRows, HOTKEY, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
 import { describePrompt, parseDescribed, SYSTEM, verdictOf, type Described } from './haiku'
 import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from './syntax'
 import { measure, tilde, type Io, type Report } from './preview'
 import { CHECKS, compileRules, evaluate, type Risk, type UserRule } from './risk'
-import { settingsBody, type Action, type Previews } from './settings'
+import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 
@@ -319,6 +319,15 @@ const toasts = new ToastList('blast')
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 
+// A settings card's click: its row, saved through /config; a saved change reloads this mod.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  if (!row) return
+  const result = await $.config.set({ key: row.key, value })
+  note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.ui.settingSaved, { label: row.label })}`
+  $.ui.invalidate('ui.render')
+}
+
 export const register: Register = (on, options) => {
   still = options.animations === false
   toasts.isStill = still
@@ -466,7 +475,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'mod-blast-radius' }, async ($, e) => ({ text: await answer($, e.args) }))
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
 
     if (e.requestId === LIST_PANE) {
       if (!held?.report || !held.plain) return next(e)
@@ -542,11 +551,6 @@ export const register: Register = (on, options) => {
 
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-blast-radius.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
-    const set = async (row: ConfigRow, value: ConfigValue) => {
-      const result = await $.config.set({ key: row.key, value })
-      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.ui.settingSaved, { label: row.label })}`
-      $.ui.invalidate('ui.render')
-    }
     const run = async (action: Action) => {
       const said = action.command === 'mod-blast-radius' ? answer($, action.args ?? '') : $.command.run({ command: action.command, args: action.args ?? '' }).then(() => fill(text.ui.ran, { command: action.command }))
       note = await said.then(reply => `${MARK.ok} ${reply || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
@@ -568,9 +572,9 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {paneTitle({ Box, Text }, look, 'settings', `${text.ui.settingsTitle} ${MARK.sep} ${text.ui.settings}`)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-blast-radius-settings-tab', label: `${text.ui.settingsTitle} ${MARK.sep} ${text.ui.settings}`, icon: look.glyph.gear, isOpen: true }], still)}
         <Text color={statusColor(note || bad)}>{note || bad || `${text.ui.statusHint} ${MARK.sep} ${text.ui.statusHintSaved}`}</Text>
-        {settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still })}
         {section({ Box, Text }, look, 'rules', 'Bash', text.ui.sectionRules, ruleLines)}
         {section({ Box, Text }, look, 'built-in', 'Bash', text.ui.sectionBuiltIn, patterns)}
       </Box>
@@ -579,6 +583,8 @@ export const register: Register = (on, options) => {
 
   // Cancel, Details and Run are entry Clients in the card; a click posts the entry's id.
   on('ui.message', async ($, e, next) => {
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
     const clicked = e.data as EntryMessage
     const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
     if (dismissed !== undefined) {

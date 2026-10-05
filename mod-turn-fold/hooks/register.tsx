@@ -1,9 +1,10 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { BarMessage, BarProps } from './bar'
 import type { Chip, ChipsMessage, ChipsProps } from './chips'
 import { isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
-import { settingsBody, type Action, type Previews } from './settings'
+import { tabRow } from './pills'
+import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import style from './style'
 import text from './text'
 import { CAPS, fill, MARK, statusColor, THEME } from './theme'
@@ -302,6 +303,15 @@ function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (pr
   )
 }
 
+// A settings card's click: its row, saved through /config; a saved change reloads this mod.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  if (!row) return
+  const result = await $.config.set({ key: row.key, value })
+  note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.noteSettingSaved, { label: row.label })}`
+  $.ui.invalidate('ui.render')
+}
+
 export const register: Register = (on, options) => {
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   look = lookFor(iconMode === 'nerd')
@@ -325,6 +335,8 @@ export const register: Register = (on, options) => {
 
   // A click on a card's strip folds the turn or tool it runs beside.
   on('ui.message', async ($, e, next) => {
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
     const message = e.data as BarMessage
     if (message?.type === 'fold') await flip($, message.kind, message.id)
     const picked = e.data as ChipsMessage
@@ -355,14 +367,9 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-turn-fold.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
-    const set = async (row: ConfigRow, value: ConfigValue) => {
-      const result = await $.config.set({ key: row.key, value })
-      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.noteSettingSaved, { label: row.label })}`
-      $.ui.invalidate('ui.render')
-    }
     const run = async (action: Action) => {
       const said =
         action.command === 'mod-turn-fold'
@@ -374,9 +381,9 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        <Text color={THEME.accent} bold>{`${MARK.stage} ${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`}</Text>
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-turn-fold-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`, icon: look.glyph.gear, isOpen: true }], false)}
         <Text color={statusColor(note)}>{withMark(look, note) || `${text.paneHintClick} ${MARK.sep} ${text.paneHintSaved}`}</Text>
-        <Box marginTop={0}>{settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}</Box>
+        <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: false })}</Box>
       </Box>
     )
   })
