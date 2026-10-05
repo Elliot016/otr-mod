@@ -1,15 +1,15 @@
 import type { ConfigRow, ConfigValue, EngineInterface, ModelForkResult, Register } from 'claude-code'
 
-import { buildPrompt, clampWords, FORK_FAILURES, isFresh, transcriptText } from './handoff'
+import { buildPrompt, clampWords, FORK_FAILURES, isFresh, parseThreads, pickedThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText } from './handoff'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import type { EntryMessage } from './entry'
 import { PILL, pill, pillRow, splitRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingsBody, type Action, type Previews } from './settings'
-import { MARK, statusColor, THEME } from './theme'
+import text from './text'
+import { fill, MARK, statusColor, THEME } from './theme'
 
 const PANE = 'handoff'
-const LABEL = 'Handoff'
 const CONFIRM_MS = 5000
 
 // The settings (userConfig), fixed per activation: a change reloads the mod.
@@ -19,6 +19,9 @@ let look = lookFor(false)
 
 let working = false
 let isRunning = false
+// Which wait the running entry names: Haiku reading the session, the person picking threads, or the handoff being written.
+let stage: 'reading' | 'picking' | 'writing' = 'writing'
+let pickThreads = true
 let isConfirming = false
 let confirmToken = 0
 let note = ''
@@ -48,15 +51,15 @@ async function togglePane($: EngineInterface) {
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
   actions = Array.isArray(showcase?.actions) ? showcase.actions : []
-  const opened = await $.ui.open({ id: PANE, title: 'mod-handoff', closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(`Handoff settings waiting: ${opened.reason}`)
+  const opened = await $.ui.open({ id: PANE, title: text.paneName, closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-handoff', key: 'pane' }, opened.isPlaced)
 }
 
 // The pane shows the last outcome; a failure is a toast, since a long line in the pill row wraps and breaks it.
-function say($: EngineInterface, text: string) {
-  note = text
-  if (text.startsWith(MARK.warn)) $.ui.toast(text.slice(MARK.warn.length).trim())
+function say($: EngineInterface, line: string) {
+  note = line
+  if (line.startsWith(MARK.warn)) $.ui.toast(line.slice(MARK.warn.length).trim())
   $.ui.invalidate('ui.render')
 }
 
@@ -67,7 +70,7 @@ async function fillPending($: EngineInterface) {
   const filled = await $.prompt.fill({ text: pending.text, mode: 'replace' })
   if (!filled.isFilled) return false
   await $.store.delete('pending')
-  say($, `${MARK.ok} Handoff filled in, review it and press Enter`)
+  say($, `${MARK.ok} ${text.filledIn}`)
   return true
 }
 
@@ -108,44 +111,73 @@ async function summarizeTranscript($: EngineInterface, prompt: string): Promise<
   })
 }
 
+// Haiku splits the session into threads and the person picks which carry over: the prompt's addition, '' to keep all, null when cancelled.
+async function pickScope($: EngineInterface): Promise<string | null> {
+  const messages = await $.session.messages().catch(() => [])
+  if (!Array.isArray(messages) || messages.length === 0) return ''
+  const reply = await $.model.complete({ model: 'haiku', system: THREADS_SYSTEM, prompt: threadsPrompt(transcriptText(messages, 150_000)), maxTokens: 600, timeoutMs: 30000 }).catch(() => null)
+  const threads = reply?.isAnswered ? parseThreads(reply.text) : []
+  // Nothing to choose between, or Haiku failed: everything carries over, as without the picker.
+  if (threads.length === 0) return ''
+  stage = 'picking'
+  $.ui.invalidate('ui.render')
+  const chosen = await $.ui.ask(text.pickQuestion, { options: threads.map(thread => thread.label), header: text.pickHeader, multiSelect: true }).catch(() => null)
+  if (chosen === null) return null
+  const { kept, note } = pickedThreads(chosen, threads)
+  return kept.length || note ? scopeNote(threads, kept, note) : null
+}
+
 // Summarize through a hidden fork, run /clear, fill the handoff into the new prompt. Nothing is sent.
 async function startHandoff($: EngineInterface) {
   if (isRunning) return
   cancelConfirm($)
   if (working) {
-    say($, `${MARK.warn} Claude is working, try again once it is idle`)
+    say($, `${MARK.warn} ${text.claudeWorking}`)
     return
   }
   isRunning = true
-  say($, 'writing the handoff')
   try {
+    let scope = ''
+    if (pickThreads) {
+      stage = 'reading'
+      $.ui.invalidate('ui.render')
+      const picked = await pickScope($)
+      if (picked === null) {
+        say($, `${MARK.warn} ${text.cancelled}`)
+        return
+      }
+      scope = picked
+    }
+    stage = 'writing'
+    $.ui.invalidate('ui.render')
+    say($, text.writing)
     const skill = await $.fs.read(`${$.plugin.root}/skills/session-handoff/SKILL.md`).then(String)
-    const prompt = buildPrompt(skill, maxWords)
+    const prompt = scope ? `${buildPrompt(skill, maxWords)}\n\n${scope}` : buildPrompt(skill, maxWords)
     let result = await $.model.fork({ prompt })
     if (!result.isAnswered && result.reason === 'nothing-to-fork') result = await summarizeTranscript($, prompt)
     if (!result.isAnswered) {
       say($, `${MARK.warn} ${FORK_FAILURES[result.reason] ?? result.reason}`)
       return
     }
-    const text = result.text.trim()
-    if (!text) {
+    const summary = result.text.trim()
+    if (!summary) {
       say($, `${MARK.warn} ${FORK_FAILURES['empty-reply']}`)
       return
     }
     if (working) {
-      say($, `${MARK.warn} Claude started working, nothing was cleared`)
+      say($, `${MARK.warn} ${text.startedWorking}`)
       return
     }
-    await $.store.set('pending', { text, at: await $.clock.now() })
+    await $.store.set('pending', { text: summary, at: await $.clock.now() })
     try {
       await $.command.run({ command: 'clear' })
     } catch {
       // The person can run /clear themselves; session.end then fills the handoff.
       await $.prompt.fill({ text: '/clear', mode: 'replace' })
-      say($, `${MARK.warn} Could not run /clear, press Enter to clear and the handoff fills in after`)
+      say($, `${MARK.warn} ${text.clearFailed}`)
       return
     }
-    if (!(await fillWithRetry($))) say($, `${MARK.warn} Cleared, but the handoff could not be filled in`)
+    if (!(await fillWithRetry($))) say($, `${MARK.warn} ${text.clearedNotFilled}`)
   } catch (error) {
     say($, `${MARK.warn} ${String(error)}`)
   } finally {
@@ -162,15 +194,19 @@ async function answer($: EngineInterface, args: string) {
   }
   // Deferred past this command's dispatch, which the turn waits on.
   $.clock.after(0, () => startHandoff($))
-  return 'Writing the handoff, then clearing'
+  return text.writingThenClearing
 }
 
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
 
 const toasts = new ToastList('handoff')
+// The animations setting, fixed per activation: off, every entry draws still.
+let still = false
 
 export const register: Register = (on, options) => {
+  still = options.animations === false
+  toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
     const id = toasts.add(e.text)
@@ -184,13 +220,14 @@ export const register: Register = (on, options) => {
 
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   maxWords = clampWords(options.max_words)
+  pickThreads = options.pick_threads !== false
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
     look = await detectLook($)
     await $.command.register({
       name: 'mod-handoff',
-      description: 'Summarize the session, clear it, and fill the handoff into the new prompt; `settings` opens its settings panel',
+      description: text.commandDescription,
       argumentHint: '[settings]',
     })
     await $.state.set({ plugin: 'mod-handoff', key: 'pane' }, await isOpen($))
@@ -262,24 +299,24 @@ export const register: Register = (on, options) => {
     const isIdle = !(e.props.isWorking || working)
     const entry = (id: string, label: string, isBusy = false) => (
       <Box key={`${id}-pad`}>
-        <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isIdle, bg: PILL.secondary, isBusy }} />
+        <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isIdle, bg: PILL.secondary, isBusy, still }} />
       </Box>
     )
     const body = isRunning ? (
       // Writing takes a model call; the shimmer shows it is still on its way.
-      entry('handoff-running', 'Writing handoff…', true)
+      entry('handoff-running', text.stage[stage], true)
     ) : isConfirming ? (
       <Box key="handoff-confirm" flexDirection="row" paddingLeft={1}>
-        <Text key="handoff-ask" color={THEME.onSurface}>{'Clear & continue?'}</Text>
-        {entry('handoff-yes', 'Yes')}
+        <Text key="handoff-ask" color={THEME.onSurface}>{text.confirmAsk}</Text>
+        {entry('handoff-yes', text.confirmYes)}
         <Text key="handoff-slash" color={THEME.border}>│</Text>
-        {entry('handoff-no', 'No')}
+        {entry('handoff-no', text.confirmNo)}
       </Box>
     ) : (
-      entry('handoff-entry', LABEL)
+      entry('handoff-entry', text.label)
     )
 
-    return pillRow({ Box, Text }, look.nerd, group, [...row, pill({ Box, Text }, look.nerd, PILL.secondary, body, 'handoff-pill')], [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, 'Handoff: summarize, clear the chat and continue fresh') : tip)
+    return pillRow({ Box, Text }, look.nerd, group, [...row, pill({ Box, Text }, look.nerd, PILL.secondary, body, 'handoff-pill')], [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -298,7 +335,7 @@ export const register: Register = (on, options) => {
     const message = e.data as EntryMessage
     if (message?.type !== 'menu-entry') return next(e)
     if (message.id === 'handoff-entry') {
-      if (working) $.ui.toast('Claude is working, Handoff is available once it is idle')
+      if (working) $.ui.toast(text.claudeWorkingPill)
       else askConfirm($)
     }
     if (message.id === 'handoff-yes') await startHandoff($)
@@ -314,14 +351,14 @@ export const register: Register = (on, options) => {
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-handoff.'))
     const set = async (row: ConfigRow, value: ConfigValue) => {
       const result = await $.config.set({ key: row.key, value })
-      say($, 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${row.label} saved`)
+      say($, 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`)
     }
     const run = (_action: Action) => startHandoff($)
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {paneTitle({ Box, Text }, look, 'fold', `Handoff ${MARK.sep} settings`)}
-        <Text color={statusColor(note)}>{withMark(look, note) || `click a control to change it ${MARK.sep} saved at once, the mod reloads`}</Text>
+        {paneTitle({ Box, Text }, look, 'fold', `${text.label} ${MARK.sep} ${text.paneSettings}`)}
+        <Text color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}
       </Box>
     )

@@ -7,11 +7,23 @@
   },
   "types": "./types/index.d.ts",
   "userConfig": {
+    "animations": {
+      "type": "boolean",
+      "title": "Animations",
+      "description": "Entries shimmer while they wait and hover colors fade. Off, everything draws still",
+      "default": true
+    },
     "max_words": {
       "type": "number",
       "title": "Handoff length",
       "description": "Hard cap, in words, for the handoff message the model writes",
       "default": 400
+    },
+    "pick_threads": {
+      "type": "boolean",
+      "title": "Pick what carries over",
+      "description": "Before writing, Haiku splits the session into up to four threads and asks which ones the handoff keeps. Off, it keeps everything",
+      "default": true
     },
     "icons": {
       "type": "string",

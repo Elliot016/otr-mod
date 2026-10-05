@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { buildPrompt, clampWords, isFresh, skillBody } from '../hooks/handoff'
+import { buildPrompt, clampWords, isFresh, parseThreads, pickedThreads, scopeNote, skillBody } from '../hooks/handoff'
 import { THEME } from '../hooks/theme'
 
 const SKILL = '---\nname: session-handoff\ndescription: x\n---\n\n# session-handoff\n\nWrite one message.'
@@ -14,7 +14,8 @@ const BAND = (isWorking = false) =>
   }) as const
 
 // Stubs every op the flow reaches and records the order they were called in.
-function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: '' }), messages: unknown[] = []) {
+// threads is Haiku's reply for the picker. The kit answers no $.ui.ask, so a picker that gets that far sees it dismissed.
+function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: '' }), messages: unknown[] = [], threads: unknown = answered) {
   const calls: string[] = []
   const filled: string[] = []
   const forks: string[] = []
@@ -25,7 +26,11 @@ function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: 
     return { value: undefined }
   })
   on('session.messages', () => ({ value: messages }))
-  on('model.complete', (_$: unknown, e: { prompt: string }) => {
+  on('model.complete', (_$: unknown, e: { prompt: string; model: string }) => {
+    if (e.model === 'haiku') {
+      calls.push('threads')
+      return { value: threads }
+    }
     completes.push(e.prompt)
     calls.push('complete')
     return { value: answered }
@@ -156,11 +161,56 @@ test('a resumed session with nothing to fork summarizes the transcript instead',
   const band = await $.ui.mount(BAND())
   await confirmYes(band)
 
-  expect(w.calls).toEqual(['fork', 'complete', 'run:clear', 'fill'])
+  // Haiku's reply is no thread list, so nothing is asked and everything carries over.
+  expect(w.calls).toEqual(['threads', 'fork', 'complete', 'run:clear', 'fill'])
   expect(w.completes[0]).toContain('USER: fix the build')
   expect(w.completes[0]).toContain('[Bash: npm run build]')
   expect(w.completes[0]).toContain('The cap for this run is 400 words')
   expect(w.filled).toEqual(['Goal: ship it.'])
+  await band.unmount()
+})
+
+const SESSION = [{ role: 'user', text: 'fix the build, then the docs', toolUses: [] }]
+const THREADS = {
+  isAnswered: true,
+  usage: USAGE,
+  text: '{"threads":[{"label":"Build fix","detail":"The failing build and its cause."},{"label":"Docs, rewrite","detail":"The README rewrite."},{"label":"Deploy","detail":"The deploy plan for Friday."}]}',
+}
+
+test('the picked threads become the handoff scope: kept, left out, and what was typed in Other', () => {
+  const threads = parseThreads(THREADS.text)
+  // A label is a dialog option, and the answer comes back comma-joined, so labels lose their commas.
+  expect(threads.map(thread => thread.label)).toEqual(['Build fix', 'Docs rewrite', 'Deploy'])
+  expect(parseThreads('{"threads":[{"label":"Only one","detail":"x"}]}')).toEqual([])
+  expect(parseThreads('not json')).toEqual([])
+
+  const { kept, note } = pickedThreads('Build fix, Deploy, also the CI flake', threads)
+  expect(kept.map(thread => thread.label)).toEqual(['Build fix', 'Deploy'])
+  expect(note).toBe('also the CI flake')
+  const scope = scopeNote(threads, kept, note)
+  expect(scope).toContain('Carry over only these threads of the session:\n- Build fix: The failing build and its cause.\n- Deploy: The deploy plan for Friday.')
+  expect(scope).toContain('Leave out everything about:\n- Docs rewrite: The README rewrite.')
+  expect(scope).toContain('The person also asked for: also the CI flake')
+  expect(scopeNote(threads, threads, '')).toBe('')
+})
+
+test('dismissing the picker cancels: nothing is written or cleared', async ($, on) => {
+  const w = world(on, answered, undefined, SESSION, THREADS)
+  const band = await $.ui.mount(BAND())
+  await confirmYes(band)
+
+  expect(w.calls).toEqual(['threads'])
+  expect(await band.find({ type: 'Text', text: 'Handoff cancelled, nothing was cleared' })).toBeDefined()
+  await band.unmount()
+})
+
+test('pick_threads off keeps everything without asking', { options: { pick_threads: false } }, async ($, on) => {
+  const w = world(on, answered, undefined, SESSION, THREADS)
+  const band = await $.ui.mount(BAND())
+  await confirmYes(band)
+
+  expect(w.calls).toEqual(['fork', 'run:clear', 'fill'])
+  expect(w.forks[0]).not.toContain('Carry over only')
   await band.unmount()
 })
 
@@ -240,8 +290,8 @@ test('the settings pane draws its title, status line and settings', { options: {
     requestId: 'handoff',
     props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 },
   } as never)
-  expect(await pane.find({ type: 'Text', text: '▸ Handoff · settings' })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /click a control to change it/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '▸ Handoff · Settings' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Click a control to change it/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'Handoff length' })).toBeDefined()
   await pane.unmount()
 })
