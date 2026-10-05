@@ -3,14 +3,15 @@ import type { ClientModule } from 'claude-code'
 import { HOVER_STEPS, hoverMix, stepToward, TICK_MS } from './entry'
 import { LEVEL_LOOK, LEVELS } from './levels'
 import style from './style'
-import { THEME } from './theme'
+import { CAPS, THEME } from './theme'
 
-// still: the animations setting is off, so the level icons switch at once.
-export type MeterProps = { effort: string | null; model: string; bg: string; still?: boolean }
+// still: the animations setting is off, so the level icons switch at once. nerd: the meter draws the pill's caps itself,
+// so the pointer on a cap is still on the meter and the levels stay open.
+export type MeterProps = { effort: string | null; model: string; bg: string; still?: boolean; nerd?: boolean }
 
 export type MeterMessage = { type: 'set'; effort: string } | { type: 'menu-hover'; id: string; isOver: boolean; level?: string } | { type: 'model-menu' }
 
-// The inside of the Moonlight-claude oh-my-posh model pill; the caps come from pills.tsx.
+// The inside of the Moonlight-claude oh-my-posh model pill.
 const PILL_FG = style.colors.pills.readout
 
 // A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
@@ -31,7 +32,7 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
   const reached = props.effort ? LEVELS.indexOf(props.effort as (typeof LEVELS)[number]) : -1
   const head = ` ${props.model} `
-  const start = head.length
+  const start = (props.nerd ? 1 : 0) + head.length
 
   // The level under the pointer previews what a click would set: -1 on the model name, -2 off the pill.
   const hovered = surface.state?.level ?? -2
@@ -74,6 +75,7 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
 
   return (
     <Box flexDirection="row">
+      {props.nerd ? <Text key="cap-left" color={props.bg}>{CAPS.left}</Text> : null}
       <Text key="head" color={PILL_FG} backgroundColor={props.bg}>{head}</Text>
       {LEVELS.map((level, index) =>
         isExpanded || index === Math.max(reached, 0) ? (
@@ -82,6 +84,7 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
           </Text>
         ) : null,
       )}
+      {props.nerd ? <Text key="cap-right" color={props.bg}>{CAPS.right}</Text> : null}
     </Box>
   )
 }

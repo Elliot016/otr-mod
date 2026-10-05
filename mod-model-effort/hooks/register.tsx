@@ -6,7 +6,7 @@ import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMa
 import type { MeterMessage } from './meter'
 import { settingChoice, settingsBody } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
-import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
 import text from './text'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
@@ -31,6 +31,43 @@ async function detectLook($: EngineInterface) {
     if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
   }
   return lookFor(false)
+}
+
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
 }
 
 const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
@@ -147,7 +184,7 @@ export const register: Register = (on, options) => {
   still = options.animations === false
   toasts.isStill = still
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
@@ -161,7 +198,7 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({ name: 'mod-model-effort', description: text.commandDescription, argumentHint: '[settings]' })
     await $.state.set({ plugin: 'mod-model-effort', key: 'pane' }, await isPaneOpen($))
     // Before the first request, the last session's model and its saved level stand in.
@@ -257,6 +294,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await loadLook($)
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
 
     const { Box, Client, Text } = $.ui.resolve(e)
@@ -264,7 +302,7 @@ export const register: Register = (on, options) => {
     const modelId = current.value?.model ?? (await $.session.model())
     const model = displayName(modelId)
     const { group, row, rest, tip } = splitRow(await next(e))
-    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary, still }} />
+    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd }} />
     // The level word follows the pill, so it never moves the glyphs under the pointer.
     const shownWord = hoveredLevel ?? flash
     const word = shownWord ? <Text key="menu-flash" color={LEVEL_LOOK[shownWord]?.color}>{(text.levelNames as Record<string, string>)[shownWord] ?? shownWord}</Text> : null
@@ -272,10 +310,11 @@ export const register: Register = (on, options) => {
     const level = current.value?.effort ?? null
     const hint = level ? fill(text.hintAtLevel, { model, level }) : fill(text.hintBase, { model })
     const menu = isModelMenuOpen ? [modelMenu({ Box, Client }, modelId)] : []
-    return pillRow({ Box, Text }, look.nerd, group, [...row, pill({ Box, Text }, look.nerd, PILL.secondary, meter), word], [...toastCards({ Box, Client, Text }, toasts), ...rest, ...menu], tipShown ? tipLine({ Box, Text }, hint) : tip)
+    return pillRow({ Box, Text }, look.nerd, group, [...row, <Box key="menu-pill" flexDirection="row">{meter}</Box>, word], [...toastCards({ Box, Client, Text }, toasts), ...rest, ...menu], tipShown ? tipLine({ Box, Text }, hint) : tip)
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)

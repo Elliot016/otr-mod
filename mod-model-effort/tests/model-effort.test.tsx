@@ -59,9 +59,10 @@ test('the footer meter follows each request and a click saves that level', async
   expect(glyphs[3]!.props.bold).toBe(true)
   // The hovered level names itself beside the pill, as a click does.
   expect(await ui.find({ type: 'Text', text: 'xhigh' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Effort: Opus 5\.5 at medium\./ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Effort:', bold: true })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ Opus 5\.5 at medium\./ })).toBeDefined()
   await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
-  expect(await ui.find({ type: 'Text', text: /^Effort: / })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Effort:' })).toBeUndefined()
   expect((await ui.drawn({ in: 'meter' })).children.filter(Boolean)).toHaveLength(2)
 
   // ' Opus 5.5 ' (10 cells) comes first; once open, the fifth glyph sits at x 18.
@@ -183,14 +184,14 @@ function band(on: (name: string, handler: (...args: any[]) => unknown) => void) 
 test('icons=nerd draws the pill with rounded caps', { options: { icons: 'nerd' } }, async ($, on) => {
   band(on as never)
   const ui = await $.ui.mount(BAND)
-  expect(JSON.stringify(await ui.drawn())).toContain(CAP)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(CAP)
   await ui.unmount()
 })
 
 test('icons=safe draws the pill without rounded caps', { options: { icons: 'safe' } }, async ($, on) => {
   band(on as never)
   const ui = await $.ui.mount(BAND)
-  expect(JSON.stringify(await ui.drawn())).not.toContain(CAP)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).not.toContain(CAP)
   await ui.unmount()
 })
 
