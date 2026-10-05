@@ -34,12 +34,16 @@ export function splitRow(others: unknown) {
   }
 }
 
-// The one-line tip above the pill row, filled while the pointer is on an entry.
-export const tipLine = ({ Box, Text }: Elements, text: string) => (
-  <Box key="menu-tip" paddingLeft={2}>
-    <Text color={THEME.muted}>{text}</Text>
-  </Box>
-)
+// The one-line tip above the pill row, filled while the pointer is on an entry: its "Name:" in bold accent, the rest muted.
+export const tipLine = ({ Box, Text }: Elements, text: string) => {
+  const at = text.indexOf(': ')
+  return (
+    <Box key="menu-tip" paddingLeft={2} flexDirection="row">
+      {at < 0 ? null : <Text color={THEME.accent} bold>{text.slice(0, at + 1)}</Text>}
+      <Text color={THEME.muted}>{at < 0 ? text : text.slice(at + 1)}</Text>
+    </Box>
+  )
+}
 
 // One pill with its own caps where the font has them; `on` is what it sits on when that is another pill or a card.
 export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: unknown, key = 'menu-pill', on?: string) {

@@ -143,7 +143,8 @@ export default {
     "sep": "·",
     "stop": "○",
     "stopOpen": "●",
-    "rail": "│"
+    "rail": "│",
+    "open": "↗"
   },
   "caps": {
     "left": "{U+E0B6}",

@@ -43,6 +43,43 @@ async function detectLook($: EngineInterface) {
   return lookFor(false)
 }
 
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
+}
+
 const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
 
 // `/mod-collision-guard settings` toggles the panel; an unplaced pane is waiting, not open.
@@ -114,11 +151,11 @@ export const register: Register = (on, options) => {
   const minutes = Number(options.window_minutes)
   windowMinutes = minutes > 0 ? minutes : 30
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({
       name: 'mod-collision-guard',
       description: text.commandDescription,
@@ -181,6 +218,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)

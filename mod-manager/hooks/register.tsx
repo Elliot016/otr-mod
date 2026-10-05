@@ -33,6 +33,43 @@ async function detectLook($: EngineInterface) {
   return lookFor(false)
 }
 
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
+}
+
 let mods: ModInfo[] = []
 // Mods toggled since the last reload, by name, with the state they had then; toggling back drops one.
 const changed = new Map<string, boolean>()
@@ -171,11 +208,11 @@ export const register: Register = (on, options) => {
   })
 
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({ name: 'mod-manager', description: text.commandDescription })
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
     await $.state.set({ plugin: 'mod-manager', key: 'pane' }, await isOpen($))
@@ -232,6 +269,7 @@ export const register: Register = (on, options) => {
 
   // The bar entry lives here, not in mod-menu: only a press in this mod counts as the person asking for this pane.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await loadLook($)
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     if (hidden.value === true) {
@@ -295,6 +333,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     if (e.requestId !== 'manager') return next(e)
     if (isOpening) $.clock.after(0, () => endOpening($))
 

@@ -37,6 +37,43 @@ async function detectLook($: EngineInterface) {
   return lookFor(false)
 }
 
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
+}
+
 const question = (limit: number) =>
   `Suggest up to ${limit} short prompts I might send you next, given this conversation. ` +
   `Each is one line under 80 characters, written the way I would type it. ` +
@@ -154,11 +191,11 @@ export const register: Register = (on, options) => {
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   enabled = options.enabled !== false
   count = Math.min(3, Math.max(1, Math.round(Number(options.count ?? 3)) || 3))
-  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({
       name: 'mod-next-steps',
       description: text.commandDescription,
@@ -238,6 +275,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await loadLook($)
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     // Toasts sit on top, so a tight band cuts them before anything else.
@@ -291,6 +329,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)
