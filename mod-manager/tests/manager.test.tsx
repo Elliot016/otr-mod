@@ -206,6 +206,8 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   expect(await ui.find({ type: 'Text', text: /^▸ Mods · 2 of 3 on$/ })).toBeDefined()
   // Rows group by source, and nothing toggled yet means nothing to reload.
   expect(await ui.find({ type: 'Text', text: /^Yours$/ })).toBeDefined()
+  // Beside each readable name, the package name: the folder to open.
+  expect(JSON.stringify(await ui.drawn({ in: 'list-dir' }))).toMatch(/"alpha"/)
   expect(await ui.find({ type: 'Text', text: /^Installed$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^No changes to apply$/ })).toBeDefined()
 
@@ -214,7 +216,7 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   expect(dirs()).toContain('beta')
   await ui.press({ key: 'mods-dir-action-0' })
   expect(JSON.parse(files[settingsPath]!).enabledPlugins['alpha@inline']).toBe(false)
-  expect(await ui.find({ type: 'Text', text: /alpha disabled, reload plugins to apply/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Alpha disabled, reload plugins to apply/ })).toBeDefined()
   expect(await ui.find({ type: 'Button', text: /^Reload plugins to apply 2 changes$/ })).toBeDefined()
   // Toggling alpha back leaves one change pending.
   await ui.press({ key: 'mods-dir-action-0' })
@@ -224,6 +226,13 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: /^Reload plugins to apply 1 change · available once Claude is idle$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /alpha does a thing/ })).toBeUndefined()
+
+  // Hovering a row shows that mod's description in a card at the bottom; leaving the list hides it.
+  await ui.pointer({ in: 'list-dir', type: 'move', x: 2, y: 0 })
+  expect(await ui.find({ type: 'Text', text: 'alpha does a thing' })).toBeDefined()
+  expect(await ui.find({ key: 'hover-card' })).toBeDefined()
+  await ui.pointer({ in: 'list-dir', type: 'leave', x: 0, y: 0 })
+  expect(await ui.find({ key: 'hover-card' })).toBeUndefined()
 
   // A click on a name opens that mod's page, and < back returns to the list.
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 2, y: 1 })
@@ -398,6 +407,51 @@ const iconsPane = async ($: any, on: any) => {
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 2, y: 0 })
   return ui
 }
+
+test('the icons switch shows Mixed when mods differ, and one click sets every mod, this one last', async ($, on) => {
+  const { files } = disk()
+  // Values the engine hands out come back frozen, so the rows are rebuilt from this map on every list.
+  const values: Record<string, string> = { 'mod-manager.icons': 'auto', 'mod-alpha.icons': 'auto', 'mod-beta.icons': 'nerd' }
+  const rows = () => Object.entries(values).map(([key, value]) => ({ key, label: 'Icons', kind: 'select', value, options: ['auto', 'nerd', 'safe'], description: 'd' }))
+  const saved: string[] = []
+  on('fs.read', (_$: unknown, e: { path: string }) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.list', () => ({ value: [{ name: 'alpha', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: rows() }))
+  on('config.set', (_$: unknown, e: { key: string; value: string }) => {
+    saved.push(e.key)
+    values[e.key] = e.value
+    return { value: e.value }
+  })
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  await $.command.run({ command: 'mod-manager' })
+  const ui = await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  } as never)
+  expect(await ui.find({ type: 'Text', text: '· Mixed' })).toBeDefined()
+
+  await ui.pointer({ in: 'icons-nerd', type: 'down', button: 'left', x: 1, y: 0 })
+  await ui.redraw()
+  // Only the mods not already on Nerd change, and this mod's own setting goes last since saving it reloads this mod.
+  expect(saved).toEqual(['mod-alpha.icons', 'mod-manager.icons'])
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: '· Mixed' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Icons set to Nerd in 2 mods/ })).toBeDefined()
+  await ui.unmount()
+})
 
 const SWITCH_ON = String.fromCodePoint(0xf205)
 const PILL_CAP = String.fromCodePoint(0xe0b6)

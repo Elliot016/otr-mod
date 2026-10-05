@@ -1,4 +1,6 @@
 import type { Previews } from './settings'
+import { fill } from './theme'
+import shown from './text'
 
 export type Io = {
   read: (path: string) => Promise<string>
@@ -33,17 +35,7 @@ export type Outcome = { ok: true; needsRestart?: boolean } | { ok: false; reason
 
 export const SELF = 'mod-manager'
 
-const BLURBS: Record<string, string> = {
-  'session.start': 'Runs once when a session starts, usually to register commands or start timers.',
-  'session.end': 'Runs when the session ends.',
-  'turn.start': 'Runs when a turn begins.',
-  'turn.complete': 'Runs when a turn ends.',
-  'tool.call': 'Sees every tool call before it runs and can deny or answer it.',
-  'tool.check': 'Decides allow, ask or deny after the permission rules.',
-  'prompt.submit': 'Sees the prompt before it is sent and can rewrite or drop it.',
-  'command.run': 'Answers a slash command the mod registered.',
-  'ui.render': 'Draws its own interface in a render site.',
-}
+const BLURBS: Record<string, string> = shown.blurbs
 
 type Json = Record<string, any>
 
@@ -166,7 +158,7 @@ export const featuresOf = (mod: ModInfo): Feature[] =>
   mod.showcase?.features ??
   mod.events.map(event => ({
     title: event,
-    detail: BLURBS[event.split(':')[0]!] ?? `Reacts to ${event}.`,
+    detail: BLURBS[event.split(':')[0]!] ?? fill(shown.reactsTo, { event }),
   }))
 
 const refuse = (reason: string): Outcome => ({ ok: false, reason })
@@ -178,7 +170,7 @@ const untouched = (before: Json, after: Json, edited: string[]) =>
   Object.keys(after).every(key => edited.includes(key) || key in before)
 
 export async function setEnabled(io: Io, mod: ModInfo, enabled: boolean): Promise<Outcome> {
-  if (mod.name === SELF) return refuse('the manager cannot disable itself')
+  if (mod.name === SELF) return refuse(shown.refuseSelf)
 
   const home = await homeDir(io)
   const path = `${home}/.claude/settings.json`
@@ -186,13 +178,13 @@ export async function setEnabled(io: Io, mod: ModInfo, enabled: boolean): Promis
   try {
     text = String(await io.read(path))
   } catch {
-    return refuse('cannot read settings.json')
+    return refuse(shown.refuseUnreadable)
   }
   let before: Json
   try {
     before = JSON.parse(text)
   } catch {
-    return refuse('settings.json is not valid JSON, left untouched')
+    return refuse(shown.refuseInvalid)
   }
 
   const after: Json = JSON.parse(text)
@@ -214,7 +206,7 @@ export async function setEnabled(io: Io, mod: ModInfo, enabled: boolean): Promis
 
   const indent = /^\{\r?\n([ \t]+)"/.exec(text)?.[1] ?? '  '
   const out = JSON.stringify(after, null, indent) + '\n'
-  if (!untouched(before, JSON.parse(out), edited)) return refuse('write would change other settings, refused')
+  if (!untouched(before, JSON.parse(out), edited)) return refuse(shown.refuseOtherSettings)
 
   await io.write(`${path}.mod-manager.bak`, text)
   await io.write(path, out)

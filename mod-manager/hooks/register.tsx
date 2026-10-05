@@ -1,7 +1,8 @@
 import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
-import { MARK, statusColor, THEME } from './theme'
+import { fill, MARK, statusColor, THEME } from './theme'
+import text from './text'
 import { actionColumn } from './rows'
 import type { EntryMessage } from './entry'
 import { PILL, pillRow, splitRow, tipLine } from './pills'
@@ -38,6 +39,8 @@ let mods: ModInfo[] = []
 const changed = new Map<string, boolean>()
 // The mod whose page fills the pane, or -1 for the list.
 let page = -1
+// The mod under the pointer in the list, whose description shows in a card at the bottom of the pane.
+let hovering = -1
 let note = ''
 let working = false
 
@@ -50,9 +53,9 @@ async function toggleMod($: EngineInterface, index: number) {
     else if (!changed.has(mod.name)) changed.set(mod.name, mod.enabled)
   }
   // Only a folder new to the dirs list waits for a restart; every other toggle lands with /reload-plugins.
-  const howToApply = outcome.ok && outcome.needsRestart ? 'new folder, restart with claude -c once to load it' : 'reload plugins to apply'
+  const howToApply = outcome.ok && outcome.needsRestart ? text.howRestart : text.howReload
   note = outcome.ok
-    ? `${MARK.ok} ${mod.name} ${mod.enabled ? 'disabled' : 'enabled'}, ${howToApply}`
+    ? `${MARK.ok} ${fill(mod.enabled ? text.modDisabled : text.modEnabled, { name: shownName(mod.name), how: howToApply })}`
     : `${MARK.warn} ${outcome.reason}`
   if (outcome.ok) mods = await discover(ioOf($))
   $.ui.invalidate('ui.render')
@@ -69,6 +72,8 @@ async function settingsCaughtUp($: EngineInterface) {
   }
 }
 
+// `mod-skill-panel` reads `Skill Panel`: the package name is for commands, people read this.
+const shownName = (name: string) => name.replace(/^mod-/, '').split('-').map(word => (word ? `${word[0]!.toUpperCase()}${word.slice(1)}` : word)).join(' ')
 const isOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === 'manager' && pane.isPlaced)
 
 // The command and the bar entry both toggle. An unplaced pane is waiting, not open.
@@ -81,8 +86,8 @@ async function togglePane($: EngineInterface) {
   mods = await discover(ioOf($))
   page = -1
   note = ''
-  const opened = await $.ui.open({ id: 'manager', title: 'Mods', closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(`Mods panel waiting: ${opened.reason}`)
+  const opened = await $.ui.open({ id: 'manager', title: text.paneTitle, closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(fill(text.panelWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-manager', key: 'pane' }, opened.isPlaced)
 }
 
@@ -96,6 +101,8 @@ const openPage = ($: EngineInterface, index: number) => {
 let tipShown = false
 
 const toasts = new ToastList('manager')
+// The animations setting, fixed per activation: off, every entry draws still.
+let still = false
 
 // The entry shimmers from the click until the pane draws, so a slow open never looks ignored.
 const OPEN_WAIT_MS = 8000
@@ -117,7 +124,31 @@ async function openingPane($: EngineInterface) {
   if (!(await isOpen($))) endOpening($)
 }
 
+// The icons switch: every mod keeps its own icons setting, and this writes the same value into each, as a person would in its panel.
+const ICON_MODES = ['auto', 'nerd', 'safe'] as const
+
+const iconRowsOf = async ($: EngineInterface) => (await $.config.list()).filter(row => row.key.startsWith('mod-') && row.key.endsWith('.icons'))
+
+async function setAllIcons($: EngineInterface, mode: string) {
+  const rows = await iconRowsOf($)
+  // A saved change reloads that mod, this one included, so this mod's own setting goes last.
+  const ordered = [...rows.filter(row => !row.key.startsWith('mod-manager.')), ...rows.filter(row => row.key.startsWith('mod-manager.'))]
+  const changing = ordered.filter(row => row.value !== mode)
+  note = `${MARK.ok} ${fill(text.iconsSaved, { mode: (text.iconModes as Record<string, string>)[mode] ?? mode, n: changing.length })}`
+  $.ui.invalidate('ui.render')
+  for (const row of changing) {
+    const result = await $.config.set({ key: row.key, value: mode })
+    if ('deny' in result && result.deny) {
+      note = `${MARK.warn} ${result.deny}`
+      $.ui.invalidate('ui.render')
+      return
+    }
+  }
+}
+
 export const register: Register = (on, options) => {
+  still = options.animations === false
+  toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
     const id = toasts.add(e.text)
@@ -135,7 +166,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     look = await detectLook($)
-    await $.command.register({ name: 'mod-manager', description: 'Open the mod manager' })
+    await $.command.register({ name: 'mod-manager', description: text.commandDescription })
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
     await $.state.set({ plugin: 'mod-manager', key: 'pane' }, await isOpen($))
     // A hot reload leaves an open pane on its old drawing until something redraws it.
@@ -206,11 +237,11 @@ export const register: Register = (on, options) => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = (
       <Box key="menu-pad-manager">
-        <Client key="menu-entry-manager" module="./entry.tsx" height={1} props={{ id: 'manager', label: look.glyph.gear, isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening }} />
+        <Client key="menu-entry-manager" module="./entry.tsx" height={1} props={{ id: 'manager', label: look.glyph.gear, isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening, still }} />
       </Box>
     )
 
-    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, 'Mods: turn each mod on or off and open its settings') : tip)
+    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -228,6 +259,7 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && message.id === 'manager') await openingPane($)
+    if (message?.type === 'menu-entry' && message.id.startsWith('icons-')) await setAllIcons($, message.id.slice('icons-'.length))
 
     return next(e)
   })
@@ -235,7 +267,14 @@ export const register: Register = (on, options) => {
   // A click on a mod's name opens its page.
   on('ui.message', { requestId: 'manager' }, async ($, e, next) => {
     const message = e.data as ListMessage
-    if (message.type === 'select') openPage($, message.index)
+    if (message.type === 'select') {
+      hovering = -1
+      openPage($, message.index)
+    }
+    if (message.type === 'hover' && message.index !== hovering) {
+      hovering = message.index
+      $.ui.invalidate('ui.render')
+    }
 
     return next(e)
   })
@@ -263,13 +302,13 @@ export const register: Register = (on, options) => {
       // A saved change reloads that mod, which redraws this page with the new value.
       const set = async (row: ConfigRow, value: ConfigValue) => {
         const result = await $.config.set({ key: row.key, value })
-        note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${row.label} saved`
+        note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
         redraw()
       }
       const run = async (action: Action) => {
         note = await $.command
           .run({ command: action.command, args: action.args ?? '' })
-          .then(() => `${MARK.ok} Ran /${[action.command, action.args].filter(Boolean).join(' ')}`)
+          .then(() => `${MARK.ok} ${fill(text.actionRan, { command: [action.command, action.args].filter(Boolean).join(' ') })}`)
           .catch(error => `${MARK.warn} ${String(error)}`)
         redraw()
       }
@@ -278,7 +317,7 @@ export const register: Register = (on, options) => {
         note = ''
         redraw()
       }
-      const hint = rows.length || actions.length ? `click a control to change it ${MARK.sep} saved at once, the mod reloads` : 'click Back to return to the list'
+      const hint = rows.length || actions.length ? fill(text.pageHint, { sep: MARK.sep }) : text.pageHintBack
       const features = featuresOf(mod).map((item, index) => (
         <Box key={`feature-${index}`} flexDirection="row" columnGap={1}>
           <Text color={THEME.accent}>{MARK.bullet}</Text>
@@ -291,11 +330,11 @@ export const register: Register = (on, options) => {
 
       return frame([
         <Box key="back-row">
-          <Button key="back" label={`${look.glyph.back} Back`} plain hover={{ scope: 'back-row', color: THEME.accent }} onPress={back} />
+          <Button key="back" label={`${look.glyph.back} ${text.back}`} plain hover={{ scope: 'back-row', color: THEME.accent }} onPress={back} />
         </Box>,
         <Box key="page-head" flexDirection="row" columnGap={2} marginTop={1}>
-          {paneTitle({ Box, Text }, look, 'mod', `${mod.name} ${MARK.sep} ${mod.version}`)}
-          <Text color={mod.enabled ? THEME.good : THEME.muted}>{mod.enabled ? 'On' : 'Off'}</Text>
+          {paneTitle({ Box, Text }, look, 'mod', fill(text.pageTitle, { name: shownName(mod.name), sep: MARK.sep, version: mod.version }))}
+          <Text color={mod.enabled ? THEME.good : THEME.muted}>{mod.enabled ? text.stateOn : text.stateOff}</Text>
         </Box>,
         <Text key="page-note" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
         <Box key="page-about" flexDirection="column" marginTop={1}>
@@ -306,10 +345,10 @@ export const register: Register = (on, options) => {
           settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews: mod.showcase?.previews })
         ) : (
           <Box key="page-off" marginTop={1}>
-            <Text color={THEME.muted}>{`Turn ${mod.name} on to change its settings and run its actions.`}</Text>
+            <Text color={THEME.muted}>{fill(text.turnOnFirst, { name: shownName(mod.name) })}</Text>
           </Box>
         ),
-        section({ Box, Text }, look, 'features', 'features', 'Features', features.length ? features : <Text color={THEME.muted}>No features detected.</Text>),
+        section({ Box, Text }, look, 'features', 'features', text.sectionFeatures, features.length ? features : <Text color={THEME.muted}>{text.noFeatures}</Text>),
       ])
     }
 
@@ -319,9 +358,9 @@ export const register: Register = (on, options) => {
         .run({ command: 'reload-plugins' })
         .then(() => {
           changed.clear()
-          return `${MARK.ok} Reloading plugins`
+          return `${MARK.ok} ${text.reloading}`
         })
-        .catch(error => `${MARK.warn} Reload failed: ${String(error)}`)
+        .catch(error => `${MARK.warn} ${fill(text.reloadFailed, { error: String(error) })}`)
       redraw()
     }
 
@@ -348,13 +387,15 @@ export const register: Register = (on, options) => {
             props={{
               rows: members.map(({ item, index }) => ({
                 index,
-                name: item.name,
+                name: shownName(item.name),
+                slug: item.name,
                 enabled: item.enabled,
                 // A command named after its mod repeats the name, so only other commands show.
                 commands: item.commands.filter(name => name !== item.name),
                 hasSettings: item.settings > 0,
               })),
               gear: look.glyph.gear,
+              nameWidth: Math.max(...members.map(({ item }) => shownName(item.name).length)),
               icon: look.glyph.icon[icon] ?? '',
             }}
           />
@@ -362,25 +403,58 @@ export const register: Register = (on, options) => {
       )
     }
     const pending = changed.size
-    const applyLabel = `Reload plugins to apply ${pending} ${pending === 1 ? 'change' : 'changes'}`
+    const applyLabel = fill(pending === 1 ? text.applyOne : text.applyMany, { n: pending })
     const onCount = mods.filter(item => item.enabled).length
 
+    // The hovered mod's name and description, pinned to the bottom of the view over the list, however far it has scrolled.
+    const hoverCard = () => {
+      const hovered = mods[hovering]
+      if (!hovered) return null
+      const width = Math.max(10, e.props.bodyColumns - 2)
+      const lines = Math.min(4, Math.max(1, Math.ceil(hovered.description.length / Math.max(1, width - 4))))
+      const height = lines + 3
+      return (
+        <Box key="hover-card" position="absolute" top={Math.max(0, e.props.scroll.offset + e.props.scroll.bodyRows - height)} left={1} width={width} height={height} flexDirection="column" paddingX={1} overflow="hidden" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+          <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(hovered.name), sep: MARK.sep, version: hovered.version })}</Text>
+          <Text color={THEME.muted} wrap="wrap">{hovered.description || text.noDescription}</Text>
+        </Box>
+      )
+    }
+
+    // One switch for every mod's icons; Mixed when they differ, and nothing at all when no mod has the setting.
+    const iconRows = await iconRowsOf($)
+    const iconValues = new Set(iconRows.map(row => String(row.value)))
+    const iconsNow = iconValues.size === 1 ? [...iconValues][0] : ''
+    const iconsSwitch = iconRows.length ? (
+      <Box key="icons-switch" flexDirection="row" columnGap={1} marginTop={1}>
+        <Text color={THEME.muted}>{text.iconsLabel}</Text>
+        {ICON_MODES.map(mode => (
+          <Box key={`icons-${mode}-pad`}>
+            <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode], isOpen: iconsNow === mode, bg: iconsNow === mode ? THEME.surface2 : THEME.bg, still }} />
+          </Box>
+        ))}
+        {iconsNow ? null : <Text color={THEME.muted}>{`${MARK.sep} ${text.iconsMixed}`}</Text>}
+      </Box>
+    ) : null
+
     return frame([
-      paneTitle({ Box, Text }, look, 'mod', `Mods ${MARK.sep} ${onCount} of ${mods.length} on`),
-      <Text key="list-note" color={statusColor(note)}>{withMark(look, note) || `click ${look.glyph.on.trim()} to turn a mod on or off ${MARK.sep} click a name to open its page`}</Text>,
-      mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>No mods found.</Text> : null,
-      group('dir', 'Yours', 'mod'),
-      group('installed', 'Installed', 'installed'),
+      paneTitle({ Box, Text }, look, 'mod', fill(text.listTitle, { sep: MARK.sep, on: onCount, total: mods.length })),
+      <Text key="list-note" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { on: look.glyph.on.trim(), sep: MARK.sep })}</Text>,
+      iconsSwitch,
+      mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>{text.noMods}</Text> : null,
+      group('dir', text.sectionYours, 'mod'),
+      group('installed', text.sectionInstalled, 'installed'),
       <Box key="list-apply" marginTop={1}>
         {/* Nothing pending means nothing to reload; while Claude works, a reload would only queue as a prompt. */}
         {pending === 0 ? (
-          <Text color={THEME.muted}>No changes to apply</Text>
+          <Text color={THEME.muted}>{text.noChanges}</Text>
         ) : working ? (
-          <Text color={THEME.muted}>{`${applyLabel} ${MARK.sep} available once Claude is idle`}</Text>
+          <Text color={THEME.muted}>{fill(text.applyBusy, { label: applyLabel, sep: MARK.sep })}</Text>
         ) : (
           <Button key="apply" label={applyLabel} onPress={apply} />
         )}
       </Box>,
+      hoverCard(),
     ])
   })
 }
