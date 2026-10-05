@@ -422,7 +422,7 @@ test('the entries carry no glyphs, and Run is red while Cancel and Details are n
   })
 })
 
-test('icons=nerd gives the Details pane a Nerd title icon', { options: { icons: 'nerd' } }, async ($, on) => {
+test('icons=nerd gives the Details pane a tab chip with the Nerd shell icon', { options: { icons: 'nerd' } }, async ($, on) => {
   const { seen } = world(on)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
@@ -431,21 +431,25 @@ test('icons=nerd gives the Details pane a Nerd title icon', { options: { icons: 
   expect(await textOf(band, /Delete 2 files/)).toMatch(new RegExp(`^${String.fromCodePoint(0xea6c)} Delete 2 files`))
   await click(band, 'blast-details')
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
-  expect(await textOf(pane, /Details$/)).toBe(`${String.fromCodePoint(0xf120)} Delete 2 files · Details`)
+  const title = JSON.stringify(await pane.drawn({ in: 'mod-blast-radius-details-tab' }))
+  expect(title).toContain(String.fromCodePoint(0xf120))
+  expect(title).toContain('Delete 2 files · Details')
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
   await band.unmount()
 })
 
-test('icons=safe gives the Details pane the safe heading mark', { options: { icons: 'safe' } }, async ($, on) => {
+test('icons=safe gives the Details pane a tab chip with the safe shell mark', { options: { icons: 'safe' } }, async ($, on) => {
   const { seen } = world(on)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
   await click(band, 'blast-details')
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
-  expect(await textOf(pane, /Details$/)).toBe('\u25b8 Delete 2 files · Details')
+  const title = JSON.stringify(await pane.drawn({ in: 'mod-blast-radius-details-tab' }))
+  expect(title).toContain('" $"')
+  expect(title).toContain('Delete 2 files · Details')
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
@@ -495,7 +499,7 @@ test('Details is on every card, even a short one, and opens the read-only pane; 
   await click(band, 'blast-details')
   expect(seen.opened).toEqual(['blast-radius-list'])
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
-  expect(await textOf(pane, /Details$/)).toContain('Delete 2 files \u00b7 Details')
+  expect(JSON.stringify(await pane.drawn({ in: 'mod-blast-radius-details-tab' }))).toContain('Delete 2 files · Details')
   expect(await textOf(pane, /read-only/)).toBeDefined()
   for (const title of ['What this command does', 'What it touches', 'Can it be undone', 'Full command']) expect(await textOf(pane, new RegExp(title))).toBeDefined()
   expect(seen.ran).toBe(0)

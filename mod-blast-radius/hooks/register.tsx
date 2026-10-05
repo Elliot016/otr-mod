@@ -1,6 +1,6 @@
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
-import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode, type Look } from './look'
+import { isNerdFace, lookFor, section, terminalSettings, type IconMode, type Look } from './look'
 import type { EntryMessage } from './entry'
 import { pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -70,6 +70,43 @@ async function detectLook($: EngineInterface) {
     if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
   }
   return lookFor(false)
+}
+
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
 }
 
 type Rules = { path: string; mtimeMs: number; rules: UserRule[]; notes: string[] }
@@ -344,11 +381,11 @@ export const register: Register = (on, options) => {
 
   isEnabled = options.enabled !== false
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({
       name: 'mod-blast-radius',
       description: text.ui.commandDescription,
@@ -475,6 +512,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'mod-blast-radius' }, async ($, e) => ({ text: await answer($, e.args) }))
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     const { Box, Button, Client, Text } = $.ui.resolve(e)
 
     if (e.requestId === LIST_PANE) {
@@ -537,7 +575,7 @@ export const register: Register = (on, options) => {
 
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-          {paneTitle({ Box, Text }, look, 'Bash', `${plain.run} ${MARK.sep} ${text.card.details}`)}
+          {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-blast-radius-details-tab', label: `${plain.run} ${MARK.sep} ${text.card.details}`, icon: look.glyph.mark.shell, isOpen: true }], still)}
           <Text color={THEME.muted} wrap="wrap">{`${text.ui.readOnly} ${MARK.sep} ${fill(text.ui.answerOnCard, { cancel: text.card.cancel, run: plain.run })}`}</Text>
           {section({ Box, Text }, look, 'does', 'Bash', text.ui.sectionDoes, [...does, plainText('why-source', fill(text.ui.heldBy, { source: source.replace(/\.$/, '') }), THEME.muted, { key: 'why-source' })])}
           {section({ Box, Text }, look, 'touches', 'tool', text.ui.sectionTouches, touches)}
@@ -600,6 +638,7 @@ export const register: Register = (on, options) => {
 
   // The hold is a card above the pill row, so it draws wherever the band does, desktop included.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await loadLook($)
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     if (!held || !held.report || !held.plain || held.decision !== null) {
       if (toasts.items.length === 0) return next(e)
