@@ -11,6 +11,8 @@ const MAX_TOASTS = 3
 // A mod's own toasts, newest last. A toast reaches only the hooks above its caller, so each mod catches its own.
 export class ToastList {
   items: { id: number; text: string }[] = []
+  // The owning mod's animations setting is off, so the dismiss × does not fade.
+  isStill = false
   private lastId = 0
 
   // `prefix` keeps the dismiss Client keys apart from other mods' cards in the band.
@@ -43,7 +45,7 @@ export const toastCards = ({ Box, Client, Text }: Elements, list: ToastList) =>
           <Text color={THEME.onSurface} wrap="wrap">{toast.text}</Text>
         </Box>
         <Box key={`${id}-close`} flexShrink={0}>
-          <Client key={id} module="./entry.tsx" height={1} props={{ id, label: '×', isOpen: false, bg: THEME.surface1 }} />
+          <Client key={id} module="./entry.tsx" height={1} props={{ id, label: '×', isOpen: false, bg: THEME.surface1, still: list.isStill }} />
         </Box>
       </Box>
     )
