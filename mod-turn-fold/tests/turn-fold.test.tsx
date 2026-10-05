@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { callTime, elapsed, rowKey, timeOfDay, turnLine, TurnLog } from '../hooks/turns'
+import { callTime, elapsed, previewOf, rowKey, timeOfDay, turnLine, TurnLog } from '../hooks/turns'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
@@ -61,6 +61,32 @@ test('a call first seen finished shows no time, and a later output with the patc
   expect(callTime(log.callOf('toolu_g'))).toBe('')
   log.claimCall('toolu_g', 'Edit', { file_path: '/a.ts' }, false, { structuredPatch: PATCH })
   expect([log.callOf('toolu_g')!.added, log.callOf('toolu_g')!.removed]).toEqual([2, 1])
+})
+
+test('an opened call previews its diff, a new file, or the start of its result', () => {
+  const edit = previewOf('Edit', {}, { structuredPatch: PATCH }, 'The file was updated')
+  expect(edit.lines.map(line => `${line.kind}:${line.text}`)).toEqual(['same:keep', 'del:old', 'add:new', 'add:added'])
+  expect(previewOf('Write', { content: 'a\nb' }, {}, '').lines.map(line => line.kind)).toEqual(['add', 'add'])
+  const long = previewOf('Bash', {}, {}, Array.from({ length: 20 }, (_, n) => `line ${n}`).join('\n'))
+  expect([long.lines.length, long.more, long.lines[0]!.text]).toEqual([8, 12, 'line 0'])
+  // Drawn before the transcript has the result, a call reads its row's output.
+  expect(previewOf('Bash', {}, { stdout: 'built\n', stderr: '' }, '').lines).toEqual([{ text: 'built', kind: 'out' }])
+})
+
+test('a failed Write counts no lines, read from the transcript or drawn', () => {
+  const content = 'line one\nline two\nline three'
+  const log = new TurnLog()
+  for (const line of [
+    row(1, 'user', { message: { role: 'user', content: 'write it' } }),
+    said(2, [{ type: 'tool_use', id: 'toolu_bad', name: 'Write', input: { file_path: '/a.ts', content } }]),
+    row(3, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_bad', content: 'File has not been read yet', is_error: true }] } }),
+    said(4, [{ type: 'tool_use', id: 'toolu_good', name: 'Write', input: { file_path: '/b.ts', content } }]),
+    row(5, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_good', content: 'ok' }] } }),
+  ]) log.feed(line)
+  expect([log.callOf('toolu_bad')!.added, log.callOf('toolu_good')!.added]).toEqual([0, 3])
+
+  log.claimCall('toolu_drawn', 'Write', { file_path: '/c.ts', content }, false, {}, true)
+  expect(log.callOf('toolu_drawn')!.added).toBe(0)
 })
 
 test('calls drawn live learn the thinking before them from the session messages; text and results end a thought', () => {
@@ -145,11 +171,17 @@ test('the prompt row shows when it was sent, the head how long the turn took, an
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
   expect(await prompt.find({ type: 'Text', text: '41s ' })).toBeUndefined()
   await pick(prompt, 1)
-  expect(await prompt.find({ type: 'Text', text: /^Bash\(claude plugin test/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Button', text: /^ \S Bash\(claude plugin test/ })).toBeDefined()
   expect(await prompt.find({ type: 'Text', text: '41s ' })).toBeDefined()
+  // A click on a call's line opens it: what the call gave back shows under the line, the tool row stays hidden, and a second click closes it.
+  await prompt.press({ key: 'toggle-call-0-button' })
+  expect(await prompt.find({ type: 'Text', text: 'ok' })).toBeDefined()
+  expect(await tool.find({ type: 'Text' })).toBeUndefined()
+  await prompt.press({ key: 'toggle-call-0-button' })
+  expect(await prompt.find({ type: 'Text', text: 'ok' })).toBeUndefined()
   // A second click on the open chip closes it.
   await pick(prompt, 1)
-  expect(await prompt.find({ type: 'Text', text: /^Bash\(claude plugin test/ })).toBeUndefined()
+  expect(await prompt.find({ type: 'Button', text: /^ \S Bash\(claude plugin test/ })).toBeUndefined()
 })
 
 // The same turn still running: no turn_duration row yet, and Claude is working.
@@ -208,7 +240,7 @@ test('with timestamps off, rows show no times', { options: { timestamps: false }
   expect(await prompt.find({ type: 'Text', text: /^\d\d:\d\d $/ })).toBeUndefined()
   await prompt.press({ key: 'toggle-turn-button' })
   await pick(prompt, 1)
-  expect(await prompt.find({ type: 'Text', text: /^Bash\(claude plugin test/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Button', text: /^ \S Bash\(claude plugin test/ })).toBeDefined()
   expect(await prompt.find({ type: 'Text', text: /41s/ })).toBeUndefined()
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
 })
@@ -362,9 +394,9 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   expect(await result.find({ type: 'Text' })).toBeUndefined()
 
   // A click on a chip lists its calls under the line; Thought comes first, so Edited starts at cell 16.
-  expect(await prompt.find({ type: 'Text', text: /^Edit\(hooks\/a\.ts\)$/ })).toBeUndefined()
+  expect(await prompt.find({ type: 'Button', text: / Edit\(hooks\/a\.ts\) $/ })).toBeUndefined()
   await pick(prompt, 17)
-  expect(await prompt.find({ type: 'Text', text: /^Edit\(hooks\/a\.ts\)$/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Button', text: / Edit\(hooks\/a\.ts\) $/ })).toBeDefined()
 
   // A click on the card's strip folds the turn back.
   await step.pointer({ in: 'toggle-card-strip', type: 'down', button: 'left', x: 0, y: 0 })
@@ -412,8 +444,8 @@ test('an open turn shows a chip per kind in order of first use, Thought first, o
   // One chip open at a time: picking Edited closes Thought.
   await pick(prompt, 17)
   expect(await prompt.find({ type: 'Text', text: 'which file?' })).toBeUndefined()
-  expect(await prompt.find({ type: 'Text', text: 'Edit(hooks/a.ts)' })).toBeDefined()
-  expect(await prompt.find({ type: 'Text', text: /^Skill\(/ })).toBeUndefined()
+  expect(await prompt.find({ type: 'Button', text: / Edit\(hooks\/a\.ts\) $/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Button', text: /^ \S Skill\(/ })).toBeUndefined()
   for (const ui of [prompt, group]) await ui.unmount()
 })
 

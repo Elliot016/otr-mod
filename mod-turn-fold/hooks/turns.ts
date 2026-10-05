@@ -15,7 +15,11 @@ export type Turn = {
 }
 
 // Times in epoch ms; thought is the thinking just before the call, empty when it kept no text.
-export type ToolCall = { id: string; name: string; input: any; added: number; removed: number; startedAt?: number; endedAt?: number; thought?: string }
+export type ToolCall = { id: string; name: string; input: any; added: number; removed: number; startedAt?: number; endedAt?: number; thought?: string; preview?: Preview }
+
+// What an opened call shows under its line: a diff's lines, or the start of what the call gave back, and how many lines were left out.
+export type PreviewLine = { text: string; kind: 'add' | 'del' | 'same' | 'out' }
+export type Preview = { lines: PreviewLine[]; more: number }
 
 // The thinking since the last result or text, carried block by block: thinking adds its text, text ends it.
 const thoughtAfter = (pending: string | undefined, block: any) => {
@@ -50,7 +54,9 @@ const userText = (content: unknown) =>
       : ''
 
 // Lines a file edit added and removed, from the result Claude Code stored for it.
-export function diffStat(name: string, input: any, output: any): { added: number; removed: number } {
+// A failed call changed nothing, so it counts nothing, even a Write whose content never reached the file.
+export function diffStat(name: string, input: any, output: any, isFailed = false): { added: number; removed: number } {
+  if (isFailed) return { added: 0, removed: 0 }
   const patch = Array.isArray(output?.structuredPatch) ? output.structuredPatch : []
   let added = 0
   let removed = 0
@@ -64,6 +70,35 @@ export function diffStat(name: string, input: any, output: any): { added: number
   // A new file has no patch, only its content.
   if (name === 'Write' && patch.length === 0 && typeof input?.content === 'string') added = input.content.split('\n').length
   return { added, removed }
+}
+
+const PREVIEW_LINES = 8
+
+const capped = (lines: PreviewLine[]): Preview => ({ lines: lines.slice(0, PREVIEW_LINES), more: Math.max(0, lines.length - PREVIEW_LINES) })
+
+// The text a result block carries: a plain string, or its text parts.
+export const resultText = (content: unknown) =>
+  typeof content === 'string' ? content : Array.isArray(content) ? content.filter((part: any) => part?.type === 'text').map((part: any) => String(part.text ?? '')).join('\n') : ''
+
+// The text a drawn row's output holds, for a call whose result the transcript has not given yet.
+const outputText = (output: any) =>
+  [output?.stdout, output?.stderr, output?.file?.content, typeof output?.content === 'string' ? output.content : '', Array.isArray(output?.filenames) ? output.filenames.join('\n') : '']
+    .filter((part): part is string => typeof part === 'string' && part.trim() !== '')
+    .join('\n')
+
+// An edit shows its patch, a new file its content as added lines; any other call the start of its result.
+export function previewOf(name: string, input: any, output: any, text: string): Preview {
+  const patch = Array.isArray(output?.structuredPatch) ? output.structuredPatch : []
+  const diff: PreviewLine[] = patch.flatMap((hunk: any) =>
+    (Array.isArray(hunk?.lines) ? hunk.lines : []).filter((line: unknown) => typeof line === 'string').map((line: string) => ({
+      text: line.slice(1),
+      kind: line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : 'same',
+    })),
+  )
+  if (diff.length) return capped(diff)
+  if (name === 'Write' && typeof input?.content === 'string') return capped(input.content.split('\n').map((line: string) => ({ text: line, kind: 'add' as const })))
+  const body = (text || outputText(output)).replace(/\s+$/, '')
+  return capped(body ? body.split('\n').map(line => ({ text: line, kind: 'out' as const })) : [])
 }
 
 // Reads the transcript a line at a time, in file order, so a re-read feeds only the new lines.
@@ -119,7 +154,7 @@ export class TurnLog {
       this.thinking = undefined
       for (const block of content) {
         const call = block?.type === 'tool_result' ? this.calls.get(block.tool_use_id) : undefined
-        if (call) Object.assign(call, diffStat(call.name, call.input, row.toolUseResult), { endedAt: timeOf(row) })
+        if (call) Object.assign(call, diffStat(call.name, call.input, row.toolUseResult, block.is_error === true), { endedAt: timeOf(row), preview: previewOf(call.name, call.input, row.toolUseResult, resultText(block.content)) })
       }
       return
     }
@@ -143,7 +178,7 @@ export class TurnLog {
   }
 
   // A tool row drawn after the transcript was read: the call joins the latest turn, and ends once its row stops running.
-  claimCall(id: string, name: string, input: any, isRunning: boolean, output: any, at = Date.now()) {
+  claimCall(id: string, name: string, input: any, isRunning: boolean, output: any, isFailed = false, at = Date.now()) {
     let call = this.calls.get(id)
     if (!call) {
       const current = this.turns[this.turns.length - 1]
@@ -159,8 +194,9 @@ export class TurnLog {
     if (isRunning) return
     if (call.endedAt === undefined) call.endedAt = at
     // A group's copy of the output may lack the patch its own row carries, so any later count fills in.
-    const stat = diffStat(name, call.input, output)
-    if (stat.added || stat.removed) Object.assign(call, stat)
+    const stat = diffStat(name, call.input, output, isFailed)
+    if (stat.added || stat.removed || isFailed) Object.assign(call, stat)
+    if (!call.preview?.lines.length) call.preview = previewOf(name, call.input, output, '')
   }
 
   // Calls claimed as they drew have no thought yet; the session's own messages, read once a turn ends, carry the thinking before each.

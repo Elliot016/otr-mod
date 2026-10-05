@@ -27,6 +27,8 @@ export default {
     "tool": "Other"
   },
   "thoughtNoText": "Claude Code kept no text for this thought",
+  "previewMore": "+ {n} more lines",
+  "previewEmpty": "No output",
   "kind": {
     "read": { "one": "Read {n} file", "many": "Read {n} files" },
     "search": { "one": "Searched {n} pattern", "many": "Searched {n} patterns" },

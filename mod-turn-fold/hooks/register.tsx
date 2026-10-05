@@ -212,7 +212,8 @@ async function pickChip($: EngineInterface, turnId: string, kind: string) {
 }
 
 // An open turn's work under its head: a line of kind chips (Thought first, then each kind in order of first use) and, under the picked one, its calls or its thinking.
-function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[], width: number) {
+// onCall opens or closes one call: its own row then shows under the list, in the turn's order.
+function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any) => RenderElement }, turn: Turn, openTools: string[], width: number, onCall: (id: string) => unknown) {
   // Claude Code's drawing reaches a mod sealed, so the thinking comes from the session's messages, without its time.
   const thoughts = turnThoughts(turn)
   const kinds = turnKinds(turn)
@@ -230,14 +231,48 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
     </Box>
   )
   const thoughtLines = thoughts.filter(Boolean).join('\n\n').split('\n').flatMap(paragraph => wrapWords(paragraph, width - 8))
+  // An open call's preview under its line: diff lines on Claude Code's add and remove backgrounds, any other output muted.
+  const preview = (call: Turn['tools'][number], n: number) => {
+    const shown = call.preview?.lines ?? []
+    const more = call.preview?.more ?? 0
+    return (
+      <Box key={`toggle-call-${n}-preview`} flexDirection="column" paddingLeft={3}>
+        {shown.length === 0 ? <Text key="none" color={THEME.muted}>{text.previewEmpty}</Text> : null}
+        {shown.map((previewLine, at) => {
+          const mark = previewLine.kind === 'add' ? '+ ' : previewLine.kind === 'del' ? '- ' : previewLine.kind === 'same' ? '  ' : ''
+          const background = previewLine.kind === 'add' ? { backgroundColor: THEME.addBg } : previewLine.kind === 'del' ? { backgroundColor: THEME.delBg } : {}
+          return (
+            <Text key={`line-${at}`} color={previewLine.kind === 'out' ? THEME.muted : THEME.onSurface} wrap="truncate-end" {...background}>
+              {fit(`${mark}${previewLine.text}`, width - 10) || ' '}
+            </Text>
+          )
+        })}
+        {more > 0 ? <Text key="more" color={THEME.muted}>{fill(text.previewMore, { n: more })}</Text> : null}
+      </Box>
+    )
+  }
   const calls = (kind: string) =>
-    kinds.find(group => group.kind === kind)?.calls.map((call, n) =>
+    kinds.find(group => group.kind === kind)?.calls.flatMap((call, n) => [
       line(
         `toggle-call-${n}`,
-        [<Text key={`toggle-call-${n}-label`} color={THEME.muted}>{fit(toolLabel(call.name, call.input, 0, 0), width - 24)}</Text>, countsPill({ Box, Text }, `toggle-call-${n}-counts`, call.added, call.removed)],
+        [
+          // The open call lifts, as a picked chip does; the others stay dim until the pointer lights them.
+          <Box key={`toggle-call-${n}-pick`} flexShrink={1} {...(openTools.includes(call.id) ? { backgroundColor: THEME.lifted } : {})}>
+            <Button
+              key={`toggle-call-${n}-button`}
+              label={` ${openTools.includes(call.id) ? look.glyph.expanded : look.glyph.collapsed} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)} `}
+              plain
+              dimColor={!openTools.includes(call.id)}
+              hover={{ scope: `toggle-call-${n}-pick`, color: THEME.accent }}
+              onPress={() => onCall(call.id)}
+            />
+          </Box>,
+          countsPill({ Box, Text }, `toggle-call-${n}-counts`, call.added, call.removed),
+        ],
         call.startedAt !== undefined && call.endedAt !== undefined ? elapsed(call.endedAt - call.startedAt) : '',
       ),
-    ) ?? []
+      ...(openTools.includes(call.id) ? [preview(call, n)] : []),
+    ]) ?? []
   const body = !picked
     ? null
     : picked.kind === 'thinking'
@@ -291,6 +326,43 @@ async function detectLook($: EngineInterface) {
   return lookFor(false)
 }
 
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
+}
+
 // A time as a rounded pill, like the omp transient prompt; plain muted text where the font has no caps.
 function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }, key: string, time: string, fill: string = THEME.surface2) {
   if (!look.nerd) return <Box key={key} flexShrink={0}><Text color={THEME.muted}>{`${time} `}</Text></Box>
@@ -321,7 +393,7 @@ export const register: Register = (on, options) => {
   expandLive = options.expand_live !== false
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({
       name: 'mod-turn-fold',
       description: text.commandDescription,
@@ -365,6 +437,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)
@@ -426,6 +499,7 @@ export const register: Register = (on, options) => {
 
   // The prompt row carries the card's head: one line naming what the turn did, which a click folds or unfolds.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     // A subagent's report opens a turn of its own, as in the transcript.
     if (isLoaded && (e.props.origin.kind === 'peer' || (e.props.origin.kind === 'composer' && isPrompt(e.props.text)))) log.claim(e.requestId, 'prompt')
@@ -460,7 +534,7 @@ export const register: Register = (on, options) => {
         {turn.durationMs !== undefined ? timePill({ Box, Text }, 'toggle-head-time', elapsed(turn.durationMs), THEME.surface3) : null}
       </Box>
     )
-    const kinds = isOpen && foldTools ? chipSection({ Box, Client, Text }, turn, await opened($, 'tools'), widthOf(e)) : null
+    const kinds = isOpen && foldTools ? chipSection({ Box, Button, Client, Text }, turn, await opened($, 'tools'), widthOf(e), id => flip($, 'tools', id)) : null
     return (
       <Box key="toggle-prompt" flexDirection="column" flexGrow={1}>
         {row}
@@ -470,6 +544,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'reply')
     const turn = log.turnOf(e.requestId)
@@ -483,8 +558,9 @@ export const register: Register = (on, options) => {
 
   // A finished tool row folds to one line of its own; a click shows Claude Code's full row and result under it.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    await loadLook($)
     if (e.surface !== 'terminal') return next(e)
-    if (isLoaded) log.claimCall(e.props.tool_use_id, e.props.tool, e.props.input, e.props.isRunning, e.props.output)
+    if (isLoaded) log.claimCall(e.props.tool_use_id, e.props.tool, e.props.input, e.props.isRunning, e.props.output, e.props.isErrored || e.props.isInterrupted)
     const turn = log.turnOf(e.requestId)
     seen.set(`ToolUse ${e.requestId}`, Boolean(turn))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
@@ -493,9 +569,9 @@ export const register: Register = (on, options) => {
     if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
     if (e.props.isRunning || !foldTools || isLive(turn)) return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt }) : next(e)
 
-    const { added, removed } = diffStat(e.props.tool, e.props.input, e.props.output)
-    const isOpen = (await opened($, 'tools')).includes(e.props.tool_use_id)
     const isFailed = e.props.isErrored || e.props.isInterrupted
+    const { added, removed } = diffStat(e.props.tool, e.props.input, e.props.output, isFailed)
+    const isOpen = (await opened($, 'tools')).includes(e.props.tool_use_id)
     const when = showTimes ? callTime(log.callOf(e.props.tool_use_id)) : ''
     const stats = [
       added ? <Box key="toggle-tool-added"><Text color={THEME.good}>{`+${added}`}</Text></Box> : null,
@@ -522,6 +598,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'row')
     const turn = log.turnOf(e.requestId)
@@ -535,9 +612,10 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     // A folded group's calls never draw rows of their own, so the group claims them for the turn.
-    if (isLoaded) for (const call of e.props.calls) if (call.tool_use_id) log.claimCall(call.tool_use_id, call.tool, call.input, call.isRunning, call.output)
+    if (isLoaded) for (const call of e.props.calls) if (call.tool_use_id) log.claimCall(call.tool_use_id, call.tool, call.input, call.isRunning, call.output, call.isErrored || call.isInterrupted)
     // A group of thinking alone has no calls; it joins the turn by its own message id.
     if (isLoaded && e.props.calls.length === 0) log.claim(e.requestId.replace(/^collapsed-/, ''), 'row')
     const id = e.props.calls.find(call => call.tool_use_id)?.tool_use_id ?? e.requestId
@@ -553,6 +631,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
+    await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'row')
     const turn = log.turnOf(e.requestId)
