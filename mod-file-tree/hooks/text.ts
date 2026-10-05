@@ -1,14 +1,11 @@
 // Every string this mod shows, see mod-builder/references/standard.md. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "pill": "Files",
+  "working": "· Working",
   "pillTip": "Files: what Claude read and changed, with a replay of each edit",
   "commandDescription": "Open the files sidebar: a tree of the files Claude touched and a replay of its last edits; `settings` opens its settings panel",
-  "paneTitle": "Files {sep} {n}",
-  "paneWorking": " {sep} Working",
-  "settingsTitle": "Files {sep} Settings",
   "settingsFrame": "mod-file-tree",
   "settingsLabel": "Settings",
-  "backLabel": "Files",
   "rootFallback": "Files",
   "paneWaiting": "Files panel waiting: {reason}",
   "settingsWaiting": "Settings panel waiting: {reason}",

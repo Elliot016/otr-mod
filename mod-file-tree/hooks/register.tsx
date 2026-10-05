@@ -1,11 +1,11 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { NAME_COLOR, type ListMessage, type Row as ListRow } from './list'
-import { isNerdFace, lookFor, paneTitle, section, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
-import type { EntryMessage } from './entry'
-import { PILL, pillRow, splitRow, tipLine, titleRow } from './pills'
+import { isNerdFace, lookFor, section, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
+import { mix, type EntryMessage } from './entry'
+import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { settingsBody, type Action, type Previews } from './settings'
+import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 import { shellPlans, TranscriptFiles } from './transcript'
@@ -300,6 +300,24 @@ async function openingPane($: EngineInterface) {
   if (!(await isOpen($, PANE))) endOpening($)
 }
 
+// The share of each status color left in its legend pill, as the turn-fold chips tint their counts.
+const LEGEND_WASH = 0.72
+
+// A settings card's click: its row, saved through /config; a saved change reloads this mod.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  if (!row) return
+  const result = await $.config.set({ key, value })
+  note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
+  $.ui.invalidate('ui.render')
+}
+
+// The panel's title line: the files and their settings as tabs, the shown one open.
+const tabs = (isSettings: boolean, touched: number) => [
+  { id: 'filetree-tab', label: text.pill, icon: look.glyph.icon.files ?? look.glyph.title, isOpen: !isSettings, ...(isSettings ? {} : { count: touched }) },
+  { id: 'filetree-settings', label: text.settingsLabel, icon: look.glyph.gear, isOpen: isSettings },
+]
+
 export const register: Register = (on, options) => {
   still = options.animations === false
   toasts.isStill = still
@@ -452,11 +470,7 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($, PANE)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = (
-      <Box key="menu-pad-filetree">
-        <Client key="menu-entry-filetree" module="./entry.tsx" height={1} props={{ id: 'filetree', label: text.pill, isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening, still }} />
-      </Box>
-    )
+    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'filetree', { label: text.pill, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
     return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
   })
@@ -474,12 +488,14 @@ export const register: Register = (on, options) => {
       tipShown = hover.isOver === true
       $.ui.invalidate('ui.render')
     }
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
     const message = e.data as EntryMessage
     if (message?.type !== 'menu-entry') return next(e)
     if (message.id === 'filetree') await openingPane($)
-    // The title row's pill swaps the panel and its settings.
-    if (message.id === 'filetree-settings') await toggleSettings($)
-    if (message.id === 'filetree-back') await togglePane($)
+    // The title line's tabs swap the panel and its settings; the open tab does nothing.
+    if (message.id === 'filetree-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
+    if (message.id === 'filetree-tab' && !(await isOpen($, PANE))) await togglePane($)
     if (message.id === 'tab-tree' || message.id === 'tab-replay') {
       mode = message.id === 'tab-tree' ? 'tree' : 'replay'
       note = ''
@@ -519,12 +535,6 @@ export const register: Register = (on, options) => {
 
     if (e.requestId === SETTINGS) {
       const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-file-tree.'))
-      // A saved change reloads this mod, which redraws the panel with the new value.
-      const set = async (row: ConfigRow, value: ConfigValue) => {
-        const result = await $.config.set({ key: row.key, value })
-        note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
-        $.ui.invalidate('ui.render')
-      }
       const run = async (action: Action) => {
         const said = answer($, action.args ?? '')
         note = await said.then(said => `${MARK.ok} ${said || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
@@ -532,9 +542,9 @@ export const register: Register = (on, options) => {
       }
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-          {titleRow({ Box, Client, Text }, look.nerd, paneTitle(elements, look, 'settings', fill(text.settingsTitle, { sep: MARK.sep })), 'filetree-back', `${look.glyph.back} ${text.backLabel}`, still)}
+          {tabRow({ Box, Client, Text }, look.nerd, tabs(true, 0), still)}
           <Text color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
-          <Box marginTop={0}>{settingsBody(elements, look, { rows, actions, working: false, set, run, previews })}</Box>
+          <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, still })}</Box>
         </Box>
       )
     }
@@ -612,7 +622,10 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {titleRow({ Box, Client, Text }, look.nerd, paneTitle(elements, look, 'files', `${fill(text.paneTitle, { sep: MARK.sep, n: touched })}${current.working ? fill(text.paneWorking, { sep: MARK.sep }) : ''}`), 'filetree-settings', `${look.glyph.gear} Settings`, still)}
+        <Box key="title-line" flexDirection="row" columnGap={1}>
+          {tabRow({ Box, Client, Text }, look.nerd, tabs(false, touched), still)}
+          {current.working ? <Text color={THEME.muted}>{text.working}</Text> : null}
+        </Box>
         <Text color={statusColor(note)}>{withMark(look, note) || hint}</Text>
         <Box key="tabs" flexDirection="row" columnGap={1} marginTop={1}>
           {tab('tab-tree', mode === 'tree', 'files', text.tabTree)}
@@ -628,8 +641,10 @@ export const register: Register = (on, options) => {
         {mode === 'tree' ? (
           <Box key="legend" flexDirection="column">
             <Text key="legend-rule" color={THEME.border}>{'─'.repeat(Math.max(1, e.props.bodyColumns - 2))}</Text>
-            <Box key="legend-row" flexDirection="row" columnGap={2}>
-              {(['changed', 'added', 'read'] as const).map(tone => <Text key={`legend-${tone}`} color={NAME_COLOR[tone]}>{`${MARK.bullet} ${text.legend[tone]}`}</Text>)}
+            <Box key="legend-row" flexDirection="row" columnGap={1}>
+              {(['changed', 'added', 'read'] as const).map(tone =>
+                pill({ Box, Text }, look.nerd, mix(NAME_COLOR[tone], THEME.bg, LEGEND_WASH), <Text color={NAME_COLOR[tone]}>{look.nerd ? text.legend[tone] : ` ${text.legend[tone]} `}</Text>, `legend-${tone}`, THEME.bg),
+              )}
             </Box>
           </Box>
         ) : null}
