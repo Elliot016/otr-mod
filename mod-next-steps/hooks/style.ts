@@ -15,6 +15,7 @@ export default {
       "good": "#49EF95",
       "alert": "#CA5F71",
       "warn": "#FFCB6B",
+      "folder": "#86E1FC",
       "pill": "#CED9FF",
       "addBg": "#1D3B38",
       "delBg": "#3D2737"

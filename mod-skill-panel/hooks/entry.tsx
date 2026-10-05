@@ -2,11 +2,12 @@
 import type { ClientModule } from 'claude-code'
 
 import style from './style'
-import { CAPS, THEME } from './theme'
+import { CAPS, mix, THEME, WASH } from './theme'
 
 // color: open text (a red Run); idle: closed text, muted unless set; isBusy shimmers the label until the click's result lands.
 // still: the mod's animations setting is off, so nothing shimmers and the hover color switches at once.
-// lead: a glyph before the label in leadColor; badge: a count after it in its own pill, capped where `nerd` has the caps.
+// lead: a bare glyph before the label in leadColor; subLead: an icon before it as a rounded subpill in subLeadColor;
+// badge: a count after it in its own pill. Subpills are capped where `nerd` has the caps.
 export type EntryProps = {
   id: string
   label: string
@@ -18,6 +19,8 @@ export type EntryProps = {
   still?: boolean
   lead?: string
   leadColor?: string
+  subLead?: string
+  subLeadColor?: string
   badge?: { text: string; color: string; bg: string }
   nerd?: boolean
 }
@@ -43,17 +46,7 @@ export const shimmerColor = (at: number, phase: number, length: number) => {
 // Hover colors ease in and out over this many ticks instead of switching at once.
 export const HOVER_STEPS = 2
 
-const channels = (hex: string) => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16))
-const isHex = (color: string) => /^#[0-9a-f]{6}$/i.test(color)
-
-// The color `t` of the way from `from` to `to`; a color that is not #RRGGBB switches halfway.
-export function mix(from: string, to: string, t: number) {
-  if (t <= 0) return from
-  if (t >= 1) return to
-  if (!isHex(from) || !isHex(to)) return t < 0.5 ? from : to
-  const end = channels(to)
-  return `#${channels(from).map((value, at) => Math.round(value + (end[at]! - value) * t).toString(16).padStart(2, '0')).join('')}`
-}
+export { mix }
 
 // One tick of a hover fade: toward HOVER_STEPS while the pointer is on, toward 0 once it left.
 export const stepToward = (level: number, isOver: boolean) => (isOver ? Math.min(HOVER_STEPS, level + 1) : Math.max(0, level - 1))
@@ -122,21 +115,24 @@ const Entry: ClientModule<EntryProps, State> = (props, surface) => {
       {text}
     </Text>
   )
-  if (!props.lead && !props.badge) return isShimmering ? <Box flexDirection="row">{label}</Box> : label
+  if (!props.lead && !props.subLead && !props.badge) return isShimmering ? <Box flexDirection="row">{label}</Box> : label
 
+  // A rounded subpill on the entry's own fill: caps where the font has them, padded otherwise.
+  const sub = (key: string, text: string, color: string, bg: string) => (
+    <Box key={key} flexDirection="row">
+      {props.nerd ? <Text key={`${key}-left`} color={bg} backgroundColor={props.bg}>{CAPS.left}</Text> : null}
+      <Text key={`${key}-text`} color={color} backgroundColor={bg} bold>{props.nerd ? text : ` ${text} `}</Text>
+      {props.nerd ? <Text key={`${key}-right`} color={bg} backgroundColor={props.bg}>{CAPS.right}</Text> : null}
+    </Box>
+  )
+  const subHue = props.subLeadColor ?? THEME.accent
   const { badge } = props
   return (
     <Box flexDirection="row">
       {props.lead ? <Text key="lead" color={props.leadColor ?? THEME.accent} backgroundColor={props.bg}>{` ${props.lead}`}</Text> : null}
+      {props.subLead ? sub('sub-lead', props.subLead, subHue, mix(subHue, props.bg, WASH)) : null}
       {label}
-      {badge ? (
-        <Box key="badge" flexDirection="row">
-          {props.nerd ? <Text key="badge-left" color={badge.bg} backgroundColor={props.bg}>{CAPS.left}</Text> : null}
-          <Text key="badge-text" color={badge.color} backgroundColor={badge.bg} bold>{props.nerd ? badge.text : ` ${badge.text} `}</Text>
-          {props.nerd ? <Text key="badge-right" color={badge.bg} backgroundColor={props.bg}>{CAPS.right}</Text> : null}
-          <Text key="badge-pad" backgroundColor={props.bg}>{' '}</Text>
-        </Box>
-      ) : null}
+      {badge ? sub('badge', badge.text, badge.color, badge.bg) : null}
     </Box>
   )
 }

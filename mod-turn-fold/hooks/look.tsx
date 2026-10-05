@@ -2,7 +2,7 @@
 import type { RenderElement } from 'claude-code'
 
 import style from './style'
-import { CAPS, decodeAll, THEME } from './theme'
+import { CAPS, decodeAll, mix, THEME, WASH } from './theme'
 
 type Glyphs = Omit<typeof style.glyphs.nerd, 'icon' | 'mark'> & { icon: Record<string, string>; mark: Record<string, string> }
 
@@ -44,8 +44,21 @@ export const paneTitle = ({ Text }: Elements, look: Look, icon: string, text: st
   <Text key="pane-title" color={THEME.accent} bold>{`${look.glyph.icon[icon] ?? look.glyph.title} ${text}`}</Text>
 )
 
-// A section's heading: a rounded pill with its icon in Nerd mode, bold accent text in safe mode.
-export function heading({ Box, Text }: Elements, look: Look, key: string, icon: string, title: string) {
+// A pill's leading icon, mark or digit, or its count: a rounded subpill washed from `hue` into the `fill` it sits on.
+export function subpill({ Box, Text }: Elements, nerd: boolean, fill: string, text: string, key: string, hue: string = THEME.accent) {
+  const bg = mix(hue, fill, WASH)
+  return (
+    <Box key={key} flexDirection="row" flexShrink={0}>
+      {nerd ? <Text key={`${key}-left`} color={bg} backgroundColor={fill}>{CAPS.left}</Text> : null}
+      <Text key={`${key}-text`} color={hue} backgroundColor={bg} bold>{nerd ? text : ` ${text} `}</Text>
+      {nerd ? <Text key={`${key}-right`} color={bg} backgroundColor={fill}>{CAPS.right}</Text> : null}
+    </Box>
+  )
+}
+
+// A section's heading: a surface3 pill led by its icon as a subpill in Nerd mode, bold accent text in safe mode.
+export function heading(elements: Elements, look: Look, key: string, icon: string, title: string) {
+  const { Box, Text } = elements
   if (!look.nerd) {
     return (
       <Box key={`${key}-head`}>
@@ -53,24 +66,27 @@ export function heading({ Box, Text }: Elements, look: Look, key: string, icon: 
       </Box>
     )
   }
+  const glyph = look.glyph.icon[icon]
   return (
     <Box key={`${key}-head`} flexDirection="row">
-      <Text color={THEME.border}>{CAPS.left}</Text>
-      <Box key={`${key}-head-body`} backgroundColor={THEME.border}>
-        <Text color={THEME.onSurface} bold>{withIcon(look, icon, title)}</Text>
+      <Text color={THEME.surface3}>{CAPS.left}</Text>
+      <Box key={`${key}-head-body`} flexDirection="row" backgroundColor={THEME.surface3}>
+        {glyph ? subpill(elements, true, THEME.surface3, glyph, `${key}-head-icon`) : null}
+        <Text color={THEME.onSurface} bold>{glyph ? ` ${title}` : title}</Text>
       </Box>
-      <Text color={THEME.border}>{CAPS.right}</Text>
+      <Text color={THEME.surface3}>{CAPS.right}</Text>
     </Box>
   )
 }
 
-// A tinted section; an empty title draws no heading.
+// A round-bordered card with its heading on the first row; an empty title draws the border alone.
 export function section(elements: Elements, look: Look, key: string, icon: string, title: string, body: unknown) {
   const { Box } = elements
   return (
-    <Box key={key} flexDirection="column" backgroundColor={THEME.surface1} marginTop={1} paddingX={1}>
+    <Box key={key} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} marginTop={1} paddingX={1}>
       {title ? heading(elements, look, key, icon, title) : null}
       {body}
     </Box>
   )
 }
+

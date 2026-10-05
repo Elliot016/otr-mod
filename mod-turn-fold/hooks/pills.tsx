@@ -3,7 +3,7 @@ import type { RenderElement } from 'claude-code'
 
 import { mix, type EntryProps } from './entry'
 import style from './style'
-import { CAPS, THEME } from './theme'
+import { CAPS, THEME, WASH } from './theme'
 
 // The menu group on Moonlight surface-3, readouts on surface-2.
 export const PILL = { primary: style.colors.pills.primary, secondary: style.colors.pills.secondary }
@@ -97,19 +97,16 @@ export function pillRow(elements: Elements, nerd: boolean, group: unknown[], row
 // One chip per view of a panel (its list, its settings), standing in for the title: id, label, icon glyph and an optional count.
 export type Tab = { id: string; label: string; icon: string; isOpen: boolean; count?: number }
 
-// The share of the chip's own color left in a count badge, as the turn-fold chips tint theirs.
-const BADGE_WASH = 0.72
-
-// A panel's title line, drawn like the turn-fold chips: the open view lifted and bold, the others muted, a click swaps the view.
+// A panel's title line: the open view on surface3 and bold, the others on surface2 and muted, each icon and count a subpill; a click swaps the view.
 export function tabRow({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, tabs: Tab[], still: boolean) {
   return (
     <Box key="tab-row" flexDirection="row" columnGap={1}>
       {tabs.map(tab => {
-        const bg = tab.isOpen ? THEME.lifted : THEME.surface3
+        const bg = tab.isOpen ? THEME.surface3 : THEME.surface2
         // Client props refuse an undefined value, so a tab without a count leaves the key out.
-        const badge = tab.count === undefined ? {} : { badge: { text: String(tab.count), color: THEME.accent, bg: mix(THEME.accent, bg, BADGE_WASH) } }
+        const badge = tab.count === undefined ? {} : { badge: { text: String(tab.count), color: THEME.accent, bg: mix(THEME.accent, bg, WASH) } }
         const entry = (
-          <Client key={tab.id} module="./entry.tsx" height={1} props={{ id: tab.id, label: tab.label, isOpen: tab.isOpen, bg, idle: THEME.muted, still, lead: tab.icon, leadColor: THEME.accent, nerd, ...badge } satisfies EntryProps} />
+          <Client key={tab.id} module="./entry.tsx" height={1} props={{ id: tab.id, label: tab.label, isOpen: tab.isOpen, bg, idle: THEME.muted, still, subLead: tab.icon, subLeadColor: THEME.accent, nerd, ...badge } satisfies EntryProps} />
         )
         return pill({ Box, Text }, nerd, bg, entry, `${tab.id}-pill`)
       })}
