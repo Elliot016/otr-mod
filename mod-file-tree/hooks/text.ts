@@ -12,6 +12,8 @@ export default {
   "cleared": "Cleared the file tree and the replay",
   "onlyRead": "{path} was only read, there is no diff",
   "replaying": "Replaying {path}",
+  "openedInCode": "Opened {path} in VS Code",
+  "opened": "Opened {path} in its default app",
   "noEarlier": "No earlier edit in this turn",
   "noLater": "No later edit in this turn",
   "settingSaved": "{label} saved",

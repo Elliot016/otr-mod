@@ -1,6 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 import { HOVER_STEPS, hoverMix, mix, shimmerColor, stepToward, TICK_MS } from './entry'
+import style from './style'
 import { CAPS, THEME } from './theme'
 
 // live: Claude is on this file right now; added, changed and read set the name's color.
@@ -21,14 +22,19 @@ export type Row = {
   pad: number
   // When this file's latest edit landed, so the row glows and fades back.
   changedAt?: number
+  // A file row ends in the open mark, which opens the file in VS Code or the default app.
+  canOpen: boolean
 }
 
 // offset is the first row's index in the whole tree: a long tree draws as several lists.
 // still: the animations setting is off: no shimmer, no glow, and the hover switches at once.
-// nerd: the font has the rounded caps the live word's pill uses.
-export type ListProps = { rows: Row[]; offset?: number; still?: boolean; nerd?: boolean }
+// nerd: the font has the rounded caps the live word's pill uses. width: every row's cells, the open mark in the last.
+export type ListProps = { rows: Row[]; offset?: number; still?: boolean; nerd?: boolean; width: number }
 
-export type ListMessage = { type: 'select'; index: number }
+export type ListMessage = { type: 'select' | 'open'; index: number }
+
+// The open mark and the space before it.
+export const OPEN_CELLS = 2
 
 // A file's name carries its status as color, named once in the pane's legend instead of a letter on every row.
 export const NAME_COLOR: Record<Tone, string> = { live: THEME.onSurface, added: THEME.good, changed: THEME.warn, read: THEME.secondary, dir: THEME.onSurface }
@@ -103,7 +109,9 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
     const row = event.type !== 'leave' && event.y >= 0 && event.y < rows.length ? event.y : -1
     const next = props.still ? (row >= 0 ? { [row]: HOVER_STEPS } : {}) : fadeLevels(levels, row)
     if (row !== hovered) surface.setState({ hovered: row, phase, levels: next })
-    if (event.type === 'down' && event.button === 'left' && row >= 0) surface.post({ type: 'select', index: (props.offset ?? 0) + row } satisfies ListMessage)
+    if (event.type !== 'down' || event.button !== 'left' || row < 0) return
+    const isOpenMark = rows[row]!.canOpen && event.x >= props.width - OPEN_CELLS
+    surface.post({ type: isOpenMark ? 'open' : 'select', index: (props.offset ?? 0) + row } satisfies ListMessage)
   })
 
   return (
@@ -132,6 +140,7 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
             {isLive && row.status ? livePill(Text, row.status, props.nerd === true) : null}
             {isLive && row.status && (row.add > 0 || row.del > 0) ? <Text> </Text> : null}
             {row.add > 0 || row.del > 0 ? countsPill(Text, row.add, row.del, props.nerd === true) : null}
+            {row.canOpen ? <Text key="open" color={index === hovered ? THEME.accent : style.colors.pills.separator}>{` ${style.marks.open}`}</Text> : null}
           </Box>
         )
       })}

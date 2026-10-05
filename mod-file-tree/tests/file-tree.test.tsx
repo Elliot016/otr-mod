@@ -167,6 +167,19 @@ test('a read-only file has no diff to replay', async ($, on) => {
   await ui.unmount()
 })
 
+test("a file row ends in the open mark; a click on it opens the file instead of the row's diff", async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
+  const ui = await $.ui.mount(PANE)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).toContain(' ↗')
+  // The pane is 70 columns, the rows 66 cells: the mark is the last one.
+  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
+  expect(await ui.find({ type: 'Text', text: /^. Opened only\.md/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /only\.md was only read/ })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('show_reads off hides files Claude only read', { options: { show_reads: false } }, async ($, on) => {
   stubs(on)
   await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)

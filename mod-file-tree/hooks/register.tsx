@@ -1,6 +1,6 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
-import { NAME_COLOR, type ListMessage, type Row as ListRow } from './list'
+import { NAME_COLOR, OPEN_CELLS, type ListMessage, type Row as ListRow } from './list'
 import { isNerdFace, lookFor, section, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
 import { mix, type EntryMessage } from './entry'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
@@ -100,6 +100,43 @@ async function detectLook($: EngineInterface) {
   return lookFor(false)
 }
 
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
+}
+
 // One panel at a time, this mod's two panes included; opening one closes the other.
 async function togglePane($: EngineInterface) {
   if (await isOpen($, PANE)) {
@@ -158,6 +195,36 @@ async function answer($: EngineInterface, args: string) {
 }
 
 // Opens the file's latest diff in the replay; a file Claude only read has none.
+// Runs a command to its end and answers its exit code; null when it could not start.
+async function exitCode($: EngineInterface, argv: string[]) {
+  try {
+    const stream = $.process.spawn({ argv })
+    for (;;) {
+      const step = await stream.next()
+      if (step.done) return step.value.code
+    }
+  } catch {
+    return null
+  }
+}
+
+// VS Code when its `code` command is on PATH, otherwise the system's default app for the file's type.
+async function openFile($: EngineInterface, path: string) {
+  const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
+  const full = /^([A-Za-z]:)?\//.test(path) ? path : `${cwd}/${path}`
+  const isWindows = /^[A-Za-z]:/.test(full)
+  const native = isWindows ? full.replace(/\//g, '\\') : full
+  if ((await exitCode($, isWindows ? ['cmd', '/c', 'code', native] : ['code', native])) === 0) {
+    note = `${MARK.ok} ${fill(text.openedInCode, { path })}`
+  } else {
+    // explorer answers 1 even when it opened the file, so its code says nothing.
+    if (isWindows) await exitCode($, ['explorer', native])
+    else if ((await exitCode($, ['open', native])) !== 0) await exitCode($, ['xdg-open', native])
+    note = `${MARK.ok} ${fill(text.opened, { path })}`
+  }
+  $.ui.invalidate('ui.render')
+}
+
 async function openDiff($: EngineInterface, path: string) {
   const current = viewOf(await hydrate($))
   const step = latestStepOf(current, path)
@@ -257,7 +324,7 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
     // The counts' pill adds a cap on each side where the font has them.
     const stats = counts.length + (counts && glyphs.nerd ? 2 : 0) + (status && counts ? 1 : 0)
     // The live word sits in a pill, one cell wider on each side.
-    const used = guides.length + (mark ? [...mark].length + 1 : 0) + stats + status.length + (isLive ? 2 : 0)
+    const used = guides.length + (mark ? [...mark].length + 1 : 0) + stats + status.length + (isLive ? 2 : 0) + (row.isDir ? 0 : OPEN_CELLS)
     const shown = fit(name, Math.max(6, width - used - 1))
     return {
       guides,
@@ -268,6 +335,7 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
       del,
       status,
       pad: width - used - shown.length,
+      canOpen: !row.isDir,
       ...(done ? { changedAt: done.at } : {}),
     }
   })
@@ -336,11 +404,11 @@ export const register: Register = (on, options) => {
   wrapDiff = options.wrap_diff !== false
   recentTurns = Math.min(20, Math.max(2, Math.round(Number(options.recent_turns ?? 5)) || 5))
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({
       name: 'mod-file-tree',
       description: text.commandDescription,
@@ -456,6 +524,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await loadLook($)
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     if (hidden.value === true) {
@@ -522,11 +591,17 @@ export const register: Register = (on, options) => {
       if (row?.isDir) fold($, current, row.key)
       else if (row) await openDiff($, row.key)
     }
+    if (message.type === 'open') {
+      const current = viewOf(await hydrate($))
+      const row = rowsOf(current, foldsOf(current), showReads)[message.index]
+      if (row && !row.isDir) await openFile($, row.key)
+    }
 
     return next(e)
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     if (e.requestId !== PANE && e.requestId !== SETTINGS) return next(e)
     if (isOpening) $.clock.after(0, () => endOpening($))
 
@@ -563,7 +638,13 @@ export const register: Register = (on, options) => {
         <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isOn, bg, still }} />
       </Box>
     )
-    const tab = (id: string, isActive: boolean, icon: string, label: string) => entry(id, withIcon(look, icon, label), isActive, isActive ? THEME.surface2 : THEME.bg)
+    // A switch is a choice bar, as on a settings page: the options on one pill, the chosen one lifted into its own.
+    const choiceBar = (key: string, options: { id: string; label: string; isOn: boolean }[]) =>
+      pill({ Box, Text }, look.nerd, THEME.surface3, (
+        <Box key={`${key}-options`} flexDirection="row" backgroundColor={THEME.surface3}>
+          {options.map(option => (option.isOn ? pill({ Box, Text }, look.nerd, THEME.lifted, entry(option.id, option.label, true, THEME.lifted), `${option.id}-chosen`, THEME.surface3) : entry(option.id, option.label, false, THEME.surface3)))}
+        </Box>
+      ), `${key}-bar`)
 
     // The pane and the section each pad one column on both sides.
     const width = Math.max(20, e.props.bodyColumns - 4)
@@ -573,7 +654,7 @@ export const register: Register = (on, options) => {
         : (
             <Box key="lists" flexDirection="column">
               {chunksOf(listRows(current, rows, look, width)).map((chunk, n) => (
-                <Client key={`list-${n}`} module="./list.tsx" height={chunk.length} props={{ rows: chunk, offset: n * LIST_CHUNK, still, nerd: look.nerd }} />
+                <Client key={`list-${n}`} module="./list.tsx" height={chunk.length} props={{ rows: chunk, offset: n * LIST_CHUNK, still, nerd: look.nerd, width }} />
               ))}
             </Box>
           )
@@ -628,12 +709,17 @@ export const register: Register = (on, options) => {
         </Box>
         <Text color={statusColor(note)}>{withMark(look, note) || hint}</Text>
         <Box key="tabs" flexDirection="row" columnGap={1} marginTop={1}>
-          {tab('tab-tree', mode === 'tree', 'files', text.tabTree)}
-          {tab('tab-replay', mode === 'replay', 'replay', text.tabReplay)}
-          {mode === 'tree' ? <Text key="scope-sep" color={THEME.border}>│</Text> : null}
-          {mode === 'tree' ? entry('scope-turn', text.scopeTurn, scope === 'turn', scope === 'turn' ? THEME.surface2 : THEME.bg) : null}
-          {mode === 'tree' ? entry('scope-recent', fill(text.scopeRecent, { n: recentTurns }), scope === 'recent', scope === 'recent' ? THEME.surface2 : THEME.bg) : null}
-          {mode === 'tree' ? entry('scope-session', text.scopeSession, scope === 'session', scope === 'session' ? THEME.surface2 : THEME.bg) : null}
+          {choiceBar('view', [
+            { id: 'tab-tree', label: withIcon(look, 'files', text.tabTree), isOn: mode === 'tree' },
+            { id: 'tab-replay', label: withIcon(look, 'replay', text.tabReplay), isOn: mode === 'replay' },
+          ])}
+          {mode === 'tree'
+            ? choiceBar('scope', [
+                { id: 'scope-turn', label: text.scopeTurn, isOn: scope === 'turn' },
+                { id: 'scope-recent', label: fill(text.scopeRecent, { n: recentTurns }), isOn: scope === 'recent' },
+                { id: 'scope-session', label: text.scopeSession, isOn: scope === 'session' },
+              ])
+            : null}
         </Box>
         {mode === 'tree' ? section(elements, look, 'tree', 'folder-open', rootName, tree) : section(elements, look, 'replay', 'replay', fill(text.replayHeading, { sep: MARK.sep, n: steps.length, unit: steps.length === 1 ? text.editOne : text.editMany }), replay)}
         {/* The footer names what each name color means, once, instead of a letter on every row. */}
