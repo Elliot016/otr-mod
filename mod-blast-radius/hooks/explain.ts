@@ -286,12 +286,13 @@ export function cardRows(plain: Plain, report: Report, width: number, bodyRows: 
 // The three action labels, shortened together so the row fits: Cancel, Details and the consequence stay in that order.
 // The digit that presses each action from an empty prompt, drawn as a keycap before its label.
 export const HOTKEY = { cancel: '1', details: '2', run: '3' }
-const KEYCAP_WIDTH = 3
+// Each action is a pill: two caps around a three-cell digit subpill and the padded label.
+export const ACTION_EXTRA = 2 + 3 + 2
+export const ACTION_GAP = 2
 
 export function actionLabels(plain: Plain, width: number) {
-  const separators = 2 * 3
-  const fixed = ` ${text.card.cancel} `.length + ` ${text.card.details} `.length + 2 + 3 * KEYCAP_WIDTH
-  const run = cutEnd(plain.run, Math.max(8, width - fixed - separators))
+  const fixed = text.card.cancel.length + text.card.details.length + 3 * ACTION_EXTRA + 2 * ACTION_GAP
+  const run = cutEnd(plain.run, Math.max(8, width - fixed))
   return { cancel: text.card.cancel, details: text.card.details, run }
 }
 

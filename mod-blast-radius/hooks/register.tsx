@@ -2,19 +2,21 @@ import type { ConfigValue, EngineInterface, Register, RenderElement } from 'clau
 
 import { isNerdFace, lookFor, section, terminalSettings, type IconMode, type Look } from './look'
 import type { EntryMessage } from './entry'
-import { pillRow, splitRow, tabRow, tipLine } from './pills'
+import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { actionLabels, cardRows, HOTKEY, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
+import { ACTION_EXTRA, ACTION_GAP, actionLabels, cardRows, HOTKEY, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
 import { describePrompt, parseDescribed, SYSTEM, verdictOf, type Described } from './haiku'
 import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from './syntax'
 import { measure, tilde, type Io, type Report } from './preview'
 import { CHECKS, compileRules, evaluate, type Risk, type UserRule } from './risk'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
-import { fill, MARK, statusColor, SYNTAX, THEME } from './theme'
+import { fill, MARK, mix, statusColor, SYNTAX, THEME, WASH } from './theme'
 
 const SETTINGS_PANE = 'blast-radius-settings'
 const LIST_PANE = 'blast-radius-list'
+const DETAILS_TAB = 'mod-blast-radius-details-tab'
+const SETTINGS_TAB = 'mod-blast-radius-settings-tab'
 const RULES_FILE = '.claude/mods-data/mod-blast-radius/rules.json'
 const DESTRUCTIVE_ASK = 'Destructive operation detected'
 const BUILT_IN = [...new Set(CHECKS.map(check => check.reason))]
@@ -190,7 +192,10 @@ async function toggleList($: EngineInterface) {
     await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false)
     return
   }
-  if (!held?.report) return
+  if (!held?.report) {
+    $.ui.toast(text.ui.nothingHeld)
+    return
+  }
   await closePanes($, LIST_PANE)
   const opened = await $.ui.open({ id: LIST_PANE, title: text.card.details, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.ui.listWaiting, { reason: opened.reason }))
@@ -218,6 +223,12 @@ async function pause($: EngineInterface) {
   }
   throw new Error('no way to wait')
 }
+
+// Both panes' title line: Details and Settings as tabs, the shown one open.
+const tabs = (isSettings: boolean) => [
+  { id: DETAILS_TAB, label: text.card.details, icon: look.glyph.mark.shell, isOpen: !isSettings },
+  { id: SETTINGS_TAB, label: text.ui.settings, icon: look.glyph.gear, isOpen: isSettings },
+]
 
 const isSettingsOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === SETTINGS_PANE && pane.isPlaced)
 
@@ -294,7 +305,7 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
   const labels = actionLabels(state.plain!, width)
   const body = rows.map((row, index) => {
     const key = `hold-row-${index}`
-    if (row.kind === 'head') return <Text key={key} color={THEME.warn} bold>{`${look.glyph.warn} ${row.text}`}</Text>
+    if (row.kind === 'head') return <Text key={key} color={THEME.alert} bold>{`${look.glyph.warn} ${row.text}`}</Text>
     if (row.kind === 'does') return <Text key={key} color={THEME.onSurface}>{row.text}</Text>
     if (row.kind === 'path') {
       return (
@@ -305,18 +316,23 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
         </Text>
       )
     }
-    if (row.kind === 'verdict') return <Text key={key} color={row.isOk ? THEME.good : THEME.warn}>{`${row.isOk ? MARK.ok : MARK.warn} ${row.text}`}</Text>
+    if (row.kind === 'verdict' && row.isOk) return <Text key={key} color={THEME.good}>{`${MARK.ok} ${row.text}`}</Text>
+    if (row.kind === 'verdict') {
+      return (
+        <Text key={key}>
+          <Text key={`${key}-mark`} color={THEME.alert} bold>{MARK.warn}</Text>
+          <Text key={`${key}-text`} color={THEME.muted}>{` ${row.text}`}</Text>
+        </Text>
+      )
+    }
     if (row.kind === 'line') return <Text key={key} color={THEME.alert}>{figures(Text, row.text, key)}</Text>
     return <Text key={key} color={THEME.muted}>{row.text}</Text>
   })
   // The entry draws the action; a Button nobody sees carries its digit, since only a Button takes a hotkey and a visible one inverts under the pointer.
+  // Each action is a numbered pill: its digit in a subpill before the label.
   const entry = (id: string, label: string, hotkey: string, color?: string) => (
     <Box key={`${id}-pad`} flexDirection="row">
-      {/* The digit sits in a keycap of its own, apart from the label. */}
-      <Box key={`${id}-cap`} backgroundColor={THEME.surface3} flexShrink={0}>
-        <Text color={THEME.accent} bold>{` ${hotkey} `}</Text>
-      </Box>
-      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface2, ...(color ? { color } : {}), still }} />
+      {pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, subLead: hotkey, nerd: look.nerd, ...(color ? { color } : {}), still }} />, `${id}-pill`, THEME.surface1)}
       <Box key={`${id}-key`} width={0} height={0} overflow="hidden">
         <Button key={`${id}-hotkey`} label={label} hotkey={hotkey} plain onPress={() => onKey(id)} />
       </Box>
@@ -326,14 +342,12 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
   return (
     <Box key="blast-card" flexDirection="column" borderStyle="round" borderColor={THEME.alert} backgroundColor={THEME.surface1} paddingX={1}>
       {body}
-      <Box key="hold-actions" flexDirection="row" columnGap={1}>
+      <Box key="hold-actions" flexDirection="row" columnGap={ACTION_GAP}>
         {entry('blast-cancel', labels.cancel, HOTKEY.cancel)}
-        <Text key="hold-sep-details" color={THEME.border}>│</Text>
         {entry('blast-details', labels.details, HOTKEY.details)}
-        <Text key="hold-sep-run" color={THEME.border}>│</Text>
         {entry('blast-run', labels.run, HOTKEY.run, THEME.alert)}
         {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
-        {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 6 + 9 + text.card.explaining.length + 3 <= width ? (
+        {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 3 * ACTION_EXTRA + 3 * ACTION_GAP + text.card.explaining.length + 2 <= width ? (
           <Box key="hold-explaining-row" flexGrow={1} justifyContent="flex-end">
             <Client key="hold-explaining" module="./entry.tsx" height={1} props={{ id: 'hold-explaining', label: text.card.explaining, isOpen: false, bg: THEME.surface1, isBusy: true, still }} />
           </Box>
@@ -530,7 +544,7 @@ export const register: Register = (on, options) => {
         ...shown.map((step, index) => (
           <Box key={`does-${index}`} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
             {spansText(Text, colorStep(step.text, rules), `does-${index}-text`)}
-            {plainText(`does-${index}-says`, (step.risk && held!.described?.steps[riskyIndex(index)]) || step.says, step.risk ? THEME.alert : THEME.muted)}
+            {plainText(`does-${index}-says`, (step.risk && held!.described?.steps[riskyIndex(index)]) || step.says, step.risk ? THEME.onSurface : THEME.muted)}
           </Box>
         )),
         rest ? plainText('does-rest', rest, THEME.muted) : null,
@@ -540,7 +554,11 @@ export const register: Register = (on, options) => {
         ...full.rows.map((row, index) => spansText(Text, row.length ? row : [{ text: ' ', role: 'plain' }], `full-${index}`)),
         full.more ? <Text key="full-more" color={THEME.muted}>{fill(text.ui.andMoreLines, { n: full.more })}</Text> : null,
       ]
-      const legend = <Text key="legend" wrap="wrap">{LEGEND.map((span, index) => <Text key={`legend-${index}`} {...roleProps(span.role)}>{span.text}</Text>)}</Text>
+      // One pill per role, in a wash of its color, as mod-file-tree's footer names its colors.
+      const legend = LEGEND.map(span => {
+        const hue = roleProps(span.role).color
+        return pill({ Box, Text }, look.nerd, mix(hue, THEME.bg, WASH), <Text color={hue}>{look.nerd ? span.text : ` ${span.text} `}</Text>, `legend-${span.role}`, THEME.bg)
+      })
 
       const touches: unknown[] = [
         <Text key="touch-total" color={THEME.onSurface} wrap="wrap">{figures(Text, report.listTitle ?? fill(text.ui.wouldSummary, { summary: report.summary }), 'touch-total')}</Text>,
@@ -575,13 +593,13 @@ export const register: Register = (on, options) => {
 
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-          {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-blast-radius-details-tab', label: `${plain.run} ${MARK.sep} ${text.card.details}`, icon: look.glyph.mark.shell, isOpen: true }], still)}
-          <Text color={THEME.muted} wrap="wrap">{`${text.ui.readOnly} ${MARK.sep} ${fill(text.ui.answerOnCard, { cancel: text.card.cancel, run: plain.run })}`}</Text>
-          {section({ Box, Text }, look, 'does', 'Bash', text.ui.sectionDoes, [...does, plainText('why-source', fill(text.ui.heldBy, { source: source.replace(/\.$/, '') }), THEME.muted, { key: 'why-source' })])}
+          {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
+          <Text color={THEME.muted} wrap="truncate-end">{`${text.ui.readOnly} ${MARK.sep} ${text.ui.answerOnCard}`}</Text>
+          {section({ Box, Text }, look, 'does', '', '', [...does, plainText('why-source', fill(text.ui.heldBy, { source: source.replace(/\.$/, '') }), THEME.muted, { key: 'why-source' })])}
           {section({ Box, Text }, look, 'touches', 'tool', text.ui.sectionTouches, touches)}
           {section({ Box, Text }, look, 'undo', 'actions', text.ui.sectionUndo, [plainText('undo-text', plain.undo, THEME.onSurface)])}
           {section({ Box, Text }, look, 'full', 'prompt', text.ui.sectionFull, fullRows)}
-          <Box key="legend-row" marginTop={1}>{legend}</Box>
+          <Box key="legend-row" flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>{legend}</Box>
         </Box>
       )
     }
@@ -610,8 +628,8 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-blast-radius-settings-tab', label: `${text.ui.settingsTitle} ${MARK.sep} ${text.ui.settings}`, icon: look.glyph.gear, isOpen: true }], still)}
-        <Text color={statusColor(note || bad)}>{note || bad || `${text.ui.statusHint} ${MARK.sep} ${text.ui.statusHintSaved}`}</Text>
+        {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
+        <Text wrap="truncate-end" color={statusColor(note || bad)}>{note || bad || `${text.ui.statusHint} ${MARK.sep} ${text.ui.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still })}
         {section({ Box, Text }, look, 'rules', 'Bash', text.ui.sectionRules, ruleLines)}
         {section({ Box, Text }, look, 'built-in', 'Bash', text.ui.sectionBuiltIn, patterns)}
@@ -632,6 +650,9 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry') await choose($, message.id)
+    // The title line's tabs swap Details and Settings; the open tab does nothing.
+    if (message?.type === 'menu-entry' && message.id === SETTINGS_TAB && !(await isSettingsOpen($))) await toggleSettings($)
+    if (message?.type === 'menu-entry' && message.id === DETAILS_TAB && !(await isPaneOpen($, LIST_PANE))) await toggleList($)
 
     return next(e)
   })
@@ -644,7 +665,7 @@ export const register: Register = (on, options) => {
       if (toasts.items.length === 0) return next(e)
       const others = await next(e)
       const { group, row, rest, tip } = splitRow(others)
-      const cards = toastCards({ Box, Client, Text }, toasts)
+      const cards = toastCards({ Box, Client, Text }, toasts, look)
       if (group.length > 0 || row.length > 0) return pillRow({ Box, Text }, look.nerd, group, row, [...cards, ...rest], tip)
       return (
         <Box key="toasts-blast" flexDirection="column">

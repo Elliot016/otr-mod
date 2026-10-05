@@ -121,8 +121,19 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
 }
 
 const click = (band: any, key: string) => band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: key })
-const labelOf = async (band: any, key: string): Promise<string> => (await band.drawn({ in: key })).children[0]
-const colorOf = async (band: any, key: string): Promise<string> => (await band.drawn({ in: key })).props.color
+// The entry's label Text: the first Text it drew outside its subpill and its badge.
+type Drawn = { type: string; props: Record<string, any>; children?: unknown[] }
+const labelNode = (node: Drawn): Drawn | undefined => {
+  if (node.props?.key === 'sub-lead' || node.props?.key === 'badge') return undefined
+  if (node.type === 'Text') return node
+  for (const child of node.children ?? []) {
+    const found = child && typeof child === 'object' ? labelNode(child as Drawn) : undefined
+    if (found) return found
+  }
+  return undefined
+}
+const labelOf = async (band: any, key: string): Promise<string> => labelNode(await band.drawn({ in: key }))?.children?.join('') as string
+const colorOf = async (band: any, key: string): Promise<string> => labelNode(await band.drawn({ in: key }))?.props.color
 
 // Answers the hold on screen with Cancel.
 const cancel = async ($: any) => {
@@ -433,7 +444,7 @@ test('icons=nerd gives the Details pane a tab chip with the Nerd shell icon', { 
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
   const title = JSON.stringify(await pane.drawn({ in: 'mod-blast-radius-details-tab' }))
   expect(title).toContain(String.fromCodePoint(0xf120))
-  expect(title).toContain('Delete 2 files · Details')
+  expect(await labelOf(pane, 'mod-blast-radius-details-tab')).toBe(' Details ')
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
@@ -448,23 +459,25 @@ test('icons=safe gives the Details pane a tab chip with the safe shell mark', { 
   await click(band, 'blast-details')
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
   const title = JSON.stringify(await pane.drawn({ in: 'mod-blast-radius-details-tab' }))
-  expect(title).toContain('" $"')
-  expect(title).toContain('Delete 2 files · Details')
+  expect(title).toContain('" $ "')
+  expect(await labelOf(pane, 'mod-blast-radius-details-tab')).toBe(' Details ')
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
   await band.unmount()
 })
 
-test('Cancel comes first, Details second, the consequence last, with dividers, and nothing closes the hold', async ($, on) => {
+test('Cancel comes first, Details second, the consequence last, each a numbered pill, and nothing closes the hold', async ($, on) => {
   await withCard($, on, 'rm -rf build', {}, async band => {
     const tree = JSON.stringify(await band.drawn())
     const at = (key: string) => tree.indexOf(key)
-    expect(at('blast-cancel')).toBeGreaterThan(-1)
-    expect(at('blast-cancel')).toBeLessThan(tree.indexOf('\u2502'))
-    expect(tree.indexOf('\u2502')).toBeLessThan(at('blast-details'))
-    expect(at('blast-details')).toBeLessThan(tree.indexOf('\u2502', at('blast-details')))
-    expect(tree.indexOf('\u2502', at('blast-details'))).toBeLessThan(at('blast-run'))
+    expect(at('blast-cancel-pill')).toBeGreaterThan(-1)
+    expect(at('blast-cancel-pill')).toBeLessThan(at('blast-details-pill'))
+    expect(at('blast-details-pill')).toBeLessThan(at('blast-run-pill'))
+    for (const digit of ['1', '2', '3']) expect(tree).toContain(`"subLead":"${digit}"`)
+    // No keycap box of its own and no divider between the pills.
+    expect(tree).not.toContain('\u2502')
+    expect(tree).not.toContain('blast-cancel-cap')
     expect(await band.find({ type: 'Text', text: /close/i })).toBeUndefined()
   })
 })
@@ -499,9 +512,12 @@ test('Details is on every card, even a short one, and opens the read-only pane; 
   await click(band, 'blast-details')
   expect(seen.opened).toEqual(['blast-radius-list'])
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
-  expect(JSON.stringify(await pane.drawn({ in: 'mod-blast-radius-details-tab' }))).toContain('Delete 2 files · Details')
-  expect(await textOf(pane, /read-only/)).toBeDefined()
-  for (const title of ['What this command does', 'What it touches', 'Can it be undone', 'Full command']) expect(await textOf(pane, new RegExp(title))).toBeDefined()
+  expect(await labelOf(pane, 'mod-blast-radius-details-tab')).toBe(' Details ')
+  expect(await labelOf(pane, 'mod-blast-radius-settings-tab')).toBe(' Settings ')
+  expect(await textOf(pane, /^Read only/)).toBe('Read only · answer on the card above the prompt')
+  // The command's own card carries no heading.
+  expect(await textOf(pane, /What this command does/)).toBeUndefined()
+  for (const title of ['What it touches', 'Can it be undone', 'Full command']) expect(await textOf(pane, new RegExp(title))).toBeDefined()
   expect(seen.ran).toBe(0)
   await pane.unmount()
 
@@ -576,8 +592,11 @@ test('Details draws the full command in syntax colors, the risky part in alert, 
   for (const color of ['#7386D0', '#FFAFAF', '#A5CFFF', '#79C0FF', '#CA5F71']) expect(colors.has(color), color).toBe(true)
   const risky = (await pane.findAll({ type: 'Text', text: /^rm$/ })) as { props: { color?: string; bold?: boolean } }[]
   expect(risky.some(found => found.props.color === '#CA5F71' && found.props.bold === true)).toBe(true)
-  expect(await textOf(pane, /^risky part$/)).toBe('risky part')
-  expect(await textOf(pane, /^command · --option/)).toBeDefined()
+  // Each role is a legend pill in its own color, the risky part in alert, with no `·` between them.
+  const legend = (await pane.find({ type: 'Text', text: /^ ?risky part ?$/ })) as { props: { color?: string } }
+  expect(legend.props.color).toBe('#CA5F71')
+  expect(await textOf(pane, /^ ?--option ?$/)).toBeDefined()
+  expect(await textOf(pane, /^command · --option/)).toBeUndefined()
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
@@ -627,7 +646,7 @@ for (const [name, command, setup] of FIT_CASES) {
         const rows = (await band.findAll({ type: 'Text' })) as { text: string }[]
         for (const row of rows) expect(row.text.length, row.text).toBeLessThanOrEqual(width)
         // The sentence, the paths and the command go to Details; the figures stay in the heading and the Run label.
-        expect(rows.filter(row => !row.text.startsWith('!') && row.text !== '│' && !/^ \d $/.test(row.text) && row.text.trim() !== '').map(row => row.text)).toEqual([])
+        expect(rows.filter(row => !row.text.startsWith('!') && row.text.trim() !== '').map(row => row.text)).toEqual([])
         expect(await labelOf(band, 'blast-run')).toBeTruthy()
       }, bandOf(6, columns))
     })
@@ -825,4 +844,80 @@ test('/mod-blast-radius answers with what it holds', async ($, on) => {
   const result = await $.command.run({ command: 'mod-blast-radius', args: '' })
 
   expect(JSON.stringify(result)).toContain('Blast radius is on: 23 built-in checks')
+})
+
+test('the card: its title in bold alert, a check verdict with an alert mark and muted words', async ($, on) => {
+  const { seen, clock } = world(on)
+  on('model.complete', () => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } }))
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await clock.advance(1)
+  await band.redraw()
+  const title = (await band.find({ type: 'Text', text: /^! Delete 2 files/ })) as { props: { color?: string; bold?: boolean } }
+  expect(title.props).toMatchObject({ color: '#CA5F71', bold: true })
+  const mark = (await band.find({ type: 'Text', text: /^!$/ })) as { props: { color?: string; bold?: boolean } }
+  expect(mark.props).toMatchObject({ color: '#CA5F71', bold: true })
+  const words = (await band.find({ type: 'Text', text: /^ Open Details to be sure/ })) as { props: { color?: string } }
+  expect(words.props.color).not.toBe('#CA5F71')
+  await cancel($)
+  await call
+  await band.unmount()
+})
+
+test('the Details and Settings tabs swap the panes, each closing the other, and the open tab does nothing', async ($, on) => {
+  const { seen } = world(on)
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await click(band, 'blast-details')
+  const details = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
+  await click(details, 'mod-blast-radius-details-tab')
+  expect([...seen.panes]).toEqual(['blast-radius-list'])
+  await click(details, 'mod-blast-radius-settings-tab')
+  expect([...seen.panes]).toEqual(['blast-radius-settings'])
+  await details.unmount()
+
+  const settings = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...SETTINGS })
+  expect(await labelOf(settings, 'mod-blast-radius-details-tab')).toBe(' Details ')
+  expect(await labelOf(settings, 'mod-blast-radius-settings-tab')).toBe(' Settings ')
+  await click(settings, 'mod-blast-radius-settings-tab')
+  expect([...seen.panes]).toEqual(['blast-radius-settings'])
+  await click(settings, 'mod-blast-radius-details-tab')
+  expect([...seen.panes]).toEqual(['blast-radius-list'])
+  await settings.unmount()
+  await click(band, 'blast-cancel')
+  await call
+  await band.unmount()
+})
+
+test('with nothing held, the Details tab says so in a toast instead of opening an empty pane', async ($, on) => {
+  const { seen } = world(on)
+  await $.command.run({ command: 'mod-blast-radius', args: 'settings' })
+  const settings = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...SETTINGS })
+  await click(settings, 'mod-blast-radius-details-tab')
+  expect([...seen.panes]).toEqual(['blast-radius-settings'])
+  await settings.redraw()
+  expect(await settings.find({ type: 'Text', text: /none is held now/ })).toBeUndefined()
+  await settings.unmount()
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  expect(await band.find({ type: 'Text', text: /none is held now/ })).toBeDefined()
+  await band.unmount()
+})
+
+test('the full command wraps between words, never inside one', async ($, on) => {
+  const { seen } = world(on)
+  const command = 'cd "C:/Users/me/AppData/Local/Temp/demo" && git status --short && git reset --hard && head -1 src/cart.js src/format.js'
+  const call = $.tool.call({ tool: 'Bash', command })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await click(band, 'blast-details')
+  const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...{ ...DETAILS, props: { ...DETAILS.props, bodyColumns: 50 } } })
+  const rows = ((await pane.findAll({ type: 'Text', text: /^cd "C:|^git |^head |&&$/ })) as { text: string }[]).map(row => row.text)
+  const words = command.split(' ')
+  for (const row of rows) for (const word of row.split(' ').filter(Boolean)) expect(words, row).toContain(word)
+  await pane.unmount()
+  await click(band, 'blast-cancel')
+  await call
+  await band.unmount()
 })

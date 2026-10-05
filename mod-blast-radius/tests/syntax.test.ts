@@ -64,6 +64,17 @@ test('rows wrap at the width, keep their roles, and the cap counts what is left'
   expect(wrapped.rows[1]!.every(span => span.role === 'text')).toBe(true)
 })
 
+test('rows break between words: every row is whole words, and the words join back to the line', () => {
+  const line = 'cd "C:/Users/me/AppData/Local/Temp/demo" && git status --short && git reset --hard && head -1 src/cart.js'
+  const { rows } = wrapSpans(colorLines(line), 45, 20)
+  const texts = rows.map(row => row.map(span => span.text).join(''))
+  expect(texts.length).toBeGreaterThan(2)
+  expect(texts.every(text => text.length <= 45 && !text.startsWith(' ') && !text.endsWith(' '))).toBe(true)
+  expect(texts.join(' ')).toBe(line)
+  // A word longer than the row is the one thing still cut.
+  expect(wrapSpans(colorLines(`ls ${'x'.repeat(25)}`), 10, 9).rows.map(row => row.map(span => span.text).join(''))).toEqual(['ls', 'xxxxxxxxxx', 'xxxxxxxxxx', 'xxxxx'])
+})
+
 test('the legend names every role it draws, one row of spans', () => {
   expect(LEGEND.map(span => span.role).filter(role => role !== 'muted')).toEqual(['command', 'option', 'text', 'variable', 'number', 'operator', 'risk'])
   expect(LEGEND.map(span => span.text).join('').length).toBeLessThan(60)

@@ -16,7 +16,7 @@
       "true": [
         { "spans": [{ "text": "rm -rf build", "color": "onSurface" }] },
         { "spans": [{ "text": "Would delete 142 files and 12 folders (3.1 MB)", "color": "muted" }] },
-        { "spans": [{ "text": " 1 ", "color": "accent", "bg": "surface3" }, { "text": " Cancel  ", "color": "onSurface" }, { "text": " 2 ", "color": "accent", "bg": "surface3" }, { "text": " Details  ", "color": "onSurface" }, { "text": " 3 ", "color": "accent", "bg": "surface3" }, { "text": " Delete folders", "color": "alert" }] }
+        { "spans": [{ "text": "Cancel", "pill": true, "sub": "1" }, { "text": "  " }, { "text": "Details", "pill": true, "sub": "2" }, { "text": "  " }, { "text": "Delete folders", "color": "alert", "pill": true, "sub": "3" }] }
       ],
       "false": [
         { "spans": [{ "text": "rm -rf build", "color": "muted" }] },
