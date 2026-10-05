@@ -1,8 +1,8 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { NAME_COLOR, OPEN_CELLS, type ListMessage, type Row as ListRow } from './list'
-import { isNerdFace, lookFor, section, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
-import { mix, type EntryMessage } from './entry'
+import { heading, isNerdFace, lookFor, section, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
+import { mix, type EntryMessage, type EntryProps } from './entry'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -351,6 +351,7 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
       status,
       pad: width - used - shown.length,
       endMark: row.isDir ? glyphs.glyph.reveal : MARK.open,
+      endColor: row.isDir ? THEME.folder : THEME.accent,
       ...(done ? { changedAt: done.at } : {}),
     }
   })
@@ -545,7 +546,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-filetree" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+      return <Box key="toasts-filetree" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
     }
 
     const { Box, Client, Text } = $.ui.resolve(e)
@@ -556,7 +557,7 @@ export const register: Register = (on, options) => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = menuEntry({ Box, Client, Text }, look.nerd, 'filetree', { label: text.pill, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
-    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
+    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -638,7 +639,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true, 0), still)}
-          <Text color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
+          <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, still })}</Box>
         </Box>
       )
@@ -653,18 +654,25 @@ export const register: Register = (on, options) => {
     const { glyph } = look
 
     // Tabs and the replay's steppers are entries: text that lights on hover, the active tab on its own surface.
-    const entry = (id: string, label: string, isOn: boolean, bg: string = THEME.surface1) => (
+    const entry = (id: string, label: string, isOn: boolean, bg: string = THEME.surface1, extra: Partial<EntryProps> = {}) => (
       <Box key={`${id}-pad`}>
-        <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isOn, bg, still }} />
+        <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isOn, bg, nerd: look.nerd, still, ...extra }} />
       </Box>
     )
-    // A switch is a choice bar, as on a settings page: the options on one pill, the chosen one lifted into its own.
-    const choiceBar = (key: string, options: { id: string; label: string; isOn: boolean }[]) =>
-      pill({ Box, Text }, look.nerd, THEME.surface3, (
-        <Box key={`${key}-options`} flexDirection="row" backgroundColor={THEME.surface3}>
-          {options.map(option => (option.isOn ? pill({ Box, Text }, look.nerd, THEME.lifted, entry(option.id, option.label, true, THEME.lifted), `${option.id}-chosen`, THEME.surface3) : entry(option.id, option.label, false, THEME.surface3)))}
+    // A Nerd icon as a subpill before the label; safe mode has none, so the prop stays out.
+    const iconLead = (name: string, color: string) => (look.glyph.icon[name] ? { subLead: look.glyph.icon[name], subLeadColor: color } : {})
+    // A switch is a choice bar, as on a settings page: the options on one surface-2 pill, the chosen one on its own surface-3 pill.
+    const choiceBar = (key: string, options: { id: string; label: string; isOn: boolean; icon?: string }[]) =>
+      pill({ Box, Text }, look.nerd, THEME.surface2, (
+        <Box key={`${key}-options`} flexDirection="row" backgroundColor={THEME.surface2}>
+          {options.map(option => {
+            const lead = option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}
+            return option.isOn
+              ? pill({ Box, Text }, look.nerd, THEME.surface3, entry(option.id, option.label, true, THEME.surface3, { idle: THEME.muted, ...lead }), `${option.id}-chosen`, THEME.surface2)
+              : entry(option.id, option.label, false, THEME.surface2, lead)
+          })}
         </Box>
-      ), `${key}-bar`)
+      ), `${key}-bar`, THEME.bg)
 
     // The pane and the section each pad one column on both sides.
     const width = Math.max(20, e.props.bodyColumns - 4)
@@ -689,12 +697,6 @@ export const register: Register = (on, options) => {
       ? <Text key="replay-empty" color={THEME.muted}>{text.replayEmpty}</Text>
       : (
           <Box key="replay-body" flexDirection="column">
-            {/* The steppers sit on top, so they stay put whatever the diff's length. */}
-            <Box key="replay-nav" flexDirection="row" columnGap={1}>
-              {entry('replay-prev', `${glyph.back} ${text.prev}`, at > 0)}
-              <Text color={THEME.onSurface} bold>{fill(text.stepOf, { at: at + 1, total: steps.length })}</Text>
-              {entry('replay-next', `${text.next} ${glyph.title}`, at < steps.length - 1)}
-            </Box>
             <Box key="replay-file" flexDirection="row" marginTop={1}>
               <Text color={THEME.accent} bold wrap="truncate-start">{withIcon(look, iconOf(step.path), step.path)}</Text>
             </Box>
@@ -716,6 +718,24 @@ export const register: Register = (on, options) => {
           </Box>
         )
 
+    // The steppers ride on the heading row, right-aligned, so they stay put whatever the diff's length.
+    const arrow = { color: THEME.accent, bg: mix(THEME.accent, THEME.surface3, LEGEND_WASH) }
+    const replayNav = step ? (
+      <Box key="replay-nav" flexDirection="row" columnGap={1}>
+        {pill({ Box, Text }, look.nerd, THEME.surface3, entry('replay-prev', text.prev, at > 0, THEME.surface3, { subLead: glyph.back, subLeadColor: THEME.accent }), 'replay-prev-pill', THEME.surface1)}
+        <Text color={THEME.onSurface} bold>{fill(text.stepOf, { at: at + 1, total: steps.length })}</Text>
+        {pill({ Box, Text }, look.nerd, THEME.surface3, entry('replay-next', text.next, at < steps.length - 1, THEME.surface3, { badge: { text: glyph.title, ...arrow }, nerd: look.nerd }), 'replay-next-pill', THEME.surface1)}
+      </Box>
+    ) : null
+    const replayTitle = fill(text.replayHeading, { sep: MARK.sep, n: steps.length, unit: steps.length === 1 ? text.editOne : text.editMany })
+    const replayHead = (
+      <Box key="replay-heading-row" flexDirection="row">
+        {heading(elements, look, 'replay', 'replay', replayTitle)}
+        <Box key="replay-heading-gap" flexGrow={1} />
+        {replayNav}
+      </Box>
+    )
+
     const hint =
       mode === 'tree'
         ? `${fill(text.hintTree, { sep: MARK.sep })}${showReads ? '' : fill(text.hintReadsHidden, { sep: MARK.sep })}`
@@ -727,11 +747,11 @@ export const register: Register = (on, options) => {
           {tabRow({ Box, Client, Text }, look.nerd, tabs(false, touched), still)}
           {current.working ? <Text color={THEME.muted}>{text.working}</Text> : null}
         </Box>
-        <Text color={statusColor(note)}>{withMark(look, note) || hint}</Text>
+        <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || hint}</Text>
         <Box key="tabs" flexDirection="row" columnGap={1} marginTop={1}>
           {choiceBar('view', [
-            { id: 'tab-tree', label: withIcon(look, 'files', text.tabTree), isOn: mode === 'tree' },
-            { id: 'tab-replay', label: withIcon(look, 'replay', text.tabReplay), isOn: mode === 'replay' },
+            { id: 'tab-tree', label: text.tabTree, isOn: mode === 'tree', icon: 'files' },
+            { id: 'tab-replay', label: text.tabReplay, isOn: mode === 'replay', icon: 'replay' },
           ])}
           {mode === 'tree'
             ? choiceBar('scope', [
@@ -741,7 +761,7 @@ export const register: Register = (on, options) => {
               ])
             : null}
         </Box>
-        {mode === 'tree' ? section(elements, look, 'tree', 'folder-open', rootName, tree) : section(elements, look, 'replay', 'replay', fill(text.replayHeading, { sep: MARK.sep, n: steps.length, unit: steps.length === 1 ? text.editOne : text.editMany }), replay)}
+        {mode === 'tree' ? section(elements, look, 'tree', 'folder-open', rootName, tree) : section(elements, look, 'replay', '', '', [replayHead, replay])}
         {/* The footer names what each name color means, once, instead of a letter on every row. */}
         {mode === 'tree' ? <Box key="legend-push" flexGrow={1} /> : null}
         {mode === 'tree' ? (
@@ -753,7 +773,7 @@ export const register: Register = (on, options) => {
               )}
               <Box key="legend-gap" flexGrow={1} />
               {/* The session's own folder opens from a pill at the footer's right end, with the folder rows' mark. */}
-              {pill({ Box, Text }, look.nerd, THEME.surface3, entry('session-reveal', `${look.glyph.reveal} ${text.sessionFolder}`, false, THEME.surface3), 'session-reveal-pill', THEME.bg)}
+              {pill({ Box, Text }, look.nerd, THEME.surface3, entry('session-reveal', text.sessionFolder, false, THEME.surface3, { subLead: look.glyph.icon.folder ?? look.glyph.reveal, subLeadColor: THEME.folder }), 'session-reveal-pill', THEME.bg)}
             </Box>
           </Box>
         ) : null}

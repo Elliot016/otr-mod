@@ -3,7 +3,7 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
 import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
-import type { EntryMessage, EntryProps } from './entry'
+import { mix, type EntryMessage, type EntryProps } from './entry'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { isNerdFace, lookFor, section, terminalSettings, type IconMode, withMark } from './look'
@@ -187,6 +187,13 @@ async function openingPane($: EngineInterface) {
 // The icons switch: every mod keeps its own icons setting, and this writes the same value into each, as a person would in its panel.
 const ICON_MODES = ['auto', 'nerd', 'safe'] as const
 
+// Rows above the hover card (the tabs, the status line and the gap under them), and the card's own rows.
+const HEAD_ROWS = 3
+const CARD_ROWS = 5
+
+// The share of green left in the on count's pill, as the legend pills tint theirs.
+const COUNT_WASH = 0.72
+
 const iconRowsOf = async ($: EngineInterface) => (await $.config.list()).filter(row => row.key.startsWith('mod-') && row.key.endsWith('.icons'))
 
 async function setAllIcons($: EngineInterface, mode: string) {
@@ -288,7 +295,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-manager" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+      return <Box key="toasts-manager" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
     }
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
@@ -298,7 +305,7 @@ export const register: Register = (on, options) => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = menuEntry({ Box, Client, Text }, look.nerd, 'manager', { label: look.glyph.gear, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
-    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
+    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -377,23 +384,22 @@ export const register: Register = (on, options) => {
       const hint = rows.length || actions.length ? fill(text.pageHint, { sep: MARK.sep }) : text.pageHintBack
       const features = featuresOf(mod).map((item, index) => (
         <Box key={`feature-${index}`} flexDirection="row" columnGap={1}>
-          <Text color={THEME.accent}>{MARK.bullet}</Text>
           <Box flexShrink={0}>
-            <Text color={THEME.onSurface}>{item.title}</Text>
+            <Text color={THEME.onSurface} bold>{item.title}</Text>
           </Box>
-          <Text color={THEME.muted} wrap="truncate-end">{item.detail}</Text>
+          <Text color={THEME.muted} wrap="truncate-end">{`${MARK.sep} ${item.detail}`}</Text>
         </Box>
       ))
 
       return frame([
         <Box key="page-head" flexDirection="row" columnGap={1}>
           {tabRow({ Box, Client, Text }, look.nerd, [listTab(false), { id: 'manager-page', label: shownName(mod.name), icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: true }], still)}
-          <Text color={THEME.muted}>{mod.version}</Text>
           <Text color={mod.enabled ? THEME.good : THEME.muted}>{`${MARK.sep} ${mod.enabled ? text.stateOn : text.stateOff}`}</Text>
         </Box>,
-        <Text key="page-note" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
-        <Box key="page-about" flexDirection="column" marginTop={1}>
-          <Text color={THEME.onSurface}>{mod.description}</Text>
+        <Text key="page-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
+        <Box key="page-about" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+          <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(mod.name), sep: MARK.sep, version: mod.version })}</Text>
+          <Text color={THEME.muted}>{mod.description}</Text>
           {mod.showcase?.tagline ? <Text color={THEME.secondary}>{mod.showcase.tagline}</Text> : null}
         </Box>,
         mod.enabled || mod.settings === 0 ? (
@@ -447,17 +453,23 @@ export const register: Register = (on, options) => {
     const applyLabel = fill(pending === 1 ? text.applyOne : text.applyMany, { n: pending })
     const onCount = mods.filter(item => item.enabled).length
 
-    // The hovered mod's name and description, pinned to the bottom of the view over the list, however far it has scrolled.
+    // The sticky card above the list keeps its space while nothing is hovered, so the list never jumps.
     const hoverCard = () => {
       const hovered = mods[hovering]
-      if (!hovered) return null
-      const width = Math.max(10, e.props.bodyColumns - 2)
-      const lines = Math.min(4, Math.max(1, Math.ceil(hovered.description.length / Math.max(1, width - 4))))
-      const height = lines + 3
       return (
-        <Box key="hover-card" position="absolute" top={Math.max(0, e.props.scroll.offset + e.props.scroll.bodyRows - height)} left={1} width={width} height={height} flexDirection="column" paddingX={1} overflow="hidden" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
-          <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(hovered.name), sep: MARK.sep, version: hovered.version })}</Text>
-          <Text color={THEME.muted} wrap="wrap">{hovered.description || text.noDescription}</Text>
+        <Box key="card" position="absolute" top={Math.max(HEAD_ROWS, e.props.scroll.offset)} left={1} width={Math.max(10, e.props.bodyColumns - 2)} height={CARD_ROWS} flexDirection="column" paddingX={1} overflow="hidden" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+          {hovered ? (
+            <Box key="hover-card" flexDirection="column">
+              <Box key="hover-card-title" flexShrink={0}>
+                <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(hovered.name), sep: MARK.sep, version: hovered.version })}</Text>
+              </Box>
+              <Box key="hover-card-text" height={CARD_ROWS - 3} overflow="hidden" flexShrink={0}>
+                <Text color={THEME.muted}>{hovered.description || text.noDescription}</Text>
+              </Box>
+            </Box>
+          ) : (
+            <Text key="hover-card-empty" color={THEME.muted}>{text.cardEmpty}</Text>
+          )}
         </Box>
       )
     }
@@ -466,39 +478,48 @@ export const register: Register = (on, options) => {
     const iconRows = await iconRowsOf($)
     const iconValues = new Set(iconRows.map(row => String(row.value)))
     const iconsNow = iconValues.size === 1 ? [...iconValues][0] : ''
+    // A choice bar as the settings cards draw one: the options on surface 2, the chosen one on its own surface 3 pill.
     const iconOption = (mode: (typeof ICON_MODES)[number]) => {
       const isChosen = iconsNow === mode
-      const bg = isChosen ? THEME.lifted : THEME.surface3
-      const entry = <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, isOpen: isChosen, bg, color: THEME.accent, idle: THEME.muted, still } satisfies EntryProps} />
-      // The chosen option is a pill of its own inside the bar, as the settings cards draw a choice.
-      return isChosen ? pill({ Box, Text }, look.nerd, bg, entry, `icons-${mode}-pill`, THEME.surface3) : <Box key={`icons-${mode}-pad`}>{entry}</Box>
+      const bg = isChosen ? THEME.surface3 : THEME.surface2
+      const entry = <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, isOpen: isChosen, bg, idle: THEME.muted, still } satisfies EntryProps} />
+      return isChosen ? pill({ Box, Text }, look.nerd, bg, entry, `icons-${mode}-pill`, THEME.surface2) : <Box key={`icons-${mode}-pad`}>{entry}</Box>
     }
     const iconsSwitch = iconRows.length ? (
-      <Box key="icons-switch" flexDirection="row" columnGap={1} marginTop={1}>
-        <Text color={THEME.muted}>{text.iconsLabel}</Text>
-        {pill({ Box, Text }, look.nerd, THEME.surface3, ICON_MODES.map(iconOption), 'icons-bar', THEME.bg)}
-        {iconsNow ? null : <Text color={THEME.muted}>{`${MARK.sep} ${text.iconsMixed}`}</Text>}
+      <Box key="icons-switch" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+        <Box key="icons-switch-row" flexDirection="row" columnGap={1}>
+          <Text color={THEME.onSurface} bold>{text.iconsLabel}</Text>
+          {pill({ Box, Text }, look.nerd, THEME.surface2, ICON_MODES.map(iconOption), 'icons-bar', THEME.surface1)}
+          {iconsNow ? null : <Text color={THEME.muted}>{`${MARK.sep} ${text.iconsMixed}`}</Text>}
+        </Box>
+        <Text color={THEME.muted}>{text.iconsDescription}</Text>
       </Box>
     ) : null
 
+    const goLead = { subLead: look.glyph.title, subLeadColor: THEME.accent }
     return frame([
       <Box key="list-head" flexDirection="row" columnGap={1}>
         {tabRow({ Box, Client, Text }, look.nerd, [listTab(true)], still)}
-        <Text color={THEME.muted}>{fill(text.onCount, { on: onCount, total: mods.length })}</Text>
+        {pill({ Box, Text }, look.nerd, mix(THEME.good, THEME.bg, COUNT_WASH), <Text color={THEME.good}>{look.nerd ? fill(text.onCount, { on: onCount }) : ` ${fill(text.onCount, { on: onCount })} `}</Text>, 'on-count', THEME.bg)}
       </Box>,
-      <Text key="list-note" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { sep: MARK.sep })}</Text>,
+      <Text key="list-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { sep: MARK.sep })}</Text>,
+      <Box key="card-space" height={CARD_ROWS} marginTop={1} flexShrink={0} />,
       iconsSwitch,
       mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>{text.noMods}</Text> : null,
       group('dir', text.sectionYours, 'mod'),
       group('installed', text.sectionInstalled, 'installed'),
-      <Box key="list-apply" marginTop={1}>
+      <Box key="list-apply" flexDirection="row" marginTop={1}>
         {/* Nothing pending means nothing to reload; while Claude works, a reload would only queue as a prompt. */}
         {pending === 0 ? (
           <Text color={THEME.muted}>{text.noChanges}</Text>
         ) : working ? (
           <Text color={THEME.muted}>{fill(text.applyBusy, { label: applyLabel, sep: MARK.sep })}</Text>
         ) : (
-          pill({ Box, Text }, look.nerd, THEME.lifted, <Client key="manager-apply" module="./entry.tsx" height={1} props={{ id: 'manager-apply', label: applyLabel, isOpen: true, bg: THEME.lifted, idle: THEME.muted, still } satisfies EntryProps} />, 'manager-apply-pill', THEME.bg)
+          [
+            <Text key="apply-count" color={THEME.muted}>{applyLabel}</Text>,
+            <Box key="apply-gap" flexGrow={1} />,
+            pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-apply" module="./entry.tsx" height={1} props={{ id: 'manager-apply', label: text.applyAction, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, ...goLead }} />, 'manager-apply-pill', THEME.bg),
+          ]
         )}
       </Box>,
       hoverCard(),

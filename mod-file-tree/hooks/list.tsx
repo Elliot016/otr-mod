@@ -1,7 +1,6 @@
 import type { ClientModule } from 'claude-code'
 
 import { HOVER_STEPS, hoverMix, mix, shimmerColor, stepToward, TICK_MS } from './entry'
-import style from './style'
 import { CAPS, THEME } from './theme'
 
 // live: Claude is on this file right now; added, changed and read set the name's color.
@@ -24,6 +23,8 @@ export type Row = {
   changedAt?: number
   // The mark the row ends in: a file's opens it in VS Code or the default app, a folder's opens it in the file manager.
   endMark: string
+  // The open mark's color: a folder's differs from a file's arrow.
+  endColor: string
 }
 
 // offset is the first row's index in the whole tree: a long tree draws as several lists.
@@ -33,8 +34,8 @@ export type ListProps = { rows: Row[]; offset?: number; still?: boolean; nerd?: 
 
 export type ListMessage = { type: 'select' | 'open'; index: number }
 
-// The open mark and the space before it.
-export const OPEN_CELLS = 2
+// The space, then the open mark's pill: caps around it on Nerd, a space each side on safe.
+export const OPEN_CELLS = 4
 
 // A file's name carries its status as color, named once in the pane's legend instead of a letter on every row.
 export const NAME_COLOR: Record<Tone, string> = { live: THEME.onSurface, added: THEME.good, changed: THEME.warn, read: THEME.secondary, dir: THEME.onSurface }
@@ -60,6 +61,17 @@ const livePill = (Text: (props: any) => unknown, word: string, nerd: boolean) =>
   <Text key="live-word" color={THEME.pill} backgroundColor={LIVE_PILL}>{word}</Text>,
   <Text key="live-cap-right" color={LIVE_PILL}>{nerd ? CAPS.right : ' '}</Text>,
 ]
+
+// A Client draws Text only, so the open mark's pill draws its caps itself; OPEN_CELLS counts these cells.
+const openPill = (Text: (props: any) => unknown, glyph: string, color: string, nerd: boolean) =>
+  nerd
+    ? [
+        <Text key="open-gap">{' '}</Text>,
+        <Text key="open-cap-left" color={THEME.surface3}>{CAPS.left}</Text>,
+        <Text key="open" color={color} backgroundColor={THEME.surface3}>{glyph}</Text>,
+        <Text key="open-cap-right" color={THEME.surface3}>{CAPS.right}</Text>,
+      ]
+    : [<Text key="open-gap">{' '}</Text>, <Text key="open" color={color} backgroundColor={THEME.surface3}>{` ${glyph} `}</Text>]
 
 // A file whose edit just landed starts in the live band's colors and fades to its own over this long.
 const GLOW_MS = 2500
@@ -140,7 +152,7 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
             {isLive && row.status ? livePill(Text, row.status, props.nerd === true) : null}
             {isLive && row.status && (row.add > 0 || row.del > 0) ? <Text> </Text> : null}
             {row.add > 0 || row.del > 0 ? countsPill(Text, row.add, row.del, props.nerd === true) : null}
-            {row.endMark ? <Text key="open" color={index === hovered ? THEME.accent : style.colors.pills.separator}>{` ${row.endMark}`}</Text> : null}
+            {row.endMark ? openPill(Text, row.endMark, row.endColor, props.nerd === true) : null}
           </Box>
         )
       })}

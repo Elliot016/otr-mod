@@ -74,7 +74,7 @@ const Cloud: ClientModule<CloudProps, number> = (props, surface) => {
           <Box key={`row-${at}`} flexDirection="row">
             <Box key={`row-${at}-lead`} width={lead} flexShrink={0}>
               {group
-                ? pill(`tag-${at}`, mix(group.hex, THEME.bg, TAG_WASH), <Text color={group.hex}>{`${group.icon} ${group.label}`}</Text>)
+                ? pill(`tag-${at}`, mix(group.hex, THEME.surface1, TAG_WASH), <Text color={group.hex}>{`${group.icon} ${group.label}`}</Text>)
                 : null}
             </Box>
             <Box key={`row-${at}-chips`} flexDirection="row" columnGap={1}>

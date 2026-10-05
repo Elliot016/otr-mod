@@ -8,7 +8,7 @@ import { tagName } from './tags'
 import { groupAgents, modelHue, readAgent, type Agent } from './agents'
 import { cardSpace, stickyCard } from './card'
 import type { EntryMessage } from './entry'
-import { isNerdFace, lookFor, terminalSettings, withMark, type IconMode } from './look'
+import { isNerdFace, lookFor, section, subpill, terminalSettings, withMark, type IconMode } from './look'
 import { menuEntry, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -290,7 +290,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-skills" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+      return <Box key="toasts-skills" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
     }
     const nerd = look.nerd
 
@@ -302,7 +302,7 @@ export const register: Register = (on, options) => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = menuEntry({ Box, Client, Text }, nerd, 'skills', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
+    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -356,7 +356,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs('settings'), still)}
-          <Text color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
+          <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
         </Box>
       )
@@ -392,23 +392,24 @@ export const register: Register = (on, options) => {
       const entry = groups.flatMap(group => group.skills.map(skill => ({ skill, group })))[selected]
       if (entry) card = { icon: entry.group.swatch.icon, hex: entry.group.swatch.hex, title: `/${entry.skill.name}`, tag: tagName(entry.group.tag), extra: '', description: entry.skill.description }
     }
-    const width = e.props.bodyColumns - 2
+    // Pane padding, then the section's border and padding.
+    const width = e.props.bodyColumns - 2 - 4
     const empty = view === 'agents' && agents.length === 0
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(view), still)}
-        <Text color={statusColor(note)}>{note || fill(view === 'agents' ? text.agentsHint : text.hint, { sep: MARK.sep })}</Text>
+        <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(view === 'agents' ? text.agentsHint : text.hint, { sep: MARK.sep })}</Text>
         {empty ? <Text color={THEME.muted}>{text.noAgents}</Text> : null}
         {card ? cardSpace({ Box }, CARD_ROWS) : null}
-        <Box marginTop={1}>
+        {section({ Box, Text }, look, 'cloud', '', '', (
           <Client key={`${view}-cloud`} module="./cloud.tsx" height={layoutCloud(cloud, width).rows.length} props={{ groups: cloud, width, selected: view === 'agents' ? selectedAgent : selected, nerd: look.nerd } satisfies CloudProps} />
-        </Box>
+        ))}
         {card
           ? stickyCard({ Box }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, (
               <Box key="card-body" flexDirection="column">
                 <Box flexDirection="row" columnGap={1} flexShrink={0}>
-                  <Text backgroundColor={card.hex} color={THEME.bg}>{` ${card.icon} `}</Text>
+                  {subpill({ Box, Text }, look.nerd, THEME.surface1, card.icon, 'card-icon', card.hex)}
                   <Text color={THEME.onSurface} bold>{card.title}</Text>
                   <Text color={card.hex}>{card.tag}</Text>
                   {card.extra ? <Text color={THEME.muted}>{`${MARK.sep} ${card.extra}`}</Text> : null}

@@ -138,6 +138,8 @@ test('panel lists skill groups and a press fills the prompt', async ($, on) => {
   expect(box).toBe('please ')
   expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain('─')
 
+  // The card's title leads with the tag's icon as a subpill.
+  expect(await ui.find({ key: 'card-icon' })).toBeDefined()
   // Pointing at a chip shows it in the card and adds nothing.
   await ui.pointer({ in: 'skills-cloud', type: 'move', x: 14, y: 2 })
   expect(await ui.find({ type: 'Text', text: '/plain' })).toBeDefined()

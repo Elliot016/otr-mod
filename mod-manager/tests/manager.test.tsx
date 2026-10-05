@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { discover, featuresOf, setEnabled, type Io } from '../hooks/registry'
+import { THEME } from '../hooks/theme'
 
 const SETTINGS = {
   $schema: 'https://example.test/schema.json',
@@ -204,7 +205,8 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
 
   const dirs = () => String(JSON.parse(files[settingsPath]!).env.CLAUDE_CODE_PLUGIN_DIRS)
   expect(JSON.stringify(await ui.drawn({ in: 'manager-tab' }))).toContain('3')
-  expect(await ui.find({ type: 'Text', text: '2 of 3 on' })).toBeDefined()
+  // The count beside the tab is a green pill, padded in safe mode.
+  expect(await ui.find({ type: 'Text', text: ' 2 on ' })).toBeDefined()
   // Rows group by source, and nothing toggled yet means nothing to reload.
   expect(await ui.find({ type: 'Text', text: /^Yours$/ })).toBeDefined()
   // Beside each readable name, the package name: the folder to open.
@@ -218,10 +220,12 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
   expect(JSON.parse(files[settingsPath]!).enabledPlugins['alpha@inline']).toBe(false)
   expect(await ui.find({ type: 'Text', text: /Alpha disabled, reload plugins to apply/ })).toBeDefined()
-  expect(JSON.stringify(await ui.drawn({ in: 'manager-apply' }))).toContain(' Reload plugins to apply 2 changes ')
+  expect(await ui.find({ type: 'Text', text: 'Reload plugins to apply 2 changes' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-apply' }))).toContain(' Reload plugins ')
+  expect(JSON.stringify(await ui.find({ key: 'manager-apply-pill' }))).toContain(THEME.surface3)
   // Toggling alpha back leaves one change pending.
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
-  expect(JSON.stringify(await ui.drawn({ in: 'manager-apply' }))).toContain(' Reload plugins to apply 1 change ')
+  expect(await ui.find({ type: 'Text', text: 'Reload plugins to apply 1 change' })).toBeDefined()
   // While Claude works the reload would only queue as a prompt, so it waits.
   await $.turn.start({ turnId: 't1' } as never)
   await ui.redraw()
@@ -230,6 +234,9 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   expect(await ui.find({ type: 'Text', text: /alpha does a thing/ })).toBeDefined()
   await ui.pointer({ in: 'list-dir', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ key: 'hover-card' })).toBeUndefined()
+  // The card keeps its place above the list with a hint, so the list never jumps.
+  expect(await ui.find({ type: 'Text', text: 'Point at a mod to read what it does' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn())).toContain('"top":3')
   await ui.pointer({ in: 'list-dir', type: 'move', x: 12, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'alpha does a thing' })).toBeDefined()
   expect(await ui.find({ key: 'hover-card' })).toBeDefined()
@@ -241,7 +248,7 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   expect(await ui.find({ type: 'Text', text: /beta does a thing/ })).toBeDefined()
   expect(JSON.stringify(await ui.drawn({ in: 'manager-page' }))).toContain('Beta')
   await ui.pointer({ in: 'manager-tab', type: 'down', button: 'left', x: 1, y: 0 })
-  expect(await ui.find({ type: 'Text', text: '3 of 3 on' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' 3 on ' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -444,6 +451,8 @@ test('the icons switch shows Mixed when mods differ, and one click sets every mo
     props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   } as never)
   expect(await ui.find({ type: 'Text', text: '· Mixed' })).toBeDefined()
+  // The switch sits in its own setting card: the label, the bar, and what it does.
+  expect(await ui.find({ type: 'Text', text: /^Sets every mod's icons at once/ })).toBeDefined()
 
   await ui.pointer({ in: 'icons-nerd', type: 'down', button: 'left', x: 1, y: 0 })
   await ui.redraw()

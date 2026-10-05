@@ -2,7 +2,7 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { cardSpace, stickyCard } from './card'
 import type { EntryMessage, EntryProps } from './entry'
-import { isNerdFace, lookFor, terminalSettings, withMark, type IconMode } from './look'
+import { isNerdFace, lookFor, section, subpill, terminalSettings, withMark, type IconMode } from './look'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -339,7 +339,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-prompts" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+      return <Box key="toasts-prompts" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
     }
     const nerd = look.nerd
 
@@ -351,7 +351,7 @@ export const register: Register = (on, options) => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = menuEntry({ Box, Client, Text }, nerd, 'prompts', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
+    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look), ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -405,7 +405,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
-          <Text color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
+          <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
         </Box>
       )
@@ -414,7 +414,8 @@ export const register: Register = (on, options) => {
     // A reload resets module state while the pane stays open, so read the transcript again.
     if (prompts.length === 0) await load($)
 
-    const width = Math.max(10, e.props.bodyColumns - 2 - GUTTER - 2)
+    // Pane padding, the section's border and padding, the gutter and the dot.
+    const width = Math.max(10, e.props.bodyColumns - 2 - 4 - GUTTER - 2)
     const current = prompts[selected]
     const stops = prompts.map((prompt, index) => ({ index, time: clock(prompt.at), text: oneLine(prompt.text, width) }))
     const marks = { dot: MARK.stop, openDot: MARK.stopOpen, rail: MARK.rail }
@@ -435,7 +436,7 @@ export const register: Register = (on, options) => {
         const first = railFirst || n > 0
         return <Client key={n === 0 ? key : `${key}-${n}`} module="./timeline.tsx" height={timelineRows(chunk.length, first)} props={{ stops: chunk, selected, railFirst: first, ...marks } satisfies TimelineProps} />
       })
-    const stat = (key: string, body: unknown) => pill({ Box, Text }, look.nerd, THEME.surface3, body, key, THEME.bg)
+    const stat = (key: string, body: unknown) => pill({ Box, Text }, look.nerd, THEME.surface3, body, key, THEME.surface1)
     const stats = current
       ? [
           current.durationMs !== undefined ? stat('open-time', <Text color={THEME.muted}>{duration(current.durationMs)}</Text>) : null,
@@ -455,14 +456,14 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
-        <Text color={statusColor(note)}>{note || fill(text.hint, { sep: MARK.sep })}</Text>
+        <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(text.hint, { sep: MARK.sep })}</Text>
         {prompts.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
         {current ? cardSpace({ Box }, CARD_ROWS) : null}
-        <Box marginTop={1} flexDirection="column">
-          {before.length > 0 ? (
+        {section({ Box, Text }, look, 'timeline', '', '', [
+          before.length > 0 ? (
             timeline('timeline-before', before, false)
-          ) : null}
-          {current && hasOpen ? (
+          ) : null,
+          current && hasOpen ? (
             <Box key="open" flexDirection="row" paddingLeft={GUTTER} columnGap={1}>
               {/* The rail runs on only when a stop follows. */}
               <Text color={THEME.accent}>{after.length > 0 ? MARK.rail : ' '}</Text>
@@ -470,20 +471,23 @@ export const register: Register = (on, options) => {
                 {stats}
               </Box>
               {/* A Button, not an Entry: a transcript scroll needs the person's press, and a Client click is refused as not person-initiated. */}
-              {/* The same open mark as a file row in mod-file-tree: dim at rest, the accent under the pointer. */}
-              <Box key="open-jump-box" flexShrink={0}>
-                <Button key="open-jump" label={MARK.open} plain dimColor hover={{ scope: 'open-jump-box', color: THEME.accent }} onPress={() => jump($, selected)} />
+              {/* A Button takes no color prop, so the glyph lights accent under the pointer only. */}
+              <Box key="open-jump-pill" flexShrink={0}>
+                {pill({ Box, Text }, look.nerd, THEME.surface3, (
+                  <Button key="open-jump" label={look.nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: 'open-jump-box', color: THEME.accent }} onPress={() => jump($, selected)} />
+                ), 'open-jump-box', THEME.surface1)}
               </Box>
             </Box>
-          ) : null}
-          {after.length > 0 ? (
+          ) : null,
+          after.length > 0 ? (
             timeline('timeline-after', after, true)
-          ) : null}
-        </Box>
+          ) : null,
+        ])}
         {current
           ? stickyCard({ Box }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, [
-              <Box key="card-title" flexShrink={0}>
-                <Text color={THEME.onSurface} bold>{[fill(text.cardNumber, { n: selected + 1 }), clock(current.at)].filter(Boolean).join(` ${MARK.sep} `)}</Text>
+              <Box key="card-title" flexDirection="row" columnGap={1} flexShrink={0}>
+                {subpill({ Box, Text }, look.nerd, THEME.surface1, fill(text.cardNumber, { n: selected + 1 }), 'card-number')}
+                {clock(current.at) ? <Text color={THEME.onSurface} bold>{clock(current.at)}</Text> : null}
               </Box>,
               <Box key="card-text" height={CARD_ROWS - 3 - (pageCount > 1 ? 1 : 0)} overflow="hidden" flexShrink={0}>
                 <Text color={THEME.muted}>{current.text}</Text>

@@ -7,7 +7,7 @@ export default {
   "settingsWaiting": "Settings panel waiting: {reason}",
   "jumped": "Jumped to #{n}",
   "settingSaved": "{label} saved",
-  "settingsHint": "Click a control to change it {sep} Saved at once, the mod reloads",
+  "settingsHint": "Click a setting to change it {sep} The mod reloads",
   "hint": "Click a prompt to open it {sep} ↗ scrolls to it",
   "settingsTab": "Settings",
   "tools": "{count} tools",

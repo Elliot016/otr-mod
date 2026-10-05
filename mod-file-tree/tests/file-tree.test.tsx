@@ -132,6 +132,9 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   expect(await replay()).toContain('"y"')
   expect(await replay()).toContain(THEME.addBg)
   expect(await replay()).toContain(THEME.delBg)
+  // Prev and Next ride on the section's heading row; the open view's option is its own surface-3 pill.
+  expect(JSON.stringify(await ui.find({ key: 'replay-heading-row' }))).toContain('replay-next')
+  expect(JSON.stringify(await ui.find({ key: 'tab-replay-chosen-body' }))).toContain(THEME.surface3)
   await click('replay-next')
   expect(await ui.find({ type: 'Text', text: '2 of 2' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'docs/new.md' })).toBeDefined()
@@ -183,7 +186,8 @@ test("a file row ends in the open mark; a click on it opens the file instead of 
   const ran = launches(on)
   await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
   const ui = await $.ui.mount(PANE)
-  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(' ↗')
+  // Safe mode pads the mark inside its surface-3 pill.
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(`"backgroundColor":"${THEME.surface3}"},"children":[" ↗ "]`)
   // The pane is 70 columns, the rows 66 cells: the mark is the last one.
   await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
   // VS Code first; without it, the system's opener.
@@ -241,7 +245,13 @@ test('icons=nerd leads the kinds and the title with Nerd icons', { options: { ic
   const ui = await $.ui.mount(PANE)
   expect(JSON.stringify(await ui.drawn({ in: 'filetree-tab' }))).toContain(nf(0xeb86))
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(`${nf(0xe609)} `)
-  expect(JSON.stringify(await ui.drawn({ in: 'tab-replay' }))).toContain(`${nf(0xea82)} Replay`)
+  // The view bar's icons are subpills before the label, the open mark a capped pill at the row's end.
+  const replayTab = JSON.stringify(await ui.drawn({ in: 'tab-replay' }))
+  expect(replayTab).toContain(nf(0xea82))
+  expect(replayTab).toContain(' Replay ')
+  const list = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(list).toContain(`"color":"${THEME.accent}","backgroundColor":"${THEME.surface3}"},"children":["↗"]`)
+  expect(list).toContain(nf(0xe0b6))
   await ui.unmount()
 })
 

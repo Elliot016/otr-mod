@@ -12,12 +12,12 @@
     "show_reads": {
       "true": [
         { "spans": [{ "text": "▾ ", "color": "muted" }, { "text": "hooks", "color": "onSurface" }] },
-        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "register.tsx  ", "color": "warn" }, { "text": " +4 ", "color": "good", "bg": "surface3" }, { "text": "−1 ", "color": "alert", "bg": "surface3" }] },
-        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "theme.ts", "color": "secondary" }] }
+        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "register.tsx  ", "color": "warn" }, { "text": "", "pill": true, "parts": [{ "text": "+4", "color": "good" }, { "text": " " }, { "text": "−1", "color": "alert" }] }, { "text": " " }, { "text": "↗", "color": "accent", "pill": true }] },
+        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "theme.ts              ", "color": "secondary" }, { "text": "↗", "color": "accent", "pill": true }] }
       ],
       "false": [
         { "spans": [{ "text": "▾ ", "color": "muted" }, { "text": "hooks", "color": "onSurface" }] },
-        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "register.tsx  ", "color": "warn" }, { "text": " +4 ", "color": "good", "bg": "surface3" }, { "text": "−1 ", "color": "alert", "bg": "surface3" }] }
+        { "spans": [{ "text": "│ ", "color": "border" }, { "text": "register.tsx  ", "color": "warn" }, { "text": "", "pill": true, "parts": [{ "text": "+4", "color": "good" }, { "text": " " }, { "text": "−1", "color": "alert" }] }, { "text": " " }, { "text": "↗", "color": "accent", "pill": true }] }
       ]
     },
     "wrap_diff": {

@@ -39,7 +39,7 @@ const ModList: ClientModule<ListProps, number> = (props, surface) => {
   return (
     <Box flexDirection="column">
       {rows.map((row, at) => {
-        const bg = at === hovered ? THEME.lifted : THEME.bg
+        const bg = at === hovered ? THEME.lifted : THEME.surface1
         const fill = row.enabled ? mix(THEME.good, bg, WASH) : THEME.surface3
         const label = (row.enabled ? on : off).padEnd(Math.max(on.length, off.length))
         const end = (side: string, key: string) => <Text key={key} color={fill} backgroundColor={nerd ? bg : fill}>{nerd ? side : ' '}</Text>

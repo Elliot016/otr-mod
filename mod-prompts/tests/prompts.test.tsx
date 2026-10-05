@@ -79,6 +79,9 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' }))).toContain(' second prompt')
   expect(await ui.find({ type: 'Text', text: '23s' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '2 tools' })).toBeDefined()
+  // The card's number is a subpill, padded in safe mode.
+  expect(await ui.find({ key: 'card-number' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' #3 ' })).toBeDefined()
   // A stop shows the clock time its prompt was sent; the queued fixture row has no timestamp, so it shows none.
   const sent = new Date('2026-10-03T11:58:00Z')
   const hhmm = `${String(sent.getHours()).padStart(2, '0')}:${String(sent.getMinutes()).padStart(2, '0')}`
@@ -88,7 +91,9 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   await ui.pointer({ in: 'timeline-before', type: 'down', button: 'left', x: 8, y: 0 })
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' }))).toContain(' first prompt')
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-after' }))).toContain('second prompt')
-  expect(await ui.find({ type: 'Button', text: '↗' })).toBeDefined()
+  // Safe mode pads the jump glyph inside its pill, since it has no rounded caps.
+  expect(await ui.find({ type: 'Button', text: ' ↗ ' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn())).toContain('open-jump-box-body')
   await ui.press({ key: 'open-jump' })
   // The kit answers no ui.scroll, so the press shows its refusal; targetOf is checked on its own below.
   expect(await ui.find({ type: 'Text', text: /no implementation for ui.scroll/ })).toBeDefined()
