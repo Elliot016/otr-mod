@@ -41,9 +41,9 @@
       "description": "Folds each finished turn under its prompt to one summary line and each tool call to one line, unfolded in place as a card by a click; /mod-turn-fold settings opens its settings"
     },
     {
-      "name": "mod-handoff",
-      "source": "./mod-handoff",
-      "description": "A Handoff pill that, after a confirm, writes a handoff of the chat, runs /clear and pastes the handoff into the fresh prompt"
+      "name": "mod-wrap-up",
+      "source": "./mod-wrap-up",
+      "description": "A Wrap up pill: hand off to a fresh session (write a handoff, /clear, paste it) or fill a /compact that keeps what you pick"
     },
     {
       "name": "mod-collision-guard",

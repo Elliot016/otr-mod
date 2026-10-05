@@ -13,7 +13,7 @@ Claude Code mods I develop. A mod is a plugin whose `hooks/hooks.json` points at
 | `mod-prompts` | Our take on prompt-rail as a sidebar: every prompt of the session (live branch, so `/rewind`'s abandoned ones drop out). Mouse only: a click on a prompt shows it in the sticky card, `[↵]` jumps the transcript there. Opens from `/mod-prompts` or the Prompts entry in the menu pill | Terminal | Loaded after one restart. Not checked live yet |
 | `mod-menu` | A pill above the prompt, `( Mods │ Skills )` (open bright, closed dim): a click shows that panel and closes the open one, a click on the open one hides it. Each panel mod draws its own entry (panel contract in the standard); mod-menu owns `/mod-menu`, which hides or shows the line | Terminal | Loaded every session. Checked live on 2026-10-03 |
 | `mod-turn-fold` | Folds each finished turn under its prompt to one line (`+ 12 tools · Edit(path) +3 −1 · Skill(x) · 1m 4s`), keeping the final reply. Unfolded, the turn is a tinted card with a strip down its left: each tool call is one line with its own toggle, and a click on the chip, the line or the strip folds it back. `/mod-turn-fold settings` opens its panel: two settings with example cards, and its actions | Terminal | Loaded after one restart. Folding, chips, settings panel and actions checked live on 2026-10-03 |
-| `mod-handoff` | A Handoff pill above the prompt: one click asks `Clear & continue?` in place, Yes writes a handoff of the chat through a hidden fork with its `session-handoff` skill, runs `/clear` and pastes the handoff into the fresh prompt to review and send. `/mod-handoff` runs it without the confirm | Terminal | Not checked live yet |
+| `mod-wrap-up` | A Wrap up pill above the prompt offers Handoff or Compact. Either opens a card where Haiku's threads of the session and fixed items (files in play, decisions, open tasks, errors seen) each keep or drop on a click. Compact fills `/compact` with matching instructions; Handoff writes a handoff through a hidden fork with its `session-handoff` skill, runs `/clear` and pastes it into the fresh prompt. Nothing is sent. `/mod-wrap-up [compact]` opens the card | Terminal | Not checked live yet |
 | `mod-collision-guard` | Before Edit, Write, MultiEdit or NotebookEdit, checks whether another open session edited the same file in the last 30 minutes (setting). If so, asks in Claude Code's question dialog: proceed, move to a worktree, cancel or your own instruction. Each session logs its edits to its own file under `~/.claude/mod-collision-guard/` | Terminal | Not checked live yet |
 | `mod-file-tree` | A Files pill opens a sidebar with the tree of files Claude touched this session, the latest one lit while it works, `+/-` counts per edit, and a Replay view that steps through the last turn's diffs with Prev and Next | Terminal | Not checked live yet |
 | `mod-next-steps` | After each turn, up to three suggested next prompts above the input from a hidden fork; a click, or its digit typed alone into the empty prompt, puts one in the prompt without sending; sending a prompt clears them | Terminal | Not checked live yet |
@@ -98,7 +98,7 @@ Another open session edited the same file: proceed, move to a worktree, cancel o
 
 ![Collision guard](showcase/collision-guard.png)
 
-### mod-handoff
+### mod-wrap-up
 
 Handoff asks first, lets you pick which threads carry over, writes the handoff, clears the chat and leaves it in the prompt to review. Played at double speed. [Video](showcase/handoff-full.mp4)
 

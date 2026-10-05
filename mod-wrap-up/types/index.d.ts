@@ -1,6 +1,6 @@
 declare module 'claude-code' {
   interface PluginState {
-    'mod-handoff': { pane: boolean }
+    'mod-wrap-up': { pane: boolean }
     'mod-menu': { hidden: boolean }
   }
 }

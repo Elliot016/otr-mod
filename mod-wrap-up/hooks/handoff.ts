@@ -81,27 +81,45 @@ export function parseThreads(reply: string): Thread[] {
   return threads.length >= 2 ? threads.slice(0, MAX_THREADS) : []
 }
 
-// The dialog answers the chosen labels comma-joined; text that is no label is what the person typed in Other.
-export function pickedThreads(answer: string, threads: Thread[]) {
-  const parts = answer.split(',').map(part => part.trim()).filter(Boolean)
-  const kept = threads.filter(thread => parts.includes(thread.label))
-  const note = parts.filter(part => !threads.some(thread => thread.label === part)).join(', ')
-  return { kept, note }
-}
+// What either path can keep besides the threads, as the card's "Also keep" line; the label lives in text.ts under the id.
+export const ALSO_KEEP = [
+  { id: 'files', phrase: 'the files in play', isKept: true },
+  { id: 'decisions', phrase: 'the decisions made', isKept: true },
+  { id: 'tasks', phrase: 'the open tasks', isKept: true },
+  { id: 'errors', phrase: 'the errors seen and how they were fixed', isKept: false },
+] as const
+
+export type AlsoId = (typeof ALSO_KEEP)[number]['id']
+
+const listed = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
 
 // The instruction added to the handoff prompt; empty when everything carries over.
-export function scopeNote(threads: Thread[], kept: Thread[], note: string) {
+export function scopeNote(threads: Thread[], kept: Thread[], also: Record<AlsoId, boolean>) {
   const dropped = threads.filter(thread => !kept.includes(thread))
-  if (dropped.length === 0 && !note) return ''
+  const alsoDropped = ALSO_KEEP.filter(item => !also[item.id]).map(item => item.phrase)
+  if (dropped.length === 0 && alsoDropped.length === 0) return ''
   return [
-    kept.length ? 'Carry over only these threads of the session:' : '',
-    ...kept.map(thread => `- ${thread.label}: ${thread.detail}`),
+    dropped.length && kept.length ? 'Carry over only these threads of the session:' : '',
+    ...(dropped.length ? kept.map(thread => `- ${thread.label}: ${thread.detail}`) : []),
     dropped.length ? 'Leave out everything about:' : '',
     ...dropped.map(thread => `- ${thread.label}: ${thread.detail}`),
-    note ? `The person also asked for: ${note}` : '',
+    alsoDropped.length ? `Also leave out ${listed(alsoDropped)}.` : '',
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+// The instructions after /compact: the kept threads to focus on, what else to keep, the dropped threads to leave out.
+export function compactNote(threads: Thread[], kept: Thread[], also: Record<AlsoId, boolean>) {
+  const dropped = threads.filter(thread => !kept.includes(thread))
+  const alsoKept = ALSO_KEEP.filter(item => also[item.id]).map(item => item.phrase)
+  return [
+    kept.length && dropped.length ? `Focus on ${listed(kept.map(thread => thread.label))}.` : '',
+    alsoKept.length ? `Keep ${listed(alsoKept)}.` : '',
+    dropped.length ? `Leave out ${listed(dropped.map(thread => thread.label))}.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 export const FORK_FAILURES: Record<string, string> = {

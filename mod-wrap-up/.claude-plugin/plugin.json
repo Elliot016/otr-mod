@@ -1,7 +1,7 @@
 {
-  "name": "mod-handoff",
+  "name": "mod-wrap-up",
   "version": "0.1.0",
-  "description": "Clear & Continue: summarizes the session into a handoff, clears, and fills it into the fresh prompt for review",
+  "description": "Wrap up: hand off to a fresh session (summarize, /clear, fill the handoff) or fill a /compact that keeps what you pick",
   "author": {
     "name": "Amorim"
   },
@@ -21,8 +21,8 @@
     },
     "pick_threads": {
       "type": "boolean",
-      "title": "Pick what carries over",
-      "description": "Before writing, Haiku splits the session into up to four threads and asks which ones the handoff keeps. Off, it keeps everything",
+      "title": "Read the threads",
+      "description": "When the card opens, Haiku splits the session into up to four threads you can keep or drop. Off, the card shows only the fixed items and the whole session counts",
       "default": true
     },
     "icons": {
