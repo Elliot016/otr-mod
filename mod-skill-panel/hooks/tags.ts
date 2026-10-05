@@ -1,6 +1,7 @@
 import style from './style'
 import text from './text'
-import { THEME } from './theme'
+import { mix } from './entry'
+import { CAPS, THEME } from './theme'
 
 export const PERSONAL = 'personal'
 
@@ -10,8 +11,6 @@ type Swatch = { hex: string; icon: string }
 export const SWATCHES: Record<string, Swatch> = Object.fromEntries(Object.entries(style.tags).map(([tag, { color, icon }]) => [tag, { hex: color, icon }]))
 
 const FALLBACK = SWATCHES[PERSONAL]!
-
-const CHIP_TEXT = THEME.bg
 
 export const tagName = (tag: string) => (text.tagNames as Record<string, string>)[tag] ?? tag
 
@@ -40,11 +39,33 @@ export const groupSkills = (skills: Skill[]) => {
 }
 
 const rgb = (hex: string) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(';')
+const fgOf = (hex: string) => `\x1b[38;2;${rgb(hex)}m`
+const bgOf = (hex: string) => `\x1b[48;2;${rgb(hex)}m`
 
-const bgChip = (s: Swatch) => `\x1b[48;2;${rgb(s.hex)}m\x1b[38;2;${rgb(CHIP_TEXT)}m ${s.icon} \x1b[39m\x1b[49m`
+// The share of the tag's own hue left in the badge, as the panel's tag pills tint theirs.
+export const TAG_WASH = 0.72
+
+export const knownTag = (tag: string) => (TAG_ORDER.includes(tag) ? tag : PERSONAL)
+
+// The typeahead collapses whitespace runs (a no-break space too), so the padding is the blank braille cell.
+const PAD = '⠀'
+
+// Every badge pads to the longest tag name, so the descriptions after it line up.
+const nameWidth = () => Math.max(...TAG_ORDER.map(tag => tagName(tag).length))
+
+// A tinted pill with the tag's icon and name in its hue, on the typeahead's own background; rounded where the font has the caps.
+export function badge(tag: string, nerd: boolean) {
+  const known = knownTag(tag)
+  const { hex, icon } = swatchFor(known)
+  const wash = mix(hex, THEME.bg, TAG_WASH)
+  const name = tagName(known)
+  const body = `${bgOf(wash)}${fgOf(hex)}${nerd ? '' : ' '}${icon} ${name}${nerd ? '' : ' '}\x1b[39m\x1b[49m`
+  const caps = nerd ? [`${fgOf(wash)}${CAPS.left}\x1b[39m`, `${fgOf(wash)}${CAPS.right}\x1b[39m`] : ['', '']
+  return `${caps[0]}${body}${caps[1]}${PAD.repeat(nameWidth() - name.length)}`
+}
 
 export const stripBadges = (text: string) =>
-  text.replace(/\x1b\[48;2;[\d;]+m\x1b\[38;2;[\d;]+m [^ ]+ \x1b\[39m\x1b\[49m /g, '')
+  TAG_ORDER.flatMap(tag => [badge(tag, true), badge(tag, false)]).reduce((rest, each) => rest.split(`${each} `).join(''), text)
 
 // The typeahead draws the name and description only, so the badge rides on the description.
-export const markDescription = (description: string, tag: string) => `${bgChip(swatchFor(tag))} ${description}`
+export const markDescription = (description: string, tag: string, nerd: boolean) => `${badge(tag, nerd)} ${description}`

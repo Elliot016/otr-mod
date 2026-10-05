@@ -1,16 +1,16 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
-import type { Line, ListMessage } from './list'
-import { actionColumn } from './rows'
+import { layoutCloud, type CloudGroup, type CloudMessage, type CloudProps } from './cloud'
 import { groupSkills, markDescription, readFrontmatter, stripBadges, type Skill } from './tags'
 import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
 import { tagName } from './tags'
+import { groupAgents, modelHue, readAgent, type Agent } from './agents'
 import { cardSpace, stickyCard } from './card'
 import type { EntryMessage } from './entry'
-import { isNerdFace, lookFor, paneTitle, terminalSettings, withMark, type IconMode } from './look'
-import { PILL, pillRow, splitRow, tipLine, titleRow } from './pills'
-import { settingsBody } from './settings'
+import { isNerdFace, lookFor, terminalSettings, withMark, type IconMode } from './look'
+import { menuEntry, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
 
@@ -32,31 +32,39 @@ async function detectLook($: EngineInterface) {
 const PANE = 'skill-panel'
 const SETTINGS = 'skill-panel-settings'
 
-// The row action: add the skill to the prompt.
-const ADD = '[↵]'
-
-// Border, title and three lines of description.
-const CARD_ROWS = 6
-
 let skills: Skill[] = []
 let mods = new Set<string>()
 let note = ''
 let selected = 0
+let agents: Agent[] = []
+let selectedAgent = 0
+// Which list the panel shows; its settings are a pane of their own.
+let view: 'skills' | 'agents' = 'skills'
 
 // Skills the panel lists: model-invocable ones, plus routers, which are the entry points even when flagged.
 const listed = () => skills.filter(skill => !skill.hidden || skill.tag === 'router')
+const orderedAgents = () => groupAgents(agents).flatMap(group => group.agents)
 
-// Appends `/name ` to the prompt unless it is already there.
-async function addSkill($: EngineInterface, index: number) {
-  const skill = groupSkills(listed()).flatMap(group => group.skills)[index]
-  if (!skill) return
+// Appends `word ` to the prompt unless it is already there.
+async function addToPrompt($: EngineInterface, word: string, added: string) {
   const { text: current } = await $.prompt.read()
-  if (!current.split(/\s+/).includes(`/${skill.name}`)) {
+  if (!current.split(/\s+/).includes(word)) {
     const gap = current === '' || /\s$/.test(current) ? '' : ' '
-    const filled = await $.prompt.fill({ text: `${gap}/${skill.name} `, mode: 'append' })
-    note = filled.isFilled ? `${MARK.ok} ${fill(text.added, { name: skill.name })}` : `${MARK.warn} ${text.promptBusy}`
+    const filled = await $.prompt.fill({ text: `${gap}${word} `, mode: 'append' })
+    note = filled.isFilled ? `${MARK.ok} ${added}` : `${MARK.warn} ${text.promptBusy}`
   }
   $.ui.invalidate('ui.render')
+}
+
+async function addSkill($: EngineInterface, index: number) {
+  const skill = groupSkills(listed()).flatMap(group => group.skills)[index]
+  if (skill) await addToPrompt($, `/${skill.name}`, fill(text.added, { name: skill.name }))
+}
+
+// An @agent- mention asks Claude to hand the work to that agent.
+async function addAgent($: EngineInterface, index: number) {
+  const agent = orderedAgents()[index]
+  if (agent) await addToPrompt($, `@agent-${agent.name}`, fill(text.agentAdded, { name: agent.name }))
 }
 
 const isOpen = async ($: EngineInterface, id = PANE) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
@@ -88,6 +96,33 @@ async function toggleSettings($: EngineInterface) {
   if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, opened.isPlaced)
 }
+
+
+// A saved change reloads this mod, which redraws the panel with the new value.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  const result = await $.config.set({ key, value })
+  note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row?.label ?? key })}`
+  $.ui.invalidate('ui.render')
+}
+
+// The panel's title line: skills, agents and settings as tabs, the shown one open.
+const tabs = (open: 'skills' | 'agents' | 'settings') => [
+  { id: 'skills-tab', label: text.paneTitle, icon: look.glyph.icon.skill ?? look.glyph.title, isOpen: open === 'skills', count: listed().length },
+  { id: 'skills-agents', label: text.agentsTab, icon: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, isOpen: open === 'agents', count: agents.length },
+  { id: 'skills-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: open === 'settings' },
+]
+
+// A list tab: switch the list, opening the sidebar first when its settings are shown.
+async function showView($: EngineInterface, next: typeof view) {
+  view = next
+  note = ''
+  if (!(await isOpen($))) await togglePane($)
+  $.ui.invalidate('ui.render')
+}
+
+// Border, title and six lines of description.
+const CARD_ROWS = 9
 
 
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
@@ -148,6 +183,14 @@ export const register: Register = (on, options) => {
       found.push({ name: meta.name ?? entry.name, tag: meta.tag, description: meta.description ?? '', hidden: meta.hidden })
     }
     skills = found
+    const agentRoot = `${home}/.claude/agents`
+    const foundAgents: Agent[] = []
+    for (const entry of await $.fs.list(agentRoot).catch(() => [])) {
+      if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
+      const agent = readAgent(String(await $.fs.read(`${agentRoot}/${entry.name}`).catch(() => '')), entry.name.slice(0, -3))
+      if (agent) foundAgents.push(agent)
+    }
+    agents = foundAgents
     const modDirs = await $.fs.list(`${home}/.claude/mods`).catch(() => [])
     mods = new Set(modDirs.filter(entry => entry.kind === 'dir').map(entry => entry.name))
     // The typeahead caches each answer for the session, so ask it to list again.
@@ -165,7 +208,7 @@ export const register: Register = (on, options) => {
     const tag = skills.find(skill => skill.name === e.command)?.tag ?? (mods.has(e.provider.plugin.split('@')[0]!) ? 'mods' : undefined)
     if (!tag) return answer
 
-    return { ...answer, description: markDescription(answer.description, tag) }
+    return { ...answer, description: markDescription(answer.description, tag, look.nerd) }
   })
 
   // The model reads the same descriptions in its skill list; the badge is only for the typeahead.
@@ -217,11 +260,7 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = (
-      <Box key="menu-pad-skills">
-        <Client key="menu-entry-skills" module="./entry.tsx" height={1} props={{ id: 'skills', label: text.pillLabel, isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening, still }} />
-      </Box>
-    )
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'skills', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
     return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
   })
@@ -241,20 +280,26 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && message.id === 'skills') await openingPane($)
-    // The title row's pill swaps the sidebar and its settings.
-    if (message?.type === 'menu-entry' && message.id === 'skills-settings') await toggleSettings($)
-    if (message?.type === 'menu-entry' && message.id === 'skills-back') await togglePane($)
+    // The title line's tabs swap the lists and the settings; the open tab does nothing.
+    if (message?.type === 'menu-entry' && message.id === 'skills-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
+    if (message?.type === 'menu-entry' && message.id === 'skills-tab') await showView($, 'skills')
+    if (message?.type === 'menu-entry' && message.id === 'skills-agents') await showView($, 'agents')
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
 
     return next(e)
   })
 
-  // The list reports clicks: the add glyph adds, the rest of the row shows the skill in the card.
+  // The cloud reports the chip under the pointer, which the card shows, and a click, which adds it to the prompt.
   on('ui.message', { requestId: 'skill-panel' }, async ($, e, next) => {
-    const message = e.data as ListMessage
-    if (message.type === 'select' && message.index !== selected) {
-      selected = message.index
+    const message = e.data as CloudMessage
+    const shown = view === 'agents' ? selectedAgent : selected
+    if (message?.type === 'hover' && message.index !== shown) {
+      if (view === 'agents') selectedAgent = message.index
+      else selected = message.index
       $.ui.invalidate('ui.render')
     }
+    if (message?.type === 'add') await (view === 'agents' ? addAgent($, message.index) : addSkill($, message.index))
 
     return next(e)
   })
@@ -267,69 +312,68 @@ export const register: Register = (on, options) => {
 
     if (e.requestId === SETTINGS) {
       const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-skill-panel.'))
-      // A saved change reloads this mod, which redraws the panel with the new value.
-      const set = async (row: ConfigRow, value: ConfigValue) => {
-        const result = await $.config.set({ key: row.key, value })
-        note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
-        $.ui.invalidate('ui.render')
-      }
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-          {titleRow({ Box, Client, Text }, look.nerd, paneTitle({ Box, Text }, look, 'settings', text.settingsHeading), 'skills-back', `${look.glyph.back} ${text.backPill}`, still)}
+          {tabRow({ Box, Client, Text }, look.nerd, tabs('settings'), still)}
           <Text color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
-          <Box marginTop={0}>{settingsBody({ Box, Button, Text }, look, { rows, actions: [], working: false, set, run: async () => {} })}</Box>
+          <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
         </Box>
       )
     }
 
-    const groups = groupSkills(listed())
-    const ordered = groups.flatMap(group => group.skills.map(skill => ({ skill, swatch: group.swatch })))
-    const current = ordered[selected]
-
-    // Whole groups pack into as many columns as fit, so a header never sits apart from its skills.
-    const cellWidth = Math.max(...ordered.map(entry => entry.skill.name.length), 1) + 10
-    const columnCount = Math.max(1, Math.floor((e.props.bodyColumns - 2) / (cellWidth + 2)))
-    const totalLines = groups.reduce((sum, group) => sum + group.skills.length + 1, 0)
-    const target = Math.ceil(totalLines / columnCount)
-    const columns: Line[][] = [[]]
+    // Both lists draw the same way: a cloud of groups and the card for the pointed entry.
     let index = 0
-    for (const group of groups) {
-      const block: Line[] = [{ kind: 'header', tag: group.tag, count: group.skills.length, hex: group.swatch.hex }]
-      for (const skill of group.skills) {
-        block.push({ kind: 'skill', index: index++, name: skill.name, hex: group.swatch.hex, icon: group.swatch.icon })
+    let cloud: CloudGroup[]
+    let card: { icon: string; hex: string; title: string; tag: string; extra: string; description: string } | undefined
+    if (view === 'agents') {
+      const agentIcon = look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title
+      cloud = groupAgents(agents).map(group => ({
+        tag: group.model,
+        label: group.model,
+        icon: agentIcon,
+        hex: modelHue(group.model),
+        skills: group.agents.map(agent => ({ index: index++, name: agent.name })),
+      }))
+      const agent = orderedAgents()[selectedAgent]
+      if (agent) {
+        const extra = agent.tools ? fill(text.agentTools, { count: agent.tools }) : text.agentAllTools
+        card = { icon: agentIcon, hex: modelHue(agent.model), title: `@agent-${agent.name}`, tag: agent.model, extra, description: agent.description }
       }
-      const last = columns[columns.length - 1]!
-      if (last.length > 0 && last.length + block.length > target && columns.length < columnCount) columns.push([...block])
-      else last.push(...block)
+    } else {
+      const groups = groupSkills(listed())
+      cloud = groups.map(group => ({
+        tag: group.tag,
+        label: tagName(group.tag),
+        icon: group.swatch.icon,
+        hex: group.swatch.hex,
+        skills: group.skills.map(skill => ({ index: index++, name: skill.name })),
+      }))
+      const entry = groups.flatMap(group => group.skills.map(skill => ({ skill, group })))[selected]
+      if (entry) card = { icon: entry.group.swatch.icon, hex: entry.group.swatch.hex, title: `/${entry.skill.name}`, tag: tagName(entry.group.tag), extra: '', description: entry.skill.description }
     }
+    const width = e.props.bodyColumns - 2
+    const empty = view === 'agents' && agents.length === 0
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {titleRow({ Box, Client, Text }, look.nerd, <Text color={THEME.accent} bold>{`${MARK.stage} ${fill(text.paneHeading, { sep: MARK.sep, count: ordered.length })}`}</Text>, 'skills-settings', `${look.glyph.gear} ${text.settingsPill}`, still)}
-        <Text color={statusColor(note)}>{note || fill(text.hint, { add: ADD, sep: MARK.sep })}</Text>
-        {current ? cardSpace({ Box }, CARD_ROWS) : null}
-        <Box marginTop={1} flexDirection="row" columnGap={2}>
-          {columns.map((column, c) => (
-            <Box key={`column-${c}`} flexDirection="row" columnGap={1}>
-              {actionColumn(
-                { Box, Button, Text },
-                `column-${c}`,
-                column.map(line => (line.kind === 'skill' ? { label: ADD, onPress: () => addSkill($, line.index) } : null)),
-              )}
-              <Client key={`list-${c}`} module="./list.tsx" height={column.length} props={{ lines: column, selected }} />
-            </Box>
-          ))}
+        {tabRow({ Box, Client, Text }, look.nerd, tabs(view), still)}
+        <Text color={statusColor(note)}>{note || fill(view === 'agents' ? text.agentsHint : text.hint, { sep: MARK.sep })}</Text>
+        {empty ? <Text color={THEME.muted}>{text.noAgents}</Text> : null}
+        {card ? cardSpace({ Box }, CARD_ROWS) : null}
+        <Box marginTop={1}>
+          <Client key={`${view}-cloud`} module="./cloud.tsx" height={layoutCloud(cloud, width).rows.length} props={{ groups: cloud, width, selected: view === 'agents' ? selectedAgent : selected, nerd: look.nerd } satisfies CloudProps} />
         </Box>
-        {current
+        {card
           ? stickyCard({ Box }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, (
               <Box key="card-body" flexDirection="column">
                 <Box flexDirection="row" columnGap={1} flexShrink={0}>
-                  <Text backgroundColor={current.swatch.hex} color={THEME.bg}>{` ${current.swatch.icon} `}</Text>
-                  <Text color={THEME.onSurface} bold>{`/${current.skill.name}`}</Text>
-                  <Text color={current.swatch.hex}>{tagName(current.skill.tag)}</Text>
+                  <Text backgroundColor={card.hex} color={THEME.bg}>{` ${card.icon} `}</Text>
+                  <Text color={THEME.onSurface} bold>{card.title}</Text>
+                  <Text color={card.hex}>{card.tag}</Text>
+                  {card.extra ? <Text color={THEME.muted}>{`${MARK.sep} ${card.extra}`}</Text> : null}
                 </Box>
                 <Box height={CARD_ROWS - 3} overflow="hidden" flexShrink={0}>
-                  <Text color={THEME.muted}>{current.skill.description || text.noDescription}</Text>
+                  <Text color={THEME.muted}>{card.description || (view === 'agents' ? text.noAgentDescription : text.noDescription)}</Text>
                 </Box>
               </Box>
             ))

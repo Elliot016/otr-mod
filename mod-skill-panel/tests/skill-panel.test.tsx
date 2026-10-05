@@ -8,6 +8,8 @@ const FILES: Record<string, string> = {
   '/h/.claude/skills/plain/SKILL.md': '---\nname: plain\ndescription: x\n---\nbody',
   '/h/.claude/skills/rev/SKILL.md': '---\nname: rev\ncolor-tag: Review\n---\nbody',
   '/h/.claude/skills/secret/SKILL.md': '---\nname: secret\ndescription: hidden one\ndisable-model-invocation: true\n---\nbody',
+  '/h/.claude/agents/finder.md': '---\nname: finder\ndescription: Finds things\nmodel: haiku\ntools: Read, Grep\n---\nbody',
+  '/h/.claude/agents/helper.md': '---\nname: helper\ndescription: Helps\n---\nbody',
 }
 
 type On = Parameters<Parameters<typeof test>[1]>[1]
@@ -15,7 +17,10 @@ type On = Parameters<Parameters<typeof test>[1]>[1]
 const stubSkills = (on: On) => {
   on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
   on('fs.list', (_$, e) => ({
-    value: neutral(e.path).endsWith('/mods') ? [{ name: 'mod-manager', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] : [
+    value: neutral(e.path).endsWith('/agents') ? [
+      { name: 'finder.md', kind: 'file', size: 0, mtimeMs: 0, isLink: false },
+      { name: 'helper.md', kind: 'file', size: 0, mtimeMs: 0, isLink: false },
+    ] : neutral(e.path).endsWith('/mods') ? [{ name: 'mod-manager', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] : [
       { name: 'plain', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
       { name: 'rev', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
       { name: 'secret', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
@@ -35,7 +40,8 @@ const stubSession = (on: On) => {
   on('ui.panes', () => ({ value: [] }))
 }
 
-const REVIEW_CHIP = '\x1b[48;2;209;168;255m\x1b[38;2;13;14;23m \u2234 \x1b[39m\x1b[49m'
+// The review tag's hue as a text color: the badge's icon and name draw in it.
+const REVIEW_HUE = '\x1b[38;2;209;168;255m'
 
 test('tags: default personal, explicit tag, unknown fallback, malformed skipped', () => {
   expect(readFrontmatter(FILES['/h/.claude/skills/plain/SKILL.md']!)).toEqual({ name: 'plain', tag: 'personal', description: 'x', hidden: false })
@@ -43,9 +49,12 @@ test('tags: default personal, explicit tag, unknown fallback, malformed skipped'
   expect(readFrontmatter('no frontmatter here')).toBeNull()
   expect(readFrontmatter(FILES['/h/.claude/skills/secret/SKILL.md']!)?.hidden).toBe(true)
   expect(swatchFor('nope')).toEqual(swatchFor('personal'))
-  expect(markDescription('Does X', 'review')).toBe(`${REVIEW_CHIP} Does X`)
-  const listing = ['- a: ' + markDescription('Does X', 'review'), '- b: Plain [x] text'].join('\n')
-  expect(stripBadges(listing)).toBe('- a: Does X\n- b: Plain [x] text')
+  const safe = markDescription('Does X', 'review', false)
+  expect(safe).toContain(`${REVIEW_HUE} ∴ review `)
+  expect(safe.endsWith(' Does X')).toBe(true)
+  expect(markDescription('Does X', 'review', true)).toContain(String.fromCodePoint(0xe0b6))
+  const listing = ['- a: ' + safe, '- c: ' + markDescription('Does Y', 'mods', true), '- b: Plain [x] text'].join('\n')
+  expect(stripBadges(listing)).toBe('- a: Does X\n- c: Does Y\n- b: Plain [x] text')
 })
 
 test('describe marks personal skills and leaves other commands alone', async ($, on) => {
@@ -65,12 +74,12 @@ test('describe marks personal skills and leaves other commands alone', async ($,
       provider: { plugin, tier: plugin === 'engine' ? 'core' : 'user' },
     } as never)
 
-  expect((await describe('mod-manager', 'mod-manager')).description).toContain('\x1b[48;2;93;203;255m')
-  expect((await describe('mod-manager', 'mod-manager@inline')).description).toContain('\x1b[48;2;93;203;255m')
+  expect((await describe('mod-manager', 'mod-manager')).description).toContain('\x1b[38;2;93;203;255m')
+  expect((await describe('mod-manager', 'mod-manager@inline')).description).toContain('\x1b[38;2;93;203;255m')
   expect((await describe('other', 'someone-elses-plugin')).description).toBe('Does X')
 
-  expect((await describe('plain')).description).toContain('\x1b[48;2;155;163;196m')
-  expect((await describe('rev')).description).toContain(REVIEW_CHIP)
+  expect((await describe('plain')).description).toContain('\x1b[38;2;155;163;196m')
+  expect((await describe('rev')).description).toContain(REVIEW_HUE)
   expect((await describe('help')).description).toBe('Does X')
 })
 
@@ -113,21 +122,61 @@ test('panel lists skill groups and a press fills the prompt', async ($, on) => {
     props: { title: 'Skills', isFocused: true, bodyColumns: 40, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   } as never)
 
-  // At 40 columns the two visible groups sit side by side: list-0 is [review header, rev], list-1 is [personal header, plain].
-  expect(await ui.find({ type: 'Text', text: '▸ Skills · 2' })).toBeDefined()
+  const tab = JSON.stringify(await ui.drawn({ in: 'skills-tab' }))
+  expect(tab).toContain(' Skills ')
+  expect(tab).toContain('2')
+
+  // The cloud: one row per tag, the tag pill (" ∴ review ", 10 cells, plus a gap) then its chips; the card shows the first skill.
+  const cloud = JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))
+  expect(cloud).toContain('∴ review')
+  expect(cloud).toContain('rev')
+  expect(cloud).toContain('plain')
   expect(await ui.find({ type: 'Text', text: '/rev' })).toBeDefined()
 
-  // The add glyph adds; a repeat is skipped.
-  await ui.press({ key: 'column-0-action-1' })
-  await ui.press({ key: 'column-1-action-1' })
-  await ui.press({ key: 'column-0-action-1' })
-  expect(box).toBe('please /rev /plain ')
+  // Row 1 is the rule between the groups; nothing on it reacts.
+  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 1 })
+  expect(box).toBe('please ')
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain('─')
 
-  // A click on the name shows the skill in the card and adds nothing.
-  await ui.pointer({ in: 'list-1', type: 'down', button: 'left', x: 2, y: 1 })
+  // Pointing at a chip shows it in the card and adds nothing.
+  await ui.pointer({ in: 'skills-cloud', type: 'move', x: 14, y: 2 })
   expect(await ui.find({ type: 'Text', text: '/plain' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'x' })).toBeDefined()
+  expect(box).toBe('please ')
+
+  // A click on a chip adds it; a repeat is skipped.
+  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 0 })
+  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 2 })
+  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 0 })
   expect(box).toBe('please /rev /plain ')
+  await ui.unmount()
+})
+
+test('the agents tab groups agents by model and a click mentions one in the prompt', async ($, on) => {
+  stubSkills(on)
+  stubSession(on)
+  let box = ''
+  on('prompt.read', () => ({ value: { text: box, cursor: box.length } }))
+  on('prompt.fill', (_$, e) => {
+    box = e.mode === 'append' ? box + e.text : e.text
+    return { isFilled: true }
+  })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('state.set', () => ({ value: undefined }))
+
+  await $.session.start({ cwd: '/h' } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-agents' }))).toContain('2')
+  await ui.pointer({ in: 'skills-agents', type: 'down', button: 'left', x: 1, y: 0 })
+
+  // haiku before inherit; an agent without a model is "inherit", one without tools gets every tool.
+  const cloud = JSON.stringify(await ui.drawn({ in: 'agents-cloud' }))
+  expect(cloud.indexOf('haiku')).toBeLessThan(cloud.indexOf('inherit'))
+  expect(await ui.find({ type: 'Text', text: '@agent-finder' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '· 2 tools' })).toBeDefined()
+
+  await ui.pointer({ in: 'agents-cloud', type: 'down', button: 'left', x: 14, y: 2 })
+  expect(box).toBe('@agent-helper ')
   await ui.unmount()
 })
 
@@ -166,12 +215,12 @@ test('icons=nerd draws the settings pill with the Nerd gear', { options: { icons
 test('icons=safe draws the settings pill with the plain gear', { options: { icons: 'safe' } }, async ($, on) => {
   const ui = await skillsPane($, on)
   const pill = JSON.stringify(await ui.drawn({ in: 'skills-settings' }))
-  expect(pill).toContain('⚙')
+  expect(pill).toContain('⊛')
   expect(pill).not.toContain(String.fromCodePoint(0xf013))
   await ui.unmount()
 })
 
-test('the title row pill swaps the sidebar for its settings and back', async ($, on) => {
+test('the title tabs swap the sidebar and its settings, and a settings pill saves its value', async ($, on) => {
   stubSkills(on)
   let open: string[] = []
   const calls: string[] = []
@@ -187,18 +236,28 @@ test('the title row pill swaps the sidebar for its settings and back', async ($,
     return { value: undefined }
   })
   on('config.list', () => ({ value: [{ key: 'mod-skill-panel.animations', label: 'Animations', kind: 'boolean', value: true, description: 'd' }] }) as never)
+  const saved: unknown[] = []
+  on('config.set', (_$: unknown, e: { key: string; value: unknown }) => {
+    saved.push([e.key, e.value])
+    return { value: {} }
+  })
   const pane = (requestId: string) =>
     ({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId, props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } }) as never
 
   await $.command.run({ command: 'mod-skill-panel' })
   const ui = await $.ui.mount(pane('skill-panel'))
+  // The open tab does nothing.
+  await ui.pointer({ in: 'skills-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(calls).toEqual(['open skill-panel'])
   await ui.pointer({ in: 'skills-settings', type: 'down', button: 'left', x: 1, y: 0 })
   expect(calls).toEqual(['open skill-panel', 'close skill-panel', 'open skill-panel-settings'])
   await ui.unmount()
 
   const settings = await $.ui.mount(pane('skill-panel-settings'))
   expect(await settings.find({ type: 'Text', text: 'Animations' })).toBeDefined()
-  await settings.pointer({ in: 'skills-back', type: 'down', button: 'left', x: 1, y: 0 })
+  await settings.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(saved).toEqual([['mod-skill-panel.animations', false]])
+  await settings.pointer({ in: 'skills-tab', type: 'down', button: 'left', x: 1, y: 0 })
   expect(calls.slice(-2)).toEqual(['close skill-panel-settings', 'open skill-panel'])
   await settings.unmount()
 })
