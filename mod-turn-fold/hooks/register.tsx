@@ -1,11 +1,13 @@
 import type { ConfigRow, ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { BarMessage, BarProps } from './bar'
+import type { Chip, ChipsMessage, ChipsProps } from './chips'
 import { isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action, type Previews } from './settings'
+import style from './style'
 import text from './text'
 import { CAPS, fill, MARK, statusColor, THEME } from './theme'
-import { callTime, diffStat, isPrompt, kindsOf, rowKey, thoughtOf, timeOfDay, toolLabel, turnSummary, TurnLog, type Turn } from './turns'
+import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
 
 let transcript = ''
 let log = new TurnLog()
@@ -50,17 +52,18 @@ async function load($: EngineInterface) {
   if (isLoaded) return
   if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
   if (!transcript) transcript = await findTranscript($)
-  if (!transcript) return
-  let text = String(await $.fs.read(transcript).catch(() => ''))
-  if (!text) {
+  // A new session's transcript is empty or not written yet: nothing to read, its rows join the empty log as they draw.
+  const size = transcript ? ((await $.fs.stat(transcript).catch(() => null))?.size ?? 0) : 0
+  let text = size ? String(await $.fs.read(transcript).catch(() => '')) : ''
+  if (size && !text) {
     const isWindows = /^[A-Za-z]:|\\/.test(transcript)
     // cmd's type rejects forward slashes ("The syntax of the command is incorrect").
     const argv = isWindows ? ['cmd', '/c', 'type', transcript.replace(/\//g, '\\')] : ['cat', transcript]
     for await (const chunk of $.process.spawn({ argv })) {
       if (chunk.stream === 'stdout') text += chunk.text
     }
+    if (!text) return
   }
-  if (!text) return
   log = new TurnLog()
   for (const line of text.split('\n')) if (line.trim()) log.feed(line)
   isLoaded = true
@@ -115,8 +118,21 @@ const fit = (text: string, width: number) => {
   return flat.length > width ? `${flat.slice(0, Math.max(0, width - 1))}…` : flat
 }
 
-// `11:32:05 · 6m 12s` with its two caps and a space: the widest start-and-duration a tool line shows.
-const WHEN_WIDTH = 21
+// A Text inside the card overflows instead of wrapping, so long lines break at word boundaries here.
+const wrapWords = (line: string, width: number) => {
+  const rows: string[] = []
+  let row = ''
+  for (const word of line.split(' ')) {
+    if (row && row.length + 1 + word.length > width) {
+      rows.push(row)
+      row = word
+    } else row = row ? `${row} ${word}` : word
+  }
+  return [...rows, row]
+}
+
+// `11:32 · 6m 12s` with its two caps and a space: the widest start-and-duration a tool line shows.
+const WHEN_WIDTH = 18
 
 const widthOf =(e: { viewport?: { columns: number } }) => Math.max(20, (e.viewport?.columns ?? 100) - 6)
 
@@ -169,6 +185,77 @@ const nested = ({ Box, Client }: Bars, key: string, body: unknown, fold: BarProp
     </Box>
   </Box>
 )
+
+type Rows = Bars & { Text: (props: any) => RenderElement }
+
+// Lines added and removed as one pill on the card; plain colored text where the font has no caps.
+function countsPill({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, key: string, added: number, removed: number) {
+  if (!added && !removed) return null
+  const parts = [added ? <Text key={`${key}-added`} color={THEME.good}>{`+${added}`}</Text> : null, removed ? <Text key={`${key}-removed`} color={THEME.alert}>{`${added ? ' ' : ''}−${removed}`}</Text> : null]
+  if (!look.nerd) return <Box key={key} flexDirection="row" flexShrink={0}>{parts}</Box>
+  return (
+    <Box key={key} flexDirection="row" flexShrink={0}>
+      <Text color={THEME.surface3}>{CAPS.left}</Text>
+      <Box key={`${key}-body`} flexDirection="row" backgroundColor={THEME.surface3}>{parts}</Box>
+      <Text color={THEME.surface3}>{CAPS.right}</Text>
+    </Box>
+  )
+}
+
+// One open chip per turn: picking another closes the first, picking the open one closes it.
+async function pickChip($: EngineInterface, turnId: string, kind: string) {
+  const list = await opened($, 'tools')
+  const key = `${turnId}:${kind}`
+  const others = list.filter(open => !open.startsWith(`${turnId}:`))
+  await $.state.set({ plugin: 'mod-turn-fold', key: 'tools' }, list.includes(key) ? others : [...others, key])
+}
+
+// An open turn's work under its head: a line of kind chips (Thought first, then each kind in order of first use) and, under the picked one, its calls or its thinking.
+function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[], width: number) {
+  // Claude Code's drawing reaches a mod sealed, so the thinking comes from the session's messages, without its time.
+  const thoughts = turnThoughts(turn)
+  const kinds = turnKinds(turn)
+  const isOpen = (kind: string) => openTools.includes(`${turn.prompt}:${kind}`)
+  const chips: Chip[] = [
+    ...(thoughts.length ? [{ kind: 'thinking' as const, mark: look.glyph.mark.thinking, label: text.thought, count: thoughts.length, added: 0, removed: 0, isOpen: isOpen('thinking') }] : []),
+    ...kinds.map(group => ({ kind: group.kind, mark: look.glyph.mark[group.kind], label: text.kindChip[group.kind], count: group.calls.length, added: group.added, removed: group.removed, isOpen: isOpen(group.kind) })),
+  ]
+  const picked = chips.find(chip => chip.isOpen)
+  const bar = picked ? style.colors.kinds[picked.kind].hue : THEME.border
+  const line = (key: string, body: unknown, time = '') => (
+    <Box key={key} flexDirection="row">
+      <Box key={`${key}-line`} flexDirection="row" columnGap={1} flexGrow={1} flexShrink={1}>{body}</Box>
+      {showTimes && time ? timePill({ Box, Text }, `${key}-time`, time, THEME.surface3) : null}
+    </Box>
+  )
+  const thoughtLines = thoughts.filter(Boolean).join('\n\n').split('\n').flatMap(paragraph => wrapWords(paragraph, width - 8))
+  const calls = (kind: string) =>
+    kinds.find(group => group.kind === kind)?.calls.map((call, n) =>
+      line(
+        `toggle-call-${n}`,
+        [<Text key={`toggle-call-${n}-label`} color={THEME.muted}>{fit(toolLabel(call.name, call.input, 0, 0), width - 24)}</Text>, countsPill({ Box, Text }, `toggle-call-${n}-counts`, call.added, call.removed)],
+        call.startedAt !== undefined && call.endedAt !== undefined ? elapsed(call.endedAt - call.startedAt) : '',
+      ),
+    ) ?? []
+  const body = !picked
+    ? null
+    : picked.kind === 'thinking'
+      ? thoughtLines.some(Boolean)
+        ? thoughtLines.map((thoughtLine, n) => <Text key={`toggle-thought-${n}`} color={THEME.muted}>{thoughtLine || ' '}</Text>)
+        : <Text key="toggle-thought-none" color={THEME.muted}>{text.thoughtNoText}</Text>
+      : calls(picked.kind)
+  return [
+    <Box key="toggle-chips" height={1}>
+      <Client key="toggle-chips-line" module="./chips.tsx" height={1} props={{ id: turn.prompt, chips, nerd: look.nerd } satisfies ChipsProps} />
+    </Box>,
+    body ? (
+      <Box key="toggle-picked" flexDirection="row">
+        <Box key="toggle-picked-bar" width={1} flexShrink={0} backgroundColor={bar} />
+        <Box key="toggle-picked-body" flexDirection="column" flexGrow={1} paddingLeft={1}>{body}</Box>
+      </Box>
+    ) : null,
+  ]
+}
 
 // What `/mod-turn-fold <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
 async function answer($: EngineInterface, args: string) {
@@ -240,6 +327,8 @@ export const register: Register = (on, options) => {
   on('ui.message', async ($, e, next) => {
     const message = e.data as BarMessage
     if (message?.type === 'fold') await flip($, message.kind, message.id)
+    const picked = e.data as ChipsMessage
+    if (picked?.type === 'chip') await pickChip($, picked.id, picked.kind)
 
     return next(e)
   })
@@ -318,6 +407,8 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       working = false
       markEnded()
+      const messages = await $.session.messages({ as: 'api' }).catch(() => null)
+      if (Array.isArray(messages)) log.learnThoughts(messages)
       $.ui.invalidate('ui.render')
     }
 
@@ -350,11 +441,23 @@ export const register: Register = (on, options) => {
     if (!turn || !isDone(turn) || turn.tools.length === 0) return row
 
     const isOpen = isTurnOpen(await opened($, 'turns'), turn)
-    const head = toggleLine({ Box, Button }, 'toggle-turn', THEME.accent, isOpen, fit(turnSummary(turn), widthOf(e) - 4), () => flip($, 'turns', turn.prompt))
+    // The head: what the turn did, its line counts in a pill, and how long it took on the right.
+    const added = turn.tools.reduce((sum, call) => sum + call.added, 0)
+    const removed = turn.tools.reduce((sum, call) => sum + call.removed, 0)
+    const head = (
+      <Box key="toggle-head-line" flexDirection="row">
+        <Box key="toggle-head-left" flexDirection="row" columnGap={1} flexGrow={1} flexShrink={1}>
+          {toggleLine({ Box, Button }, 'toggle-turn', THEME.accent, isOpen, fit(turnLine(turn), widthOf(e) - 30), () => flip($, 'turns', turn.prompt))}
+          {countsPill({ Box, Text }, 'toggle-head-counts', added, removed)}
+        </Box>
+        {turn.durationMs !== undefined ? timePill({ Box, Text }, 'toggle-head-time', elapsed(turn.durationMs), THEME.surface3) : null}
+      </Box>
+    )
+    const kinds = isOpen && foldTools ? chipSection({ Box, Client, Text }, turn, await opened($, 'tools'), widthOf(e)) : null
     return (
       <Box key="toggle-prompt" flexDirection="column" flexGrow={1}>
         {row}
-        {slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, head, { kind: 'turns', id: turn.prompt })}
+        {slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, [head, kinds], { kind: 'turns', id: turn.prompt })}
       </Box>
     )
   })
@@ -379,7 +482,8 @@ export const register: Register = (on, options) => {
     seen.set(`ToolUse ${e.requestId}`, Boolean(turn))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const place = await placeOf($, turn, e.requestId)
-    if (place === 'hidden') return <Box key="toggle-hidden" />
+    // In an open turn the head's kind rows list every call, so the row itself draws nothing.
+    if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
     if (e.props.isRunning || !foldTools || isLive(turn)) return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt }) : next(e)
 
     const { added, removed } = diffStat(e.props.tool, e.props.input, e.props.output)
@@ -407,7 +511,7 @@ export const register: Register = (on, options) => {
       </Box>
     ) : line
     const body = isOpen ? [timed, nested({ Box, Client }, 'toggle-tool-row', await next(e), { kind: 'tools', id: e.props.tool_use_id })] : timed
-    return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, body, { kind: 'turns', id: turn!.prompt }) : <Box key="toggle-tool-plain" flexDirection="column">{body}</Box>
+    return <Box key="toggle-tool-plain" flexDirection="column">{body}</Box>
   })
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
@@ -417,7 +521,7 @@ export const register: Register = (on, options) => {
     seen.set(`ToolResult ${e.requestId}`, Boolean(turn))
     const { Box, Client } = $.ui.resolve(e)
     const place = await placeOf($, turn, e.requestId)
-    if (place === 'hidden' || (foldTools && !isLive(turn) && !(await opened($, 'tools')).includes(e.props.tool_use_id))) return <Box key="toggle-hidden" />
+    if (place === 'hidden' || (place === 'card' && foldTools) || (foldTools && !isLive(turn) && !(await opened($, 'tools')).includes(e.props.tool_use_id))) return <Box key="toggle-hidden" />
 
     const body = nested({ Box, Client }, 'toggle-result', await next(e), { kind: 'tools', id: e.props.tool_use_id })
     return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, body, { kind: 'turns', id: turn!.prompt }) : body
@@ -425,44 +529,20 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
+    // A folded group's calls never draw rows of their own, so the group claims them for the turn.
+    if (isLoaded) for (const call of e.props.calls) if (call.tool_use_id) log.claimCall(call.tool_use_id, call.tool, call.input, call.isRunning, call.output)
+    // A group of thinking alone has no calls; it joins the turn by its own message id.
+    if (isLoaded && e.props.calls.length === 0) log.claim(e.requestId.replace(/^collapsed-/, ''), 'row')
     const id = e.props.calls.find(call => call.tool_use_id)?.tool_use_id ?? e.requestId
     const turn = log.turnOf(id)
     seen.set(`ToolGroup ${e.requestId}`, Boolean(turn))
     const place = await placeOf($, turn, id)
     if (place === 'plain') return next(e)
 
-    const { Box, Button, Client, Text } = $.ui.resolve(e)
-    if (place === 'hidden') return <Box key="toggle-hidden" />
-    const native = await next(e)
-    const card = (body: unknown) => slice({ Box, Client }, 'toggle-card', THEME.accent, body, { kind: 'turns', id: turn!.prompt })
-    if (!foldTools || isLive(turn)) return card(native)
-
-    // Claude Code's one count line becomes a row per kind of work, each with its mark, each folding open to its calls.
-    const openTools = await opened($, 'tools')
-    const thought = thoughtOf(native)
-    const rows = kindsOf(e.props.calls).map(group => {
-      const foldId = `${id}:${group.kind}`
-      const isOpen = openTools.includes(foldId)
-      const key = `toggle-kind-${group.kind}`
-      const line = toggleLine({ Box, Button }, key, THEME.border, isOpen, `${look.glyph.mark[group.kind]} ${group.label}`, () => flip($, 'tools', foldId))
-      const calls = group.calls.map((call, n) => {
-        const { added, removed } = diffStat(call.tool, call.input, call.output)
-        return <Text key={`${key}-call-${n}`} color={THEME.muted}>{fit(toolLabel(call.tool, call.input, added, removed), widthOf(e) - 8)}</Text>
-      })
-      return (
-        <Box key={`${key}-row`} flexDirection="column">
-          {line}
-          {isOpen ? nested({ Box, Client }, `${key}-calls`, calls, { kind: 'tools', id: foldId }) : null}
-        </Box>
-      )
-    })
-    return card(
-      <Box key="toggle-kinds" flexDirection="column">
-        {/* Thinking has no calls to show, so its row has no chip; the padding lines its mark up with the others. */}
-        {thought ? <Box key="toggle-kind-thinking" paddingLeft={4}><Text color={THEME.muted}>{`${look.glyph.mark.thinking} ${thought}`}</Text></Box> : null}
-        {rows}
-      </Box>,
-    )
+    const { Box, Client } = $.ui.resolve(e)
+    // In an open turn the head's kind rows list every call, so the group draws nothing.
+    if (place === 'hidden' || foldTools) return <Box key="toggle-hidden" />
+    return slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt })
   })
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
@@ -470,6 +550,8 @@ export const register: Register = (on, options) => {
     if (isLoaded) log.claim(e.requestId, 'row')
     const turn = log.turnOf(e.requestId)
     seen.set(`TurnDuration ${e.requestId}`, Boolean(turn))
+    // A turn learned as it drew has no duration row from the transcript; this line carries it.
+    if (turn && turn.durationMs === undefined && typeof e.props.durationMs === 'number') turn.durationMs = e.props.durationMs
     if ((await placeOf($, turn, e.requestId)) !== 'hidden') return next(e)
 
     const { Box } = $.ui.resolve(e)

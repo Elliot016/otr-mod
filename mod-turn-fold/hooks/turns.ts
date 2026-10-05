@@ -14,8 +14,16 @@ export type Turn = {
   at?: number
 }
 
-// startedAt is when Claude asked for the call, endedAt when its result came back, both epoch ms.
-export type ToolCall = { id: string; name: string; input: any; added: number; removed: number; startedAt?: number; endedAt?: number }
+// Times in epoch ms; thought is the thinking just before the call, empty when it kept no text.
+export type ToolCall = { id: string; name: string; input: any; added: number; removed: number; startedAt?: number; endedAt?: number; thought?: string }
+
+// The thinking since the last result or text, carried block by block: thinking adds its text, text ends it.
+const thoughtAfter = (pending: string | undefined, block: any) => {
+  if (block?.type === 'thinking') return [pending, typeof block.thinking === 'string' ? block.thinking.trim() : ''].filter(Boolean).join('\n\n')
+  if (block?.type === 'redacted_thinking') return pending ?? ''
+  if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim()) return undefined
+  return pending
+}
 
 const WRAPPER = /^<(command-|local-command-|bash-|system-reminder|task-notification|user-prompt-submit-hook)/
 const INTERRUPTED = /^\[Request interrupted by user/
@@ -63,6 +71,7 @@ export class TurnLog {
   turns: Turn[] = []
   private byId = new Map<string, Turn>()
   private calls = new Map<string, ToolCall>()
+  private thinking: string | undefined
 
   feed(line: string) {
     let row: any
@@ -94,9 +103,10 @@ export class TurnLog {
     if (row.type === 'assistant' && Array.isArray(content)) {
       this.add(current, rowKey(row.uuid))
       for (const block of content) {
+        this.thinking = thoughtAfter(this.thinking, block)
         if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim()) current.reply = rowKey(row.uuid)
         if (block?.type === 'tool_use' && typeof block.id === 'string') {
-          const call: ToolCall = { id: block.id, name: String(block.name), input: block.input, added: 0, removed: 0, startedAt: timeOf(row) }
+          const call: ToolCall = { id: block.id, name: String(block.name), input: block.input, added: 0, removed: 0, startedAt: timeOf(row), thought: this.thinking }
           current.tools.push(call)
           this.calls.set(block.id, call)
           this.add(current, block.id)
@@ -106,6 +116,7 @@ export class TurnLog {
     }
     if (row.type === 'user' && Array.isArray(content)) {
       this.add(current, rowKey(row.uuid))
+      this.thinking = undefined
       for (const block of content) {
         const call = block?.type === 'tool_result' ? this.calls.get(block.tool_use_id) : undefined
         if (call) Object.assign(call, diffStat(call.name, call.input, row.toolUseResult), { endedAt: timeOf(row) })
@@ -137,14 +148,35 @@ export class TurnLog {
     if (!call) {
       const current = this.turns[this.turns.length - 1]
       if (!current) return
-      call = { id, name, input, added: 0, removed: 0, startedAt: at }
+      // A call first seen finished has no start this mod saw, so it shows no time rather than a false one.
+      call = { id, name, input, added: 0, removed: 0, startedAt: isRunning ? at : undefined }
       current.tools.push(call)
       this.calls.set(id, call)
       this.add(current, id)
     }
     // A row first draws while its input still streams in, so a later, fuller input replaces the first.
     if (input && Object.keys(input).length >= Object.keys(call.input ?? {}).length) call.input = input
-    if (!isRunning && call.endedAt === undefined) Object.assign(call, diffStat(name, input, output), { endedAt: at })
+    if (isRunning) return
+    if (call.endedAt === undefined) call.endedAt = at
+    // A group's copy of the output may lack the patch its own row carries, so any later count fills in.
+    const stat = diffStat(name, call.input, output)
+    if (stat.added || stat.removed) Object.assign(call, stat)
+  }
+
+  // Calls claimed as they drew have no thought yet; the session's own messages, read once a turn ends, carry the thinking before each.
+  learnThoughts(messages: readonly { role: string; content: readonly any[] }[]) {
+    let pending: string | undefined
+    for (const message of messages) {
+      if (message.role !== 'assistant') {
+        pending = undefined
+        continue
+      }
+      for (const block of message.content) {
+        pending = thoughtAfter(pending, block)
+        const call = block?.type === 'tool_use' ? this.calls.get(block.id) : undefined
+        if (call && call.thought === undefined) call.thought = pending
+      }
+    }
   }
 
   // The turn a drawn row belongs to.
@@ -167,6 +199,7 @@ export class TurnLog {
   private start(uuid: string, at: number | undefined) {
     const turn: Turn = { prompt: uuid, ids: new Set(), tools: [], at }
     this.turns.push(turn)
+    this.thinking = undefined
   }
 
   private add(turn: Turn, id: string) {
@@ -197,11 +230,10 @@ const clock = (ms: number) => {
 
 const two = (n: number) => String(n).padStart(2, '0')
 
-// Local wall-clock time: `14:32` for a prompt, `14:32:05` for a tool call.
-export const timeOfDay = (at: number, withSeconds = false) => {
+// Local wall-clock time, `14:32`, for a prompt and a tool call alike.
+export const timeOfDay = (at: number) => {
   const date = new Date(at)
-  const time = `${two(date.getHours())}:${two(date.getMinutes())}`
-  return withSeconds ? `${time}:${two(date.getSeconds())}` : time
+  return `${two(date.getHours())}:${two(date.getMinutes())}`
 }
 
 // How long a call took: `0.4s` under a second, then `41s`, `6m 12s`, `1h 3m`.
@@ -214,14 +246,12 @@ export const elapsed = (ms: number) => {
 
 // A call's start and duration for its line, or nothing while either end is unknown.
 export const callTime = (call: ToolCall | undefined) =>
-  call?.startedAt === undefined || call.endedAt === undefined ? '' : `${timeOfDay(call.startedAt, true)} · ${elapsed(call.endedAt - call.startedAt)}`
+  call?.startedAt === undefined || call.endedAt === undefined ? '' : `${timeOfDay(call.startedAt)} · ${elapsed(call.endedAt - call.startedAt)}`
 
-// The folded turn's line: tool count, then each file change, skill and agent, then the time it took.
-export function turnSummary(turn: Turn) {
+// The head's words: tool count, then each file changed, skill and agent once; counts and the time draw as pills beside it.
+export function turnLine(turn: Turn) {
   const named = turn.tools.filter(call => ['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Skill', 'Agent', 'Task'].includes(call.name))
-  const parts = [fill(turn.tools.length === 1 ? text.toolCountOne : text.toolCountMany, { n: turn.tools.length }), ...named.map(call => toolLabel(call.name, call.input, call.added, call.removed))]
-  if (turn.durationMs !== undefined) parts.push(clock(turn.durationMs))
-  return parts.join(' · ')
+  return [fill(turn.tools.length === 1 ? text.toolCountOne : text.toolCountMany, { n: turn.tools.length }), ...new Set(named.map(call => toolLabel(call.name, call.input, 0, 0)))].join(' · ')
 }
 
 export type Kind = 'read' | 'search' | 'edit' | 'shell' | 'web' | 'agent' | 'tool'
@@ -242,32 +272,23 @@ const KIND_OF: Record<string, Kind> = {
   Task: 'agent',
 }
 
-const KIND_ORDER: Kind[] = ['read', 'search', 'edit', 'shell', 'web', 'agent', 'tool']
-
 const KIND_LABEL = (kind: Kind, n: number) => fill(n === 1 ? text.kind[kind].one : text.kind[kind].many, { n })
 
-type GroupCall = { tool_use_id?: string; tool: string; input: unknown; output?: unknown }
-
-// A folded group of calls split by kind, in a fixed order, each with its line and its calls.
-export function kindsOf<T extends GroupCall>(calls: readonly T[]) {
-  return KIND_ORDER.map(kind => {
-    const own = calls.filter(call => (KIND_OF[call.tool] ?? 'tool') === kind)
-    return { kind, label: KIND_LABEL(kind, own.length), calls: own }
-  }).filter(group => group.calls.length > 0)
-}
-
-// Claude Code names the thinking time only in its own drawing of the group, so it is read from there.
-export function thoughtOf(tree: unknown): string | undefined {
-  const texts: string[] = []
-  const walk = (node: unknown) => {
-    if (typeof node === 'string') texts.push(node)
-    else if (Array.isArray(node)) node.forEach(walk)
-    else if (node && typeof node === 'object') {
-      const element = node as { children?: unknown; props?: { children?: unknown } }
-      walk(element.children)
-      walk(element.props?.children)
-    }
+// A finished turn's calls, one group per kind in order of first use, with the group's line counts.
+export function turnKinds(turn: Turn) {
+  const groups = new Map<Kind, ToolCall[]>()
+  for (const call of turn.tools) {
+    const kind = KIND_OF[call.name] ?? 'tool'
+    groups.set(kind, [...(groups.get(kind) ?? []), call])
   }
-  walk(tree)
-  return /Thought for [\dhms ]*\d[hms]/.exec(texts.join(''))?.[0]?.trim()
+  return [...groups].map(([kind, calls]) => ({
+    kind,
+    label: KIND_LABEL(kind, calls.length),
+    calls,
+    added: calls.reduce((sum, call) => sum + call.added, 0),
+    removed: calls.reduce((sum, call) => sum + call.removed, 0),
+  }))
 }
+
+// What Claude thought across a turn, once per thinking: calls asked in parallel share one.
+export const turnThoughts = (turn: Turn) => [...new Set(turn.tools.filter(call => call.thought !== undefined).map(call => call.thought!))]

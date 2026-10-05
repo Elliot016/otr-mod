@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { callTime, elapsed, rowKey, timeOfDay, turnSummary, TurnLog } from '../hooks/turns'
+import { callTime, elapsed, rowKey, timeOfDay, turnLine, TurnLog } from '../hooks/turns'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
@@ -11,7 +11,7 @@ const PATCH = [{ lines: [' keep', '-old', '+new', '+added'] }]
 const TRANSCRIPT = [
   row(1, 'user', { message: { role: 'user', content: 'fix the bug' } }),
   said(2, [{ type: 'text', text: 'Looking.' }]),
-  said(3, [{ type: 'tool_use', id: 'toolu_edit', name: 'Edit', input: { file_path: 'C:\\repo\\hooks\\a.ts' } }]),
+  said(3, [{ type: 'thinking', thinking: 'which file?' }, { type: 'tool_use', id: 'toolu_edit', name: 'Edit', input: { file_path: 'C:\\repo\\hooks\\a.ts' } }]),
   row(4, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_edit', content: 'ok' }] }, toolUseResult: { structuredPatch: PATCH } }),
   said(5, [{ type: 'tool_use', id: 'toolu_skill', name: 'Skill', input: { skill: 'tidy' } }]),
   row(6, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_skill', content: 'ok' }] } }),
@@ -21,6 +21,10 @@ const TRANSCRIPT = [
   row(10, 'user', { message: { role: 'user', content: 'now the docs' } }),
   '{"torn',
 ].join('\n')
+
+// The open turn's chip line, drawn by its Client, and a click at a cell of it.
+const chipsOf = async (ui: any) => JSON.stringify(await ui.drawn({ in: 'toggle-chips-line' }))
+const pick = (ui: any, x: number) => ui.pointer({ in: 'toggle-chips-line', type: 'down', button: 'left', x, y: 0 })
 
 const logOf = (text: string) => {
   const log = new TurnLog()
@@ -32,7 +36,8 @@ test('the transcript splits into turns at each prompt, with tools, diff counts, 
   const log = logOf(TRANSCRIPT)
   expect(log.turns.map(turn => turn.prompt)).toEqual([ID(1), ID(10)])
   const [first] = log.turns
-  expect(turnSummary(first!)).toBe('2 tools · Edit(hooks/a.ts) +2 \u22121 · Skill(tidy) · 1m 4s')
+  expect(turnLine(first!)).toBe('2 tools · Edit(hooks/a.ts) · Skill(tidy)')
+  expect([first!.tools[0]!.added, first!.tools[0]!.removed, first!.durationMs]).toEqual([2, 1, 64000])
   expect(first!.reply).toBe(rowKey(ID(7)))
   expect(log.turnOf('toolu_edit')).toBe(first)
   expect(log.turnOf(`${ID(2).slice(0, 24)}000000000003`)).toBe(first)
@@ -43,10 +48,36 @@ test('a call drawn before its input streams in gets the input later, and never s
   const log = logOf(TRANSCRIPT)
   const last = log.turns[log.turns.length - 1]!
   log.claimCall('toolu_live', 'Edit', {}, true, undefined)
-  expect(turnSummary(last)).toBe('1 tool · Edit')
-  expect(turnSummary(last)).not.toContain('Edit()')
+  expect(turnLine(last)).toBe('1 tool · Edit')
+  expect(turnLine(last)).not.toContain('Edit()')
   log.claimCall('toolu_live', 'Edit', { file_path: '/w/hooks/b.ts', old_string: 'a', new_string: 'b' }, true, undefined)
-  expect(turnSummary(last)).toContain('Edit(hooks/b.ts)')
+  expect(turnLine(last)).toContain('Edit(hooks/b.ts)')
+})
+
+test('a call first seen finished shows no time, and a later output with the patch fills in its counts', () => {
+  const log = new TurnLog()
+  log.claim(ID(50), 'prompt')
+  log.claimCall('toolu_g', 'Edit', { file_path: '/a.ts' }, false, {})
+  expect(callTime(log.callOf('toolu_g'))).toBe('')
+  log.claimCall('toolu_g', 'Edit', { file_path: '/a.ts' }, false, { structuredPatch: PATCH })
+  expect([log.callOf('toolu_g')!.added, log.callOf('toolu_g')!.removed]).toEqual([2, 1])
+})
+
+test('calls drawn live learn the thinking before them from the session messages; text and results end a thought', () => {
+  const log = new TurnLog()
+  log.claim(ID(40), 'prompt')
+  for (const id of ['toolu_x', 'toolu_y', 'toolu_z']) log.claimCall(id, 'Read', {}, false, {})
+  log.learnThoughts([
+    { role: 'user', content: [{ type: 'text', text: 'go' }] },
+    { role: 'assistant', content: [{ type: 'thinking', thinking: 'read x first' }, { type: 'tool_use', id: 'toolu_x' }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_x' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'now y' }, { type: 'tool_use', id: 'toolu_y' }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_y' }] },
+    { role: 'assistant', content: [{ type: 'redacted_thinking', data: '…' }, { type: 'tool_use', id: 'toolu_z' }] },
+  ])
+  expect(log.callOf('toolu_x')?.thought).toBe('read x first')
+  expect(log.callOf('toolu_y')?.thought).toBeUndefined()
+  expect(log.callOf('toolu_z')?.thought).toBe('')
 })
 
 test('times: a prompt keeps when it was sent, a call its start and how long it took', () => {
@@ -57,7 +88,7 @@ test('times: a prompt keeps when it was sent, a call its start and how long it t
     row(3, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_bash', content: 'ok' }] }, ...at('32:46') }),
   ].join('\n'))
   expect(log.turns[0]!.at).toBe(Date.parse('2026-10-03T14:32:00.000Z'))
-  expect(callTime(log.callOf('toolu_bash'))).toBe(`${timeOfDay(Date.parse('2026-10-03T14:32:05.000Z'), true)} · 41s`)
+  expect(callTime(log.callOf('toolu_bash'))).toBe(`${timeOfDay(Date.parse('2026-10-03T14:32:05.000Z'))} · 41s`)
   expect([elapsed(400), elapsed(41_000), elapsed(372_000), elapsed(3_780_000)]).toEqual(['0.4s', '41s', '6m 12s', '1h 3m'])
   expect(callTime({ id: 'x', name: 'Bash', input: {}, added: 0, removed: 0, startedAt: 1 })).toBe('')
 })
@@ -104,12 +135,21 @@ async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsT
   }
 }
 
-test('the prompt row shows when it was sent and the tool line its start and duration', async ($, on) => {
+test('the prompt row shows when it was sent, the head how long the turn took, and a picked chip how long each call took', async ($, on) => {
   const { prompt, tool } = await mountTimed($, on)
   expect(await prompt.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:00.000Z'))} ` })).toBeDefined()
-  // The finished turn starts folded; its tool line shows once it opens.
+  expect(await prompt.find({ type: 'Text', text: '47s ' })).toBeDefined()
+  // The finished turn starts folded; its chip line shows under the head once it opens, and the tool row itself draws nothing.
   await prompt.press({ key: 'toggle-turn-button' })
-  expect(await tool.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:05.000Z'), true)} · 41s` })).toBeDefined()
+  expect(await chipsOf(prompt)).toContain('Ran')
+  expect(await tool.find({ type: 'Text' })).toBeUndefined()
+  expect(await prompt.find({ type: 'Text', text: '41s ' })).toBeUndefined()
+  await pick(prompt, 1)
+  expect(await prompt.find({ type: 'Text', text: /^Bash\(claude plugin test/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: '41s ' })).toBeDefined()
+  // A second click on the open chip closes it.
+  await pick(prompt, 1)
+  expect(await prompt.find({ type: 'Text', text: /^Bash\(claude plugin test/ })).toBeUndefined()
 })
 
 // The same turn still running: no turn_duration row yet, and Claude is working.
@@ -151,7 +191,9 @@ test('icons=nerd draws the times as rounded pills', { options: { icons: 'nerd' }
   expect(drawn).toMatch(/"key":"toggle-prompt-time-body","backgroundColor":"#252A42"/)
   expect(await prompt.find({ type: 'Text', text: timeOfDay(Date.parse('2026-10-03T14:32:00.000Z')) })).toBeDefined()
   await prompt.press({ key: 'toggle-turn-button' })
-  expect(await tool.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:05.000Z'), true)} · 41s` })).toBeDefined()
+  await pick(prompt, 1)
+  expect(await prompt.find({ type: 'Text', text: '41s' })).toBeDefined()
+  expect(await tool.find({ type: 'Text' })).toBeUndefined()
 })
 
 test('icons=safe draws the times as plain muted text, with no Nerd caps', { options: { icons: 'safe' } }, async ($, on) => {
@@ -165,8 +207,10 @@ test('with timestamps off, rows show no times', { options: { timestamps: false }
   const { prompt, tool } = await mountTimed($, on)
   expect(await prompt.find({ type: 'Text', text: /^\d\d:\d\d $/ })).toBeUndefined()
   await prompt.press({ key: 'toggle-turn-button' })
-  expect(await tool.find({ type: 'Button', text: /^Bash\(claude plugin test/ })).toBeDefined()
-  expect(await tool.find({ type: 'Text', text: /· 41s$/ })).toBeUndefined()
+  await pick(prompt, 1)
+  expect(await prompt.find({ type: 'Text', text: /^Bash\(claude plugin test/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: /41s/ })).toBeUndefined()
+  expect(await tool.find({ type: 'Text' })).toBeUndefined()
 })
 
 test('a subagent report opens its own turn, so the prompt keeps its own reply; a mid-turn report does not', () => {
@@ -189,6 +233,7 @@ test('the transcript is read once; rows drawn later join their turn and fold at 
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
   on('fs.read', () => {
     reads += 1
     return { value: TRANSCRIPT }
@@ -225,6 +270,49 @@ test('the transcript is read once; rows drawn later join their turn and fold at 
   expect(reads).toBe(1)
 })
 
+test('a new session, whose transcript is not written yet, folds its turns; a group claims calls that draw no rows of their own', async ($, on) => {
+  // Only session.start arrives, before the transcript file exists.
+  on('store.get', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's2' }))
+  on('env.get', () => ({ value: undefined }))
+  on('fs.list', () => ({ value: [] }))
+  on('command.register', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [] }))
+  on('session.start', () => ({ cwd: '/w' }))
+  mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{e.component === 'ToolGroup' ? 'Thought for 6s, ran 2 shell commands' : `base ${e.component}`}</Text>
+  })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  const shell = (id: string) => ({ tool_use_id: id, tool: 'Bash', input: { command: 'ls' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} })
+  const live = [
+    await mount('UserMessage', ID(30), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true }),
+    await mount('ToolGroup', 'collapsed-toolu_a', { calls: [shell('toolu_a'), shell('toolu_b')], isActive: false, isExpanded: false }),
+    await mount('ToolGroup', `collapsed-${ID(32)}`, { calls: [], isActive: false, isExpanded: false }),
+    await mount('TurnDuration', ID(33), { word: 'Cooked', durationMs: 12000 }),
+  ]
+  for (const ui of live) await ui.unmount()
+
+  await mount('UserMessage', ID(31), { text: 'and the docs', origin: { kind: 'composer' }, isExpanded: true })
+  const head = await mount('UserMessage', ID(30), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true })
+  const group = await mount('ToolGroup', 'collapsed-toolu_a', { calls: [shell('toolu_a'), shell('toolu_b')], isActive: false, isExpanded: false })
+  expect(await head.find({ type: 'Button', text: /^2 tools$/ })).toBeDefined()
+  // The live turn's duration comes from its own duration line, since the transcript was never read for it.
+  expect(await head.find({ type: 'Text', text: '12s ' })).toBeDefined()
+  expect(await group.find({ type: 'Text' })).toBeUndefined()
+  // A group of thinking alone belongs to the turn too: it never draws outside the card, folded or open.
+  const thinking = await mount('ToolGroup', `collapsed-${ID(32)}`, { calls: [], isActive: false, isExpanded: false })
+  expect(await thinking.find({ type: 'Text' })).toBeUndefined()
+  await head.press({ key: 'toggle-turn-button' })
+  expect(await chipsOf(head)).toMatch(/Ran .*"2"/)
+  expect(await thinking.find({ type: 'Text' })).toBeUndefined()
+  expect(await group.find({ type: 'Text' })).toBeUndefined()
+})
+
 test('a finished turn folds under its prompt, keeps its reply, and a click unfolds it', async ($, on) => {
   on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
@@ -250,29 +338,33 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
 
   // Folded: the prompt and its summary line, the reply; the step, the tool row and its result draw nothing.
   expect(await prompt.find({ type: 'Text', text: 'base UserMessage' })).toBeDefined()
-  expect(await prompt.find({ type: 'Button', text: /^2 tools · Edit\(hooks\/a\.ts\) \+2 \u22121 · Skill\(tidy\) · 1m 4s$/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Button', text: '2 tools · Edit(hooks/a.ts) · Skill(tidy)' })).toBeDefined()
   expect(await prompt.find({ type: 'Button', text: /^ \+ $/ })).toBeDefined()
   expect(await reply.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
   expect(await step.find({ type: 'Text' })).toBeUndefined()
   expect(await edit.find({ type: 'Button' })).toBeUndefined()
   expect(await result.find({ type: 'Text' })).toBeUndefined()
 
-  // Unfolded: the step draws again, the tool row is one line of its own, and its result stays hidden.
+  // Unfolded: the step draws again in the card; the head lists the work by kind, so the tool row and result draw nothing.
   await prompt.press({ key: 'toggle-turn-button' })
   expect(await prompt.find({ type: 'Button', text: /^ \u2212 $/ })).toBeDefined()
   expect(await step.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
   // Unfolded rows sit in the turn's card; the reply stays outside it.
   expect(await step.find({ key: 'toggle-card-bar' })).toBeDefined()
   expect(await reply.find({ key: 'toggle-card-bar' })).toBeUndefined()
-  expect(await edit.find({ type: 'Button', text: /^Edit\(hooks\/a\.ts\)$/ })).toBeDefined()
-  expect(await edit.find({ type: 'Text', text: /^\+2$/ })).toBeDefined()
-  expect(await edit.find({ type: 'Text', text: /^\u22121$/ })).toBeDefined()
+  expect(await chipsOf(prompt)).toContain('Edited')
+  expect(await chipsOf(prompt)).toContain('Other')
+  // The head carries the turn's counts as a pill and its time on the right.
+  expect(await prompt.find({ type: 'Text', text: /^\+2$/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: /^ \u22121$/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: '1m 4s ' })).toBeDefined()
+  expect(await edit.find({ type: 'Text' })).toBeUndefined()
   expect(await result.find({ type: 'Text' })).toBeUndefined()
 
-  // A click on the tool line shows Claude Code's own row under it, and the result.
-  await edit.press({ key: 'toggle-tool-button' })
-  expect(await edit.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
-  expect(await result.find({ type: 'Text', text: 'base ToolResult' })).toBeDefined()
+  // A click on a chip lists its calls under the line; Thought comes first, so Edited starts at cell 16.
+  expect(await prompt.find({ type: 'Text', text: /^Edit\(hooks\/a\.ts\)$/ })).toBeUndefined()
+  await pick(prompt, 17)
+  expect(await prompt.find({ type: 'Text', text: /^Edit\(hooks\/a\.ts\)$/ })).toBeDefined()
 
   // A click on the card's strip folds the turn back.
   await step.pointer({ in: 'toggle-card-strip', type: 'down', button: 'left', x: 0, y: 0 })
@@ -282,7 +374,7 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   for (const ui of [prompt, step, reply, edit, result]) await ui.unmount()
 })
 
-test('a grouped count line becomes a row per kind with its mark, thinking first, each folding open to its calls', async ($, on) => {
+test('an open turn shows a chip per kind in order of first use, Thought first, one open at a time', async ($, on) => {
   on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
@@ -305,17 +397,23 @@ test('a grouped count line becomes a row per kind with its mark, thinking first,
   ]
   const group = await mount('ToolGroup', 'toolu_edit', { calls, isActive: false, isExpanded: false })
 
-  // Folded with its turn, the group draws nothing.
+  // Folded or open, the group itself draws nothing: the head lists the turn's work.
   expect(await group.find({ type: 'Text' })).toBeUndefined()
   await prompt.press({ key: 'toggle-turn-button' })
-  expect(await group.find({ type: 'Text', text: '∴ Thought for 56s' })).toBeDefined()
-  expect(await group.find({ type: 'Button', text: '≡ Read 1 file' })).toBeDefined()
-  expect(await group.find({ type: 'Button', text: '✎ Edited 1 file' })).toBeDefined()
-  expect(await group.find({ type: 'Text', text: /^Edit\(/ })).toBeUndefined()
+  expect(await group.find({ type: 'Text' })).toBeUndefined()
+  // Thought first, then each kind in the order the turn first used it: the edit came before the skill.
+  const line = await chipsOf(prompt)
+  expect([line.indexOf('Thought '), line.indexOf('Edited '), line.indexOf('Other ')].every((at, n, all) => at >= 0 && (n === 0 || at > all[n - 1]!))).toBe(true)
 
-  await group.press({ key: 'toggle-kind-edit-button' })
-  expect(await group.find({ type: 'Text', text: 'Edit(hooks/a.ts) +2 −1' })).toBeDefined()
-  expect(await group.find({ type: 'Text', text: /^Read\(/ })).toBeUndefined()
+  // The transcript has a thinking block before the edit; its time lives only in Claude Code's sealed drawing.
+  expect(await prompt.find({ type: 'Text', text: 'which file?' })).toBeUndefined()
+  await pick(prompt, 1)
+  expect(await prompt.find({ type: 'Text', text: 'which file?' })).toBeDefined()
+  // One chip open at a time: picking Edited closes Thought.
+  await pick(prompt, 17)
+  expect(await prompt.find({ type: 'Text', text: 'which file?' })).toBeUndefined()
+  expect(await prompt.find({ type: 'Text', text: 'Edit(hooks/a.ts)' })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: /^Skill\(/ })).toBeUndefined()
   for (const ui of [prompt, group]) await ui.unmount()
 })
 

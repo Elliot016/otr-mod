@@ -16,6 +16,17 @@ export default {
   "durationSeconds": "{s}s",
   "durationMinutes": "{m}m {s}s",
   "durationHours": "{h}h {m}m",
+  "thought": "Thought",
+  "kindChip": {
+    "read": "Read",
+    "search": "Searched",
+    "edit": "Edited",
+    "shell": "Ran",
+    "web": "Fetched",
+    "agent": "Agents",
+    "tool": "Other"
+  },
+  "thoughtNoText": "Claude Code kept no text for this thought",
   "kind": {
     "read": { "one": "Read {n} file", "many": "Read {n} files" },
     "search": { "one": "Searched {n} pattern", "many": "Searched {n} patterns" },
