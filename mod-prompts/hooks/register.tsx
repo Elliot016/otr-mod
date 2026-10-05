@@ -1,14 +1,13 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { cardSpace, stickyCard } from './card'
-import type { ListMessage } from './list'
-import type { EntryMessage } from './entry'
-import { isNerdFace, lookFor, paneTitle, terminalSettings, withMark, type IconMode } from './look'
-import { PILL, pillRow, splitRow, tipLine, titleRow } from './pills'
-import { settingsBody } from './settings'
+import type { EntryMessage, EntryProps } from './entry'
+import { isNerdFace, lookFor, terminalSettings, withMark, type IconMode } from './look'
+import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { parseRow, promptsOf, promptText, rowKey, targetOf, type Prompt, type Row } from './prompts'
-import { actionColumn } from './rows'
+import { GUTTER, timelineRows, type TimelineMessage, type TimelineProps } from './timeline'
 import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
 
@@ -31,17 +30,24 @@ async function detectLook($: EngineInterface) {
 const PANE = 'prompts'
 const SETTINGS = 'prompts-settings'
 
-// The jump control on each row.
-const GO = '[↵]'
+// Border, the number line and six lines of the prompt.
+const CARD_ROWS = 9
 
-// Border, the number line and three lines of the prompt.
-const CARD_ROWS = 6
+const STOPS_PER_CLIENT = 30
+
+const PAGE_SIZE = 100
 
 let transcript = ''
 // A long session's transcript takes seconds to read, so it is read once; later prompts come from the rows Claude Code draws.
 let isLoaded = false
+// A turn ended while the pane was open: read again in the background, so its prompt gets its numbers.
+let isStale = false
 let prompts: Prompt[] = []
 let selected = -1
+// The page the timeline shows; -1 follows the open prompt.
+let page = -1
+// How many pages the last drawing had, so a pager click knows its bounds.
+let pageCount = 1
 let note = ''
 // Row key -> the requestId Claude Code drew that prompt's row under, which a jump scrolls to.
 const drawn = new Map<string, string>()
@@ -50,7 +56,8 @@ const isOpen = async ($: EngineInterface, id = PANE) => (await $.ui.panes()).som
 
 // A long session outgrows $.fs.read's 4 MiB cap; then the transcript streams through the platform's own file printer.
 async function load($: EngineInterface) {
-  if (isLoaded) return
+  if (isLoaded && !isStale) return
+  isStale = false
   if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
   if (!transcript) transcript = await findTranscript($)
   if (!transcript) return
@@ -72,9 +79,35 @@ async function load($: EngineInterface) {
     if (row) rows.push(row)
   }
   isLoaded = true
-  prompts = promptsOf(rows)
+  // Prompts drawn since the read, not yet in the file, stay at the end.
+  const read = promptsOf(rows)
+  // A prompt typed mid-turn is drawn under another id than the file's, so a drawn one also matches by its text.
+  const known = new Set(read.flatMap(prompt => [rowKey(prompt.id), sameText(prompt.text)]))
+  prompts = [...read, ...prompts.filter(prompt => !known.has(rowKey(prompt.id)) && !known.has(sameText(prompt.text)))]
   if (selected < 0 || selected >= prompts.length) selected = prompts.length - 1
 }
+
+const sameText = (text: string) => `text:${text.replace(/\s+/g, ' ').trim()}`
+
+// A turn's length as the fold writes it: seconds, then minutes and seconds.
+const duration = (ms: number) => {
+  const seconds = Math.round(ms / 1000)
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+// A saved change reloads this mod, which redraws the panel with the new value.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  const result = await $.config.set({ key, value })
+  note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row?.label ?? key })}`
+  $.ui.invalidate('ui.render')
+}
+
+// The panel's title line: the list and its settings as tabs, the shown one open.
+const tabs = (isSettings: boolean) => [
+  { id: 'prompts-tab', label: text.paneTitle, icon: look.glyph.icon.prompt ?? look.glyph.title, isOpen: !isSettings, count: prompts.length },
+  { id: 'prompts-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: isSettings },
+]
 
 // When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
 async function findTranscript($: EngineInterface) {
@@ -98,6 +131,7 @@ async function togglePane($: EngineInterface) {
   if (await isOpen($, SETTINGS)) await $.ui.close({ id: SETTINGS })
   note = ''
   selected = -1
+  page = -1
   await load($)
   const opened = await $.ui.open({ id: PANE, title: text.paneTitle, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.panelWaiting, { reason: opened.reason }))
@@ -207,7 +241,13 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId && (await isOpen($))) $.ui.invalidate('ui.render')
+    if (!e.agentId && (await isOpen($))) {
+      isStale = true
+      $.clock.after(0, async () => {
+        await load($)
+        $.ui.invalidate('ui.render')
+      })
+    }
 
     return next(e)
   })
@@ -217,8 +257,9 @@ export const register: Register = (on, options) => {
     drawn.set(rowKey(e.requestId), e.requestId)
     // A prompt sent after the read joins the list as its row draws.
     const text = e.props.origin?.kind === 'composer' ? promptText(String(e.props.text ?? '')) : undefined
-    if (isLoaded && text && !prompts.some(prompt => rowKey(prompt.id) === rowKey(e.requestId))) {
-      prompts = [...prompts, { id: e.requestId, text, at: new Date().toISOString() }]
+    // Claude Code redraws rows (a reload, a scroll), so a row whose text is already listed is not a new prompt.
+    if (isLoaded && text && !prompts.some(prompt => rowKey(prompt.id) === rowKey(e.requestId) || sameText(prompt.text) === sameText(text))) {
+      prompts = [...prompts, { id: e.requestId, text, at: new Date().toISOString(), tools: 0, added: 0, removed: 0 }]
       $.clock.after(0, () => $.ui.invalidate('ui.render'))
     }
 
@@ -269,11 +310,7 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = (
-      <Box key="menu-pad-prompts">
-        <Client key="menu-entry-prompts" module="./entry.tsx" height={1} props={{ id: 'prompts', label: text.pillLabel, isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening, still }} />
-      </Box>
-    )
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'prompts', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
     return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
   })
@@ -293,16 +330,23 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && message.id === 'prompts') await openingPane($)
-    // The title row's pill swaps the sidebar and its settings.
-    if (message?.type === 'menu-entry' && message.id === 'prompts-settings') await toggleSettings($)
-    if (message?.type === 'menu-entry' && message.id === 'prompts-back') await togglePane($)
+    // The title line's tabs swap the sidebar and its settings; the open tab does nothing.
+    if (message?.type === 'menu-entry' && message.id === 'prompts-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
+    if (message?.type === 'menu-entry' && message.id === 'prompts-tab' && !(await isOpen($))) await togglePane($)
+    if (message?.type === 'menu-entry' && (message.id === 'prompts-page-prev' || message.id === 'prompts-page-next')) {
+      const shown = page < 0 ? Math.floor(Math.max(0, selected) / PAGE_SIZE) : page
+      page = Math.max(0, Math.min(pageCount - 1, shown + (message.id === 'prompts-page-next' ? 1 : -1)))
+      $.ui.invalidate('ui.render')
+    }
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
 
     return next(e)
   })
 
-  // The list reports clicks on a prompt's text, which select it into the card.
+  // The timeline reports a click on a stop, which opens that prompt.
   on('ui.message', { requestId: 'prompts' }, async ($, e, next) => {
-    const message = e.data as ListMessage
+    const message = e.data as TimelineMessage
     if (message.type === 'select' && message.index !== selected) {
       selected = message.index
       $.ui.invalidate('ui.render')
@@ -318,17 +362,11 @@ export const register: Register = (on, options) => {
 
     if (e.requestId === SETTINGS) {
       const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-prompts.'))
-      // A saved change reloads this mod, which redraws the panel with the new value.
-      const set = async (row: ConfigRow, value: ConfigValue) => {
-        const result = await $.config.set({ key: row.key, value })
-        note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
-        $.ui.invalidate('ui.render')
-      }
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-          {titleRow({ Box, Client, Text }, look.nerd, paneTitle({ Box, Text }, look, 'settings', text.settingsHeading), 'prompts-back', `${look.glyph.back} ${text.backPill}`, still)}
+          {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
           <Text color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
-          <Box marginTop={0}>{settingsBody({ Box, Button, Text }, look, { rows, actions: [], working: false, set, run: async () => {} })}</Box>
+          <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
         </Box>
       )
     }
@@ -336,38 +374,85 @@ export const register: Register = (on, options) => {
     // A reload resets module state while the pane stays open, so read the transcript again.
     if (prompts.length === 0) await load($)
 
-    const width = Math.max(10, e.props.bodyColumns - 2 - GO.length - 1)
-    const number = String(prompts.length).length
+    const width = Math.max(10, e.props.bodyColumns - 2 - GUTTER - 2)
     const current = prompts[selected]
+    const stops = prompts.map((prompt, index) => ({ index, time: clock(prompt.at), text: oneLine(prompt.text, width) }))
+    const marks = { dot: MARK.stop, openDot: MARK.stopOpen, rail: MARK.rail }
+    pageCount = Math.max(1, Math.ceil(stops.length / PAGE_SIZE))
+    const shownPage = Math.min(pageCount - 1, page < 0 ? Math.floor(Math.max(0, selected) / PAGE_SIZE) : page)
+    const first = shownPage * PAGE_SIZE
+    const onPage = stops.slice(first, first + PAGE_SIZE)
+    const hasOpen = selected >= first && selected < first + PAGE_SIZE
+    const before = hasOpen ? onPage.filter(stop => stop.index <= selected) : onPage
+    const after = hasOpen ? onPage.filter(stop => stop.index > selected) : []
+    const pager = (id: string, label: string) => (
+      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: false, bg: THEME.surface3, idle: THEME.secondary, still } satisfies EntryProps} />
+    )
+    // The engine caps how large one Client's tree may serialize, so a long session's stops spread over several Clients.
+    const timeline = (key: string, list: typeof stops, railFirst: boolean) =>
+      Array.from({ length: Math.ceil(list.length / STOPS_PER_CLIENT) }, (_, n) => {
+        const chunk = list.slice(n * STOPS_PER_CLIENT, (n + 1) * STOPS_PER_CLIENT)
+        const first = railFirst || n > 0
+        return <Client key={n === 0 ? key : `${key}-${n}`} module="./timeline.tsx" height={timelineRows(chunk.length, first)} props={{ stops: chunk, selected, railFirst: first, ...marks } satisfies TimelineProps} />
+      })
+    const stat = (key: string, body: unknown) => pill({ Box, Text }, look.nerd, THEME.surface3, body, key, THEME.bg)
+    const stats = current
+      ? [
+          current.durationMs !== undefined ? stat('open-time', <Text color={THEME.muted}>{duration(current.durationMs)}</Text>) : null,
+          current.added || current.removed
+            ? stat('open-counts', (
+                <Text>
+                  <Text color={THEME.good}>{current.added ? `+${current.added}` : ''}</Text>
+                  <Text color={THEME.alert}>{current.added && current.removed ? ' ' : ''}{current.removed ? `−${current.removed}` : ''}</Text>
+                </Text>
+              ))
+            : null,
+          current.tools ? stat('open-tools', <Text color={THEME.muted}>{fill(text.tools, { count: current.tools })}</Text>) : null,
+        ].filter(Boolean)
+      : []
 
-    // Mouse only: [↵] is a Button, since a jump needs the person's press behind it; a click on the text selects it into the card.
+    // Mouse only: the jump is a Button, since a scroll needs the person's press behind it; a click on a stop opens it.
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {titleRow({ Box, Client, Text }, look.nerd, <Text color={THEME.accent} bold>{`${MARK.stage} ${fill(text.heading, { sep: MARK.sep, count: prompts.length })}`}</Text>, 'prompts-settings', `${look.glyph.gear} ${text.settingsPill}`, still)}
-        <Text color={statusColor(note)}>{note || fill(text.hint, { go: GO, sep: MARK.sep })}</Text>
+        {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
+        <Text color={statusColor(note)}>{note || fill(text.hint, { sep: MARK.sep })}</Text>
         {prompts.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
         {current ? cardSpace({ Box }, CARD_ROWS) : null}
-        <Box marginTop={1} flexDirection="row" columnGap={1}>
-          {actionColumn(
-            { Box, Button, Text },
-            'prompts',
-            prompts.map((_, index) => ({ label: GO, onPress: () => jump($, index) })),
-          )}
-          <Client
-            key="list"
-            module="./list.tsx"
-            height={prompts.length}
-            props={{ rows: prompts.map((prompt, index) => ({ number: String(index + 1).padStart(number), time: clock(prompt.at), text: oneLine(prompt.text, width - number - 1 - (prompt.at ? 6 : 0)) })), selected }}
-          />
+        <Box marginTop={1} flexDirection="column">
+          {before.length > 0 ? (
+            timeline('timeline-before', before, false)
+          ) : null}
+          {current && hasOpen ? (
+            <Box key="open" flexDirection="row" paddingLeft={GUTTER} columnGap={1}>
+              {/* The rail runs on only when a stop follows. */}
+              <Text color={THEME.accent}>{after.length > 0 ? MARK.rail : ' '}</Text>
+              <Box key="open-stats" flexDirection="row" columnGap={1} flexGrow={1}>
+                {stats}
+              </Box>
+              {/* A Button, not an Entry: a transcript scroll needs the person's press, and a Client click is refused as not person-initiated. */}
+              {stat('open-jump-pill', <Button key="open-jump" label={`${look.glyph.go.replace(/[[\]\s]/g, '')} ${text.jump}`} plain hover={{ scope: 'open-jump', color: THEME.accent }} onPress={() => jump($, selected)} />)}
+            </Box>
+          ) : null}
+          {after.length > 0 ? (
+            timeline('timeline-after', after, true)
+          ) : null}
         </Box>
         {current
           ? stickyCard({ Box }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, [
               <Box key="card-title" flexShrink={0}>
                 <Text color={THEME.onSurface} bold>{[fill(text.cardNumber, { n: selected + 1 }), clock(current.at)].filter(Boolean).join(` ${MARK.sep} `)}</Text>
               </Box>,
-              <Box key="card-text" height={CARD_ROWS - 3} overflow="hidden" flexShrink={0}>
+              <Box key="card-text" height={CARD_ROWS - 3 - (pageCount > 1 ? 1 : 0)} overflow="hidden" flexShrink={0}>
                 <Text color={THEME.muted}>{current.text}</Text>
               </Box>,
+              // The pager rides in the pinned card, so it stays in view however far the timeline scrolls.
+              pageCount > 1 ? (
+                <Box key="pager" flexDirection="row" columnGap={1} flexShrink={0}>
+                  {shownPage > 0 ? pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-prev', text.pagePrev), 'pager-prev', THEME.surface1) : null}
+                  <Text color={THEME.muted}>{fill(text.page, { page: shownPage + 1, pages: pageCount, from: first + 1, to: first + onPage.length, sep: MARK.sep })}</Text>
+                  {shownPage < pageCount - 1 ? pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-next', text.pageNext), 'pager-next', THEME.surface1) : null}
+                </Box>
+              ) : null,
             ])
           : null}
       </Box>

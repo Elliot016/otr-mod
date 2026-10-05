@@ -1,6 +1,7 @@
 // Shared pill row, see mod-builder/references/standard.md. Copy unchanged into every mod that draws in the row.
 import type { RenderElement } from 'claude-code'
 
+import { mix, type EntryProps } from './entry'
 import style from './style'
 import { CAPS, THEME } from './theme'
 
@@ -40,15 +41,27 @@ export const tipLine = ({ Box, Text }: Elements, text: string) => (
   </Box>
 )
 
-// One pill with its own caps, so it stands alone whichever mods are loaded; caps only where the font has them.
-export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: unknown, key = 'menu-pill') {
+// One pill with its own caps where the font has them; `on` is what it sits on when that is another pill or a card.
+export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: unknown, key = 'menu-pill', on?: string) {
+  const under = on ? { backgroundColor: on } : {}
   return (
     <Box key={key} flexDirection="row">
-      {nerd ? <Text key={`${key}-cap-left`} color={bg}>{CAPS.left}</Text> : null}
+      {nerd ? <Text key={`${key}-cap-left`} color={bg} {...under}>{CAPS.left}</Text> : null}
       <Box key={`${key}-body`} flexDirection="row" backgroundColor={bg}>
         {body}
       </Box>
-      {nerd ? <Text key={`${key}-cap-right`} color={bg}>{CAPS.right}</Text> : null}
+      {nerd ? <Text key={`${key}-cap-right`} color={bg} {...under}>{CAPS.right}</Text> : null}
+    </Box>
+  )
+}
+
+// A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open panel's entry is a pill of its own inside the group.
+export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, props: Omit<EntryProps, 'id' | 'bg'>) {
+  const bg = props.isOpen ? THEME.lifted : PILL.primary
+  const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props } satisfies EntryProps} />
+  return (
+    <Box key={`menu-pad-${id}`} flexDirection="row">
+      {props.isOpen ? pill({ Box, Text }, nerd, bg, entry, `menu-open-${id}`, PILL.primary) : entry}
     </Box>
   )
 }
@@ -79,13 +92,25 @@ export function pillRow(elements: Elements, nerd: boolean, group: unknown[], row
   )
 }
 
-// A panel's title row: the title, then a pill entry at the right end that swaps the panel and its settings.
-export function titleRow({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, title: unknown, id: string, label: string, still: boolean) {
-  const entry = <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: false, bg: PILL.primary, idle: THEME.pill, still }} />
+// One chip per view of a panel (its list, its settings), standing in for the title: id, label, icon glyph and an optional count.
+export type Tab = { id: string; label: string; icon: string; isOpen: boolean; count?: number }
+
+// The share of the chip's own color left in a count badge, as the turn-fold chips tint theirs.
+const BADGE_WASH = 0.72
+
+// A panel's title line, drawn like the turn-fold chips: the open view lifted and bold, the others muted, a click swaps the view.
+export function tabRow({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, tabs: Tab[], still: boolean) {
   return (
-    <Box key="title-row" flexDirection="row">
-      <Box key="title-row-text" flexGrow={1} flexShrink={1}>{title}</Box>
-      {pill({ Box, Text }, nerd, PILL.primary, entry, `${id}-pill`)}
+    <Box key="tab-row" flexDirection="row" columnGap={1}>
+      {tabs.map(tab => {
+        const bg = tab.isOpen ? THEME.lifted : THEME.surface3
+        // Client props refuse an undefined value, so a tab without a count leaves the key out.
+        const badge = tab.count === undefined ? {} : { badge: { text: String(tab.count), color: THEME.accent, bg: mix(THEME.accent, bg, BADGE_WASH) } }
+        const entry = (
+          <Client key={tab.id} module="./entry.tsx" height={1} props={{ id: tab.id, label: tab.label, isOpen: tab.isOpen, bg, idle: THEME.muted, still, lead: tab.icon, leadColor: THEME.accent, nerd, ...badge } satisfies EntryProps} />
+        )
+        return pill({ Box, Text }, nerd, bg, entry, `${tab.id}-pill`)
+      })}
     </Box>
   )
 }
