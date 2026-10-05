@@ -50,7 +50,12 @@ function parseSteps(text: string, limit: number) {
   return [...new Set(lines)].slice(0, limit)
 }
 
+// True while the model writes suggestions, so the band shows they are coming.
+let isSuggesting = false
+
 async function suggest($: EngineInterface, mine: number) {
+  isSuggesting = true
+  $.ui.invalidate('ui.render')
   try {
     const reply = await $.model.fork({ prompt: question(count) })
     if (mine !== epoch || !reply.isAnswered) return
@@ -60,11 +65,20 @@ async function suggest($: EngineInterface, mine: number) {
     $.ui.invalidate('ui.render')
   } catch {
     // A suggestion is a courtesy: any failure shows nothing.
+  } finally {
+    if (mine === epoch) {
+      isSuggesting = false
+      $.ui.invalidate('ui.render')
+    }
   }
 }
 
 function clearSteps($: EngineInterface) {
   epoch += 1
+  if (isSuggesting) {
+    isSuggesting = false
+    $.ui.invalidate('ui.render')
+  }
   if (steps.length === 0) return
   steps = []
   $.ui.invalidate('ui.render')
@@ -212,10 +226,16 @@ export const register: Register = (on, options) => {
     // A command waiting on the person outranks suggestions: the band has few rows, and a hidden hold looks like a hang.
     const isHolding = (await $.state.get({ plugin: 'mod-blast-radius', key: 'holding' })).value === true
     if (steps.length === 0 || isHolding) {
-      if (cards.length === 0) return next(e)
+      const waiting = enabled && isSuggesting && !isHolding
+      if (cards.length === 0 && !waiting) return next(e)
       return (
         <Box key="toasts-nextsteps" flexDirection="column">
           {cards}
+          {waiting ? (
+            <Box key="nextsteps-waiting" paddingX={1}>
+              <Client key="steps-waiting" module="./entry.tsx" height={1} props={{ id: 'steps-waiting', label: 'Thinking of next steps…', isOpen: false, bg: THEME.bg, isBusy: true }} />
+            </Box>
+          ) : null}
           {await next(e)}
         </Box>
       )

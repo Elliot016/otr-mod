@@ -19,7 +19,8 @@ const DESTRUCTIVE_ASK = 'Destructive operation detected'
 const BUILT_IN = [...new Set(CHECKS.map(check => check.reason))]
 
 type Decision = 'run' | 'cancel' | 'interrupted' | 'error'
-type Held = { command: string; risk: Risk; report: Report | null; plain: Plain | null; decision: Decision | null; described?: Described }
+// isDescribing: Haiku is still writing the card's words.
+type Held = { command: string; risk: Risk; report: Report | null; plain: Plain | null; decision: Decision | null; described?: Described; isDescribing?: boolean }
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let isEnabled = true
@@ -96,8 +97,12 @@ async function describe($: EngineInterface, mine: Held) {
   const risky = segmentsOf(mine.command, rules).filter(step => step.risk)
   let found = describedCache.get(mine.command)
   if (!found) {
+    mine.isDescribing = true
+    $.ui.invalidate('ui.render')
     const prompt = describePrompt(mine.command, mine.risk.reason, mine.report?.summary ?? '', risky.map(step => step.text))
     const reply = await $.model.complete({ model: 'haiku', system: SYSTEM, prompt, maxTokens: 400, timeoutMs: 15000 }).catch(() => null)
+    mine.isDescribing = false
+    $.ui.invalidate('ui.render')
     found = reply?.isAnswered ? parseDescribed(reply.text, risky.length) ?? undefined : undefined
     if (!found) return
     describedCache.set(mine.command, found)
@@ -235,6 +240,8 @@ function spansText(Text: Elements['Text'], spans: Span[], key: string) {
 }
 
 // The held command as a card above the pills: what happens in plain words, what it touches, then Cancel, Details and the consequence. Every row fits the band.
+const EXPLAINING = 'Explaining…'
+
 function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number, maxRows: number) {
   const width = Math.max(20, columns - 4)
   // The card's rows are what is left after its border, its action row and the pill row below.
@@ -271,6 +278,12 @@ function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number,
         {entry('blast-details', labels.details)}
         <Text key="hold-sep-run" color={THEME.border}>│</Text>
         {entry('blast-run', labels.run, THEME.alert)}
+        {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
+        {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 6 + EXPLAINING.length + 3 <= width ? (
+          <Box key="hold-explaining-row" flexGrow={1} justifyContent="flex-end">
+            <Client key="hold-explaining" module="./entry.tsx" height={1} props={{ id: 'hold-explaining', label: EXPLAINING, isOpen: false, bg: THEME.surface1, isBusy: true }} />
+          </Box>
+        ) : null}
       </Box>
     </Box>
   )

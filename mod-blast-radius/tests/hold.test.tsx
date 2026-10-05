@@ -235,6 +235,28 @@ test('Haiku words replace the heading and the sentence, while Run keeps the rule
   await band.unmount()
 })
 
+test('while Haiku writes the card words, a shimmering Explaining shows on the action row', async ($, on) => {
+  const { seen, clock } = world(on)
+  let release = (_: unknown) => {}
+  const pending = new Promise(resolve => (release = resolve))
+  on('model.complete', async () => ({ value: await pending }))
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await clock.advance(1)
+  await band.redraw()
+  expect(await band.find({ key: 'hold-explaining' })).toBeDefined()
+
+  release({ isAnswered: true, usage: {}, text: '{"verb":"Delete the build folder","does":"Removes the build output.","undo":"No.","steps":["Deletes the build folder"]}' })
+  await clock.settle()
+  await band.redraw()
+  expect(await band.find({ key: 'hold-explaining' })).toBeUndefined()
+  expect(await textOf(band, /Delete the build folder/)).toBeDefined()
+  await cancel($)
+  await call
+  await band.unmount()
+})
+
 test('a failed Haiku call leaves the rule wording in place', async ($, on) => {
   const { seen } = world(on)
   on('model.complete', () => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } }))

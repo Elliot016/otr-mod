@@ -13,9 +13,9 @@ function setup(on: any, reply: () => unknown) {
   const fills: { text: string; mode?: string }[] = []
   const asked: string[] = []
   let draft = ''
-  on('model.fork', (_$: unknown, e: { prompt: string }) => {
+  on('model.fork', async (_$: unknown, e: { prompt: string }) => {
     asked.push(e.prompt)
-    return { value: reply() }
+    return { value: await reply() }
   })
   on('prompt.read', () => ({ value: { text: draft, cursor: draft.length } }))
   on('prompt.fill', (_$: unknown, e: { text: string; mode?: string }) => {
@@ -35,6 +35,22 @@ function setup(on: any, reply: () => unknown) {
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
 const mount = ($: any) => $.ui.mount({ plugin: 'mod-nextsteps', surface: 'terminal', ...BAND })
 const rowsOf = async (ui: any) => JSON.stringify(await ui.drawn({ in: 'steps-list' }))
+
+test('while the suggestions are being written, a shimmering line says they are coming', async ($, on) => {
+  let release = (_: unknown) => {}
+  const pending = new Promise(resolve => (release = resolve))
+  const { clock } = setup(on, () => pending)
+  await $.turn.complete(DONE as never)
+  await clock.advance(0)
+
+  const ui = await mount($)
+  expect(JSON.stringify(await ui.drawn({ in: 'steps-waiting' }))).toContain('T')
+  release(answered('add a test'))
+  await clock.settle()
+  expect(await ui.find({ key: 'steps-waiting' })).toBeUndefined()
+  expect(await rowsOf(ui)).toContain('add a test')
+  await ui.unmount()
+})
 
 test('suggestions appear after turn.complete, tidied and capped at the count', async ($, on) => {
   const { clock, asked } = setup(on, () => answered('1. add a test\n- run the suite\n"ship it"\nfourth one'))

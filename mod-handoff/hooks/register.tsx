@@ -260,13 +260,14 @@ export const register: Register = (on, options) => {
     const { group, row, rest, tip } = splitRow(await next(e))
     // A muted entry while Claude works; a click then explains in a toast instead of crowding the row.
     const isIdle = !(e.props.isWorking || working)
-    const entry = (id: string, label: string) => (
+    const entry = (id: string, label: string, isBusy = false) => (
       <Box key={`${id}-pad`}>
-        <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isIdle, bg: PILL.secondary }} />
+        <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isIdle, bg: PILL.secondary, isBusy }} />
       </Box>
     )
     const body = isRunning ? (
-      <Text key="handoff-running" color={THEME.muted}>{` ${'Writing handoff…'} `}</Text>
+      // Writing takes a model call; the shimmer shows it is still on its way.
+      entry('handoff-running', 'Writing handoff…', true)
     ) : isConfirming ? (
       <Box key="handoff-confirm" flexDirection="row" paddingLeft={1}>
         <Text key="handoff-ask" color={THEME.onSurface}>{'Clear & continue?'}</Text>
