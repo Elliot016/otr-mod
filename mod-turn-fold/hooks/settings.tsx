@@ -1,6 +1,8 @@
-// Shared settings body, see mod-builder/references/standard.md. Copy unchanged into every mod with settings or actions.
+// Shared settings body, see mod-builder/references/standard.md. Master in templates/cli-mod; copy unchanged into every mod with settings or actions.
 import type { ConfigRow, ConfigValue, RenderElement } from 'claude-code'
 
+import { section, type Look } from './look'
+import style from './style'
 import { MARK, THEME } from './theme'
 
 // A button a mod offers beside its settings: runs `/<command> <args>`, declared in its showcase.json.
@@ -59,12 +61,12 @@ function exampleOf({ Box, Text }: Elements, previews: Previews | undefined, row:
 
 // The value as the panel shows it: on/off as words, a list as its items.
 const shown = (row: ConfigRow) =>
-  row.kind === 'boolean' ? (row.value === true ? 'On' : 'Off') : Array.isArray(row.value) ? row.value.join(', ') : String(row.value)
+  row.kind === 'boolean' ? (row.value === true ? style.text.on : style.text.off) : Array.isArray(row.value) ? row.value.join(', ') : String(row.value)
 
 const valueColor = (row: ConfigRow) => (row.kind === 'boolean' ? (row.value === true ? THEME.good : THEME.muted) : THEME.secondary)
 
 // Changes the row in place: on/off flips, a choice steps to its next option, a number steps by one; text is edited in /config.
-function control({ Box, Button, Text }: Elements, row: ConfigRow, index: number, set: SettingsProps['set']) {
+function control({ Box, Button, Text }: Elements, { glyph }: Look, row: ConfigRow, index: number, set: SettingsProps['set']) {
   const key = `setting-${index}`
   const button = (suffix: string, label: string, value: ConfigValue, isInactive = false) => (
     <Button
@@ -76,17 +78,17 @@ function control({ Box, Button, Text }: Elements, row: ConfigRow, index: number,
       onPress={() => set(row, value)}
     />
   )
-  if (row.isLocked) return <Text color={THEME.muted}>[■]</Text>
-  if (row.kind === 'boolean') return button('flip', row.value === true ? '[◉]' : '[○]', row.value !== true, row.value !== true)
+  if (row.isLocked) return <Text color={THEME.muted}>{glyph.locked}</Text>
+  if (row.kind === 'boolean') return button('flip', row.value === true ? glyph.on : glyph.off, row.value !== true, row.value !== true)
   if (row.kind === 'choice' && row.options?.length) {
     const at = row.options.indexOf(String(row.value))
-    return button('next', '[↻]', row.options[(at + 1) % row.options.length]!)
+    return button('next', glyph.cycle, row.options[(at + 1) % row.options.length]!)
   }
   if (row.kind === 'number' && typeof row.value === 'number') {
     return (
       <Box key={key} flexDirection="row">
-        {button('down', '[−]', row.value - 1)}
-        {button('up', '[+]', row.value + 1)}
+        {button('down', glyph.down, row.value - 1)}
+        {button('up', glyph.up, row.value + 1)}
       </Box>
     )
   }
@@ -94,60 +96,50 @@ function control({ Box, Button, Text }: Elements, row: ConfigRow, index: number,
 }
 
 // The Settings and Actions sections of a mod's panel or page.
-export function settingsBody(elements: Elements, { rows, actions, working, set, run, previews }: SettingsProps) {
+export function settingsBody(elements: Elements, look: Look, { rows, actions, working, set, run, previews }: SettingsProps) {
   const { Box, Button, Text } = elements
+  const settings = [
+    rows.length === 0 ? <Text key="settings-none" color={THEME.muted}>{style.text.noSettings}</Text> : null,
+    ...rows.map((row, index) => {
+      const example = exampleOf(elements, previews, row)
+      return (
+        <Box key={`setting-row-${index}`} flexDirection="row" columnGap={1} marginTop={index === 0 ? 0 : 1}>
+          <Box key={`setting-control-${index}`} width={6} flexShrink={0}>
+            {control(elements, look, row, index, set)}
+          </Box>
+          <Box key={`setting-text-${index}`} flexDirection="column" flexGrow={1}>
+            <Box key={`setting-head-${index}`} flexDirection="row" columnGap={2}>
+              <Text color={THEME.onSurface}>{row.label}</Text>
+              <Text color={valueColor(row)}>{row.isLocked ? `${shown(row)} ${MARK.sep} ${style.text.locked}` : shown(row)}</Text>
+            </Box>
+            {row.description ? (
+              <Text color={THEME.muted}>{row.kind === 'text' ? `${row.description} ${MARK.sep} ${style.text.editInConfig}` : row.description}</Text>
+            ) : null}
+            {/* The page's own background sets the example apart from the tinted section around it. */}
+            {example ? (
+              <Box key={`setting-preview-${index}`} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.bg} paddingX={1} marginTop={1}>
+                {example}
+              </Box>
+            ) : null}
+          </Box>
+        </Box>
+      )
+    }),
+  ]
+  const buttons = actions.map((action, index) =>
+    working && !action.isLocal ? (
+      <Text key={`action-${index}`} color={THEME.muted}>{`${look.glyph.go} ${action.label} ${MARK.sep} ${style.text.idleOnly}`}</Text>
+    ) : (
+      <Box key={`action-row-${index}`}>
+        <Button key={`action-${index}`} label={`${look.glyph.go} ${action.label}`} plain hover={{ scope: `action-row-${index}`, color: THEME.accent }} onPress={() => run(action)} />
+      </Box>
+    ),
+  )
   return (
     <Box key="settings" flexDirection="column">
-      <Text color={THEME.accent} bold>
-        Settings
-      </Text>
-      {rows.length === 0 ? <Text color={THEME.muted}>No settings.</Text> : null}
-      {rows.map((row, index) => {
-        const example = exampleOf(elements, previews, row)
-        return (
-          <Box key={`setting-row-${index}`} flexDirection="row" columnGap={1} marginTop={index === 0 ? 0 : 1}>
-            <Box key={`setting-control-${index}`} width={6} flexShrink={0}>
-              {control(elements, row, index, set)}
-            </Box>
-            <Box key={`setting-text-${index}`} flexDirection="column" flexGrow={1}>
-              <Box key={`setting-head-${index}`} flexDirection="row" columnGap={2}>
-                <Text color={THEME.onSurface}>{row.label}</Text>
-                <Text color={valueColor(row)}>{row.isLocked ? `${shown(row)} ${MARK.sep} locked` : shown(row)}</Text>
-              </Box>
-              {row.description ? (
-                <Text color={THEME.muted}>{row.kind === 'text' ? `${row.description} ${MARK.sep} edit it in /config` : row.description}</Text>
-              ) : null}
-              {example ? (
-                <Box key={`setting-preview-${index}`} flexDirection="column" borderStyle="round" borderColor={THEME.border} paddingX={1} marginTop={1}>
-                  {example}
-                </Box>
-              ) : null}
-            </Box>
-          </Box>
-        )
-      })}
-      {actions.length > 0 ? (
-        <Box key="actions" flexDirection="column" marginTop={1}>
-          <Text color={THEME.accent} bold>
-            Actions
-          </Text>
-          {actions.map((action, index) =>
-            working && !action.isLocal ? (
-              <Text key={`action-${index}`} color={THEME.muted}>{`[↵] ${action.label} ${MARK.sep} available once Claude is idle`}</Text>
-            ) : (
-              <Box key={`action-row-${index}`}>
-                <Button
-                  key={`action-${index}`}
-                  label={`[↵] ${action.label}`}
-                  plain
-                  hover={{ scope: `action-row-${index}`, color: THEME.accent }}
-                  onPress={() => run(action)}
-                />
-              </Box>
-            ),
-          )}
-        </Box>
-      ) : null}
+      {section(elements, look, 'settings', 'settings', style.text.settings, settings)}
+      {actions.length > 0 ? section(elements, look, 'actions', 'actions', style.text.actions, buttons) : null}
     </Box>
   )
 }
+

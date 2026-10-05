@@ -1,3 +1,6 @@
+import text from './text'
+import { fill } from './theme'
+
 // One prompt and everything Claude drew after it, up to the next prompt.
 export type Turn = {
   prompt: string
@@ -139,6 +142,8 @@ export class TurnLog {
       this.calls.set(id, call)
       this.add(current, id)
     }
+    // A row first draws while its input still streams in, so a later, fuller input replaces the first.
+    if (input && Object.keys(input).length >= Object.keys(call.input ?? {}).length) call.input = input
     if (!isRunning && call.endedAt === undefined) Object.assign(call, diffStat(name, input, output), { endedAt: at })
   }
 
@@ -175,17 +180,19 @@ const tail = (path: string) => String(path ?? '').replace(/\\/g, '/').split('/')
 // The one line a folded tool row shows: `Edit(hooks/register.tsx) +3 -1`, `Skill(tidy)`, `Agent(Research docs)`.
 export function toolLabel(name: string, input: any, added: number, removed: number) {
   const stat = added || removed ? ` +${added} \u2212${removed}` : ''
-  if (name === 'Edit' || name === 'MultiEdit' || name === 'Write' || name === 'NotebookEdit') return `${name}(${tail(input?.file_path ?? input?.notebook_path)})${stat}`
-  if (name === 'Skill') return `Skill(${input?.skill ?? '?'})`
-  if (name === 'Agent' || name === 'Task') return `Agent(${input?.description ?? input?.subagent_type ?? '?'})`
-  if (name === 'Bash') return `Bash(${String(input?.command ?? '').split('\n')[0]})`
-  if (name === 'Read') return `Read(${tail(input?.file_path)})`
+  // An input not known yet shows the bare name, never empty parentheses.
+  const call = (label: string, detail: unknown) => (detail ? `${label}(${detail})` : label)
+  if (name === 'Edit' || name === 'MultiEdit' || name === 'Write' || name === 'NotebookEdit') return `${call(name, tail(input?.file_path ?? input?.notebook_path))}${stat}`
+  if (name === 'Skill') return call('Skill', input?.skill)
+  if (name === 'Agent' || name === 'Task') return call('Agent', input?.description ?? input?.subagent_type)
+  if (name === 'Bash') return call('Bash', String(input?.command ?? '').split('\n')[0])
+  if (name === 'Read') return call('Read', tail(input?.file_path))
   return name
 }
 
 const clock = (ms: number) => {
   const seconds = Math.round(ms / 1000)
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  return seconds < 60 ? fill(text.durationSeconds, { s: seconds }) : fill(text.durationMinutes, { m: Math.floor(seconds / 60), s: seconds % 60 })
 }
 
 const two = (n: number) => String(n).padStart(2, '0')
@@ -199,10 +206,10 @@ export const timeOfDay = (at: number, withSeconds = false) => {
 
 // How long a call took: `0.4s` under a second, then `41s`, `6m 12s`, `1h 3m`.
 export const elapsed = (ms: number) => {
-  if (ms < 1000) return `${(Math.max(0, ms) / 1000).toFixed(1)}s`
+  if (ms < 1000) return fill(text.durationSeconds, { s: (Math.max(0, ms) / 1000).toFixed(1) })
   const seconds = Math.round(ms / 1000)
   if (seconds < 3600) return clock(ms)
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
+  return fill(text.durationHours, { h: Math.floor(seconds / 3600), m: Math.floor((seconds % 3600) / 60) })
 }
 
 // A call's start and duration for its line, or nothing while either end is unknown.
@@ -212,7 +219,55 @@ export const callTime = (call: ToolCall | undefined) =>
 // The folded turn's line: tool count, then each file change, skill and agent, then the time it took.
 export function turnSummary(turn: Turn) {
   const named = turn.tools.filter(call => ['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Skill', 'Agent', 'Task'].includes(call.name))
-  const parts = [`${turn.tools.length} tool${turn.tools.length === 1 ? '' : 's'}`, ...named.map(call => toolLabel(call.name, call.input, call.added, call.removed))]
+  const parts = [fill(turn.tools.length === 1 ? text.toolCountOne : text.toolCountMany, { n: turn.tools.length }), ...named.map(call => toolLabel(call.name, call.input, call.added, call.removed))]
   if (turn.durationMs !== undefined) parts.push(clock(turn.durationMs))
   return parts.join(' · ')
+}
+
+export type Kind = 'read' | 'search' | 'edit' | 'shell' | 'web' | 'agent' | 'tool'
+
+const KIND_OF: Record<string, Kind> = {
+  Read: 'read',
+  Grep: 'search',
+  Glob: 'search',
+  Edit: 'edit',
+  MultiEdit: 'edit',
+  Write: 'edit',
+  NotebookEdit: 'edit',
+  Bash: 'shell',
+  PowerShell: 'shell',
+  WebFetch: 'web',
+  WebSearch: 'web',
+  Agent: 'agent',
+  Task: 'agent',
+}
+
+const KIND_ORDER: Kind[] = ['read', 'search', 'edit', 'shell', 'web', 'agent', 'tool']
+
+const KIND_LABEL = (kind: Kind, n: number) => fill(n === 1 ? text.kind[kind].one : text.kind[kind].many, { n })
+
+type GroupCall = { tool_use_id?: string; tool: string; input: unknown; output?: unknown }
+
+// A folded group of calls split by kind, in a fixed order, each with its line and its calls.
+export function kindsOf<T extends GroupCall>(calls: readonly T[]) {
+  return KIND_ORDER.map(kind => {
+    const own = calls.filter(call => (KIND_OF[call.tool] ?? 'tool') === kind)
+    return { kind, label: KIND_LABEL(kind, own.length), calls: own }
+  }).filter(group => group.calls.length > 0)
+}
+
+// Claude Code names the thinking time only in its own drawing of the group, so it is read from there.
+export function thoughtOf(tree: unknown): string | undefined {
+  const texts: string[] = []
+  const walk = (node: unknown) => {
+    if (typeof node === 'string') texts.push(node)
+    else if (Array.isArray(node)) node.forEach(walk)
+    else if (node && typeof node === 'object') {
+      const element = node as { children?: unknown; props?: { children?: unknown } }
+      walk(element.children)
+      walk(element.props?.children)
+    }
+  }
+  walk(tree)
+  return /Thought for [\dhms ]*\d[hms]/.exec(texts.join(''))?.[0]?.trim()
 }

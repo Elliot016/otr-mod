@@ -3,8 +3,9 @@ import type { ConfigRow, ConfigValue, EngineInterface, Register, RenderElement }
 import type { BarMessage, BarProps } from './bar'
 import { isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action, type Previews } from './settings'
-import { MARK, statusColor, THEME } from './theme'
-import { callTime, diffStat, isPrompt, rowKey, timeOfDay, toolLabel, turnSummary, TurnLog, type Turn } from './turns'
+import text from './text'
+import { CAPS, fill, MARK, statusColor, THEME } from './theme'
+import { callTime, diffStat, isPrompt, kindsOf, rowKey, thoughtOf, timeOfDay, toolLabel, turnSummary, TurnLog, type Turn } from './turns'
 
 let transcript = ''
 let log = new TurnLog()
@@ -28,20 +29,20 @@ let note = ''
 
 const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
 
-// `/mod-toggle settings` toggles the panel; an unplaced pane is waiting, not open.
+// `/mod-turn-fold settings` toggles the panel; an unplaced pane is waiting, not open.
 async function toggleSettings($: EngineInterface) {
   if (await isPaneOpen($)) {
     await $.ui.close({ id: PANE })
-    await $.state.set({ plugin: 'mod-toggle', key: 'pane' }, false)
+    await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, false)
     return
   }
   note = ''
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
-  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-toggle' }))
-  const result = await $.ui.open({ id: PANE, title: 'mod-toggle', closeOnEscape: true })
-  if (!result.isPlaced) $.ui.toast(`Settings panel waiting: ${result.reason}`)
-  await $.state.set({ plugin: 'mod-toggle', key: 'pane' }, result.isPlaced)
+  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-turn-fold' }))
+  const result = await $.ui.open({ id: PANE, title: text.panePlacedTitle, closeOnEscape: true })
+  if (!result.isPlaced) $.ui.toast(fill(text.paneWaiting, { reason: String(result.reason) }))
+  await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, result.isPlaced)
 }
 
 // Read once, since a long session's file is large (past $.fs.read's cap it streams through the file printer); later rows are claimed as they render.
@@ -98,15 +99,15 @@ const markEnded = () => {
 
 // Reading the lists subscribes the row to redraws when a click changes them.
 async function opened($: EngineInterface, kind: Kind) {
-  const value = (kind === 'turns' ? await $.state.get({ plugin: 'mod-toggle', key: 'turns' }) : await $.state.get({ plugin: 'mod-toggle', key: 'tools' })).value
+  const value = (kind === 'turns' ? await $.state.get({ plugin: 'mod-turn-fold', key: 'turns' }) : await $.state.get({ plugin: 'mod-turn-fold', key: 'tools' })).value
   return Array.isArray(value) ? value : []
 }
 
 async function flip($: EngineInterface, kind: Kind, id: string) {
   const list = await opened($, kind)
   const value = list.includes(id) ? list.filter(open => open !== id) : [...list, id]
-  if (kind === 'turns') await $.state.set({ plugin: 'mod-toggle', key: 'turns' }, value)
-  else await $.state.set({ plugin: 'mod-toggle', key: 'tools' }, value)
+  if (kind === 'turns') await $.state.set({ plugin: 'mod-turn-fold', key: 'turns' }, value)
+  else await $.state.set({ plugin: 'mod-turn-fold', key: 'tools' }, value)
 }
 
 const fit = (text: string, width: number) => {
@@ -169,7 +170,7 @@ const nested = ({ Box, Client }: Bars, key: string, body: unknown, fold: BarProp
   </Box>
 )
 
-// What `/mod-toggle <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
+// What `/mod-turn-fold <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
 async function answer($: EngineInterface, args: string) {
   if (args.trim() === 'settings') {
     await toggleSettings($)
@@ -178,17 +179,17 @@ async function answer($: EngineInterface, args: string) {
   if (args.trim() === 'debug') {
     const temp = ((await $.env.get('TEMP')) ?? (await $.env.get('TMPDIR')) ?? '/tmp').replace(/\\/g, '/')
     const rows = [...seen].map(([row, isPlaced]) => `${isPlaced ? 'placed  ' : 'unplaced'} ${row}`)
-    await $.fs.write(`${temp}/mod-toggle-ids.txt`, `${log.turns.length} turns\n${rows.join('\n')}\n`)
-    return `${rows.length} drawn rows written to ${temp}/mod-toggle-ids.txt`
+    await $.fs.write(`${temp}/mod-turn-fold-ids.txt`, `${log.turns.length} turns\n${rows.join('\n')}\n`)
+    return `${rows.length} drawn rows written to ${temp}/mod-turn-fold-ids.txt`
   }
   const flippedNow = await opened($, 'turns')
   const done = log.turns.filter(isDone)
   const isAnyOpen = done.some(turn => isTurnOpen(flippedNow, turn))
   // Folding all clears the flips when turns fold by default, and flips every turn when they open by default.
   const flipAll = isAnyOpen !== foldTurns
-  await $.state.set({ plugin: 'mod-toggle', key: 'turns' }, flipAll ? done.map(turn => turn.prompt) : [])
+  await $.state.set({ plugin: 'mod-turn-fold', key: 'turns' }, flipAll ? done.map(turn => turn.prompt) : [])
 
-  return isAnyOpen ? 'Folded every finished turn' : 'Unfolded every finished turn'
+  return isAnyOpen ? text.noteFolded : text.noteUnfolded
 }
 
 // Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
@@ -203,13 +204,13 @@ async function detectLook($: EngineInterface) {
 }
 
 // A time as a rounded pill, like the omp transient prompt; plain muted text where the font has no caps.
-function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }, key: string, time: string) {
+function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }, key: string, time: string, fill: string = THEME.surface2) {
   if (!look.nerd) return <Box key={key} flexShrink={0}><Text color={THEME.muted}>{`${time} `}</Text></Box>
   return (
     <Box key={key} flexDirection="row" flexShrink={0}>
-      <Text color={THEME.surface2}>{String.fromCodePoint(0xe0b6)}</Text>
-      <Box key={`${key}-body`} backgroundColor={THEME.surface2}><Text color={THEME.muted}>{time}</Text></Box>
-      <Text color={THEME.surface2}>{`${String.fromCodePoint(0xe0b4)} `}</Text>
+      <Text color={fill}>{CAPS.left}</Text>
+      <Box key={`${key}-body`} backgroundColor={fill}><Text color={THEME.muted}>{time}</Text></Box>
+      <Text color={fill}>{`${CAPS.right} `}</Text>
     </Box>
   )
 }
@@ -225,11 +226,11 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     look = await detectLook($)
     await $.command.register({
-      name: 'mod-toggle',
-      description: 'Fold or unfold every finished turn; `settings` opens its settings panel, `debug` writes the drawn row ids to %TEMP%',
+      name: 'mod-turn-fold',
+      description: text.commandDescription,
       argumentHint: '[settings|debug]',
     })
-    await $.state.set({ plugin: 'mod-toggle', key: 'pane' }, await isPaneOpen($))
+    await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, await isPaneOpen($))
     await load($)
 
     return next(e)
@@ -244,18 +245,18 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) await $.state.set({ plugin: 'mod-toggle', key: 'pane' }, false)
+    if (e.id === PANE) await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, false)
 
     return next(e)
   })
 
   // One panel at a time: another mod's pane opening closes this one, deferred past that plugin's dispatch.
   on('state.set', async ($, e, next) => {
-    if (e.key === 'pane' && e.plugin !== 'mod-toggle' && e.value === true) {
+    if (e.key === 'pane' && e.plugin !== 'mod-turn-fold' && e.value === true) {
       $.clock.after(0, async () => {
         if (!(await isPaneOpen($))) return
         await $.ui.close({ id: PANE })
-        await $.state.set({ plugin: 'mod-toggle', key: 'pane' }, false)
+        await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, false)
       })
     }
 
@@ -266,27 +267,27 @@ export const register: Register = (on, options) => {
     if (e.requestId !== PANE) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-toggle.'))
+    const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-turn-fold.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
     const set = async (row: ConfigRow, value: ConfigValue) => {
       const result = await $.config.set({ key: row.key, value })
-      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${row.label} saved`
+      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.noteSettingSaved, { label: row.label })}`
       $.ui.invalidate('ui.render')
     }
     const run = async (action: Action) => {
       const said =
-        action.command === 'mod-toggle'
+        action.command === 'mod-turn-fold'
           ? answer($, action.args ?? '')
-          : $.command.run({ command: action.command, args: action.args ?? '' }).then(() => `ran /${[action.command, action.args].filter(Boolean).join(' ')}`)
+          : $.command.run({ command: action.command, args: action.args ?? '' }).then(() => fill(text.noteCommandRan, { command: [action.command, action.args].filter(Boolean).join(' ') }))
       note = await said.then(text => `${MARK.ok} ${text || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
       $.ui.invalidate('ui.render')
     }
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        <Text color={THEME.accent} bold>{`${MARK.stage} mod-toggle ${MARK.sep} settings`}</Text>
-        <Text color={statusColor(note)}>{withMark(look, note) || `click a control to change it ${MARK.sep} saved at once, the mod reloads`}</Text>
-        <Box marginTop={1}>{settingsBody({ Box, Button, Text }, { rows, actions, working, set, run, previews })}</Box>
+        <Text color={THEME.accent} bold>{`${MARK.stage} ${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`}</Text>
+        <Text color={statusColor(note)}>{withMark(look, note) || `${text.paneHintClick} ${MARK.sep} ${text.paneHintSaved}`}</Text>
+        <Box marginTop={0}>{settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}</Box>
       </Box>
     )
   })
@@ -323,7 +324,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'mod-toggle' }, async ($, e) => ({ text: await answer($, e.args) }))
+  on('command.run', { command: 'mod-turn-fold' }, async ($, e) => ({ text: await answer($, e.args) }))
 
   // The prompt row carries the card's head: one line naming what the turn did, which a click folds or unfolds.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
@@ -339,7 +340,8 @@ export const register: Register = (on, options) => {
       showTimes && turn?.at !== undefined ? (
         <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1}>
           {/* Claude Code draws a prompt with a blank row above it, so the time steps down one row to sit beside the text. */}
-          <Box key="toggle-prompt-time-row" marginTop={1} flexShrink={0}>{timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at))}</Box>
+          {/* The column takes the prompt's background (Moonlight userMessageBackground) down every wrapped line, so no empty cell shows under the time. */}
+          <Box key="toggle-prompt-time-row" marginTop={1} flexShrink={0} backgroundColor={THEME.surface2}>{timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at), THEME.surface3)}</Box>
           <Box key="toggle-prompt-text" flexDirection="column" flexGrow={1} flexShrink={1}>{prompt}</Box>
         </Box>
       ) : (
@@ -429,8 +431,38 @@ export const register: Register = (on, options) => {
     const place = await placeOf($, turn, id)
     if (place === 'plain') return next(e)
 
-    const { Box, Client } = $.ui.resolve(e)
-    return place === 'hidden' ? <Box key="toggle-hidden" /> : slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt })
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
+    if (place === 'hidden') return <Box key="toggle-hidden" />
+    const native = await next(e)
+    const card = (body: unknown) => slice({ Box, Client }, 'toggle-card', THEME.accent, body, { kind: 'turns', id: turn!.prompt })
+    if (!foldTools || isLive(turn)) return card(native)
+
+    // Claude Code's one count line becomes a row per kind of work, each with its mark, each folding open to its calls.
+    const openTools = await opened($, 'tools')
+    const thought = thoughtOf(native)
+    const rows = kindsOf(e.props.calls).map(group => {
+      const foldId = `${id}:${group.kind}`
+      const isOpen = openTools.includes(foldId)
+      const key = `toggle-kind-${group.kind}`
+      const line = toggleLine({ Box, Button }, key, THEME.border, isOpen, `${look.glyph.mark[group.kind]} ${group.label}`, () => flip($, 'tools', foldId))
+      const calls = group.calls.map((call, n) => {
+        const { added, removed } = diffStat(call.tool, call.input, call.output)
+        return <Text key={`${key}-call-${n}`} color={THEME.muted}>{fit(toolLabel(call.tool, call.input, added, removed), widthOf(e) - 8)}</Text>
+      })
+      return (
+        <Box key={`${key}-row`} flexDirection="column">
+          {line}
+          {isOpen ? nested({ Box, Client }, `${key}-calls`, calls, { kind: 'tools', id: foldId }) : null}
+        </Box>
+      )
+    })
+    return card(
+      <Box key="toggle-kinds" flexDirection="column">
+        {/* Thinking has no calls to show, so its row has no chip; the padding lines its mark up with the others. */}
+        {thought ? <Box key="toggle-kind-thinking" paddingLeft={4}><Text color={THEME.muted}>{`${look.glyph.mark.thinking} ${thought}`}</Text></Box> : null}
+        {rows}
+      </Box>,
+    )
   })
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {

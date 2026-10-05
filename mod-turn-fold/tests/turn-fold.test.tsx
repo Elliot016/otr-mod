@@ -39,6 +39,16 @@ test('the transcript splits into turns at each prompt, with tools, diff counts, 
   expect(log.turnAt(ID(10))).toBe(log.turns[1])
 })
 
+test('a call drawn before its input streams in gets the input later, and never shows empty parentheses', () => {
+  const log = logOf(TRANSCRIPT)
+  const last = log.turns[log.turns.length - 1]!
+  log.claimCall('toolu_live', 'Edit', {}, true, undefined)
+  expect(turnSummary(last)).toBe('1 tool · Edit')
+  expect(turnSummary(last)).not.toContain('Edit()')
+  log.claimCall('toolu_live', 'Edit', { file_path: '/w/hooks/b.ts', old_string: 'a', new_string: 'b' }, true, undefined)
+  expect(turnSummary(last)).toContain('Edit(hooks/b.ts)')
+})
+
 test('times: a prompt keeps when it was sent, a call its start and how long it took', () => {
   const at = (s: string) => ({ timestamp: `2026-10-03T14:${s}.000Z` })
   const log = logOf([
@@ -87,7 +97,7 @@ async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsT
   // A reload fires session.start, not turn.start.
   if (isLive && !startsTurn) await $.session.start({ cwd: '/w' } as never)
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   return {
     prompt: await mount('UserMessage', ID(1), { text: 'run the tests', origin: { kind: 'composer' }, isExpanded: true }),
     tool: await mount('ToolUse', 'toolu_bash', { tool_use_id: 'toolu_bash', tool: 'Bash', input: { command: 'claude plugin test .' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }),
@@ -136,9 +146,19 @@ test('icons=nerd draws the times as rounded pills', { options: { icons: 'nerd' }
   const { prompt, tool } = await mountTimed($, on)
   const drawn = JSON.stringify(await prompt.drawn())
   expect(drawn).toContain(String.fromCodePoint(0xe0b6))
+  // The time's column carries the prompt's background down a wrapped prompt, and the pill a lighter one so it still shows.
+  expect(drawn).toMatch(/"key":"toggle-prompt-time-row"[^}]*"backgroundColor":"#1C2033"/)
+  expect(drawn).toMatch(/"key":"toggle-prompt-time-body","backgroundColor":"#252A42"/)
   expect(await prompt.find({ type: 'Text', text: timeOfDay(Date.parse('2026-10-03T14:32:00.000Z')) })).toBeDefined()
   await prompt.press({ key: 'toggle-turn-button' })
   expect(await tool.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:05.000Z'), true)} · 41s` })).toBeDefined()
+})
+
+test('icons=safe draws the times as plain muted text, with no Nerd caps', { options: { icons: 'safe' } }, async ($, on) => {
+  const { prompt } = await mountTimed($, on)
+  const drawn = JSON.stringify(await prompt.drawn())
+  expect(drawn).not.toContain(String.fromCodePoint(0xe0b6))
+  expect(await prompt.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:00.000Z'))} ` })).toBeDefined()
 })
 
 test('with timestamps off, rows show no times', { options: { timestamps: false } }, async ($, on) => {
@@ -184,7 +204,7 @@ test('the transcript is read once; rows drawn later join their turn and fold at 
   // A compact keeps the same transcript, so it is not read again.
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'compact', hook_event_name: 'SessionStart', cwd: '/w' } as never)
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const toolProps = { tool_use_id: 'toolu_new', tool: 'Bash', input: { command: 'ls' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }
 
   // The transcript never sees this turn; its rows are claimed as they draw, and the latest turn stays open.
@@ -221,7 +241,7 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
 
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
   const reply = await mount('AssistantMessage', ID(7), { text: 'Fixed.', isFirstOfReply: false })
@@ -262,6 +282,43 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   for (const ui of [prompt, step, reply, edit, result]) await ui.unmount()
 })
 
+test('a grouped count line becomes a row per kind with its mark, thinking first, each folding open to its calls', async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: TRANSCRIPT }))
+  mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{e.component === 'ToolGroup' ? 'Thought for 56s, read 1 file, edited 1 file' : `base ${e.component}`}</Text>
+  })
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
+  const calls = [
+    { tool_use_id: 'toolu_edit', tool: 'Edit', input: { file_path: '/repo/hooks/a.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: { structuredPatch: PATCH } },
+    { tool_use_id: 'toolu_read', tool: 'Read', input: { file_path: '/repo/hooks/b.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} },
+  ]
+  const group = await mount('ToolGroup', 'toolu_edit', { calls, isActive: false, isExpanded: false })
+
+  // Folded with its turn, the group draws nothing.
+  expect(await group.find({ type: 'Text' })).toBeUndefined()
+  await prompt.press({ key: 'toggle-turn-button' })
+  expect(await group.find({ type: 'Text', text: '∴ Thought for 56s' })).toBeDefined()
+  expect(await group.find({ type: 'Button', text: '≡ Read 1 file' })).toBeDefined()
+  expect(await group.find({ type: 'Button', text: '✎ Edited 1 file' })).toBeDefined()
+  expect(await group.find({ type: 'Text', text: /^Edit\(/ })).toBeUndefined()
+
+  await group.press({ key: 'toggle-kind-edit-button' })
+  expect(await group.find({ type: 'Text', text: 'Edit(hooks/a.ts) +2 −1' })).toBeDefined()
+  expect(await group.find({ type: 'Text', text: /^Read\(/ })).toBeUndefined()
+  for (const ui of [prompt, group]) await ui.unmount()
+})
+
 test('with fold_turns off, finished turns start open and the line folds them', { options: { fold_turns: false } }, async ($, on) => {
   on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
@@ -278,7 +335,7 @@ test('with fold_turns off, finished turns start open and the line folds them', {
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
 
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
 
@@ -292,18 +349,18 @@ test('with fold_turns off, finished turns start open and the line folds them', {
   for (const ui of [prompt, step]) await ui.unmount()
 })
 
-test('/mod-toggle settings opens its own panel: a click saves a setting, an action runs, and actions wait while Claude works', async ($, on) => {
+test('/mod-turn-fold settings opens its own panel: a click saves a setting, an action runs, and actions wait while Claude works', async ($, on) => {
   const saved: unknown[] = []
   const ran: string[] = []
   const ROWS = [
-    { key: 'mod-toggle.fold_turns', label: 'Fold finished turns', description: 'Starts folded', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'mod-toggle' }, isLocked: false },
+    { key: 'mod-turn-fold.fold_turns', label: 'Fold finished turns', description: 'Starts folded', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'mod-turn-fold' }, isLocked: false },
   ]
   on('store.get', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', (_$, e) =>
     String(e.path).endsWith('showcase.json') ? { value: JSON.stringify({
-            actions: [{ label: 'Say hi', command: 'other', args: 'hi' }, { label: 'Fold all', command: 'mod-toggle' }],
+            actions: [{ label: 'Say hi', command: 'other', args: 'hi' }, { label: 'Fold all', command: 'mod-turn-fold' }],
             previews: { fold_turns: { true: [{ bar: 'border', spans: [{ text: ' + ', bg: 'accent' }, { text: ' 2 tools · Edit', color: 'muted' }] }, { spans: [{ text: '● Fixed.' }] }] } },
           }) } : { value: '' },
   )
@@ -323,13 +380,13 @@ test('/mod-toggle settings opens its own panel: a click saves a setting, an acti
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   mock.clock(on)
 
-  await $.command.run({ command: 'mod-toggle', args: 'settings' })
+  await $.command.run({ command: 'mod-turn-fold', args: 'settings' })
   const ui = await $.ui.mount({
-    plugin: 'mod-toggle',
+    plugin: 'mod-turn-fold',
     surface: 'terminal',
     component: 'Pane',
     requestId: 'toggle-settings',
-    props: { title: 'mod-toggle', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} },
+    props: { title: 'mod-turn-fold', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} },
   } as never)
   expect(await ui.find({ type: 'Text', text: /^Fold finished turns$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^On$/ })).toBeDefined()
@@ -339,7 +396,7 @@ test('/mod-toggle settings opens its own panel: a click saves a setting, an acti
   expect(await ui.find({ type: 'Text', text: /^● Fixed.$/ })).toBeDefined()
 
   await ui.press({ key: 'setting-0-flip' })
-  expect(saved).toEqual([['mod-toggle.fold_turns', false]])
+  expect(saved).toEqual([['mod-turn-fold.fold_turns', false]])
 
   await ui.press({ key: 'action-0' })
   expect(ran).toEqual(['other hi'])
