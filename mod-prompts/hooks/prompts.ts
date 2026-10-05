@@ -15,7 +15,7 @@ const WRAPPER = /^<(command-|local-command-|bash-|system-reminder|task-notificat
 const INTERRUPTED = /^\[Request interrupted by user/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const promptText = (text: string) => {
+export const promptText = (text: string) => {
   const trimmed = text.trim()
   return trimmed && !WRAPPER.test(trimmed) && !INTERRUPTED.test(trimmed) && !trimmed.startsWith('/') ? trimmed : undefined
 }

@@ -93,10 +93,81 @@ test('the sidebar lists prompts, a click shows one in the sticky card, and [↵]
   } as never)
   expect(JSON.stringify(await scrolledPane.drawn())).toContain('"top":12')
   await scrolledPane.unmount()
+
+  // A prompt sent later joins the list as its row draws, and the transcript is not read again.
+  const later = await $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'UserMessage', requestId: ID(42), props: { text: 'later prompt', origin: { kind: 'composer' } } } as never)
+  await later.unmount()
+  const reopened = await $.ui.mount({
+    plugin: 'mod-prompts',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'prompts',
+    props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} },
+  } as never)
+  expect(await reopened.find({ type: 'Text', text: '▸ Prompts · 4' })).toBeDefined()
+  expect(spawned).toEqual(['/t/s1.jsonl'])
+  await reopened.unmount()
 })
 
 test('a jump targets the id the row was drawn under, else the uuid', () => {
   const drawn = new Map([[ID(1).slice(0, 24), `${ID(1).slice(0, 24)}000000000007`]])
   expect(targetOf(drawn, ID(1))).toBe(`${ID(1).slice(0, 24)}000000000007`)
   expect(targetOf(drawn, ID(2))).toBe(ID(2))
+})
+
+test('the title row pill swaps the sidebar for its settings and back', async ($, on) => {
+  const opened: string[] = []
+  on('store.get', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: '' }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', (_$, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('config.list', () => ({ value: [{ key: 'mod-prompts.animations', label: 'Animations', kind: 'boolean', value: true, description: 'd' }] }) as never)
+  on('fs.list', () => ({ value: [] }))
+  mock.env(on, {})
+  mock.clock(on)
+  const pane = (requestId: string) =>
+    ({ plugin: 'mod-prompts', surface: 'terminal', component: 'Pane', requestId, props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } }) as never
+
+  const ui = await $.ui.mount(pane('prompts'))
+  await ui.pointer({ in: 'prompts-settings', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(opened).toEqual(['prompts-settings'])
+  await ui.unmount()
+
+  const settings = await $.ui.mount(pane('prompts-settings'))
+  expect(await settings.find({ type: 'Text', text: 'Animations' })).toBeDefined()
+  await settings.pointer({ in: 'prompts-back', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(opened).toEqual(['prompts-settings', 'prompts'])
+  await settings.unmount()
+})
+
+// The sidebar with nothing in the transcript, enough to draw the title row's settings pill.
+async function emptyPane($: any, on: any) {
+  on('store.get', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: '' }))
+  on('fs.list', () => ({ value: [] }))
+  on('ui.panes', () => ({ value: [] }))
+  mock.env(on, {})
+  mock.clock(on)
+  return $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'Pane', requestId: 'prompts', props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } } as never)
+}
+
+test('icons=nerd draws the settings pill with the Nerd gear', { options: { icons: 'nerd' } }, async ($, on) => {
+  const ui = await emptyPane($, on)
+  expect(JSON.stringify(await ui.drawn({ in: 'prompts-settings' }))).toContain(String.fromCodePoint(0xf013))
+  await ui.unmount()
+})
+
+test('icons=safe draws the settings pill with the plain gear', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await emptyPane($, on)
+  const pill = JSON.stringify(await ui.drawn({ in: 'prompts-settings' }))
+  expect(pill).toContain('⚙')
+  expect(pill).not.toContain(String.fromCodePoint(0xf013))
+  await ui.unmount()
 })

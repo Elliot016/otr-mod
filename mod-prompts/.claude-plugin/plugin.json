@@ -3,5 +3,20 @@
   "version": "0.1.0",
   "description": "A sidebar of every prompt in this session, with the full text in a card: Enter or click jumps the transcript to it. Opens from /mod-prompts or the Prompts entry in the mod-menu pill",
   "author": { "name": "Amorim" },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": ["auto", "nerd", "safe"],
+      "default": "auto"
+    },
+    "animations": {
+      "type": "boolean",
+      "title": "Animations",
+      "description": "Entries shimmer while they wait and hover colors fade. Off, everything draws still",
+      "default": true
+    }
+  }
 }
