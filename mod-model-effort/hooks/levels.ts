@@ -1,13 +1,9 @@
+import style from './style'
+
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
 // The glyphs and usage colors of the Moonlight-claude oh-my-posh status line, so both read alike.
-export const LEVEL_LOOK: Record<string, { glyph: string; color: string }> = {
-  low: { glyph: '○', color: '#ACB9E6' },
-  medium: { glyph: '◐', color: '#CDBBE5' },
-  high: { glyph: '●', color: '#EA98EE' },
-  xhigh: { glyph: '◉', color: '#F883C9' },
-  max: { glyph: '◈', color: '#FF6F7A' },
-}
+export const LEVEL_LOOK: Record<string, { glyph: string; color: string }> = style.levels
 
 // The model menu lists the models requests have used, newest first; no API lists them, and a fixed list goes stale.
 export const MAX_MODELS = 6

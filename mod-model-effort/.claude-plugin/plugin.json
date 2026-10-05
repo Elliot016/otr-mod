@@ -1,0 +1,22 @@
+{
+  "name": "mod-model-effort",
+  "version": "0.1.0",
+  "description": "A clickable effort meter in the prompt footer, five squares from low to max: click one to set that level, saved for the model like Alt+P does",
+  "author": { "name": "Amorim" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": ["auto", "nerd", "safe"],
+      "default": "auto"
+    },
+    "animations": {
+      "type": "boolean",
+      "title": "Animations",
+      "description": "Entries shimmer while they wait and hover colors fade. Off, everything draws still",
+      "default": true
+    }
+  }
+}

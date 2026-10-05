@@ -41,7 +41,7 @@ test('the footer meter follows each request and a click saves that level', async
   const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'medium', messageCount: 1 } as never)
   while ((await stream.next()).done !== true);
 
-  const ui = await $.ui.mount({ plugin: 'mod-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
   expect(await ui.find({ type: 'Text', text: 'auto mode' })).toBeDefined()
   const drawn = JSON.stringify(await ui.drawn({ in: 'meter' }))
   expect(drawn).toContain('◐ ')
@@ -68,7 +68,7 @@ test('the footer meter follows each request and a click saves that level', async
   await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
   await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
   expect(JSON.parse(files['/h/.claude/settings.json']!).modelSettings['claude-opus-5-5'].effortLevel).toBe('max')
-  expect(files['/h/.claude/settings.json.mod-effort.bak']).toContain('"medium"')
+  expect(files['/h/.claude/settings.json.mod-model-effort.bak']).toContain('"medium"')
   // The level word shows on a click, then leaves. The pointer leaves too, so the tip naming the level is gone.
   expect(await ui.find({ type: 'Text', text: 'max' })).toBeDefined()
   await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
@@ -96,7 +96,7 @@ test('a click on the model name lists the models used before, and a pick switche
     const { Text } = $$.ui.resolve(e)
     return <Text>base</Text>
   })
-  const ui = await $.ui.mount({ plugin: 'mod-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never)
   expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
 
   // The current model leads, then the others in the order they were used; a model never seen before still shows.
@@ -154,7 +154,7 @@ test('a clicked level rides on each request until Alt+P saves another', async ($
   }
 
   await step(0)
-  const ui = await $.ui.mount({ plugin: 'mod-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
   await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
   await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
   await step(1)
@@ -166,4 +166,48 @@ test('a clicked level rides on each request until Alt+P saves another', async ($
   await step(2)
   expect(sent).toEqual(['medium', 'max', 'medium'])
   await ui.unmount()
+})
+
+const BAND = { plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never
+const CAP = String.fromCodePoint(0xe0b6)
+
+function band(on: (name: string, handler: (...args: any[]) => unknown) => void) {
+  on('env.get', () => ({ value: undefined }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+}
+
+test('icons=nerd draws the pill with rounded caps', { options: { icons: 'nerd' } }, async ($, on) => {
+  band(on as never)
+  const ui = await $.ui.mount(BAND)
+  expect(JSON.stringify(await ui.drawn())).toContain(CAP)
+  await ui.unmount()
+})
+
+test('icons=safe draws the pill without rounded caps', { options: { icons: 'safe' } }, async ($, on) => {
+  band(on as never)
+  const ui = await $.ui.mount(BAND)
+  expect(JSON.stringify(await ui.drawn())).not.toContain(CAP)
+  await ui.unmount()
+})
+
+test('/mod-model-effort settings opens the pane and the pane draws a setting row', { options: { icons: 'safe' } }, async ($, on) => {
+  const opened: string[] = []
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', (_$, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('state.set', () => ({ value: undefined }))
+  on('config.list', () => ({ value: [{ key: 'mod-model-effort.animations', label: 'Animations', value: true, kind: 'boolean', description: 'Entries shimmer' }] }))
+  await $.command.run({ command: 'mod-model-effort', args: 'settings' })
+  expect(opened).toEqual(['model-effort-settings'])
+
+  const pane = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'Pane', requestId: 'model-effort-settings', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
+  expect(await pane.find({ type: 'Text', text: '▸ Effort · Settings' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'Animations' })).toBeDefined()
+  await pane.unmount()
 })
