@@ -29,6 +29,43 @@ async function detectLook($: EngineInterface) {
   return lookFor(false)
 }
 
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
+}
+
 const PANE = 'skill-panel'
 const SETTINGS = 'skill-panel-settings'
 
@@ -155,7 +192,7 @@ async function openingPane($: EngineInterface) {
 export const register: Register = (on, options) => {
   still = options.animations === false
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
   toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
@@ -170,7 +207,7 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({ name: 'mod-skill-panel', description: text.commandDescription, argumentHint: '[settings]' })
     const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
     const root = `${home}/.claude/skills`
@@ -183,14 +220,16 @@ export const register: Register = (on, options) => {
       found.push({ name: meta.name ?? entry.name, tag: meta.tag, description: meta.description ?? '', hidden: meta.hidden })
     }
     skills = found
-    const agentRoot = `${home}/.claude/agents`
-    const foundAgents: Agent[] = []
-    for (const entry of await $.fs.list(agentRoot).catch(() => [])) {
-      if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
-      const agent = readAgent(String(await $.fs.read(`${agentRoot}/${entry.name}`).catch(() => '')), entry.name.slice(0, -3))
-      if (agent) foundAgents.push(agent)
+    // The person's agents, then the project's, which win over a same-named one as they do in Claude Code.
+    const foundAgents = new Map<string, Agent>()
+    for (const agentRoot of [`${home}/.claude/agents`, `${String(e.cwd ?? '').replace(/\\/g, '/')}/.claude/agents`]) {
+      for (const entry of await $.fs.list(agentRoot).catch(() => [])) {
+        if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
+        const agent = readAgent(String(await $.fs.read(`${agentRoot}/${entry.name}`).catch(() => '')), entry.name.slice(0, -3))
+        if (agent) foundAgents.set(agent.name, agent)
+      }
     }
-    agents = foundAgents
+    agents = [...foundAgents.values()]
     const modDirs = await $.fs.list(`${home}/.claude/mods`).catch(() => [])
     mods = new Set(modDirs.filter(entry => entry.kind === 'dir').map(entry => entry.name))
     // The typeahead caches each answer for the session, so ask it to list again.
@@ -245,6 +284,7 @@ export const register: Register = (on, options) => {
 
   // The bar entry lives here, not in mod-menu: only a press in this mod counts as the person asking for this pane.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await loadLook($)
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     if (hidden.value === true) {
@@ -305,6 +345,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     if (e.requestId !== PANE && e.requestId !== SETTINGS) return next(e)
     if (isOpening) $.clock.after(0, () => endOpening($))
 

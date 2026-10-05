@@ -180,6 +180,40 @@ test('the agents tab groups agents by model and a click mentions one in the prom
   await ui.unmount()
 })
 
+test("the agents tab adds the project's agents, which win over a same-named one of the person's", async ($, on) => {
+  const files: Record<string, string> = {
+    ...FILES,
+    '/p/.claude/agents/finder.md': '---\nname: finder\ndescription: The project finder\nmodel: sonnet\n---\nbody',
+    '/p/.claude/agents/local.md': '---\nname: local\ndescription: Only here\n---\nbody',
+  }
+  const file = (name: string) => ({ name, kind: 'file', size: 0, mtimeMs: 0, isLink: false })
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('fs.list', (_$, e) => {
+    const path = neutral(e.path)
+    if (path === '/h/.claude/agents') return { value: [file('finder.md'), file('helper.md')] }
+    if (path === '/p/.claude/agents') return { value: [file('finder.md'), file('local.md')] }
+    return { value: [] }
+  })
+  on('fs.read', (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  stubSession(on)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('state.set', () => ({ value: undefined }))
+
+  await $.session.start({ cwd: 'C:\\p' } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-agents' }))).toContain('3')
+  await ui.pointer({ in: 'skills-agents', type: 'down', button: 'left', x: 1, y: 0 })
+  const cloud = JSON.stringify(await ui.drawn({ in: 'agents-cloud' }))
+  expect(cloud).toContain('local')
+  expect(cloud).toContain('sonnet')
+  expect(cloud).not.toContain('haiku')
+  await ui.unmount()
+})
+
 test('the command toggles: it opens a closed pane and closes an open one', async ($, on) => {
   let open: string[] = []
   const calls: string[] = []
@@ -293,9 +327,10 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
   expect(await idle.find({ type: 'Text', text: 'other mod' })).toBeDefined()
   // The pointer on the entry shows its tip under the row, and leaving takes it away.
   await idle.pointer({ type: 'move', x: 1, y: 0, in: 'menu-entry-skills' })
-  expect(await idle.find({ type: 'Text', text: /^Skills: browse your skills/ })).toBeDefined()
+  expect(await idle.find({ type: 'Text', text: 'Skills:', bold: true })).toBeDefined()
+  expect(await idle.find({ type: 'Text', text: /^ browse your skills/ })).toBeDefined()
   await idle.pointer({ type: 'leave', x: 0, y: 0, in: 'menu-entry-skills' })
-  expect(await idle.find({ type: 'Text', text: /^Skills: browse your skills/ })).toBeUndefined()
+  expect(await idle.find({ type: 'Text', text: 'Skills:' })).toBeUndefined()
   await idle.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(opened).toEqual(['skill-panel'])
   await idle.unmount()
