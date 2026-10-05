@@ -3,7 +3,7 @@ import type { ClientModule } from 'claude-code'
 import { HOVER_STEPS, hoverMix, mix, shimmerColor, stepToward, TICK_MS } from './entry'
 import { CAPS, THEME } from './theme'
 
-// live: Claude is on this file right now; added, changed and read set the status letter's color.
+// live: Claude is on this file right now; added, changed and read set the name's color.
 export type Tone = 'live' | 'added' | 'changed' | 'read' | 'dir'
 
 export type Row = {
@@ -30,7 +30,15 @@ export type ListProps = { rows: Row[]; offset?: number; still?: boolean; nerd?: 
 
 export type ListMessage = { type: 'select'; index: number }
 
-const STATUS_COLOR: Record<Tone, string> = { live: THEME.accent, added: THEME.good, changed: THEME.secondary, read: THEME.muted, dir: THEME.muted }
+// A file's name carries its status as color, named once in the pane's legend instead of a letter on every row.
+export const NAME_COLOR: Record<Tone, string> = { live: THEME.onSurface, added: THEME.good, changed: THEME.warn, read: THEME.secondary, dir: THEME.onSurface }
+
+// Lines added and removed in one pill; plain colored text where the font has no caps.
+const countsPill = (Text: (props: any) => unknown, add: number, del: number, nerd: boolean) => {
+  const parts = [add > 0 ? <Text key="add" color={THEME.good} backgroundColor={nerd ? THEME.surface3 : undefined}>{`+${add}`}</Text> : null, del > 0 ? <Text key="del" color={THEME.alert} backgroundColor={nerd ? THEME.surface3 : undefined}>{`${add > 0 ? ' ' : ''}−${del}`}</Text> : null]
+  if (!nerd) return parts
+  return [<Text key="counts-left" color={THEME.surface3}>{CAPS.left}</Text>, ...parts, <Text key="counts-right" color={THEME.surface3}>{CAPS.right}</Text>]
+}
 
 // levels: each row's hover fade, kept only while it is above 0.
 type State = { hovered: number; phase: number; levels: Record<number, number> }
@@ -103,7 +111,7 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
       {rows.map((row, index) => {
         const isLive = row.tone === 'live'
         const glow = props.still ? 0 : glowOf(row, Date.now())
-        const restColor = mix(row.tone === 'read' ? THEME.muted : THEME.onSurface, THEME.pill, glow)
+        const restColor = mix(NAME_COLOR[row.tone], THEME.pill, glow)
         const nameColor = hoverMix(restColor, THEME.accent, levels[index] ?? 0)
         const background = isLive ? LIVE_BG : glow > 0 ? mix(THEME.surface1, LIVE_BG, glow) : undefined
         return (
@@ -120,12 +128,10 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
               <Text color={nameColor}>{row.name}</Text>
             )}
             <Text>{' '.repeat(Math.max(1, row.pad))}</Text>
-            {/* The status sits left of the counts, so the counts keep one right edge whether a row has a status or not. */}
-            {isLive && row.status ? livePill(Text, row.status, props.nerd === true) : row.status ? <Text color={STATUS_COLOR[row.tone]} bold>{row.status}</Text> : null}
-            {row.status && (row.add > 0 || row.del > 0) ? <Text> </Text> : null}
-            {row.add > 0 ? <Text color={THEME.good}>{`+${row.add}`}</Text> : null}
-            {row.add > 0 && row.del > 0 ? <Text> </Text> : null}
-            {row.del > 0 ? <Text color={THEME.alert}>{`−${row.del}`}</Text> : null}
+            {/* The live word sits left of the counts, so the counts keep one right edge whether a row is live or not. */}
+            {isLive && row.status ? livePill(Text, row.status, props.nerd === true) : null}
+            {isLive && row.status && (row.add > 0 || row.del > 0) ? <Text> </Text> : null}
+            {row.add > 0 || row.del > 0 ? countsPill(Text, row.add, row.del, props.nerd === true) : null}
           </Box>
         )
       })}

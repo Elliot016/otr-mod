@@ -44,11 +44,10 @@ export default {
     "write": { "done": "written", "live": "writing" },
     "new": { "done": "created", "live": "creating" }
   },
-  "status": {
-    "read": "R",
-    "edit": "M",
-    "write": "M",
-    "new": "A"
+  "legend": {
+    "changed": "Modified",
+    "added": "Added",
+    "read": "Read"
   },
   "notes": {
     "replaceAll": "replace all",

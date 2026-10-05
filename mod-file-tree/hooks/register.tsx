@@ -1,6 +1,6 @@
 import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
 
-import type { ListMessage, Row as ListRow } from './list'
+import { NAME_COLOR, type ListMessage, type Row as ListRow } from './list'
 import { isNerdFace, lookFor, paneTitle, section, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
 import type { EntryMessage } from './entry'
 import { PILL, pillRow, splitRow, tipLine, titleRow } from './pills'
@@ -194,12 +194,12 @@ function fold($: EngineInterface, current: Log, key: string) {
 
 const WORD: Record<Kind, { done: string; live: string }> = text.words
 
-// Git's letters, as VS Code shows them: added, modified, and R for a file Claude only read.
-const STATUS: Record<Kind, { letter: string; tone: ListRow['tone'] }> = {
-  read: { letter: text.status.read, tone: 'read' },
-  edit: { letter: text.status.edit, tone: 'changed' },
-  write: { letter: text.status.write, tone: 'changed' },
-  new: { letter: text.status.new, tone: 'added' },
+// What a file's name color says: added, modified, or only read.
+const STATUS: Record<Kind, { tone: ListRow['tone'] }> = {
+  read: { tone: 'read' },
+  edit: { tone: 'changed' },
+  write: { tone: 'changed' },
+  new: { tone: 'added' },
 }
 
 type ToolEvent = { tool: string; [argument: string]: unknown }
@@ -247,13 +247,15 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
       : icon(iconOf(row.name))
     // Safe mode has no folder icon, so a trailing slash tells a folder from a file.
     const name = row.isDir && !glyphs.nerd ? `${row.name}/` : row.name
-    const status = !entry ? '' : isLive ? WORD[entry.last].live : STATUS[entry.kind].letter
+    // Only the live row carries a word; the others show their status as the name's color.
+    const status = entry && isLive ? WORD[entry.last].live : ''
     // A folded folder shows what its files add up to, so folding hides no change.
     const inside = row.isDir && row.isFolded ? current.files.filter(file => file.path.startsWith(`${row.key}/`)) : []
     const add = entry?.add ?? inside.reduce((sum, file) => sum + file.add, 0)
     const del = entry?.del ?? inside.reduce((sum, file) => sum + file.del, 0)
     const counts = [add > 0 ? `+${add}` : '', del > 0 ? `−${del}` : ''].filter(Boolean).join(' ')
-    const stats = counts.length + (status && counts ? 1 : 0)
+    // The counts' pill adds a cap on each side where the font has them.
+    const stats = counts.length + (counts && glyphs.nerd ? 2 : 0) + (status && counts ? 1 : 0)
     // The live word sits in a pill, one cell wider on each side.
     const used = guides.length + (mark ? [...mark].length + 1 : 0) + stats + status.length + (isLive ? 2 : 0)
     const shown = fit(name, Math.max(6, width - used - 1))
@@ -621,6 +623,16 @@ export const register: Register = (on, options) => {
           {mode === 'tree' ? entry('scope-session', text.scopeSession, scope === 'session', scope === 'session' ? THEME.surface2 : THEME.bg) : null}
         </Box>
         {mode === 'tree' ? section(elements, look, 'tree', 'folder-open', rootName, tree) : section(elements, look, 'replay', 'replay', fill(text.replayHeading, { sep: MARK.sep, n: steps.length, unit: steps.length === 1 ? text.editOne : text.editMany }), replay)}
+        {/* The footer names what each name color means, once, instead of a letter on every row. */}
+        {mode === 'tree' ? <Box key="legend-push" flexGrow={1} /> : null}
+        {mode === 'tree' ? (
+          <Box key="legend" flexDirection="column">
+            <Text key="legend-rule" color={THEME.border}>{'─'.repeat(Math.max(1, e.props.bodyColumns - 2))}</Text>
+            <Box key="legend-row" flexDirection="row" columnGap={2}>
+              {(['changed', 'added', 'read'] as const).map(tone => <Text key={`legend-${tone}`} color={NAME_COLOR[tone]}>{`${MARK.bullet} ${text.legend[tone]}`}</Text>)}
+            </Box>
+          </Box>
+        ) : null}
       </Box>
     )
   })

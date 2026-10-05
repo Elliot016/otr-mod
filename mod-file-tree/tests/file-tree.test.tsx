@@ -95,16 +95,16 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: '▸ Files · 2 · Working' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn({ in: 'tab-tree' }))).toContain(' Tree ')
-  // The folder without docs/new.md folds; new.md's write landed, so it glows with its letter, not the action word.
+  // The folder without docs/new.md folds; new.md's write landed, so it glows, with no action word and no status letter.
   const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(drawn).not.toContain('creating')
-  expect(drawn).toContain('"A"')
+  expect(drawn).not.toContain('"A"')
   expect(drawn).toContain('"backgroundColor":"#252a42"')
   expect(drawn).toContain('▸')
   expect(drawn).not.toContain('a.ts')
   // The folded src/ carries a.ts's counts, so folding hides no change.
   expect(drawn).toContain('"+2"')
-  expect(drawn).toContain('"−1"')
+  expect(drawn).toContain('" −1"')
   // A folder the person opens stays open while Claude works; a second click folds it again.
   await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 3, y: 2 })
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('a.ts')
@@ -117,8 +117,9 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   expect(idle).toContain('+2')
   expect(idle).toContain('▾')
   expect(idle).not.toContain('creating')
-  expect(idle).toContain('"A"')
-  expect(idle).toContain('"M"')
+  // No letters: the name's color carries the status, and the footer names the colors.
+  expect(idle).not.toContain('"M"')
+  expect(await ui.find({ type: 'Text', text: '• Modified' })).toBeDefined()
 
   // A click on the fourth row (docs, new.md, src, a.ts) opens a.ts in the replay.
   const click = (key: string, y = 0) => ui.pointer({ in: key, type: 'down', button: 'left', x: 2, y })
@@ -186,12 +187,26 @@ test('icons=nerd leads the kinds and the title with Nerd icons', { options: { ic
   await ui.unmount()
 })
 
+test('a file name takes its status color: added green, modified yellow, read blue', { options: { animations: false } }, async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Write', file_path: '/w/new.md', content: 'hi\n' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/e.md', old_string: 'a', new_string: 'b' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/w/r.md' } as never)
+  const ui = await $.ui.mount(PANE)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).toContain('"color":"#49EF95"},"children":["new.md"]')
+  expect(drawn).toContain('"color":"#FFCB6B"},"children":["e.md"]')
+  expect(drawn).toContain('"color":"#B9C6F5"},"children":["r.md"]')
+  await ui.unmount()
+})
+
 test('icons=safe draws no Nerd glyph', { options: { icons: 'safe' } }, async ($, on) => {
   stubs(on)
   await $.tool.call({ tool: 'Edit', file_path: '/w/e.md', old_string: 'a', new_string: 'b' } as never)
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: '▸ Files · 1' })).toBeDefined()
-  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('"M"')
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('e.md')
+  expect(await ui.find({ type: 'Text', text: '• Modified' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn())).not.toMatch(/[\uE000-\uF8FF\u{F0000}-\u{FFFFD}]/u)
   await ui.unmount()
 })
