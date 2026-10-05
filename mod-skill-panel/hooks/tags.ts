@@ -1,23 +1,19 @@
+import style from './style'
+import text from './text'
+import { THEME } from './theme'
+
 export const PERSONAL = 'personal'
 
 type Swatch = { hex: string; icon: string }
 
 // Hues spread away from the theme blue, each over 9:1 on bg; icons are single-width Unicode, no Nerd Font.
-export const SWATCHES: Record<string, Swatch> = {
-  router: { hex: '#F99BD1', icon: '\u25C6' },
-  debug: { hex: '#FF9C8B', icon: '\u203C' },
-  interface: { hex: '#EEB154', icon: '\u25AA' },
-  writing: { hex: '#C3C55A', icon: '\u2261' },
-  utility: { hex: '#7CD591', icon: '\u263C' },
-  start: { hex: '#2AD7D7', icon: '\u00BB' },
-  mods: { hex: '#5DCBFF', icon: '\u002B' },
-  review: { hex: '#D1A8FF', icon: '\u2234' },
-  personal: { hex: '#9BA3C4', icon: '\u25CF' },
-}
+export const SWATCHES: Record<string, Swatch> = Object.fromEntries(Object.entries(style.tags).map(([tag, { color, icon }]) => [tag, { hex: color, icon }]))
 
 const FALLBACK = SWATCHES[PERSONAL]!
 
-const CHIP_TEXT = '#0D0E17'
+const CHIP_TEXT = THEME.bg
+
+export const tagName = (tag: string) => (text.tagNames as Record<string, string>)[tag] ?? tag
 
 export const swatchFor = (tag: string) => SWATCHES[tag] ?? FALLBACK
 

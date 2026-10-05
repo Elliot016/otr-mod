@@ -1,15 +1,36 @@
-import type { EngineInterface, Register } from 'claude-code'
+import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import type { Line, ListMessage } from './list'
 import { actionColumn } from './rows'
 import { groupSkills, markDescription, readFrontmatter, stripBadges, type Skill } from './tags'
-import { MARK, statusColor, THEME } from './theme'
+import { fill, MARK, statusColor, THEME } from './theme'
+import text from './text'
+import { tagName } from './tags'
 import { cardSpace, stickyCard } from './card'
 import type { EntryMessage } from './entry'
-import { PILL, pillRow, splitRow, tipLine } from './pills'
+import { isNerdFace, lookFor, paneTitle, terminalSettings, withMark, type IconMode } from './look'
+import { PILL, pillRow, splitRow, tipLine, titleRow } from './pills'
+import { settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
+
+// The icons setting (userConfig), fixed per activation: a change reloads the mod.
+let iconMode: IconMode = 'auto'
+let look = lookFor(false)
+
+// Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
+async function detectLook($: EngineInterface) {
+  if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
+  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
+  for (const path of terminalSettings(local)) {
+    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
+  }
+  return lookFor(false)
+}
+
 const PANE = 'skill-panel'
+const SETTINGS = 'skill-panel-settings'
 
 // The row action: add the skill to the prompt.
 const ADD = '[↵]'
@@ -29,16 +50,16 @@ const listed = () => skills.filter(skill => !skill.hidden || skill.tag === 'rout
 async function addSkill($: EngineInterface, index: number) {
   const skill = groupSkills(listed()).flatMap(group => group.skills)[index]
   if (!skill) return
-  const { text } = await $.prompt.read()
-  if (!text.split(/\s+/).includes(`/${skill.name}`)) {
-    const gap = text === '' || /\s$/.test(text) ? '' : ' '
+  const { text: current } = await $.prompt.read()
+  if (!current.split(/\s+/).includes(`/${skill.name}`)) {
+    const gap = current === '' || /\s$/.test(current) ? '' : ' '
     const filled = await $.prompt.fill({ text: `${gap}/${skill.name} `, mode: 'append' })
-    note = filled.isFilled ? `${MARK.ok} Added /${skill.name}` : `${MARK.warn} The prompt is busy, try again`
+    note = filled.isFilled ? `${MARK.ok} ${fill(text.added, { name: skill.name })}` : `${MARK.warn} ${text.promptBusy}`
   }
   $.ui.invalidate('ui.render')
 }
 
-const isOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
+const isOpen = async ($: EngineInterface, id = PANE) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
 // The command and the bar entry both toggle. An unplaced pane is waiting, not open.
 async function togglePane($: EngineInterface) {
@@ -47,9 +68,24 @@ async function togglePane($: EngineInterface) {
     await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, false)
     return
   }
+  if (await isOpen($, SETTINGS)) await $.ui.close({ id: SETTINGS })
   note = ''
-  const opened = await $.ui.open({ id: PANE, title: 'Skills', closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(`Skills panel waiting: ${opened.reason}`)
+  const opened = await $.ui.open({ id: PANE, title: text.paneTitle, closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(fill(text.skillsWaiting, { reason: opened.reason }))
+  await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, opened.isPlaced)
+}
+
+// `/mod-skill-panel settings` and the title row's pill toggle the settings panel, which takes the sidebar's place.
+async function toggleSettings($: EngineInterface) {
+  if (await isOpen($, SETTINGS)) {
+    await $.ui.close({ id: SETTINGS })
+    await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, false)
+    return
+  }
+  if (await isOpen($)) await $.ui.close({ id: PANE })
+  note = ''
+  const opened = await $.ui.open({ id: SETTINGS, title: text.settingsPaneTitle, closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, opened.isPlaced)
 }
 
@@ -58,6 +94,8 @@ async function togglePane($: EngineInterface) {
 let tipShown = false
 
 const toasts = new ToastList('skills')
+// The animations setting, fixed per activation: off, every entry draws still.
+let still = false
 
 // The entry shimmers from the click until the pane draws, so a slow open never looks ignored.
 const OPEN_WAIT_MS = 8000
@@ -79,7 +117,12 @@ async function openingPane($: EngineInterface) {
   if (!(await isOpen($))) endOpening($)
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  still = options.animations === false
+  iconMode = (options.icons as IconMode | undefined) ?? 'auto'
+  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  look = lookFor(iconMode === 'nerd')
+  toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
     const id = toasts.add(e.text)
@@ -92,7 +135,8 @@ export const register: Register = on => {
   })
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'mod-skill-panel', description: 'Open the skills sidebar' })
+    look = await detectLook($)
+    await $.command.register({ name: 'mod-skill-panel', description: text.commandDescription, argumentHint: '[settings]' })
     const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
     const root = `${home}/.claude/skills`
     const found: Skill[] = []
@@ -127,14 +171,15 @@ export const register: Register = on => {
   // The model reads the same descriptions in its skill list; the badge is only for the typeahead.
   on('prompt.attachment', { type: 'skill_listing' }, async ($, e, next) => next({ ...e, text: stripBadges(e.text) }))
 
-  on('command.run', { command: 'mod-skill-panel' }, async $ => {
-    await togglePane($)
+  on('command.run', { command: 'mod-skill-panel' }, async ($, e) => {
+    if ((e.args ?? '').trim() === 'settings') await toggleSettings($)
+    else await togglePane($)
 
     return { text: '' }
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, false)
+    if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
 
     return next(e)
   })
@@ -144,8 +189,10 @@ export const register: Register = on => {
     // Deferred past this dispatch, so this mod's own state write is not nested in another plugin's.
     if (e.key === 'pane' && e.plugin !== 'mod-skill-panel' && e.value === true) {
       $.clock.after(0, async () => {
-        if (!(await isOpen($))) return
+        const wasOpen = (await isOpen($)) || (await isOpen($, SETTINGS))
+        if (!wasOpen) return
         await $.ui.close({ id: PANE })
+        await $.ui.close({ id: SETTINGS })
         await $.state.set({ plugin: 'mod-skill-panel', key: 'pane' }, false)
       })
     }
@@ -162,7 +209,7 @@ export const register: Register = on => {
       const { Box, Client, Text } = $.ui.resolve(e)
       return <Box key="toasts-skills" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
     }
-    const nerd = (await $.state.get({ plugin: 'mod-menu', key: 'nerd' })).value === true
+    const nerd = look.nerd
 
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
@@ -172,11 +219,11 @@ export const register: Register = on => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = (
       <Box key="menu-pad-skills">
-        <Client key="menu-entry-skills" module="./entry.tsx" height={1} props={{ id: 'skills', label: 'Skills', isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening }} />
+        <Client key="menu-entry-skills" module="./entry.tsx" height={1} props={{ id: 'skills', label: text.pillLabel, isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening, still }} />
       </Box>
     )
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, 'Skills: browse your skills and add one to the prompt') : tip)
+    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -194,6 +241,9 @@ export const register: Register = on => {
     }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && message.id === 'skills') await openingPane($)
+    // The title row's pill swaps the sidebar and its settings.
+    if (message?.type === 'menu-entry' && message.id === 'skills-settings') await toggleSettings($)
+    if (message?.type === 'menu-entry' && message.id === 'skills-back') await togglePane($)
 
     return next(e)
   })
@@ -210,10 +260,28 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
-    if (e.requestId !== PANE) return next(e)
+    if (e.requestId !== PANE && e.requestId !== SETTINGS) return next(e)
     if (isOpening) $.clock.after(0, () => endOpening($))
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)
+
+    if (e.requestId === SETTINGS) {
+      const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-skill-panel.'))
+      // A saved change reloads this mod, which redraws the panel with the new value.
+      const set = async (row: ConfigRow, value: ConfigValue) => {
+        const result = await $.config.set({ key: row.key, value })
+        note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
+        $.ui.invalidate('ui.render')
+      }
+      return (
+        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+          {titleRow({ Box, Client, Text }, look.nerd, paneTitle({ Box, Text }, look, 'settings', text.settingsHeading), 'skills-back', `${look.glyph.back} ${text.backPill}`, still)}
+          <Text color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
+          <Box marginTop={0}>{settingsBody({ Box, Button, Text }, look, { rows, actions: [], working: false, set, run: async () => {} })}</Box>
+        </Box>
+      )
+    }
+
     const groups = groupSkills(listed())
     const ordered = groups.flatMap(group => group.skills.map(skill => ({ skill, swatch: group.swatch })))
     const current = ordered[selected]
@@ -237,8 +305,8 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        <Text color={THEME.accent} bold>{`${MARK.stage} Skills ${MARK.sep} ${ordered.length}`}</Text>
-        <Text color={statusColor(note)}>{note || `click [↵] to add to the prompt ${MARK.sep} click a name to read it`}</Text>
+        {titleRow({ Box, Client, Text }, look.nerd, <Text color={THEME.accent} bold>{`${MARK.stage} ${fill(text.paneHeading, { sep: MARK.sep, count: ordered.length })}`}</Text>, 'skills-settings', `${look.glyph.gear} ${text.settingsPill}`, still)}
+        <Text color={statusColor(note)}>{note || fill(text.hint, { add: ADD, sep: MARK.sep })}</Text>
         {current ? cardSpace({ Box }, CARD_ROWS) : null}
         <Box marginTop={1} flexDirection="row" columnGap={2}>
           {columns.map((column, c) => (
@@ -258,10 +326,10 @@ export const register: Register = on => {
                 <Box flexDirection="row" columnGap={1} flexShrink={0}>
                   <Text backgroundColor={current.swatch.hex} color={THEME.bg}>{` ${current.swatch.icon} `}</Text>
                   <Text color={THEME.onSurface} bold>{`/${current.skill.name}`}</Text>
-                  <Text color={current.swatch.hex}>{current.skill.tag}</Text>
+                  <Text color={current.swatch.hex}>{tagName(current.skill.tag)}</Text>
                 </Box>
                 <Box height={CARD_ROWS - 3} overflow="hidden" flexShrink={0}>
-                  <Text color={THEME.muted}>{current.skill.description || 'This skill has no description.'}</Text>
+                  <Text color={THEME.muted}>{current.skill.description || text.noDescription}</Text>
                 </Box>
               </Box>
             ))

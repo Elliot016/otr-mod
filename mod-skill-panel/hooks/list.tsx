@@ -1,5 +1,6 @@
 import type { ClientModule } from 'claude-code'
 
+import { tagName } from './tags'
 import { MARK, THEME } from './theme'
 
 export type Line =
@@ -31,7 +32,7 @@ const SkillList: ClientModule<ListProps, number> = (props, surface) => {
         if (line.kind === 'header') {
           return (
             <Box key={`line-${row}`} flexDirection="row" columnGap={1}>
-              <Text color={line.hex} bold>{line.tag}</Text>
+              <Text color={line.hex} bold>{tagName(line.tag)}</Text>
               <Text color={THEME.muted}>{`${MARK.sep} ${line.count}`}</Text>
             </Box>
           )

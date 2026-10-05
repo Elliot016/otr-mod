@@ -151,6 +151,58 @@ test('the command toggles: it opens a closed pane and closes an open one', async
   expect(calls).toEqual(['open skill-panel', 'close skill-panel'])
 })
 
+const skillsPane = async ($: any, on: any) => {
+  stubSkills(on)
+  on('ui.panes', () => ({ value: [] }))
+  return $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
+}
+
+test('icons=nerd draws the settings pill with the Nerd gear', { options: { icons: 'nerd' } }, async ($, on) => {
+  const ui = await skillsPane($, on)
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-settings' }))).toContain(String.fromCodePoint(0xf013))
+  await ui.unmount()
+})
+
+test('icons=safe draws the settings pill with the plain gear', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await skillsPane($, on)
+  const pill = JSON.stringify(await ui.drawn({ in: 'skills-settings' }))
+  expect(pill).toContain('⚙')
+  expect(pill).not.toContain(String.fromCodePoint(0xf013))
+  await ui.unmount()
+})
+
+test('the title row pill swaps the sidebar for its settings and back', async ($, on) => {
+  stubSkills(on)
+  let open: string[] = []
+  const calls: string[] = []
+  on('ui.panes', () => ({ value: open.map(id => ({ id, isPlaced: true })) }))
+  on('ui.open', (_$, e) => {
+    calls.push(`open ${e.id}`)
+    open = [e.id]
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', (_$, e) => {
+    calls.push(`close ${e.id}`)
+    open = open.filter(id => id !== e.id)
+    return { value: undefined }
+  })
+  on('config.list', () => ({ value: [{ key: 'mod-skill-panel.animations', label: 'Animations', kind: 'boolean', value: true, description: 'd' }] }) as never)
+  const pane = (requestId: string) =>
+    ({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId, props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } }) as never
+
+  await $.command.run({ command: 'mod-skill-panel' })
+  const ui = await $.ui.mount(pane('skill-panel'))
+  await ui.pointer({ in: 'skills-settings', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(calls).toEqual(['open skill-panel', 'close skill-panel', 'open skill-panel-settings'])
+  await ui.unmount()
+
+  const settings = await $.ui.mount(pane('skill-panel-settings'))
+  expect(await settings.find({ type: 'Text', text: 'Animations' })).toBeDefined()
+  await settings.pointer({ in: 'skills-back', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(calls.slice(-2)).toEqual(['close skill-panel-settings', 'open skill-panel'])
+  await settings.unmount()
+})
+
 test('its footer entry opens the pane on a press and closes it on the next', async ($, on) => {
   const opened: string[] = []
   on('fs.read', () => {
