@@ -162,11 +162,16 @@ type Bars = Elements & { Client: (props: any) => RenderElement }
 
 type Controls = Elements & { Button: (props: any) => RenderElement }
 
-// A fold control: a colored chip showing + or the minus sign, then the line's text; a click on either toggles.
-const toggleLine = ({ Box, Button }: Controls, key: string, chip: string, isOpen: boolean, label: string, onPress: () => unknown, extra: unknown = null) => (
+// A fold control: a colored pill showing + or the minus sign, then the line's text; a click on either toggles.
+// Without a Nerd Font the pill's ends are a space each, so the chip takes three cells either way.
+const toggleLine = ({ Box, Button, Text }: Controls & { Text: (props: any) => RenderElement }, key: string, chip: string, isOpen: boolean, label: string, onPress: () => unknown, extra: unknown = null) => (
   <Box key={key} flexDirection="row" columnGap={1}>
-    <Box key={`${key}-chip`} backgroundColor={chip} flexShrink={0}>
-      <Button key={`${key}-chip-button`} label={` ${isOpen ? '−' : '+'} `} plain hover={{ scope: `${key}-chip`, color: THEME.onSurface }} onPress={onPress} />
+    <Box key={`${key}-chip-pill`} flexDirection="row" flexShrink={0}>
+      {look.nerd ? <Text color={chip}>{CAPS.left}</Text> : null}
+      <Box key={`${key}-chip`} backgroundColor={chip} flexShrink={0}>
+        <Button key={`${key}-chip-button`} label={look.nerd ? (isOpen ? '−' : '+') : ` ${isOpen ? '−' : '+'} `} plain hover={{ scope: `${key}-chip`, color: THEME.onSurface }} onPress={onPress} />
+      </Box>
+      {look.nerd ? <Text color={chip}>{CAPS.right}</Text> : null}
     </Box>
     <Box key={`${key}-label`} flexShrink={1}>
       <Button key={`${key}-button`} label={label} plain dimColor={!isOpen} hover={{ scope: `${key}-label`, color: THEME.accent }} onPress={onPress} />
@@ -257,15 +262,20 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
         `toggle-call-${n}`,
         [
           // The open call lifts, as a picked chip does; the others stay dim until the pointer lights them.
-          <Box key={`toggle-call-${n}-pick`} flexShrink={1} {...(openTools.includes(call.id) ? { backgroundColor: THEME.lifted } : {})}>
-            <Button
-              key={`toggle-call-${n}-button`}
-              label={` ${openTools.includes(call.id) ? look.glyph.expanded : look.glyph.collapsed} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)} `}
-              plain
-              dimColor={!openTools.includes(call.id)}
-              hover={{ scope: `toggle-call-${n}-pick`, color: THEME.accent }}
-              onPress={() => onCall(call.id)}
-            />
+          // The open call is a lifted pill whose ends take the spaces around the label, so lines keep one width.
+          <Box key={`toggle-call-${n}-line`} flexDirection="row" flexShrink={1}>
+            {look.nerd && openTools.includes(call.id) ? <Text color={THEME.lifted}>{CAPS.left}</Text> : null}
+            <Box key={`toggle-call-${n}-pick`} flexShrink={1} {...(openTools.includes(call.id) ? { backgroundColor: THEME.lifted } : {})}>
+              <Button
+                key={`toggle-call-${n}-button`}
+                label={look.nerd && openTools.includes(call.id) ? `${look.glyph.expanded} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)}` : ` ${openTools.includes(call.id) ? look.glyph.expanded : look.glyph.collapsed} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)} `}
+                plain
+                dimColor={!openTools.includes(call.id)}
+                hover={{ scope: `toggle-call-${n}-pick`, color: THEME.accent }}
+                onPress={() => onCall(call.id)}
+              />
+            </Box>
+            {look.nerd && openTools.includes(call.id) ? <Text color={THEME.lifted}>{CAPS.right}</Text> : null}
           </Box>,
           countsPill({ Box, Text }, `toggle-call-${n}-counts`, call.added, call.removed),
         ],
@@ -513,7 +523,8 @@ export const register: Register = (on, options) => {
         <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1}>
           {/* Claude Code draws a prompt with a blank row above it, so the time steps down one row to sit beside the text. */}
           {/* The column takes the prompt's background (Moonlight userMessageBackground) down every wrapped line, so no empty cell shows under the time. */}
-          <Box key="toggle-prompt-time-row" marginTop={1} flexShrink={0} backgroundColor={THEME.surface2}>{timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at), THEME.surface3)}</Box>
+          {/* alignItems keeps the pill one row tall at the top; stretched, its body would paint the wrapped lines below it too. */}
+          <Box key="toggle-prompt-time-row" marginTop={1} flexShrink={0} alignItems="flex-start" backgroundColor={THEME.surface2}>{timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at), THEME.surface3)}</Box>
           <Box key="toggle-prompt-text" flexDirection="column" flexGrow={1} flexShrink={1}>{prompt}</Box>
         </Box>
       ) : (
@@ -528,7 +539,7 @@ export const register: Register = (on, options) => {
     const head = (
       <Box key="toggle-head-line" flexDirection="row">
         <Box key="toggle-head-left" flexDirection="row" columnGap={1} flexGrow={1} flexShrink={1}>
-          {toggleLine({ Box, Button }, 'toggle-turn', THEME.accent, isOpen, fit(turnLine(turn), widthOf(e) - 30), () => flip($, 'turns', turn.prompt))}
+          {toggleLine({ Box, Button, Text }, 'toggle-turn', THEME.accent, isOpen, fit(turnLine(turn), widthOf(e) - 30), () => flip($, 'turns', turn.prompt))}
           {countsPill({ Box, Text }, 'toggle-head-counts', added, removed)}
         </Box>
         {turn.durationMs !== undefined ? timePill({ Box, Text }, 'toggle-head-time', elapsed(turn.durationMs), THEME.surface3) : null}
@@ -578,7 +589,7 @@ export const register: Register = (on, options) => {
       removed ? <Box key="toggle-tool-removed"><Text color={THEME.alert}>{`−${removed}`}</Text></Box> : null,
     ]
     const line = toggleLine(
-      { Box, Button },
+      { Box, Button, Text },
       'toggle-tool',
       isFailed ? THEME.alert : THEME.border,
       isOpen,
