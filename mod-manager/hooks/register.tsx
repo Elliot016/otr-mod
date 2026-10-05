@@ -98,6 +98,19 @@ async function toggleMod($: EngineInterface, index: number) {
 }
 
 // Claude Code picks up a settings.json write a moment later; a reload before that applied the old toggles.
+// The pending toggles take effect through a plugin reload, once the settings file has every one.
+async function applyChanges($: EngineInterface) {
+  await settingsCaughtUp($)
+  note = await $.command
+    .run({ command: 'reload-plugins' })
+    .then(() => {
+      changed.clear()
+      return `${MARK.ok} ${text.reloading}`
+    })
+    .catch(error => `${MARK.warn} ${fill(text.reloadFailed, { error: String(error) })}`)
+  $.ui.invalidate('ui.render')
+}
+
 async function settingsCaughtUp($: EngineInterface) {
   const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
   const onDisk = JSON.stringify(JSON.parse(String(await $.fs.read(`${home}/.claude/settings.json`))).enabledPlugins ?? {})
@@ -304,6 +317,7 @@ export const register: Register = (on, options) => {
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && message.id === 'manager') await openingPane($)
     if (message?.type === 'menu-entry' && message.id.startsWith('icons-')) await setAllIcons($, message.id.slice('icons-'.length))
+    if (message?.type === 'menu-entry' && message.id === 'manager-apply') await applyChanges($)
     // The Mods tab on a mod's page goes back to the list; the open tab does nothing.
     if (message?.type === 'menu-entry' && message.id === 'manager-tab' && page >= 0) openPage($, -1)
     const change = settingChoice(e.data)
@@ -391,18 +405,6 @@ export const register: Register = (on, options) => {
         ),
         section({ Box, Text }, look, 'features', 'features', text.sectionFeatures, features.length ? features : <Text color={THEME.muted}>{text.noFeatures}</Text>),
       ])
-    }
-
-    const apply = async () => {
-      await settingsCaughtUp($)
-      note = await $.command
-        .run({ command: 'reload-plugins' })
-        .then(() => {
-          changed.clear()
-          return `${MARK.ok} ${text.reloading}`
-        })
-        .catch(error => `${MARK.warn} ${fill(text.reloadFailed, { error: String(error) })}`)
-      redraw()
     }
 
     // One section per source, so a row needs no "yours" or "installed" label of its own.
@@ -496,7 +498,7 @@ export const register: Register = (on, options) => {
         ) : working ? (
           <Text color={THEME.muted}>{fill(text.applyBusy, { label: applyLabel, sep: MARK.sep })}</Text>
         ) : (
-          <Button key="apply" label={applyLabel} onPress={apply} />
+          pill({ Box, Text }, look.nerd, THEME.lifted, <Client key="manager-apply" module="./entry.tsx" height={1} props={{ id: 'manager-apply', label: applyLabel, isOpen: true, bg: THEME.lifted, idle: THEME.muted, still } satisfies EntryProps} />, 'manager-apply-pill', THEME.bg)
         )}
       </Box>,
       hoverCard(),

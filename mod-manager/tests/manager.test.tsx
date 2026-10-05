@@ -218,10 +218,10 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
   expect(JSON.parse(files[settingsPath]!).enabledPlugins['alpha@inline']).toBe(false)
   expect(await ui.find({ type: 'Text', text: /Alpha disabled, reload plugins to apply/ })).toBeDefined()
-  expect(await ui.find({ type: 'Button', text: /^Reload plugins to apply 2 changes$/ })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-apply' }))).toContain(' Reload plugins to apply 2 changes ')
   // Toggling alpha back leaves one change pending.
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
-  expect(await ui.find({ type: 'Button', text: /^Reload plugins to apply 1 change$/ })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-apply' }))).toContain(' Reload plugins to apply 1 change ')
   // While Claude works the reload would only queue as a prompt, so it waits.
   await $.turn.start({ turnId: 't1' } as never)
   await ui.redraw()

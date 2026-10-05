@@ -5,7 +5,7 @@ import { settingChoice, settingsBody, type Action, type Previews } from './setti
 import { fill, MARK, statusColor, THEME } from './theme'
 import type { EntryMessage } from './entry'
 import type { ListMessage } from './list'
-import { pillRow, splitRow, tabRow } from './pills'
+import { pill, pillRow, splitRow, tabRow } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import text from './text'
 
@@ -309,9 +309,7 @@ export const register: Register = (on, options) => {
           <Box key="steps-keys" flexDirection="column" flexShrink={0}>
             {steps.map((_, index) => (
               <Box key={`steps-key-${index}`} flexDirection="row">
-                <Box key={`steps-cap-${index}`} backgroundColor={THEME.surface3}>
-                  <Text color={THEME.accent} bold>{` ${index + 1} `}</Text>
-                </Box>
+                {pill({ Box, Text }, look.nerd, THEME.surface3, <Text color={THEME.accent} bold>{look.nerd ? String(index + 1) : ` ${index + 1} `}</Text>, `steps-cap-${index}`, THEME.surface1)}
                 <Box key={`steps-hotkey-${index}`} width={0} height={0} overflow="hidden">
                   <Button key={`steps-hotkey-button-${index}`} label={steps[index]} hotkey={String(index + 1)} plain onPress={() => fillFrom($, index)} />
                 </Box>
