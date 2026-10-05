@@ -97,6 +97,26 @@ let tipShown = false
 
 const toasts = new ToastList('manager')
 
+// The entry shimmers from the click until the pane draws, so a slow open never looks ignored.
+const OPEN_WAIT_MS = 8000
+let isOpening = false
+
+function endOpening($: EngineInterface) {
+  if (!isOpening) return
+  isOpening = false
+  $.ui.invalidate('ui.render')
+}
+
+async function openingPane($: EngineInterface) {
+  if (!(await isOpen($))) {
+    isOpening = true
+    $.ui.invalidate('ui.render')
+    $.clock.after(OPEN_WAIT_MS, () => endOpening($))
+  }
+  await togglePane($)
+  if (!(await isOpen($))) endOpening($)
+}
+
 export const register: Register = (on, options) => {
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
@@ -186,7 +206,7 @@ export const register: Register = (on, options) => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = (
       <Box key="menu-pad-manager">
-        <Client key="menu-entry-manager" module="./entry.tsx" height={1} props={{ id: 'manager', label: look.glyph.gear, isOpen: shown, bg: PILL.primary, idle: THEME.pill }} />
+        <Client key="menu-entry-manager" module="./entry.tsx" height={1} props={{ id: 'manager', label: look.glyph.gear, isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening }} />
       </Box>
     )
 
@@ -207,7 +227,7 @@ export const register: Register = (on, options) => {
       $.ui.invalidate('ui.render')
     }
     const message = e.data as EntryMessage
-    if (message?.type === 'menu-entry' && message.id === 'manager') await togglePane($)
+    if (message?.type === 'menu-entry' && message.id === 'manager') await openingPane($)
 
     return next(e)
   })
@@ -222,6 +242,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== 'manager') return next(e)
+    if (isOpening) $.clock.after(0, () => endOpening($))
 
     // A reload resets module state while the pane stays open, so reload the list.
     if (mods.length === 0) mods = await discover(ioOf($))

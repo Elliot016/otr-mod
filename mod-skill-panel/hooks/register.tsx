@@ -59,6 +59,26 @@ let tipShown = false
 
 const toasts = new ToastList('skills')
 
+// The entry shimmers from the click until the pane draws, so a slow open never looks ignored.
+const OPEN_WAIT_MS = 8000
+let isOpening = false
+
+function endOpening($: EngineInterface) {
+  if (!isOpening) return
+  isOpening = false
+  $.ui.invalidate('ui.render')
+}
+
+async function openingPane($: EngineInterface) {
+  if (!(await isOpen($))) {
+    isOpening = true
+    $.ui.invalidate('ui.render')
+    $.clock.after(OPEN_WAIT_MS, () => endOpening($))
+  }
+  await togglePane($)
+  if (!(await isOpen($))) endOpening($)
+}
+
 export const register: Register = on => {
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
@@ -152,7 +172,7 @@ export const register: Register = on => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = (
       <Box key="menu-pad-skills">
-        <Client key="menu-entry-skills" module="./entry.tsx" height={1} props={{ id: 'skills', label: 'Skills', isOpen: shown, bg: PILL.primary, idle: THEME.pill }} />
+        <Client key="menu-entry-skills" module="./entry.tsx" height={1} props={{ id: 'skills', label: 'Skills', isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening }} />
       </Box>
     )
 
@@ -173,7 +193,7 @@ export const register: Register = on => {
       $.ui.invalidate('ui.render')
     }
     const message = e.data as EntryMessage
-    if (message?.type === 'menu-entry' && message.id === 'skills') await togglePane($)
+    if (message?.type === 'menu-entry' && message.id === 'skills') await openingPane($)
 
     return next(e)
   })
@@ -191,6 +211,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
+    if (isOpening) $.clock.after(0, () => endOpening($))
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const groups = groupSkills(listed())

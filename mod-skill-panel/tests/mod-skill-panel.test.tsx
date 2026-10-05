@@ -236,6 +236,43 @@ test('a pane that waits says why in a wrapped card above the row, not in Claude 
   await band.unmount()
 })
 
+test('its entry shimmers from the click until the pane draws', async ($, on) => {
+  const opened: string[] = []
+  on('fs.read', () => {
+    throw new Error('ENOENT')
+  })
+  on('fs.list', () => ({ value: [] }))
+  on('env.get', () => ({ value: '/h' }))
+  on('ui.panes', () => ({ value: opened.map(id => ({ id, isPlaced: true })) }))
+  on('ui.open', (_$, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>other mod</Text>
+  })
+  const clock = mock.clock(on)
+  const band = await $.ui.mount({
+    plugin: 'mod-skill-panel',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+  })
+  // At rest the label is one Text; shimmering, each character is its own Text in the wave's colors.
+  const letters = async () => JSON.stringify(await band.drawn({ in: 'menu-entry-skills' })).split('"type":"Text"').length - 1
+  expect(await letters()).toBe(1)
+
+  await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
+  expect(await letters()).toBe(' Skills '.length)
+
+  const pane = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 60 } } as never)
+  await clock.advance(1500)
+  expect(await letters()).toBe(1)
+  await pane.unmount()
+  await band.unmount()
+})
+
 test('its entry joins the row another panel opened, above the hint line', async ($, on) => {
   on('ui.panes', () => ({ value: [] }))
   on('ui.render', () => ({
