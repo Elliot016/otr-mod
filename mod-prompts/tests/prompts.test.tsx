@@ -88,6 +88,7 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   await ui.pointer({ in: 'timeline-before', type: 'down', button: 'left', x: 8, y: 0 })
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' }))).toContain(' first prompt')
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-after' }))).toContain('second prompt')
+  expect(await ui.find({ type: 'Button', text: '↗' })).toBeDefined()
   await ui.press({ key: 'open-jump' })
   // The kit answers no ui.scroll, so the press shows its refusal; targetOf is checked on its own below.
   expect(await ui.find({ type: 'Text', text: /no implementation for ui.scroll/ })).toBeDefined()

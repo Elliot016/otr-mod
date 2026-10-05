@@ -27,6 +27,43 @@ async function detectLook($: EngineInterface) {
   return lookFor(false)
 }
 
+// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+async function savedLook($: EngineInterface) {
+  if (iconMode !== 'auto') return look
+  try {
+    const nerd = await $.store.get('look-nerd')
+    return typeof nerd === 'boolean' ? lookFor(nerd) : look
+  } catch {
+    return look
+  }
+}
+
+async function saveLook($: EngineInterface) {
+  try {
+    await $.store.set('look-nerd', look.nerd)
+  } catch {
+    // Without a store the mod still draws; it only starts from safe again next time.
+  }
+}
+
+// Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
+let lookLoad: Promise<void> | null = null
+
+function loadLook($: EngineInterface) {
+  lookLoad ??= (async () => {
+    look = await savedLook($)
+    void detectLook($).then(async found => {
+      const isChanged = found.nerd !== look.nerd
+      look = found
+      await saveLook($)
+      if (isChanged) $.ui.invalidate('ui.render')
+    }).catch(() => {
+      // A failed check keeps the icons drawn now.
+    })
+  })()
+  return lookLoad
+}
+
 const PANE = 'prompts'
 const SETTINGS = 'prompts-settings'
 
@@ -202,7 +239,7 @@ async function openingPane($: EngineInterface) {
 export const register: Register = (on, options) => {
   still = options.animations === false
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto waits for session.start to read the terminal font.
+  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
   toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
@@ -217,7 +254,7 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
-    look = await detectLook($)
+    await loadLook($)
     await $.command.register({ name: 'mod-prompts', description: text.commandDescription, argumentHint: '[settings]' })
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
     await $.state.set({ plugin: 'mod-prompts', key: 'pane' }, await isOpen($))
@@ -254,6 +291,7 @@ export const register: Register = (on, options) => {
 
   // Each prompt row as Claude Code draws it, so a jump scrolls to the id the row really has.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    await loadLook($)
     drawn.set(rowKey(e.requestId), e.requestId)
     // A prompt sent after the read joins the list as its row draws.
     const text = e.props.origin?.kind === 'composer' ? promptText(String(e.props.text ?? '')) : undefined
@@ -295,6 +333,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await loadLook($)
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     if (hidden.value === true) {
@@ -356,6 +395,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    await loadLook($)
     if (e.requestId !== PANE && e.requestId !== SETTINGS) return next(e)
     if (isOpening) $.clock.after(0, () => endOpening($))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
@@ -430,7 +470,10 @@ export const register: Register = (on, options) => {
                 {stats}
               </Box>
               {/* A Button, not an Entry: a transcript scroll needs the person's press, and a Client click is refused as not person-initiated. */}
-              {stat('open-jump-pill', <Button key="open-jump" label={`${look.glyph.go.replace(/[[\]\s]/g, '')} ${text.jump}`} plain hover={{ scope: 'open-jump', color: THEME.accent }} onPress={() => jump($, selected)} />)}
+              {/* The same open mark as a file row in mod-file-tree: dim at rest, the accent under the pointer. */}
+              <Box key="open-jump-box" flexShrink={0}>
+                <Button key="open-jump" label={MARK.open} plain dimColor hover={{ scope: 'open-jump-box', color: THEME.accent }} onPress={() => jump($, selected)} />
+              </Box>
             </Box>
           ) : null}
           {after.length > 0 ? (
