@@ -3,7 +3,8 @@ import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-c
 import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, pathOf, recordEdit, type Io } from './guard'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action, type Previews } from './settings'
-import { MARK, statusColor, THEME } from './theme'
+import text from './text'
+import { fill, MARK, statusColor, THEME } from './theme'
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let enabled = true
@@ -16,7 +17,7 @@ let actions: Action[] = []
 let previews: Previews | undefined
 let note = ''
 
-const CHOICES = ['Proceed', 'Move to a worktree', 'Cancel']
+const CHOICES = [text.choiceProceed, text.choiceWorktree, text.choiceCancel]
 
 // `$` cannot cross an import, so the log gets plain functions instead.
 const ioOf = ($: EngineInterface): Io => ({
@@ -27,7 +28,7 @@ const ioOf = ($: EngineInterface): Io => ({
 
 async function logDir($: EngineInterface) {
   const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  return `${home}/.claude/mod-collision-guard/sessions`
+  return `${home}/.claude/mods-data/mod-collision-guard/sessions`
 }
 
 // Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
@@ -54,8 +55,8 @@ async function toggleSettings($: EngineInterface) {
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
   actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-collision-guard' }))
-  const opened = await $.ui.open({ id: PANE, title: 'Collision Guard', closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(`Settings panel waiting: ${opened.reason}`)
+  const opened = await $.ui.open({ id: PANE, title: text.paneName, closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-collision-guard', key: 'pane' }, opened.isPlaced)
 }
 
@@ -67,9 +68,9 @@ async function answer($: EngineInterface, args: string) {
   }
   if (args.trim() === 'clear') {
     await clearOwn(ioOf($), await logDir($), await $.session.id())
-    return 'Recorded edits of this session forgotten'
+    return text.cleared
   }
-  return `${enabled ? 'On' : 'Off'}, ${windowMinutes} min window. /mod-collision-guard settings opens the panel`
+  return fill(text.statusLine, { state: enabled ? text.statusOn : text.statusOff, minutes: windowMinutes })
 }
 
 const worktreeReason = (path: string) =>
@@ -77,16 +78,16 @@ const worktreeReason = (path: string) =>
 
 // The question, the dialog's choices and what each means for the call: undefined lets it run.
 async function decide($: EngineInterface, path: string, at: number, now: number) {
-  const question = `Another open session edited ${path} ${agoText(now - at)} (${clockText(at)}). Edit it anyway?`
-  let picked = 'Cancel'
+  const question = fill(text.question, { path, ago: agoText(now - at), clock: clockText(at) })
+  let picked = text.choiceCancel
   try {
-    picked = await $.ui.ask(question, { options: CHOICES, header: 'Collision' })
+    picked = await $.ui.ask(question, { options: CHOICES, header: text.askHeader })
   } catch {
     // Dismissed, "Chat about this", or a run with nobody to ask: refuse, the safe answer.
   }
-  if (picked === 'Proceed') return undefined
-  if (picked === 'Move to a worktree') return { deny: worktreeReason(path) }
-  if (picked === 'Cancel') return { deny: `The user cancelled this edit of ${path} because another open session is editing it. Do not retry it; ask what to do instead.` }
+  if (picked === text.choiceProceed) return undefined
+  if (picked === text.choiceWorktree) return { deny: worktreeReason(path) }
+  if (picked === text.choiceCancel) return { deny: `The user cancelled this edit of ${path} because another open session is editing it. Do not retry it; ask what to do instead.` }
   return { deny: `Another open session is editing ${path}. The user says: ${picked}` }
 }
 
@@ -102,7 +103,7 @@ export const register: Register = (on, options) => {
     look = await detectLook($)
     await $.command.register({
       name: 'mod-collision-guard',
-      description: 'Collision Guard status; `settings` opens its panel, `clear` forgets this session\'s recorded edits',
+      description: text.commandDescription,
       argumentHint: '[settings|clear]',
     })
     await $.state.set({ plugin: 'mod-collision-guard', key: 'pane' }, await isPaneOpen($))
@@ -169,7 +170,7 @@ export const register: Register = (on, options) => {
     // A saved change reloads this mod, which redraws the panel with the new value.
     const set = async (row: ConfigRow, value: ConfigValue) => {
       const result = await $.config.set({ key: row.key, value })
-      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${row.label} saved`
+      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
       $.ui.invalidate('ui.render')
     }
     const run = async (action: Action) => {
@@ -181,8 +182,8 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {paneTitle({ Box, Text }, look, 'settings', `Collision Guard ${MARK.sep} settings`)}
-        <Text key="settings-note" color={statusColor(note)}>{withMark(look, note) || `click a control to change it ${MARK.sep} saved at once, the mod reloads`}</Text>
+        {paneTitle({ Box, Text }, look, 'settings', `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`)}
+        <Text key="settings-note" color={statusColor(note)}>{withMark(look, note) || `${text.defaultNote} ${MARK.sep} ${text.defaultNoteTail}`}</Text>
         {settingsBody({ Box, Button, Text }, look, { rows, actions, working: false, set, run, previews })}
       </Box>
     )

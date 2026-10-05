@@ -1,3 +1,6 @@
+import text from './text'
+import { fill } from './theme'
+
 // Pure logic of the collision log. `$` never crosses an import, so the register file hands in plain functions.
 export type Edit = { path: string; session: string; at: number }
 
@@ -71,9 +74,9 @@ export async function findConflict(io: Io, dir: string, session: string, path: s
 
 export function agoText(ms: number) {
   const minutes = Math.floor(ms / 60000)
-  if (minutes < 1) return 'less than a minute ago'
-  if (minutes < 60) return `${minutes} min ago`
-  return `${Math.floor(minutes / 60)} h ${minutes % 60} min ago`
+  if (minutes < 1) return text.agoLessThanMinute
+  if (minutes < 60) return fill(text.agoMinutes, { minutes })
+  return fill(text.agoHoursMinutes, { hours: Math.floor(minutes / 60), minutes: minutes % 60 })
 }
 
 const two = (n: number) => String(n).padStart(2, '0')

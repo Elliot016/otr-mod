@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 const NOW = 1_800_000_000_000
 const MIN = 60000
-const DIR = '/h/.claude/mod-collision-guard/sessions'
+const DIR = '/h/.claude/mods-data/mod-collision-guard/sessions'
 const FILE = '/work/app.ts'
 
 // The engine rewrites paths in the host's style, so compare on a neutral form.
@@ -184,7 +184,7 @@ const PILL_CAP = new RegExp(String.fromCodePoint(0xe0b6))
 
 test('its settings pane draws the heading, a setting and the action', async ($, on) => {
   const ui = await paneOf($, on)
-  expect(await ui.find({ type: 'Text', text: /^▸ Collision Guard · settings$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^▸ Collision guard · Settings$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Guard edits$/ })).toBeDefined()
   expect(await ui.find({ type: 'Button', text: /Forget this session's recorded edits/ })).toBeDefined()
   await ui.unmount()
