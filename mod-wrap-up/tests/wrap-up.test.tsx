@@ -288,6 +288,13 @@ test('the typed command opens the card, in Compact mode with `compact`', async (
   const band = await $.ui.mount(BAND())
   expect(await label(band, 'wrap-up-entry')).toContain(THEME.lifted)
   expect(await label(band, 'wrap-up-go')).toContain(' Fill prompt ')
+  // Fill prompt and Cancel are pills on surface3, the go led by its glyph as a subpill; Threads and Also keep are bordered boxes with their headings.
+  expect(await label(band, 'wrap-up-go')).toContain('" ↵ "')
+  expect(await label(band, 'wrap-up-go')).toContain(THEME.surface3)
+  expect(await label(band, 'wrap-up-go')).not.toContain(THEME.lifted)
+  expect(await label(band, 'wrap-up-cancel')).toContain(THEME.surface3)
+  expect(await band.find({ type: 'Text', text: 'Threads' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'Also keep' })).toBeDefined()
   expect(w.calls).toEqual([])
   await band.unmount()
 })
@@ -337,6 +344,11 @@ test('icons=nerd keeps the Wrap up labels plain, with no icon', { options: { ico
   await band.pointer({ type: 'move', x: 32, y: 0, in: 'wrap-up-entry' } as never)
   expect(await label(band, 'wrap-up-entry')).toContain(' Handoff ')
   expect(await label(band, 'wrap-up-entry')).toContain(CAPS.right)
+  // The card's blocks lead their headings with an icon subpill; its go leads with the go glyph as one.
+  await choose(band, 'handoff', 'nerd')
+  expect(await band.find({ type: 'Text', text: String.fromCodePoint(0xf005) })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: String.fromCodePoint(0xf075) })).toBeDefined()
+  expect(await label(band, 'wrap-up-go')).toContain(`"${String.fromCodePoint(0xf054)}"`)
   await band.unmount()
 })
 
@@ -368,7 +380,7 @@ test('the settings pane draws its title, status line and settings', { options: {
     props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 },
   } as never)
   expect(JSON.stringify(await pane.drawn({ in: 'mod-wrap-up-settings-tab' }))).toContain('Wrap up · Settings')
-  expect(await pane.find({ type: 'Text', text: /Click a control to change it/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Click a setting to change it/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'Handoff length' })).toBeDefined()
   await pane.unmount()
 })

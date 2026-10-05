@@ -12,8 +12,8 @@ export default {
   "commandDescription": "Open the effort meter's settings panel with `settings`",
   "usage": "mod-model-effort: use /mod-model-effort settings",
   "settingsWaiting": "Effort settings waiting: {reason}",
-  "statusHint": "Click a control to change it",
-  "statusHintSaved": "Saved at once, the mod reloads",
+  "statusHint": "Click a setting to change it",
+  "statusHintSaved": "The mod reloads",
   "settingSaved": "{label} saved",
   "levelNames": {
     "low": "low",

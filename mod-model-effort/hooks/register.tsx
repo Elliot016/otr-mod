@@ -1,12 +1,12 @@
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import { displayName, LEVEL_LOOK, withEffort, withModel } from './levels'
-import type { EntryMessage } from './entry'
+import type { EntryMessage, EntryProps } from './entry'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import type { MeterMessage } from './meter'
 import { settingChoice, settingsBody } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
-import { PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import text from './text'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
@@ -149,23 +149,34 @@ async function openPicker($: EngineInterface) {
   await $.command.run({ command: 'model', args: '' }).catch(error => $.ui.toast(fill(text.pickerFailed, { mark: MARK.warn, error: String(error) })))
 }
 
-type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement }
+type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
-const menuEntry = ({ Box, Client }: Elements, id: string, label: string, isOpen: boolean) => (
-  <Box key={`${id}-pad`}>
-    <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen, bg: THEME.surface1, still }} />
-  </Box>
-)
+// A model entry as its own pill on the card; `entry` holds what differs between the current model, the others and the picker.
+const menuEntry = ({ Box, Client, Text }: Elements, id: string, fill: string, entry: Omit<EntryProps, 'id' | 'bg'>) =>
+  pill({ Box, Text }, look.nerd, fill, <Client key={id} module="./entry.tsx" height={1} props={{ id, bg: fill, nerd: look.nerd, still, ...entry } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
 
-// The models used before, the current one marked, then the full picker; a card right-aligned over the pill.
-const modelMenu = ({ Box, Client }: Elements, currentId: string) => (
-  <Box key="effort-models-row" flexDirection="row" justifyContent="flex-end">
-    <Box key="effort-models" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-      {menuModels.map((id, index) => menuEntry({ Box, Client }, `effort-model-${index}`, `${id === currentId ? MARK.ok : ' '} ${displayName(id)}`, id === currentId))}
-      {menuEntry({ Box, Client }, 'effort-model-all', `${MARK.stage} ${text.allModels}`, false)}
+// A control glyph without the brackets and padding it carries as a Button label, for drawing as a subpill.
+const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
+
+// The models used before, the current one on surface3 with a ✓ subpill, then the full picker; a card right-aligned over the pill.
+function modelMenu(elements: Elements, currentId: string) {
+  const { Box } = elements
+  const ok = bare(look.glyph.ok)
+  // The others start with blanks as wide as the ✓ subpill, so every name lines up.
+  const blank = ' '.repeat([...ok].length + 2)
+  return (
+    <Box key="effort-models-row" flexDirection="row" justifyContent="flex-end">
+      <Box key="effort-models" flexDirection="column" alignItems="flex-start" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+        {menuModels.map((id, index) =>
+          id === currentId
+            ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: true, idle: THEME.muted, subLead: ok, subLeadColor: THEME.good })
+            : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: true }),
+        )}
+        {menuEntry(elements, 'effort-model-all', THEME.surface2, { label: text.allModels, isOpen: false, subLead: bare(look.glyph.go) })}
+      </Box>
     </Box>
-  </Box>
-)
+  )
+}
 
 const toasts = new ToastList('effort')
 // The animations setting, fixed per activation: off, every entry draws still.
@@ -309,8 +320,8 @@ export const register: Register = (on, options) => {
 
     const level = current.value?.effort ?? null
     const hint = level ? fill(text.hintAtLevel, { model, level }) : fill(text.hintBase, { model })
-    const menu = isModelMenuOpen ? [modelMenu({ Box, Client }, modelId)] : []
-    return pillRow({ Box, Text }, look.nerd, group, [...row, <Box key="menu-pill" flexDirection="row">{meter}</Box>, word], [...toastCards({ Box, Client, Text }, toasts), ...rest, ...menu], tipShown ? tipLine({ Box, Text }, hint) : tip)
+    const menu = isModelMenuOpen ? [modelMenu({ Box, Client, Text }, modelId)] : []
+    return pillRow({ Box, Text }, look.nerd, group, [...row, <Box key="menu-pill" flexDirection="row">{meter}</Box>, word], [...toastCards({ Box, Client, Text }, toasts, look), ...rest, ...menu], tipShown ? tipLine({ Box, Text }, hint) : tip)
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
@@ -323,7 +334,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-model-effort-settings-tab', label: `${text.paneName} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true }], still)}
-        <Text color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
+        <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, previews: undefined, still: still })}
       </Box>
     )

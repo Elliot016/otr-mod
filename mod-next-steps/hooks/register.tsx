@@ -3,14 +3,21 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
-import type { EntryMessage } from './entry'
-import type { ListMessage } from './list'
+import type { EntryMessage, EntryProps } from './entry'
 import { pill, pillRow, splitRow, tabRow } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import text from './text'
 
 const PANE = 'nextsteps'
 const MAX_CHARS = 100
+// Cells a suggestion row spends besides its text: the card's border and padding, the pill's caps, digit and padding, and the close pill beside the first row.
+const ROW_CHROME = 19
+const MIN_ROOM = 10
+
+const fit = (line: string, width: number) => (line.length <= width ? line : `${line.slice(0, width - 1)}…`)
+
+// A control glyph without the brackets and padding it carries as a Button label, for drawing inside a pill.
+const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let iconMode: IconMode = 'auto'
@@ -248,9 +255,8 @@ export const register: Register = (on, options) => {
       $.ui.invalidate('ui.render')
       return next(e)
     }
-    const message = e.data as ListMessage | EntryMessage
-    if (message?.type === 'select') await fillFrom($, message.index)
-    if (message?.type === 'menu-entry' && message.id === 'steps-dismiss') clearSteps($)
+    if (clicked?.type === 'menu-entry' && clicked.id.startsWith('steps-row-')) await fillFrom($, Number(clicked.id.slice('steps-row-'.length)))
+    if (clicked?.type === 'menu-entry' && clicked.id === 'steps-dismiss') clearSteps($)
 
     return next(e)
   })
@@ -279,7 +285,7 @@ export const register: Register = (on, options) => {
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     // Toasts sit on top, so a tight band cuts them before anything else.
-    const cards = toastCards({ Box, Client, Text }, toasts)
+    const cards = toastCards({ Box, Client, Text }, toasts, look)
     // A command waiting on the person outranks suggestions: the band has few rows, and a hidden hold looks like a hang.
     const isHolding = (await $.state.get({ plugin: 'mod-blast-radius', key: 'holding' })).value === true
     // Joins the shared pill row's top section when other mods drew one below; wrapping it would hide the row from mods drawn around this one, which then start a second row.
@@ -301,27 +307,26 @@ export const register: Register = (on, options) => {
       ])
     }
     const below = await next(e)
+    const room = Math.max(MIN_ROOM, e.props.bodyColumns - ROW_CHROME)
+    // Each suggestion a numbered pill; its digit, typed alone into the empty prompt, fills it through a Button nobody sees.
+    const row = (step: string, index: number) => (
+      <Box key={`steps-line-${index}`} flexDirection="row">
+        {pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={`steps-row-${index}`} module="./entry.tsx" height={1} props={{ id: `steps-row-${index}`, label: fit(step, room), isOpen: true, bg: THEME.surface3, subLead: String(index + 1), nerd: look.nerd, still } satisfies EntryProps} />, `steps-pill-${index}`, THEME.surface1)}
+        <Box key={`steps-hotkey-${index}`} width={0} height={0} overflow="hidden">
+          <Button key={`steps-hotkey-button-${index}`} label={step} hotkey={String(index + 1)} plain onPress={() => fillFrom($, index)} />
+        </Box>
+      </Box>
+    )
+    const dismiss = pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="steps-dismiss" module="./entry.tsx" height={1} props={{ id: 'steps-dismiss', label: bare(look.glyph.close), isOpen: false, bg: THEME.surface3, nerd: look.nerd, still } satisfies EntryProps} />, 'steps-dismiss-pill', THEME.surface1)
 
     return above(below, [
         ...cards,
-        <Box key="nextsteps-rows" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-          {/* Each suggestion's digit, typed alone into the empty prompt, fills it; the keycap shows it and a Button nobody sees carries the hotkey. */}
-          <Box key="steps-keys" flexDirection="column" flexShrink={0}>
-            {steps.map((_, index) => (
-              <Box key={`steps-key-${index}`} flexDirection="row">
-                {pill({ Box, Text }, look.nerd, THEME.surface3, <Text color={THEME.accent} bold>{look.nerd ? String(index + 1) : ` ${index + 1} `}</Text>, `steps-cap-${index}`, THEME.surface1)}
-                <Box key={`steps-hotkey-${index}`} width={0} height={0} overflow="hidden">
-                  <Button key={`steps-hotkey-button-${index}`} label={steps[index]} hotkey={String(index + 1)} plain onPress={() => fillFrom($, index)} />
-                </Box>
-              </Box>
-            ))}
+        <Box key="nextsteps-rows" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+          <Box key="steps-first" flexDirection="row" justifyContent="space-between" columnGap={1}>
+            {row(steps[0]!, 0)}
+            {dismiss}
           </Box>
-          <Box key="nextsteps-list" flexGrow={1} flexShrink={1}>
-            <Client key="steps-list" module="./list.tsx" height={steps.length} props={{ rows: steps }} />
-          </Box>
-          <Box key="nextsteps-dismiss" flexShrink={0}>
-            <Client key="steps-dismiss" module="./entry.tsx" height={1} props={{ id: 'steps-dismiss', label: look.glyph.close.trim() || '×', isOpen: false, bg: THEME.surface1, still }} />
-          </Box>
+          {steps.slice(1).map((step, at) => row(step, at + 1))}
         </Box>,
     ])
   })
@@ -342,7 +347,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-next-steps-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneHeadingSettings}`, icon: look.glyph.gear, isOpen: true }], still)}
-        <Text key="status" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusReload}`}</Text>
+        <Text key="status" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusReload}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: still })}
       </Box>
     )

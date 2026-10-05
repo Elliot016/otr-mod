@@ -6,7 +6,7 @@ export default {
   "thinking": "Thinking of next steps…",
   "paneHeading": "Next steps",
   "paneHeadingSettings": "Settings",
-  "statusHint": "Click a control to change it",
-  "statusReload": "Saved at once, the mod reloads",
+  "statusHint": "Click a setting to change it",
+  "statusReload": "The mod reloads",
   "settingSaved": "{label} saved"
 }

@@ -35,7 +35,12 @@ function setup(on: any, reply: () => unknown, below?: (elements: any) => unknown
 
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
 const mount = ($: any) => $.ui.mount({ plugin: 'mod-next-steps', surface: 'terminal', ...BAND })
-const rowsOf = async (ui: any) => JSON.stringify(await ui.drawn({ in: 'steps-list' }))
+const rowsOf = async (ui: any) => JSON.stringify(await Promise.all([0, 1, 2].map(index => ui.drawn({ in: `steps-row-${index}` }).catch(() => null))))
+// The color a row's label draws in, found in its entry's drawing by the label's text.
+const labelColor = async (ui: any, index: number, label: string) => {
+  const find = (node: any): string | undefined => (node?.children?.[0] === label ? node.props?.color : (node?.children ?? []).map(find).find(Boolean))
+  return find(await ui.drawn({ in: `steps-row-${index}` }))
+}
 
 test('while the suggestions are being written, a shimmering line says they are coming', async ($, on) => {
   let release = (_: unknown) => {}
@@ -71,7 +76,7 @@ test('suggestions appear after turn.complete, tidied and capped at the count', a
   expect(drawn).toContain('Run the suite')
   expect(drawn).toContain('Ship it')
   expect(drawn).not.toContain('Fourth')
-  expect(JSON.stringify(await ui.drawn({ in: 'steps-dismiss' }))).toContain('[×]')
+  expect(JSON.stringify(await ui.drawn({ in: 'steps-dismiss' }))).toContain('×')
   await ui.unmount()
 })
 
@@ -119,7 +124,7 @@ test('a digit or a click fills the prompt without sending; the digit itself neve
   expect(fills.pop()).toEqual({ text: 'Beta', mode: 'replace' })
   setDraft('')
 
-  await ui.pointer({ in: 'steps-list', type: 'down', button: 'left', x: 3, y: 0 })
+  await ui.pointer({ in: 'steps-row-0', type: 'down', button: 'left', x: 4, y: 0 })
   expect(fills[1]).toEqual({ text: 'Alpha', mode: 'replace' })
 
   // A draft already in the box is kept: the suggestion is appended.
@@ -129,15 +134,16 @@ test('a digit or a click fills the prompt without sending; the digit itself neve
   await ui.unmount()
 })
 
-test('hover lights the row under the pointer', async ($, on) => {
+test('hover lights the row under the pointer', { options: { animations: false } }, async ($, on) => {
   const { clock } = setup(on, () => answered('alpha\nbeta'))
   await $.turn.complete(DONE as never)
   await clock.settle()
   const ui = await mount($)
-  await ui.pointer({ in: 'steps-list', type: 'move', x: 3, y: 1 })
-  expect(await rowsOf(ui)).toContain('#7386D0')
-  await ui.pointer({ in: 'steps-list', type: 'leave', x: 0, y: 0 })
-  expect(await rowsOf(ui)).not.toContain('#7386D0')
+  await ui.pointer({ in: 'steps-row-1', type: 'move', x: 4, y: 0 })
+  expect(await labelColor(ui, 1, ' Beta ')).toBe('#7386D0')
+  expect(await labelColor(ui, 0, ' Alpha ')).toBe('#EEEEFA')
+  await ui.pointer({ in: 'steps-row-1', type: 'leave', x: 0, y: 0 })
+  expect(await labelColor(ui, 1, ' Beta ')).toBe('#EEEEFA')
   await ui.unmount()
 })
 
@@ -229,16 +235,32 @@ test('desktop falls back to built-in drawing', async ($, on) => {
   await ui.unmount()
 })
 
-test('each suggestion leads with its digit as a keycap, in either icon mode', { options: { icons: 'safe' } }, async ($, on) => {
-  const { clock } = setup(on, () => answered('alpha\nbeta'))
+test('a long suggestion is cut to fit a narrow band', async ($, on) => {
+  const long = `Long ${'word '.repeat(18)}end`
+  const { clock } = setup(on, () => answered(long))
   await $.turn.complete(DONE as never)
   await clock.settle()
-  const ui = await mount($)
-  expect(await ui.find({ type: 'Text', text: ' 1 ' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: ' 2 ' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: ' 3 ' })).toBeUndefined()
+  const ui = await $.ui.mount({ plugin: 'mod-next-steps', surface: 'terminal', ...BAND, props: { ...BAND.props, bodyColumns: 40 } })
+  const label = JSON.stringify(await ui.drawn({ in: 'steps-row-0' })).match(/" (Long[^"]*) "/)?.[1] ?? ''
+  expect(label.length).toBe(40 - 19)
+  expect(label.endsWith('…')).toBe(true)
   await ui.unmount()
 })
+
+for (const [icons, one] of [['nerd', '"1"'], ['safe', '" 1 "']]) {
+  test(`each suggestion is a pill led by its digit as a subpill, icons=${icons}`, { options: { icons } }, async ($, on) => {
+    const { clock } = setup(on, () => answered('alpha\nbeta'))
+    await $.turn.complete(DONE as never)
+    await clock.settle()
+    const ui = await mount($)
+    expect(JSON.stringify(await ui.drawn({ in: 'steps-row-0' }))).toContain(one)
+    expect(JSON.stringify(await ui.drawn({ in: 'steps-row-1' }))).toContain(one.replace('1', '2'))
+    expect(await ui.find({ key: 'steps-hotkey-button-2' })).toBeUndefined()
+    expect(await ui.find({ key: 'steps-pill-0-body' })).toBeDefined()
+    expect(await ui.find({ key: 'steps-dismiss-pill-body' })).toBeDefined()
+    await ui.unmount()
+  })
+}
 
 for (const icons of ['nerd', 'safe']) {
   test(`settings pane draws its heading and controls with icons=${icons}`, { options: { icons } }, async ($, on) => {

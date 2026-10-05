@@ -2,7 +2,7 @@ import type { ConfigValue, EngineInterface, ModelForkResult, Register, RenderEle
 
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
 import { heading, isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
-import type { EntryMessage } from './entry'
+import type { EntryMessage, EntryProps } from './entry'
 import type { ChoiceProps } from './choice'
 import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import style from './style'
@@ -254,13 +254,24 @@ async function answer($: EngineInterface, args: string) {
 
 type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
+// A control glyph without the brackets and padding it carries as a Button label, for drawing as a subpill.
+const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
+
 // The band card: each thread and each "also keep" item a line that keeps or drops itself on a click, then what the go does.
 function cardBox({ Box, Client, Text }: Elements, picked: Card) {
   const line = (id: string, label: string, isKept: boolean) => (
     <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isKept, idle: THEME.muted, bg: THEME.surface1, lead: isKept ? MARK.stopOpen : MARK.stop, leadColor: isKept ? THEME.accent : style.colors.pills.separator, still }} />
   )
-  const action = (id: string, label: string, bg: string) => (
-    pill({ Box, Text }, look.nerd, bg, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, idle: THEME.muted, bg, still }} />, `${id}-pill`, THEME.surface1)
+  // An action pill on surface3; the go leads with its glyph as a subpill.
+  const action = (id: string, label: string, lead: Pick<EntryProps, 'subLead'>) => (
+    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, ...lead } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+  )
+  // Threads and Also keep each sit in a round-bordered box inside the card, its heading a pill on the first row.
+  const block = (key: string, icon: string, title: string, body: unknown) => (
+    <Box key={key} flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+      {heading({ Box, Text }, look, key, icon, title)}
+      {body}
+    </Box>
   )
   const threads = picked.threads === null
     ? <Text key="wrap-up-reading" color={THEME.muted}>{text.card.reading}</Text>
@@ -287,17 +298,17 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
         <Text key="wrap-up-card-mode" color={THEME.onSurface} bold>{text.choice[picked.mode]}</Text>
         <Text key="wrap-up-card-hint" color={THEME.muted}>{`: ${text.card.title} ${MARK.sep} ${text.card.hint}`}</Text>
       </Box>
-      {pickThreads ? heading({ Box, Text }, look, 'wrap-up-threads', '', text.card.threads) : null}
-      {pickThreads ? threads : null}
-      {heading({ Box, Text }, look, 'wrap-up-also', '', text.card.also)}
-      <Box key="wrap-up-also-row" flexDirection="row" flexWrap="wrap">
-        {ALSO_KEEP.map(item => line(`wrap-up-also-${item.id}`, text.alsoKeep[item.id], picked.also[item.id]))}
-      </Box>
+      {pickThreads ? block('wrap-up-threads', 'prompt', text.card.threads, threads) : null}
+      {block('wrap-up-also', 'features', text.card.also, (
+        <Box key="wrap-up-also-row" flexDirection="row" flexWrap="wrap">
+          {ALSO_KEEP.map(item => line(`wrap-up-also-${item.id}`, text.alsoKeep[item.id], picked.also[item.id]))}
+        </Box>
+      ))}
       <Box key="wrap-up-gap" height={1} />
       {foot}
       <Box key="wrap-up-actions" flexDirection="row" justifyContent="flex-end" columnGap={1}>
-        {action('wrap-up-go', text.card.go[picked.mode], THEME.lifted)}
-        {action('wrap-up-cancel', text.card.cancel, THEME.surface3)}
+        {action('wrap-up-go', text.card.go[picked.mode], { subLead: bare(look.glyph.go) })}
+        {action('wrap-up-cancel', text.card.cancel, {})}
       </Box>
     </Box>
   )
@@ -404,7 +415,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-wrap-up" flexDirection="column">{toastCards({ Box, Client, Text }, toasts)}{await next(e)}</Box>
+      return <Box key="toasts-wrap-up" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
     }
 
     const { Box, Client, Text } = $.ui.resolve(e)
@@ -428,7 +439,7 @@ export const register: Register = (on, options) => {
     )
     const cards = card ? [cardBox({ Box, Client, Text }, card)] : []
 
-    return pillRow({ Box, Text }, look.nerd, group, [...row, isRunning ? pill({ Box, Text }, look.nerd, PILL.secondary, body, 'wrap-up-pill') : <Box key="wrap-up-pill" flexDirection="row">{body}</Box>], [...toastCards({ Box, Client, Text }, toasts), ...cards, ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
+    return pillRow({ Box, Text }, look.nerd, group, [...row, isRunning ? pill({ Box, Text }, look.nerd, PILL.secondary, body, 'wrap-up-pill') : <Box key="wrap-up-pill" flexDirection="row">{body}</Box>], [...toastCards({ Box, Client, Text }, toasts, look), ...cards, ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -470,7 +481,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-wrap-up-settings-tab', label: `${text.label} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true }], still)}
-        <Text color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
+        <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still })}
       </Box>
     )

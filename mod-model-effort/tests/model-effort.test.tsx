@@ -102,10 +102,20 @@ test('a click on the model name lists the models used before, and a pick switche
 
   // The current model leads, then the others in the order they were used; a model never seen before still shows.
   await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
-  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))).toContain('✓ Opus 5.5')
-  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-1' }))).toContain('Sonnet 5.5')
+  // Each entry is a pill: the current one on surface3 with a green ✓ subpill, the others on surface2 with a blank as wide, so names line up.
+  const current = JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))
+  expect(current).toContain('" ✓ "')
+  expect(current).toContain('#49EF95')
+  expect(current).toContain('" Opus 5.5 "')
+  expect(current).toContain('#252A42')
+  const other = JSON.stringify(await ui.drawn({ in: 'effort-model-1' }))
+  expect(other).toContain('"    Sonnet 5.5 "')
+  expect(other).toContain('#1C2033')
   expect(JSON.stringify(await ui.drawn({ in: 'effort-model-2' }))).toContain('Newmodel 6.0')
-  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-all' }))).toContain('All models')
+  const all = JSON.stringify(await ui.drawn({ in: 'effort-model-all' }))
+  expect(all).toContain('" ↵ "')
+  expect(all).toContain('" All models… "')
+  expect(await ui.find({ key: 'effort-model-0-pill-body' })).toBeDefined()
 
   await ui.pointer({ in: 'effort-model-1', type: 'down', button: 'left', x: 1, y: 0 })
   expect(ran).toEqual(['model claude-sonnet-5-5'])
@@ -183,8 +193,15 @@ function band(on: (name: string, handler: (...args: any[]) => unknown) => void) 
 
 test('icons=nerd draws the pill with rounded caps', { options: { icons: 'nerd' } }, async ($, on) => {
   band(on as never)
+  on('store.get', () => ({ value: undefined }))
   const ui = await $.ui.mount(BAND)
   expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(CAP)
+  // The model menu's subpills take the Nerd ✓ and go glyphs, bare and capped.
+  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  const current = JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))
+  expect(current).toContain(`"${String.fromCodePoint(0xeab2)}"`)
+  expect(current).toContain(CAP)
+  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-all' }))).toContain(`"${String.fromCodePoint(0xf054)}"`)
   await ui.unmount()
 })
 

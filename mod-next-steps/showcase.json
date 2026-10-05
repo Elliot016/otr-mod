@@ -11,9 +11,9 @@
   "previews": {
     "enabled": {
       "true": [
-        { "spans": [{ "text": " 1 ", "color": "accent", "bg": "surface3" }, { "text": " │ ", "color": "border" }, { "text": "Add a test for the empty case", "color": "muted" }] },
-        { "spans": [{ "text": " 2 ", "color": "accent", "bg": "surface3" }, { "text": " │ ", "color": "border" }, { "text": "Run the full suite", "color": "muted" }] },
-        { "spans": [{ "text": " 3 ", "color": "accent", "bg": "surface3" }, { "text": " │ ", "color": "border" }, { "text": "Commit the fix", "color": "muted" }] }
+        { "spans": [{ "text": "Add a test for the empty case", "pill": true, "sub": "1" }, { "text": "  " }, { "text": "×", "color": "muted", "pill": true }] },
+        { "spans": [{ "text": "Run the full suite", "pill": true, "sub": "2" }] },
+        { "spans": [{ "text": "Commit the fix", "pill": true, "sub": "3" }] }
       ],
       "false": [
         { "spans": [{ "text": "No suggestions, no extra request", "color": "muted" }] }
