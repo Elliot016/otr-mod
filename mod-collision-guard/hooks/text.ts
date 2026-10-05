@@ -15,8 +15,8 @@ export default {
   "choiceCancel": "Cancel",
   "question": "Another open session edited {path} {ago} ({clock}). Edit it anyway?",
   "settingSaved": "{label} saved",
-  "defaultNote": "Click a control to change it",
-  "defaultNoteTail": "Saved at once, the mod reloads",
+  "defaultNote": "Click a setting to change it",
+  "defaultNoteTail": "The mod reloads",
   "agoLessThanMinute": "less than a minute ago",
   "agoMinutes": "{minutes} min ago",
   "agoHoursMinutes": "{hours} h {minutes} min ago"
