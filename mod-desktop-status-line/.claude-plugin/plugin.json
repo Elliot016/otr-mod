@@ -1,5 +1,5 @@
 {
-  "name": "mod-app-statusline",
+  "name": "mod-desktop-status-line",
   "version": "0.1.0",
   "description": "Moonlight status line drawn above the prompt on the desktop app",
   "author": {

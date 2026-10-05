@@ -2,28 +2,35 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Look, Snapshot } from '../types'
+import style from './style'
+import text from './text'
+
+const fill = (template: string, values: Record<string, string | number> = {}) => template.replace(/{(w+)}/g, (slot, name: string) => (name in values ? String(values[name]) : slot))
+
+const COLORS = style.colors
+const SYMBOL = style.statuslineMarks
 
 const MOONLIGHT = {
-  surface3: '#252A42',
-  muted: '#9BA3C4',
+  surface3: COLORS.theme.surface3,
+  muted: COLORS.theme.muted,
 }
 
 // Neutral so the outline sits on the desktop's own gray instead of fighting it.
-const PILL = { borderStyle: 'round', borderColor: '#3A3D4A', paddingX: 1 } as const
-const MENU_BACKGROUND = '#1C1D24'
+const PILL = { borderStyle: 'round', borderColor: COLORS.statusline.pillBorder, paddingX: 1 } as const
+const MENU_BACKGROUND = COLORS.statusline.menuBackground
 
 const THEME = 'Documents/oh-my-posh/themes/Moonlight-claude.omp.json'
 
 const usageRules = (ramp: string[]) => [90, 79, 59, 39, 10].map((min, i) => ({ min, color: ramp[5 - i]! }))
-const RAMP = ['#CED9FF', '#ACB9E6', '#CDBBE5', '#EA98EE', '#F883C9', '#FF6F7A']
+const RAMP = COLORS.usage
 
 // Mirrors the theme as it is today, for when the file can't be read.
 const FALLBACK_LOOK: Look = {
-  clock: { color: '#7E86A4', rules: [] },
-  git: { color: '#7386D0', rules: [] },
-  path: { color: '#B9C6F5', rules: [] },
-  pathCycle: ['#EEEEFA', '#B9C6F5'],
-  gitMarks: { pending: '#7386D0', divergence: '#B86CB3', ahead: '#EEEEFA', behind: '#8A9BE0' },
+  clock: { color: COLORS.pills.readout, rules: [] },
+  git: { color: COLORS.theme.accent, rules: [] },
+  path: { color: COLORS.theme.secondary, rules: [] },
+  pathCycle: [COLORS.theme.onSurface, COLORS.theme.secondary],
+  gitMarks: { pending: COLORS.theme.accent, divergence: COLORS.statusline.divergence, ahead: COLORS.theme.onSurface, behind: COLORS.statusline.behind },
   cost: { color: RAMP[0]!, rules: [20, 10, 5, 2, 0.5].map((min, i) => ({ min, color: RAMP[5 - i]! })) },
   context: { color: RAMP[0]!, rules: usageRules(RAMP) },
   fiveHour: { color: RAMP[0]!, rules: usageRules(RAMP) },
@@ -42,9 +49,9 @@ const SEGMENTS: [Exclude<keyof Look, 'pathCycle' | 'gitMarks'>, (seg: OmpSegment
 
 type OmpSegment = { type?: string; template?: string; foreground?: string; foreground_templates?: string[]; options?: { cycle?: string[] } }
 
-const snapshot = atom({ plugin: 'mod-app-statusline', key: 'snapshot' } as const, null)
-const look = atom({ plugin: 'mod-app-statusline', key: 'look' } as const, null)
-const menuOpen = atom({ plugin: 'mod-app-statusline', key: 'menuOpen' } as const, false)
+const snapshot = atom({ plugin: 'mod-desktop-status-line', key: 'snapshot' } as const, null)
+const look = atom({ plugin: 'mod-desktop-status-line', key: 'look' } as const, null)
+const menuOpen = atom({ plugin: 'mod-desktop-status-line', key: 'menuOpen' } as const, false)
 
 // oh-my-posh takes the first foreground_template that matches, else the segment's foreground.
 const colorFor = (seg: Look[keyof Omit<Look, 'pathCycle' | 'gitMarks'>], value: number) =>
@@ -90,7 +97,7 @@ async function loadLook($: EngineInterface) {
 const untilReset = (iso: string | undefined, now: number, unit: 'hm' | 'dh') => {
   if (!iso) return ''
   const minutes = Math.floor((Date.parse(iso) - now) / 60000)
-  if (minutes <= 0) return 'now'
+  if (minutes <= 0) return text.resetsNow
   if (unit === 'hm') {
     return minutes >= 120 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
   }
@@ -175,14 +182,14 @@ const encodePowerShell = (script: string) => {
 
 const OPENERS = {
   explorer: {
-    name: 'the file manager',
-    label: 'File manager',
+    name: text.openFileManagerName,
+    label: text.openFileManagerLabel,
     windows: (quoted: string) => `Start-Process -FilePath ${quoted}`,
     mac: (path: string) => ['open', path],
   },
   vscode: {
-    name: 'VS Code',
-    label: 'VS Code',
+    name: text.openVscodeName,
+    label: text.openVscodeLabel,
     // code.cmd is a batch file, so its own console stays hidden while VS Code opens normally.
     windows: (quoted: string) => `Start-Process -FilePath 'code' -ArgumentList ('"' + ${quoted} + '"') -WindowStyle Hidden`,
     mac: (path: string) => ['open', '-a', 'Visual Studio Code', path],
@@ -197,7 +204,7 @@ async function openWith($: EngineInterface, app: keyof typeof OPENERS, path: str
     ? ['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodePowerShell(opener.windows(quoted))]
     : opener.mac(path)
   const result = await $.process.run(argv).catch(error => ({ exitCode: -1, stderr: String(error) }))
-  if (result.exitCode !== 0) $.ui.toast(`Could not open ${opener.name}: ${result.stderr.trim()}`)
+  if (result.exitCode !== 0) $.ui.toast(fill(text.openFailed, { name: opener.name, error: result.stderr.trim() }))
 }
 
 async function refresh($: EngineInterface) {
@@ -220,7 +227,7 @@ async function refresh($: EngineInterface) {
     ahead: git?.ahead ?? 0,
     behind: git?.behind ?? 0,
     root,
-    path: root.split(/[\\/]/).filter(Boolean).slice(-2).join(' › '),
+    path: root.split(/[\\/]/).filter(Boolean).slice(-2).join(` ${SYMBOL.pathSep} `),
     cost: usage.cost?.usd ?? null,
     contextPercent: usage.context.percent ?? null,
     fiveHour: limit('five_hour'),
@@ -242,29 +249,29 @@ async function band($: EngineInterface, e: Parameters<EngineInterface['ui']['res
 
   if (snap.contextPercent !== null) {
     const percent = Math.round(snap.contextPercent)
-    stats.push({ kind: 'context', percent, value: `${percent}%`, tooltip: 'Context used', color: colorFor(theme.context, percent) })
+    stats.push({ kind: 'context', percent, value: `${percent}%`, tooltip: text.contextTooltip, color: colorFor(theme.context, percent) })
   }
   if (snap.fiveHour) {
     const { percent } = snap.fiveHour
-    stats.push({ kind: 'clock', percent, value: `${percent}%`, label: untilReset(snap.fiveHour.resetsAt, snap.now, 'hm'), tooltip: '5h limit · resets in', color: colorFor(theme.fiveHour, percent) })
+    stats.push({ kind: 'clock', percent, value: `${percent}%`, label: untilReset(snap.fiveHour.resetsAt, snap.now, 'hm'), tooltip: text.fiveHourTooltip, color: colorFor(theme.fiveHour, percent) })
   }
   if (snap.sevenDay) {
     const { percent } = snap.sevenDay
-    stats.push({ kind: 'calendar', percent, value: `${percent}%`, label: untilReset(snap.sevenDay.resetsAt, snap.now, 'dh'), tooltip: '7d limit · resets in', color: colorFor(theme.sevenDay, percent) })
+    stats.push({ kind: 'calendar', percent, value: `${percent}%`, label: untilReset(snap.sevenDay.resetsAt, snap.now, 'dh'), tooltip: text.sevenDayTooltip, color: colorFor(theme.sevenDay, percent) })
   }
   if (snap.cost !== null) {
-    stats.push({ kind: 'cost', percent: 100, value: `$${snap.cost.toFixed(2)}`, tooltip: 'Session cost', color: colorFor(theme.cost, snap.cost) })
+    stats.push({ kind: 'cost', percent: 100, value: `$${snap.cost.toFixed(2)}`, tooltip: text.costTooltip, color: colorFor(theme.cost, snap.cost) })
   }
 
-  const folders = snap.path.split(' › ')
+  const folders = snap.path.split(` ${SYMBOL.pathSep} `)
   const marks = theme.gitMarks
   const branch = (
     <Text>
-      <Text color={theme.git.color}>{`⑂ ${snap.branch}`}</Text>
-      {snap.isDirty && <Text color={marks.pending}> ●</Text>}
-      {snap.ahead > 0 && snap.behind > 0 && <Text color={marks.divergence}>{` ⇅${snap.ahead}/${snap.behind}`}</Text>}
-      {snap.ahead > 0 && snap.behind === 0 && <Text color={marks.ahead}>{` ↑${snap.ahead}`}</Text>}
-      {snap.behind > 0 && snap.ahead === 0 && <Text color={marks.behind}>{` ↓${snap.behind}`}</Text>}
+      <Text color={theme.git.color}>{`${SYMBOL.branch} ${snap.branch}`}</Text>
+      {snap.isDirty && <Text color={marks.pending}>{` ${SYMBOL.dirty}`}</Text>}
+      {snap.ahead > 0 && snap.behind > 0 && <Text color={marks.divergence}>{` ${SYMBOL.diverged}${snap.ahead}/${snap.behind}`}</Text>}
+      {snap.ahead > 0 && snap.behind === 0 && <Text color={marks.ahead}>{` ${SYMBOL.ahead}${snap.ahead}`}</Text>}
+      {snap.behind > 0 && snap.ahead === 0 && <Text color={marks.behind}>{` ${SYMBOL.behind}${snap.behind}`}</Text>}
     </Text>
   )
 
@@ -278,7 +285,7 @@ async function band($: EngineInterface, e: Parameters<EngineInterface['ui']['res
         <Text>
           {folders.map((folder, i) => {
             const color = theme.pathCycle[i % theme.pathCycle.length] ?? theme.path.color
-            return <Text key={`f${i}`} color={color}>{i > 0 ? ` › ${folder}` : folder}</Text>
+            return <Text key={`f${i}`} color={color}>{i > 0 ? ` ${SYMBOL.pathSep} ${folder}` : folder}</Text>
           })}
         </Text>
         {isMenuOpen &&
@@ -293,7 +300,7 @@ async function band($: EngineInterface, e: Parameters<EngineInterface['ui']['res
               }}
             />
           ))}
-        <Button key="open" plain label={isMenuOpen ? '×' : '⋯'} onPress={() => update($, menuOpen, isOpen => !isOpen)} />
+        <Button key="open" plain label={isMenuOpen ? SYMBOL.close : SYMBOL.menu} onPress={() => update($, menuOpen, isOpen => !isOpen)} />
       </Box>
       {stats.map(stat => (
         <Box key={stat.kind} {...PILL} gap={1} alignItems="center" position="relative">

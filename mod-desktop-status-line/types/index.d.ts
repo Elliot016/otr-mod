@@ -29,6 +29,6 @@ export type Look = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'mod-app-statusline': { snapshot: Snapshot | null; look: Look | null; menuOpen: boolean }
+    'mod-desktop-status-line': { snapshot: Snapshot | null; look: Look | null; menuOpen: boolean }
   }
 }
