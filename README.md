@@ -16,8 +16,93 @@ Claude Code mods I develop. A mod is a plugin whose `hooks/hooks.json` points at
 | `mod-handoff` | A Handoff pill above the prompt: one click asks `Clear & continue?` in place, Yes writes a handoff of the chat through a hidden fork with its `session-handoff` skill, runs `/clear` and pastes the handoff into the fresh prompt to review and send. `/mod-handoff` runs it without the confirm | Terminal | Not checked live yet |
 | `mod-collision-guard` | Before Edit, Write, MultiEdit or NotebookEdit, checks whether another open session edited the same file in the last 30 minutes (setting). If so, asks in Claude Code's question dialog: proceed, move to a worktree, cancel or your own instruction. Each session logs its edits to its own file under `~/.claude/mod-collision-guard/` | Terminal | Not checked live yet |
 | `mod-file-tree` | A Files pill opens a sidebar with the tree of files Claude touched this session, the latest one lit while it works, `+/-` counts per edit, and a Replay view that steps through the last turn's diffs with Prev and Next | Terminal | Not checked live yet |
-| `mod-next-steps` | After each turn, up to three suggested next prompts above the input from a hidden fork; a click puts one in the prompt, sending a prompt clears them | Terminal | Not checked live yet |
+| `mod-next-steps` | After each turn, up to three suggested next prompts above the input from a hidden fork; a click, or its digit typed alone into the empty prompt, puts one in the prompt without sending; sending a prompt clears them | Terminal | Not checked live yet |
 | `mod-blast-radius` | Holds a risky Bash command (the rules of the destructive-command hook plus your own in `~/.claude/mod-blast-radius/rules.json`) in a pane that shows what it would change: paths and sizes for `rm`, git status for resets, lost commits for force pushes. It runs only on Run | Terminal | Not checked live yet |
+
+## Showcase
+
+Recorded in Windows Terminal with a Nerd Font on 2026-10-05. Each GIF links to its full video. `mod-desktop-status-line` draws only in the desktop app, so it has no capture here.
+
+### mod-menu
+
+The pill row above the prompt. Hovering an entry shows its hint.
+
+![Pill row](showcase/menu-band.png)
+![Hover hint](showcase/menu-hover-hint.png)
+
+### mod-manager
+
+Hover a mod for its description card, and switch every mod's icons between Auto, Nerd and Plain. [Video](showcase/manager-hover-and-icons.mp4)
+
+![Manager hover and icons switch](showcase/gif/manager-hover-and-icons.gif)
+
+| Auto (Nerd Font) | Plain |
+| --- | --- |
+| ![Icons auto](showcase/manager-icons-auto.png) | ![Icons plain](showcase/manager-icons-plain.png) |
+
+### mod-file-tree
+
+The Files panel while Claude works: the live word on the file in use, then `+/-` counts. [Video](showcase/file-tree-live.mp4)
+
+![File tree live](showcase/gif/file-tree-live.gif)
+
+### mod-next-steps
+
+Hover a suggestion, click it into the prompt, send it. The edited file glows in Files. [Video](showcase/next-steps-and-edit-glow.mp4)
+
+![Next steps and edit glow](showcase/gif/next-steps-and-edit-glow.gif)
+
+Each suggestion has a number. Type `1`, `2` or `3` alone into the empty prompt to fill it with that suggestion; nothing is sent. [Video](showcase/next-steps-keys.mp4)
+
+![Next steps keys](showcase/gif/next-steps-keys.gif)
+
+### mod-prompts
+
+Pick a prompt to read it in the card, `[↵]` jumps the transcript there. [Video](showcase/prompts-jump.mp4)
+
+![Prompts jump](showcase/gif/prompts-jump.gif)
+
+### mod-skill-panel
+
+Skills grouped by tag, a card for the clicked one, and the settings panel. [Video](showcase/skill-panel-and-settings.mp4)
+
+![Skill panel](showcase/gif/skill-panel-and-settings.gif)
+
+### mod-turn-fold
+
+A finished turn folds to one line under its prompt. Unfolded, its work splits into kind rows (Thought, Read, Ran) and timed tool lines, each folding open on its own. [Video](showcase/turn-fold-unfold.mp4)
+
+![Turn fold](showcase/gif/turn-fold-unfold.gif)
+
+| Folded | Open |
+| --- | --- |
+| ![Folded](showcase/turn-fold-folded.png) | ![Open](showcase/turn-fold-open.png) |
+
+### mod-model-effort
+
+The effort pill and its settings panel.
+
+![Model effort](showcase/model-effort.png)
+
+### mod-blast-radius
+
+A risky command waits in a card: what it does, what it touches, a verdict, and Cancel, Details, Run. Type `1`, `2` or `3` alone into the empty prompt to answer. [Video](showcase/blast-radius-hold.mp4)
+
+![Blast radius](showcase/gif/blast-radius-hold.gif)
+
+![Details pane](showcase/blast-radius-details.png)
+
+### mod-collision-guard
+
+Another open session edited the same file: proceed, move to a worktree, cancel or say what to do.
+
+![Collision guard](showcase/collision-guard.png)
+
+### mod-handoff
+
+Handoff asks first, lets you pick which threads carry over, writes the handoff, clears the chat and leaves it in the prompt to review. Played at double speed. [Video](showcase/handoff-full.mp4)
+
+![Handoff](showcase/gif/handoff-full.gif)
 
 ## Layout
 
