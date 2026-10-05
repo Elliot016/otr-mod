@@ -1,7 +1,6 @@
 import type { ClientModule } from 'claude-code'
 
 import type { EntryMessage } from './entry'
-import style from './style'
 import { CAPS, THEME } from './theme'
 
 // mode: the id of the option the open card is in, drawn lifted and keeping the pill open; isIdle false mutes it while Claude works.
@@ -35,13 +34,13 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
     })
   }
 
-  // The option at cell x, from the drawn order: the head, then each option with a one-cell dot between.
+  // The option at cell x, from the drawn order: the head, then the options side by side, as in the menu group.
   const optionAt = (x: number) => {
     let start = (props.nerd ? 1 : 0) + head.length
     for (const [index, option] of props.options.entries()) {
       const end = start + widthOf(option.label, props.nerd)
       if (x >= start && x < end) return index
-      start = end + 1
+      start = end
     }
     return -1
   }
@@ -75,12 +74,7 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
     <Box flexDirection="row">
       {props.nerd ? <Text key="cap-left" color={props.bg}>{CAPS.left}</Text> : null}
       <Text key="head" color={props.isIdle ? (isExpanded ? THEME.muted : THEME.onSurface) : THEME.muted} backgroundColor={props.bg}>{head}</Text>
-      {isExpanded
-        ? props.options.flatMap((_, index) => [
-            ...(index > 0 ? [<Text key={`dot-${index}`} color={style.colors.pills.separator} backgroundColor={props.bg}>{style.marks.bullet}</Text>] : []),
-            option(index),
-          ])
-        : null}
+      {isExpanded ? props.options.map((_, index) => option(index)) : null}
       {props.nerd ? <Text key="cap-right" color={props.bg}>{CAPS.right}</Text> : null}
     </Box>
   )

@@ -27,6 +27,7 @@ export function splitRow(others: unknown) {
   const groupPill = pills.find(child => keyOf(child) === 'menu-group')
   const body = childrenOf(groupPill).find(child => keyOf(child) === 'menu-group-body')
   return {
+    // A mod still running an older copy may draw `menu-group-sep-*` separators between entries; the group drops them.
     group: childrenOf(body).filter(child => !keyOf(child)?.startsWith('menu-group-sep')),
     row: pills.filter(child => keyOf(child) !== 'menu-group'),
     rest,
@@ -78,11 +79,8 @@ export function pillRow(elements: Elements, nerd: boolean, group: unknown[], row
     const at = ENTRY_ORDER.indexOf(String(keyOf(entry) ?? '').replace(/^menu-pad-/, ''))
     return at < 0 ? ENTRY_ORDER.length : at
   }
-  const sorted = [...group].sort((a, b) => rank(a) - rank(b))
-  const entries = sorted.flatMap((entry, index) =>
-    // Boxes keep their key in the drawn tree and Texts lose it, so the separator sits in a keyed Box the next mod can drop.
-    index === 0 ? [entry] : [<Box key={`menu-group-sep-${index}`}><Text color={style.colors.pills.separator}>{style.marks.bullet}</Text></Box>, entry],
-  )
+  // Like a choice bar: the entries side by side on one pill, the open panel's lifted into its own.
+  const entries = [...group].sort((a, b) => rank(a) - rank(b))
   return (
     <Box key="menu-rows" flexDirection="column">
       {rest}

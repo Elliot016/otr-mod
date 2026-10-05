@@ -69,7 +69,7 @@ type Band = { pointer: (event: never) => Promise<void>; drawn: (scope: { in: str
 const click = (band: Band, key: string) => band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: key } as never)
 const label = async (band: Band, key: string) => JSON.stringify(await band.drawn({ in: key }))
 
-// The pill is one Client: ` Wrap up ` (cells 0 to 8), ` Handoff ` (9 to 17), a dot, ` Compact ` (19 to 27); Nerd adds the pill's left cap and a cap cell each side of an option.
+// The pill is one Client: ` Wrap up ` (cells 0 to 8), ` Handoff ` (9 to 17), ` Compact ` (18 to 26); Nerd adds the pill's left cap and a cap cell each side of an option.
 const OPTION_X = { safe: { handoff: 10, compact: 20 }, nerd: { handoff: 12, compact: 24 } }
 const choose = (band: Band, option: 'handoff' | 'compact', icons: 'safe' | 'nerd' = 'safe') =>
   band.pointer({ type: 'down', x: OPTION_X[icons][option], y: 0, button: 'left', in: 'wrap-up-entry' } as never)
@@ -333,8 +333,8 @@ test('icons=nerd keeps the Wrap up labels plain, with no icon', { options: { ico
   expect(await label(band, 'wrap-up-entry')).toContain('" Wrap up "')
   await click(band, 'wrap-up-entry')
   expect(await label(band, 'wrap-up-entry')).toContain(' Handoff ')
-  // The right cap is the pill's last cell: cap, ` Wrap up `, two options of 11 cells and a dot, so x 33. The options stay open on it.
-  await band.pointer({ type: 'move', x: 33, y: 0, in: 'wrap-up-entry' } as never)
+  // The right cap is the pill's last cell: cap, ` Wrap up `, two options of 11 cells, so x 32. The options stay open on it.
+  await band.pointer({ type: 'move', x: 32, y: 0, in: 'wrap-up-entry' } as never)
   expect(await label(band, 'wrap-up-entry')).toContain(' Handoff ')
   expect(await label(band, 'wrap-up-entry')).toContain(CAPS.right)
   await band.unmount()
