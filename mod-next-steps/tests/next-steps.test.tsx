@@ -8,7 +8,8 @@ const BAND = {
 const DONE = { answer: 'All done.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' } as const
 
 // Stubs everything the mod touches; `reply` is what the forked model answers and `fills` records prompt writes.
-function setup(on: any, reply: () => unknown) {
+// below: what the mods drawn under this one return; plain text by default.
+function setup(on: any, reply: () => unknown, below?: (elements: any) => unknown) {
   const clock = mock.clock(on)
   const fills: { text: string; mode?: string }[] = []
   const asked: string[] = []
@@ -26,14 +27,14 @@ function setup(on: any, reply: () => unknown) {
   on('turn.complete', () => ({ text: '' }))
   on('prompt.submit', (_$: unknown, e: { text: string }) => ({ text: e.text }))
   on('ui.render', ($: any, e: unknown) => {
-    const { Text } = $.ui.resolve(e)
-    return <Text key="base">base</Text>
+    const elements = $.ui.resolve(e)
+    return below ? below(elements) : <elements.Text key="base">base</elements.Text>
   })
   return { clock, fills, asked, setDraft: (text: string) => (draft = text) }
 }
 
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
-const mount = ($: any) => $.ui.mount({ plugin: 'mod-nextsteps', surface: 'terminal', ...BAND })
+const mount = ($: any) => $.ui.mount({ plugin: 'mod-next-steps', surface: 'terminal', ...BAND })
 const rowsOf = async (ui: any) => JSON.stringify(await ui.drawn({ in: 'steps-list' }))
 
 test('while the suggestions are being written, a shimmering line says they are coming', async ($, on) => {
@@ -71,6 +72,25 @@ test('suggestions appear after turn.complete, tidied and capped at the count', a
   expect(drawn).toContain('ship it')
   expect(drawn).not.toContain('fourth')
   expect(JSON.stringify(await ui.drawn({ in: 'steps-dismiss' }))).toContain('[×]')
+  await ui.unmount()
+})
+
+test('with a shared pill row below, the card joins that row instead of wrapping it, so mods drawn around stay on one row', async ($, on) => {
+  const { clock } = setup(on, () => answered('add a test'), ({ Box, Text }: any) => (
+    <Box key="menu-rows" flexDirection="column">
+      <Box key="menu-row" flexDirection="row">
+        <Text key="pill">Files</Text>
+      </Box>
+    </Box>
+  ))
+  await $.turn.complete(DONE as never)
+  await clock.settle()
+  const ui = await mount($)
+  const tree = (await ui.drawn()) as { props?: { key?: string } }
+  expect(tree.props?.key).toBe('menu-rows')
+  expect(JSON.stringify(tree).split('"menu-rows"').length - 1).toBe(1)
+  expect(await ui.find({ key: 'steps-action-0' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Files' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -198,7 +218,7 @@ test('desktop falls back to built-in drawing', async ($, on) => {
   const { clock } = setup(on, () => answered('alpha'))
   await $.turn.complete(DONE as never)
   await clock.settle()
-  const ui = await $.ui.mount({ plugin: 'mod-nextsteps', surface: 'desktop', ...BAND } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-next-steps', surface: 'desktop', ...BAND } as never)
   expect(await ui.find({ key: 'steps-action-0' })).toBeUndefined()
   await ui.unmount()
 })
@@ -231,8 +251,8 @@ for (const icons of ['nerd', 'safe']) {
     })
     on('config.list', () => ({
       value: [
-        { key: 'mod-nextsteps.enabled', label: 'Suggest next steps', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'mod-nextsteps' }, isLocked: false },
-        { key: 'mod-nextsteps.count', label: 'Suggestions', kind: 'number', value: 3, provider: { kind: 'plugin', name: 'mod-nextsteps' }, isLocked: false },
+        { key: 'mod-next-steps.enabled', label: 'Suggest next steps', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'mod-next-steps' }, isLocked: false },
+        { key: 'mod-next-steps.count', label: 'Suggestions', kind: 'number', value: 3, provider: { kind: 'plugin', name: 'mod-next-steps' }, isLocked: false },
         { key: 'other.x', label: 'Not mine', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'other' }, isLocked: false },
       ],
     }))
@@ -242,23 +262,23 @@ for (const icons of ['nerd', 'safe']) {
       return { value: e.value }
     })
 
-    await $.command.run({ command: 'mod-nextsteps', args: 'settings' })
+    await $.command.run({ command: 'mod-next-steps', args: 'settings' })
     const ui = await $.ui.mount({
-      plugin: 'mod-nextsteps',
+      plugin: 'mod-next-steps',
       surface: 'terminal',
       component: 'Pane',
       requestId: 'nextsteps',
-      props: { title: 'mod-nextsteps', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+      props: { title: 'mod-next-steps', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
     } as never)
     const lead = icons === 'nerd' ? String.fromCodePoint(0xf075) : '▸'
-    expect(await ui.find({ type: 'Text', text: `${lead} mod-nextsteps · settings` })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: `${lead} Next steps · Settings` })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Suggest next steps/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Not mine/ })).toBeUndefined()
 
     await ui.press({ key: 'setting-1-up' })
-    expect(saved).toEqual([['mod-nextsteps.count', 3]])
+    expect(saved).toEqual([['mod-next-steps.count', 3]])
     await ui.press({ key: 'setting-0-flip' })
-    expect(saved[1]).toEqual(['mod-nextsteps.enabled', false])
+    expect(saved[1]).toEqual(['mod-next-steps.enabled', false])
     await ui.unmount()
   })
 }

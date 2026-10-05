@@ -6,7 +6,7 @@
     { "title": "Stays out of the way", "detail": "They clear when you send a prompt or a new turn starts, and a failed or interrupted turn shows nothing." }
   ],
   "actions": [
-    { "label": "Clear the current suggestions", "command": "mod-nextsteps", "args": "clear" }
+    { "label": "Clear the current suggestions", "command": "mod-next-steps", "args": "clear" }
   ],
   "previews": {
     "enabled": {

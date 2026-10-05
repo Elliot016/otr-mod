@@ -3,10 +3,12 @@ import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-c
 import { actionColumn } from './rows'
 import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action, type Previews } from './settings'
-import { MARK, statusColor, THEME } from './theme'
+import { fill, MARK, statusColor, THEME } from './theme'
 import type { EntryMessage } from './entry'
 import type { ListMessage } from './list'
+import { pillRow, splitRow } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
+import text from './text'
 
 const PANE = 'nextsteps'
 const MAX_CHARS = 100
@@ -94,35 +96,39 @@ async function fillFrom($: EngineInterface, index: number) {
 
 const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
 
-// `/mod-nextsteps settings` toggles the panel; an unplaced pane is waiting, not open.
+// `/mod-next-steps settings` toggles the panel; an unplaced pane is waiting, not open.
 async function toggleSettings($: EngineInterface) {
   if (await isPaneOpen($)) {
     await $.ui.close({ id: PANE })
-    await $.state.set({ plugin: 'mod-nextsteps', key: 'pane' }, false)
+    await $.state.set({ plugin: 'mod-next-steps', key: 'pane' }, false)
     return
   }
   note = ''
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
-  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-nextsteps' }))
-  const opened = await $.ui.open({ id: PANE, title: 'mod-nextsteps', closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(`Settings panel waiting: ${opened.reason}`)
-  await $.state.set({ plugin: 'mod-nextsteps', key: 'pane' }, opened.isPlaced)
+  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-next-steps' }))
+  const opened = await $.ui.open({ id: PANE, title: 'mod-next-steps', closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
+  await $.state.set({ plugin: 'mod-next-steps', key: 'pane' }, opened.isPlaced)
 }
 
-// What `/mod-nextsteps <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
+// What `/mod-next-steps <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
 async function answer($: EngineInterface, args: string) {
   if (args.trim() === 'clear') {
     clearSteps($)
-    return 'Suggestions cleared'
+    return text.suggestionsCleared
   }
   await toggleSettings($)
   return ''
 }
 
 const toasts = new ToastList('nextsteps')
+// The animations setting, fixed per activation: off, every entry draws still.
+let still = false
 
 export const register: Register = (on, options) => {
+  still = options.animations === false
+  toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
     const id = toasts.add(e.text)
@@ -143,17 +149,17 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     look = await detectLook($)
     await $.command.register({
-      name: 'mod-nextsteps',
-      description: 'Next-prompt suggestions above the input; `settings` opens its settings panel, `clear` drops the current ones',
+      name: 'mod-next-steps',
+      description: text.commandDescription,
       argumentHint: '[settings|clear]',
     })
-    await $.state.set({ plugin: 'mod-nextsteps', key: 'pane' }, await isPaneOpen($))
+    await $.state.set({ plugin: 'mod-next-steps', key: 'pane' }, await isPaneOpen($))
     $.ui.invalidate('ui.render')
 
     return next(e)
   })
 
-  on('command.run', { command: 'mod-nextsteps' }, async ($, e) => ({ text: await answer($, e.args ?? '') }))
+  on('command.run', { command: 'mod-next-steps' }, async ($, e) => ({ text: await answer($, e.args ?? '') }))
 
   // Subagent turns carry agentId and say nothing about the main prompt.
   on('turn.start', async ($, e, next) => {
@@ -200,18 +206,18 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) await $.state.set({ plugin: 'mod-nextsteps', key: 'pane' }, false)
+    if (e.id === PANE) await $.state.set({ plugin: 'mod-next-steps', key: 'pane' }, false)
 
     return next(e)
   })
 
   // One panel at a time: another mod's pane opening closes this one, deferred past that plugin's dispatch.
   on('state.set', async ($, e, next) => {
-    if (e.key === 'pane' && e.plugin !== 'mod-nextsteps' && e.value === true) {
+    if (e.key === 'pane' && e.plugin !== 'mod-next-steps' && e.value === true) {
       $.clock.after(0, async () => {
         if (!(await isPaneOpen($))) return
         await $.ui.close({ id: PANE })
-        await $.state.set({ plugin: 'mod-nextsteps', key: 'pane' }, false)
+        await $.state.set({ plugin: 'mod-next-steps', key: 'pane' }, false)
       })
     }
 
@@ -225,26 +231,28 @@ export const register: Register = (on, options) => {
     const cards = toastCards({ Box, Client, Text }, toasts)
     // A command waiting on the person outranks suggestions: the band has few rows, and a hidden hold looks like a hang.
     const isHolding = (await $.state.get({ plugin: 'mod-blast-radius', key: 'holding' })).value === true
+    // Joins the shared pill row's top section when other mods drew one below; wrapping it would hide the row from mods drawn around this one, which then start a second row.
+    const above = (below: unknown, items: unknown[]) => {
+      const { group, row, rest, tip } = splitRow(below)
+      if (group.length || row.length || tip) return pillRow({ Box, Text }, look.nerd, group, row, [...items, ...rest], tip)
+      return <Box key="nextsteps" flexDirection="column">{items}{below}</Box>
+    }
     if (steps.length === 0 || isHolding) {
       const waiting = enabled && isSuggesting && !isHolding
       if (cards.length === 0 && !waiting) return next(e)
-      return (
-        <Box key="toasts-nextsteps" flexDirection="column">
-          {cards}
-          {waiting ? (
-            <Box key="nextsteps-waiting" paddingX={1}>
-              <Client key="steps-waiting" module="./entry.tsx" height={1} props={{ id: 'steps-waiting', label: 'Thinking of next steps…', isOpen: false, bg: THEME.bg, isBusy: true }} />
-            </Box>
-          ) : null}
-          {await next(e)}
-        </Box>
-      )
+      return above(await next(e), [
+        ...cards,
+        waiting ? (
+          <Box key="nextsteps-waiting" paddingX={1}>
+            <Client key="steps-waiting" module="./entry.tsx" height={1} props={{ id: 'steps-waiting', label: text.thinking, isOpen: false, bg: THEME.bg, isBusy: true, still }} />
+          </Box>
+        ) : null,
+      ])
     }
     const below = await next(e)
 
-    return (
-      <Box key="nextsteps" flexDirection="column">
-        {cards}
+    return above(below, [
+        ...cards,
         <Box key="nextsteps-rows" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
           {actionColumn(
             { Box, Button, Text },
@@ -255,36 +263,34 @@ export const register: Register = (on, options) => {
             <Client key="steps-list" module="./list.tsx" height={steps.length} props={{ rows: steps }} />
           </Box>
           <Box key="nextsteps-dismiss" flexShrink={0}>
-            <Client key="steps-dismiss" module="./entry.tsx" height={1} props={{ id: 'steps-dismiss', label: look.glyph.close.trim() || '×', isOpen: false, bg: THEME.surface1 }} />
+            <Client key="steps-dismiss" module="./entry.tsx" height={1} props={{ id: 'steps-dismiss', label: look.glyph.close.trim() || '×', isOpen: false, bg: THEME.surface1, still }} />
           </Box>
-        </Box>
-        {below}
-      </Box>
-    )
+        </Box>,
+    ])
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-nextsteps.'))
+    const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-next-steps.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
     const set = async (row: ConfigRow, value: ConfigValue) => {
-      const clamped = row.key === 'mod-nextsteps.count' && typeof value === 'number' ? Math.min(3, Math.max(1, value)) : value
+      const clamped = row.key === 'mod-next-steps.count' && typeof value === 'number' ? Math.min(3, Math.max(1, value)) : value
       const result = await $.config.set({ key: row.key, value: clamped })
-      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${row.label} saved`
+      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
       $.ui.invalidate('ui.render')
     }
     const run = async (action: Action) => {
-      const said = action.command === 'mod-nextsteps' ? answer($, action.args ?? '') : Promise.resolve('')
+      const said = action.command === 'mod-next-steps' ? answer($, action.args ?? '') : Promise.resolve('')
       note = await said.then(text => `${MARK.ok} ${text || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
       $.ui.invalidate('ui.render')
     }
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {paneTitle({ Box, Text }, look, 'prompt', `mod-nextsteps ${MARK.sep} settings`)}
-        <Text key="status" color={statusColor(note)}>{withMark(look, note) || `click a control to change it ${MARK.sep} saved at once, the mod reloads`}</Text>
+        {paneTitle({ Box, Text }, look, 'prompt', `${text.paneHeading} ${MARK.sep} ${text.paneHeadingSettings}`)}
+        <Text key="status" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusReload}`}</Text>
         {settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}
       </Box>
     )
