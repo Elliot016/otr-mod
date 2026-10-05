@@ -163,6 +163,48 @@ test('a subagent report opens its own turn, so the prompt keeps its own reply; a
   expect(log.turns[1]!.reply).toBe(rowKey(ID(6)))
 })
 
+test('the transcript is read once; rows drawn later join their turn and fold at the next prompt', async ($, on) => {
+  let reads = 0
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.read', () => {
+    reads += 1
+    return { value: TRANSCRIPT }
+  })
+  on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{`base ${e.component}`}</Text>
+  })
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  // A compact keeps the same transcript, so it is not read again.
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'compact', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-toggle', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  const toolProps = { tool_use_id: 'toolu_new', tool: 'Bash', input: { command: 'ls' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }
+
+  // The transcript never sees this turn; its rows are claimed as they draw, and the latest turn stays open.
+  await $.turn.start({ turnId: 't2' } as never)
+  const fresh = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true })
+  const tool = await mount('ToolUse', 'toolu_new', toolProps)
+  await $.turn.complete({ turnId: 't2', reason: 'answer', answer: 'ok', isAborted: false } as never)
+  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  await fresh.unmount()
+  await tool.unmount()
+
+  // The next prompt folds it: its row draws nothing, and its prompt carries the fold line.
+  await mount('UserMessage', ID(21), { text: 'and the docs', origin: { kind: 'composer' }, isExpanded: true })
+  const folded = await mount('ToolUse', 'toolu_new', toolProps)
+  expect(await folded.find({ type: 'Text' })).toBeUndefined()
+  const head = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true })
+  expect(await head.find({ type: 'Button', text: /^1 tool$/ })).toBeDefined()
+  expect(reads).toBe(1)
+})
+
 test('a finished turn folds under its prompt, keeps its reply, and a click unfolds it', async ($, on) => {
   on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))

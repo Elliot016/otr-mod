@@ -4,13 +4,11 @@ import type { BarMessage, BarProps } from './bar'
 import { isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
 import { settingsBody, type Action, type Previews } from './settings'
 import { MARK, statusColor, THEME } from './theme'
-import { callTime, diffStat, rowKey, timeOfDay, toolLabel, turnSummary, TurnLog, type Turn } from './turns'
+import { callTime, diffStat, isPrompt, rowKey, timeOfDay, toolLabel, turnSummary, TurnLog, type Turn } from './turns'
 
 let transcript = ''
 let log = new TurnLog()
-// Characters of the transcript already parsed, and its size then, so a re-read parses only new lines.
-let consumed = 0
-let lastSize = -1
+let isLoaded = false
 let working = false
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let foldTurns = true
@@ -46,15 +44,14 @@ async function toggleSettings($: EngineInterface) {
   await $.state.set({ plugin: 'mod-toggle', key: 'pane' }, result.isPlaced)
 }
 
-// A long session outgrows $.fs.read's 4 MiB cap; then the transcript streams through the platform's own file printer.
+// Read once, since a long session's file is large (past $.fs.read's cap it streams through the file printer); later rows are claimed as they render.
 async function load($: EngineInterface) {
+  if (isLoaded) return
   if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
   if (!transcript) transcript = await findTranscript($)
   if (!transcript) return
-  const { size } = await $.fs.stat(transcript).catch(() => ({ size: -1 }))
-  if (size === lastSize) return
   let text = String(await $.fs.read(transcript).catch(() => ''))
-  if (!text && size > 0) {
+  if (!text) {
     const isWindows = /^[A-Za-z]:|\\/.test(transcript)
     // cmd's type rejects forward slashes ("The syntax of the command is incorrect").
     const argv = isWindows ? ['cmd', '/c', 'type', transcript.replace(/\//g, '\\')] : ['cat', transcript]
@@ -62,16 +59,10 @@ async function load($: EngineInterface) {
       if (chunk.stream === 'stdout') text += chunk.text
     }
   }
-  // A failed read leaves the size unrecorded, so the next render tries again.
   if (!text) return
-  const end = text.lastIndexOf('\n') + 1
-  if (end < consumed) {
-    log = new TurnLog()
-    consumed = 0
-  }
-  for (const line of text.slice(consumed, end).split('\n')) if (line.trim()) log.feed(line)
-  consumed = end
-  lastSize = size
+  log = new TurnLog()
+  for (const line of text.split('\n')) if (line.trim()) log.feed(line)
+  isLoaded = true
   $.ui.invalidate('ui.render')
 }
 
@@ -302,12 +293,14 @@ export const register: Register = (on, options) => {
 
   // Only the settings hook event names the transcript; kept per session so a reload finds it again.
   on('classic.SessionStart', async ($, e, next) => {
-    transcript = e.transcript_path
-    log = new TurnLog()
-    consumed = 0
-    lastSize = -1
-    await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
-    await load($)
+    // A compact keeps the same file, which the log already holds.
+    if (e.transcript_path !== transcript || !isLoaded) {
+      transcript = e.transcript_path
+      log = new TurnLog()
+      isLoaded = false
+      await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
+      await load($)
+    }
     // SessionStart comes between turns, so whatever the transcript holds has ended.
     markEnded()
 
@@ -315,10 +308,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) {
-      working = true
-      await load($)
-    }
+    if (!e.agentId) working = true
 
     return next(e)
   })
@@ -326,7 +316,6 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId) {
       working = false
-      await load($)
       markEnded()
       $.ui.invalidate('ui.render')
     }
@@ -338,27 +327,30 @@ export const register: Register = (on, options) => {
 
   // The prompt row carries the card's head: one line naming what the turn did, which a click folds or unfolds.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
-    if (e.surface !== 'terminal' || e.props.origin.kind !== 'composer') return next(e)
+    if (e.surface !== 'terminal') return next(e)
+    // A subagent's report opens a turn of its own, as in the transcript.
+    if (isLoaded && (e.props.origin.kind === 'peer' || (e.props.origin.kind === 'composer' && isPrompt(e.props.text)))) log.claim(e.requestId, 'prompt')
+    if (e.props.origin.kind !== 'composer') return next(e)
     const turn = log.turnAt(e.requestId)
     seen.set(`UserMessage ${e.requestId}`, Boolean(turn))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const prompt = await next(e)
     const row =
       showTimes && turn?.at !== undefined ? (
-        <Box key="toggle-prompt-row" flexDirection="row" width="100%">
+        <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1}>
           {/* Claude Code draws a prompt with a blank row above it, so the time steps down one row to sit beside the text. */}
           <Box key="toggle-prompt-time-row" marginTop={1} flexShrink={0}>{timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at))}</Box>
           <Box key="toggle-prompt-text" flexDirection="column" flexGrow={1} flexShrink={1}>{prompt}</Box>
         </Box>
       ) : (
-        <Box key="toggle-prompt-row" flexDirection="column" width="100%">{prompt}</Box>
+        <Box key="toggle-prompt-row" flexDirection="column" flexGrow={1}>{prompt}</Box>
       )
     if (!turn || !isDone(turn) || turn.tools.length === 0) return row
 
     const isOpen = isTurnOpen(await opened($, 'turns'), turn)
     const head = toggleLine({ Box, Button }, 'toggle-turn', THEME.accent, isOpen, fit(turnSummary(turn), widthOf(e) - 4), () => flip($, 'turns', turn.prompt))
     return (
-      <Box key="toggle-prompt" flexDirection="column" width="100%">
+      <Box key="toggle-prompt" flexDirection="column" flexGrow={1}>
         {row}
         {slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, head, { kind: 'turns', id: turn.prompt })}
       </Box>
@@ -367,6 +359,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
+    if (isLoaded) log.claim(e.requestId, 'reply')
     const turn = log.turnOf(e.requestId)
     seen.set(`AssistantMessage ${e.requestId}`, Boolean(turn))
     const place = await placeOf($, turn, e.requestId)
@@ -379,6 +372,7 @@ export const register: Register = (on, options) => {
   // A finished tool row folds to one line of its own; a click shows Claude Code's full row and result under it.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
+    if (isLoaded) log.claimCall(e.props.tool_use_id, e.props.tool, e.props.input, e.props.isRunning, e.props.output)
     const turn = log.turnOf(e.requestId)
     seen.set(`ToolUse ${e.requestId}`, Boolean(turn))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
@@ -416,6 +410,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
+    if (isLoaded) log.claim(e.requestId, 'row')
     const turn = log.turnOf(e.requestId)
     seen.set(`ToolResult ${e.requestId}`, Boolean(turn))
     const { Box, Client } = $.ui.resolve(e)
@@ -440,6 +435,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
+    if (isLoaded) log.claim(e.requestId, 'row')
     const turn = log.turnOf(e.requestId)
     seen.set(`TurnDuration ${e.requestId}`, Boolean(turn))
     if ((await placeOf($, turn, e.requestId)) !== 'hidden') return next(e)

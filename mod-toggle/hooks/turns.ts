@@ -21,7 +21,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // A message drawn as several rows gets ids that keep its uuid's first four groups, so rows match on those.
 export const rowKey = (id: string) => (UUID.test(id) ? id.slice(0, 24) : id)
 
-const isPrompt = (text: string) => {
+export const isPrompt = (text: string) => {
   const trimmed = text.trim()
   return Boolean(trimmed) && !WRAPPER.test(trimmed) && !INTERRUPTED.test(trimmed) && !trimmed.startsWith('/')
 }
@@ -113,6 +113,33 @@ export class TurnLog {
       this.add(current, rowKey(row.uuid))
       if (row.subtype === 'turn_duration' && typeof row.durationMs === 'number') current.durationMs = row.durationMs
     }
+  }
+
+  // A row drawn after the transcript was read: a new prompt opens a turn, any other row joins the latest one.
+  claim(requestId: string, kind: 'prompt' | 'reply' | 'row', at = Date.now()) {
+    if (this.turnOf(requestId) || this.turnAt(requestId)) return
+    if (kind === 'prompt') {
+      this.start(requestId, at)
+      return
+    }
+    const current = this.turns[this.turns.length - 1]
+    if (!current) return
+    this.add(current, rowKey(requestId))
+    if (kind === 'reply') current.reply = rowKey(requestId)
+  }
+
+  // A tool row drawn after the transcript was read: the call joins the latest turn, and ends once its row stops running.
+  claimCall(id: string, name: string, input: any, isRunning: boolean, output: any, at = Date.now()) {
+    let call = this.calls.get(id)
+    if (!call) {
+      const current = this.turns[this.turns.length - 1]
+      if (!current) return
+      call = { id, name, input, added: 0, removed: 0, startedAt: at }
+      current.tools.push(call)
+      this.calls.set(id, call)
+      this.add(current, id)
+    }
+    if (!isRunning && call.endedAt === undefined) Object.assign(call, diffStat(name, input, output), { endedAt: at })
   }
 
   // The turn a drawn row belongs to.
