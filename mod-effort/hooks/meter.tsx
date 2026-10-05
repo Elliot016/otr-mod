@@ -5,7 +5,7 @@ import { THEME } from './theme'
 
 export type MeterProps = { effort: string | null; model: string; bg: string }
 
-export type MeterMessage = { type: 'set'; effort: string } | { type: 'menu-hover'; id: string; isOver: boolean } | { type: 'model-menu' }
+export type MeterMessage = { type: 'set'; effort: string } | { type: 'menu-hover'; id: string; isOver: boolean; level?: string } | { type: 'model-menu' }
 
 // The inside of the Moonlight-claude oh-my-posh model pill; the caps come from pills.tsx.
 const PILL_FG = '#7E86A4'
@@ -38,8 +38,8 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
     const slot = event.x - start
     // While folded the slots are not where they will be, so the first event only opens the meter.
     const level = event.type === 'leave' ? -2 : isExpanded && slot >= 0 && slot < LEVELS.length * 2 ? Math.floor(slot / 2) : -1
-    // The tip above the row shows while the pointer is anywhere on the pill.
-    if ((level === -2) !== (hovered === -2)) surface.post({ type: 'menu-hover', id: 'effort', isOver: level !== -2 } satisfies MeterMessage)
+    // The tip above the row shows while the pointer is on the pill; the level under it names itself beside the pill.
+    if (level !== hovered) surface.post({ type: 'menu-hover', id: 'effort', isOver: level !== -2, level: LEVELS[level] } satisfies MeterMessage)
     surface.setState({ level, at: Date.now() })
     if (event.type === 'down' && event.button === 'left' && level >= 0) surface.post({ type: 'set', effort: LEVELS[level]! } satisfies MeterMessage)
     // The model name opens the model menu.

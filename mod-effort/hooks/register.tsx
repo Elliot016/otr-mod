@@ -60,6 +60,9 @@ async function setEffort($: EngineInterface, effort: string) {
 // True while the pointer is on the effort pill, which then shows its tip above the row.
 let tipShown = false
 
+// The level under the pointer, named beside the pill like a clicked level is.
+let hoveredLevel: string | null = null
+
 // The model menu above the pill, opened by a click on the model name.
 let isModelMenuOpen = false
 
@@ -182,6 +185,7 @@ export const register: Register = on => {
     if (message?.type === 'set') await setEffort($, message.effort)
     if (message?.type === 'menu-hover') {
       tipShown = message.isOver
+      hoveredLevel = message.level ?? null
       $.ui.invalidate('ui.render')
     }
 
@@ -198,7 +202,8 @@ export const register: Register = on => {
     const { group, row, rest, tip } = splitRow(await next(e))
     const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary }} />
     // The level word follows the pill, so it never moves the glyphs under the pointer.
-    const word = flash ? <Text key="menu-flash" color={LEVEL_LOOK[flash]?.color}>{flash}</Text> : null
+    const shownWord = hoveredLevel ?? flash
+    const word = shownWord ? <Text key="menu-flash" color={LEVEL_LOOK[shownWord]?.color}>{shownWord}</Text> : null
 
     const level = current.value?.effort ?? null
     const hint = `Effort: ${model}${level ? ` at ${level}` : ''}. Click the name to change the model, a level to set it`

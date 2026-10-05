@@ -57,6 +57,8 @@ test('the footer meter follows each request and a click saves that level', async
   expect(glyphs.slice(0, 4).every(glyph => glyph.props.color !== THEME.border)).toBe(true)
   expect(glyphs[4]!.props.color).toBe(THEME.border)
   expect(glyphs[3]!.props.bold).toBe(true)
+  // The hovered level names itself beside the pill, as a click does.
+  expect(await ui.find({ type: 'Text', text: 'xhigh' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Effort: Opus 5\.5 at medium\./ })).toBeDefined()
   await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: /^Effort: / })).toBeUndefined()
