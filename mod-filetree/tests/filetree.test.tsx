@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { THEME } from '../hooks/theme'
-import { diffLines, emptyLog, commit, iconOf, relPath, rootOf, rowsOf, touch } from '../hooks/tree'
+import { TranscriptFiles } from '../hooks/transcript'
+import { diffLines, emptyLog, commit, iconOf, relPath, rootOf, rowsOf, touch, turnView } from '../hooks/tree'
 
 const nf = (code: number) => String.fromCodePoint(code)
 
@@ -13,16 +14,35 @@ const PANE = {
   props: { title: 'Files', isFocused: true, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as never
 
-const stubs = (on: Parameters<Parameters<typeof test>[1]>[1], opened: string[] = []) => {
+const SHELL_DIFF = {
+  files: [{ filePath: '/w/hooks/meter.tsx', hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, lines: ['-old', '+new', '+more'] }] }],
+  moreFiles: 1,
+  changedFiles: ['/w/hooks/meter.tsx', '/w/hooks/levels.ts'],
+}
+
+const isTranscript = (path: string) => path.replace(/\\/g, '/').endsWith('/s1.jsonl')
+
+// `transcript.text` is the session's .jsonl, which a test may grow between events.
+const stubs = (on: Parameters<Parameters<typeof test>[1]>[1], opened: string[] = [], transcript = { text: '', reads: 0 }) => {
   on('session.cwd', () => ({ value: '/w' }))
-  on('fs.exists', () => ({ value: false }))
-  on('fs.read', () => ({ value: 'one\ntwo\nthree\n' }))
+  on('session.id', () => ({ value: 's1' }))
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('fs.list', () => ({ value: transcript.text ? [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] : [] }))
+  on('fs.exists', (_$, e) => ({ value: isTranscript(e.path) && transcript.text !== '' }))
+  on('fs.stat', (_$, e) => ({ value: { kind: 'file', size: isTranscript(e.path) ? transcript.text.length : 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', (_$, e) => {
+    if (isTranscript(e.path)) transcript.reads += 1
+    return { value: isTranscript(e.path) ? transcript.text : 'one\ntwo\nthree\n' }
+  })
   on('ui.panes', () => ({ value: [] }))
   on('ui.open', (_$, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true } } as never
   })
-  on('tool.call', () => ({ result: { text: 'ok' } }))
+  // A shell command answers with the edits Claude Code diffed for it.
+  on('tool.call', (_$, e) => ({ result: e.tool === 'Bash' ? { stdout: '', bashEditDiff: SHELL_DIFF } : { text: 'ok' } }) as never)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
   on('turn.complete', () => ({ text: '' }))
   mock.clock(on)
@@ -75,21 +95,27 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: '▸ Files · 2 · working' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn({ in: 'tab-tree' }))).toContain(' Tree ')
-  const drawn = JSON.stringify(await ui.drawn({ in: 'list' }))
-  expect(drawn).toContain('a.ts')
-  expect(drawn).toContain('+2')
+  // While Claude is on docs/new.md, the folder without it folds, so the live file stays in view.
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(drawn).toContain('creating')
-  expect(drawn).toContain('▾')
+  expect(drawn).toContain('▸')
+  expect(drawn).not.toContain('a.ts')
+  // The folded src/ carries a.ts's counts, so folding hides no change.
+  expect(drawn).toContain('+2 ')
+  expect(drawn).toContain('−1 ')
 
   await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false, reason: 'end_turn' } as never)
-  const idle = JSON.stringify(await ui.drawn({ in: 'list' }))
+  const idle = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(idle).toContain('a.ts')
+  expect(idle).toContain('+2')
+  expect(idle).toContain('▾')
   expect(idle).not.toContain('creating')
   expect(idle).toContain('"A"')
   expect(idle).toContain('"M"')
 
   // A click on the fourth row (docs, new.md, src, a.ts) opens a.ts in the replay.
   const click = (key: string, y = 0) => ui.pointer({ in: key, type: 'down', button: 'left', x: 2, y })
-  await click('list', 3)
+  await click('list-0', 3)
   const replay = async () => JSON.stringify(await ui.drawn())
   expect(await ui.find({ type: 'Text', text: '1 of 2' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'src/a.ts' })).toBeDefined()
@@ -106,8 +132,8 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
 
   // Back in the tree, a click on the src folder's row folds it away.
   await click('tab-tree')
-  await ui.pointer({ in: 'list', type: 'down', button: 'left', x: 4, y: 2 })
-  expect(JSON.stringify(await ui.drawn({ in: 'list' }))).not.toContain('a.ts')
+  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 4, y: 2 })
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).not.toContain('a.ts')
   await ui.unmount()
 })
 
@@ -117,7 +143,7 @@ test('Windows paths outside the working folder draw from their shared folder', a
   await $.tool.call({ tool: 'Edit', file_path: 'C:\\Users\\A\\.claude\\skills\\mb\\refs\\recipes.md', old_string: 'a', new_string: 'b' } as never)
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: '▸ Files · 2' })).toBeDefined()
-  const drawn = JSON.stringify(await ui.drawn({ in: 'list' }))
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(drawn).toContain('projects/p/memory')
   expect(drawn).not.toContain('Users')
   await ui.unmount()
@@ -127,7 +153,7 @@ test('a read-only file has no diff to replay', async ($, on) => {
   stubs(on)
   await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
   const ui = await $.ui.mount(PANE)
-  await ui.pointer({ in: 'list', type: 'down', button: 'left', x: 2, y: 0 })
+  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 2, y: 0 })
   expect(await ui.find({ type: 'Text', text: /only\.md was only read/ })).toBeDefined()
   await ui.unmount()
 })
@@ -137,7 +163,7 @@ test('show_reads off hides files Claude only read', { options: { show_reads: fal
   await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
   await $.tool.call({ tool: 'Edit', file_path: '/w/e.md', old_string: 'a', new_string: 'b' } as never)
   const ui = await $.ui.mount(PANE)
-  const drawn = JSON.stringify(await ui.drawn({ in: 'list' }))
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(drawn).toContain('e.md')
   expect(drawn).not.toContain('only.md')
   await ui.unmount()
@@ -148,7 +174,7 @@ test('icons=nerd leads the kinds and the title with Nerd icons', { options: { ic
   await $.tool.call({ tool: 'Edit', file_path: '/w/e.md', old_string: 'a', new_string: 'b' } as never)
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: `${nf(0xeb86)} Files · 1` })).toBeDefined()
-  expect(JSON.stringify(await ui.drawn({ in: 'list' }))).toContain(`${nf(0xe609)} `)
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(`${nf(0xe609)} `)
   expect(JSON.stringify(await ui.drawn({ in: 'tab-replay' }))).toContain(`${nf(0xea82)} Replay`)
   await ui.unmount()
 })
@@ -158,7 +184,7 @@ test('icons=safe draws no Nerd glyph', { options: { icons: 'safe' } }, async ($,
   await $.tool.call({ tool: 'Edit', file_path: '/w/e.md', old_string: 'a', new_string: 'b' } as never)
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: '▸ Files · 1' })).toBeDefined()
-  expect(JSON.stringify(await ui.drawn({ in: 'list' }))).toContain('"M"')
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('"M"')
   expect(JSON.stringify(await ui.drawn())).not.toMatch(/[\uE000-\uF8FF\u{F0000}-\u{FFFFD}]/u)
   await ui.unmount()
 })
@@ -193,11 +219,158 @@ test('the Files pill opens the pane from the band', async ($, on) => {
   await band.unmount()
 })
 
+// Transcript rows as Claude Code writes them: a prompt, tool uses, and their results with the stored patch.
+let uuid = 0
+const jrow = (fields: object) => JSON.stringify({ uuid: `u${(uuid += 1)}`, ...fields })
+const prompt = (text: string) => jrow({ type: 'user', message: { role: 'user', content: text } })
+const use = (id: string, name: string, input: object) => jrow({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] } })
+const result = (id: string, toolUseResult: object = {}, isError = false) =>
+  jrow({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok', is_error: isError }] }, toolUseResult })
+const PATCH = { structuredPatch: [{ lines: [' keep', '-old', '+new', '+more'] }] }
+
+const SESSION = [
+  prompt('fix the parser'),
+  use('t-read', 'Read', { file_path: 'C:\\repo\\src\\a.ts' }),
+  result('t-read'),
+  use('t-edit', 'Edit', { file_path: 'C:\\repo\\src\\a.ts', old_string: 'old', new_string: 'new\nmore' }),
+  result('t-edit', PATCH),
+  use('t-bad', 'Edit', { file_path: 'C:\\repo\\src\\b.ts', old_string: 'x', new_string: 'y' }),
+  result('t-bad', {}, true),
+  prompt('now the docs'),
+  use('t-write', 'Write', { file_path: 'C:\\repo\\docs\\new.md', content: 'one\ntwo\n' }),
+  result('t-write', { type: 'create', content: 'one\ntwo\n' }),
+  '',
+].join('\n')
+
+test('the transcript rebuilds every file and edit: the stored patch, a new file, and no step for a failed edit', () => {
+  const parsed = new TranscriptFiles('C:\\repo')
+  for (const line of SESSION.split('\n')) if (line) parsed.feed(line)
+  const log = parsed.log
+  expect(log.turn).toBe(2)
+  expect(log.files.map(file => `${file.path}:${file.kind}:+${file.add}-${file.del}`)).toEqual(['src/a.ts:edit:+2-1', 'src/b.ts:edit:+0-0', 'docs/new.md:new:+2-0'])
+  expect(log.steps.map(step => `${step.turn} ${step.tool} ${step.path} ${step.note}`)).toEqual(['1 Edit src/a.ts ', '2 Write docs/new.md new file'])
+  expect(log.steps[0]!.lines.map(line => `${line.op}${line.t}`)).toEqual([' keep', '-old', '+new', '+more'])
+  expect(turnView(log).files.map(file => file.path)).toEqual(['docs/new.md'])
+})
+
+test('a resumed session, with nothing in $.state, shows the files from its transcript', async ($, on) => {
+  const transcript = { text: SESSION.replace(/C:\\\\repo/g, '/w'), reads: 0 }
+  stubs(on, [], transcript)
+  const ui = await $.ui.mount(PANE)
+  // This turn is the default view; Session shows the whole transcript.
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).not.toContain('a.ts')
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).toContain('a.ts')
+  expect(drawn).toContain('new.md')
+  expect(drawn).toContain('+2')
+  await ui.unmount()
+})
+
+test('the transcript is read once; later calls add on top, and the transcript growing does not re-read it', async ($, on) => {
+  const transcript = { text: [prompt('first'), use('t-old', 'Edit', { file_path: '/w/old.ts', old_string: 'a', new_string: 'b' }), result('t-old', PATCH), ''].join('\n'), reads: 0 }
+  stubs(on, [], transcript)
+  await $.turn.start({ turnId: 't1' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/fresh.ts', old_string: 'x\n', new_string: 'y\n' } as never)
+  transcript.text += [prompt('second'), use('t-fresh', 'Edit', { file_path: '/w/fresh.ts', old_string: 'x\n', new_string: 'y\n' }), result('t-fresh', PATCH), ''].join('\n')
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: 'ok', isAborted: false } as never)
+  expect(transcript.reads).toBe(1)
+
+  const ui = await $.ui.mount(PANE)
+  const turn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(turn).toContain('fresh.ts')
+  expect(turn).not.toContain('old.ts')
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
+  expect(await ui.find({ type: 'Text', text: '▸ Files · 2' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' })).match(/fresh\.ts/g)).toHaveLength(1)
+  await ui.unmount()
+})
+
+test('a session with many files draws in several lists, and a click in a later one opens the right file', async ($, on) => {
+  const reads = Array.from({ length: 150 }, (_, n) => [use(`t-${n}`, 'Read', { file_path: `/w/f${String(n).padStart(3, '0')}.ts` }), result(`t-${n}`)]).flat()
+  const transcript = { text: [prompt('read them all'), ...reads, use('t-edit', 'Edit', { file_path: '/w/f145.ts', old_string: 'a', new_string: 'b' }), result('t-edit', PATCH), ''].join('\n'), reads: 0 }
+  stubs(on, [], transcript)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'list-3' }))).toContain('f145.ts')
+  // A click reports its row within that list, and the list adds its offset into the whole tree.
+  await ui.pointer({ type: 'down', x: 2, y: 145 - 3 * 40, button: 'left', in: 'list-3' } as never)
+  expect(await ui.find({ type: 'Text', text: /Replaying f145\.ts/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a shell command shows the files it changed: diffed ones with their lines, the rest by name', async ($, on) => {
+  stubs(on)
+  await $.turn.start({ turnId: 't1' } as never)
+  await $.tool.call({ tool: 'Bash', command: "node -e \"fs.writeFileSync('hooks/meter.tsx', ...)\"" } as never)
+  // Once the turn ends no row shimmers, so each name is one Text again.
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: 'ok', isAborted: false } as never)
+  const ui = await $.ui.mount(PANE)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).toContain('meter.tsx')
+  expect(drawn).toContain('levels.ts')
+  expect(drawn).toContain('+2 ')
+  await ui.unmount()
+
+  const parsed = new TranscriptFiles('/w')
+  for (const line of [prompt('edit it'), use('t-sh', 'Bash', { command: 'sed -i s/a/b/ x' }), result('t-sh', { stdout: '', bashEditDiff: SHELL_DIFF })]) parsed.feed(line)
+  expect(parsed.log.files.map(file => `${file.path}:+${file.add}-${file.del}`)).toEqual(['hooks/meter.tsx:+2-1', 'hooks/levels.ts:+0-0'])
+  expect(parsed.log.steps.map(step => `${step.tool} ${step.note}`)).toEqual(['Bash shell', 'Bash shell, no diff kept'])
+})
+
+test('the recent view keeps the files of the last N turns, N from the recent_turns setting', { options: { recent_turns: 2 } }, async ($, on) => {
+  const transcript = {
+    text: [
+      prompt('long ago'),
+      use('t-1', 'Edit', { file_path: '/w/old.ts', old_string: 'a', new_string: 'b' }),
+      result('t-1', PATCH),
+      prompt('recent'),
+      use('t-2', 'Edit', { file_path: '/w/recent.ts', old_string: 'a', new_string: 'b' }),
+      result('t-2', PATCH),
+      prompt('now'),
+      use('t-3', 'Read', { file_path: '/w/now.ts' }),
+      result('t-3'),
+      '',
+    ].join('\n'),
+    reads: 0,
+  }
+  stubs(on, [], transcript)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'scope-recent' }))).toContain('Last 2 turns')
+  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-recent' } as never)
+  const recent = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(recent).toContain('recent.ts')
+  expect(recent).toContain('now.ts')
+  expect(recent).not.toContain('old.ts')
+  await ui.unmount()
+})
+
+test('the file Claude is on shimmers: its name draws a letter at a time, in a band that sweeps across', async ($, on) => {
+  stubs(on)
+  await $.turn.start({ turnId: 't1' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/w/live.ts' } as never)
+  const ui = await $.ui.mount(PANE)
+  const lettersOf = async () => JSON.stringify(await ui.drawn({ in: 'list-0' })).match(/"children":\["[a-z.]"\]/g)?.length ?? 0
+  expect(await lettersOf()).toBe('live.ts'.length)
+  // The live row sits on its own band, Moonlight surface-3.
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('#252A42')
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: 'ok', isAborted: false } as never)
+  expect(await lettersOf()).toBe(0)
+  await ui.unmount()
+})
+
+test('clear hides what came before it, though the transcript still holds it', async ($, on) => {
+  const transcript = { text: SESSION.replace(/C:\\\\repo/g, '/w'), reads: 0 }
+  stubs(on, [], transcript)
+  await $.command.run({ command: 'mod-filetree', args: 'clear' })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /^No files touched yet/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('session.start registers the command and /mod-filetree toggles the pane', async ($, on) => {
   const opened: string[] = []
   const registered: string[] = []
   stubs(on, opened)
-  mock.env(on, {})
   on('session.start', () => ({ cwd: '/w' }) as never)
   on('command.register', (_$, e) => {
     registered.push(e.name)

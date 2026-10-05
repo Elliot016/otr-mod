@@ -7,7 +7,8 @@ import { PILL, pillRow, splitRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingsBody, type Action, type Previews } from './settings'
 import { MARK, statusColor, THEME } from './theme'
-import { commit, diffLines, emptyLog, fit, iconOf, latestStepOf, relPath, rootOf, rowsOf, stepsOfTurn, touch, type Entry, type Kind, type Line, type Log } from './tree'
+import { shellPlans, TranscriptFiles } from './transcript'
+import { commit, diffLines, emptyLog, fit, iconOf, latestStepOf, liveFolds, relPath, rootOf, recentView, rowsOf, stepsOfTurn, touch, turnView, type Entry, type Kind, type Line, type Log } from './tree'
 
 const PANE = 'filetree'
 const SETTINGS = 'filetree-settings'
@@ -17,8 +18,14 @@ let wrapDiff = true
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 
-// The log survives a reload in $.state; this copy is what the hooks edit, reloaded from there when empty.
+// The transcript is read once per session start, since a long session's file is large; live calls then update the log. Kept in $.state for the pane and reloads.
 let log: Log | undefined
+let transcript = ''
+// `/mod-filetree clear` hides what came before it; the transcript would bring it back otherwise.
+let cleared = { seq: 0, step: 0 }
+let scope: 'turn' | 'recent' | 'session' = 'turn'
+// How many turns the middle view covers, from the recent_turns setting.
+let recentTurns = 5
 let mode: 'tree' | 'replay' = 'tree'
 // null follows the latest turn that edited something.
 let replayTurn: number | null = null
@@ -30,14 +37,55 @@ let previews: Previews | undefined
 
 const isOpen = async ($: EngineInterface, id: string) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
+// A reload empties the module copy and $.state still holds it; only an empty state reads the transcript.
 async function hydrate($: EngineInterface) {
-  if (!log) log = ((await $.state.get({ plugin: 'mod-filetree', key: 'log' })).value as Log | undefined) ?? emptyLog()
-  return log
+  if (log) return log
+  cleared = (await $.state.get({ plugin: 'mod-filetree', key: 'cleared' })).value ?? cleared
+  log = (await $.state.get({ plugin: 'mod-filetree', key: 'log' })).value as Log | undefined
+  if (!log) await load($)
+  return log ?? (log = emptyLog())
 }
 
 async function save($: EngineInterface) {
   await $.state.set({ plugin: 'mod-filetree', key: 'log' }, log ?? emptyLog())
   $.ui.invalidate('ui.render')
+}
+
+// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
+async function findTranscript($: EngineInterface) {
+  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+  const projects = `${home}/.claude/projects`
+  const file = `${await $.session.id().catch(() => '')}.jsonl`
+  for (const entry of await $.fs.list(projects).catch(() => [])) {
+    const path = `${projects}/${entry.name}/${file}`
+    if (entry.kind === 'dir' && (await $.fs.exists(path).catch(() => false))) return path
+  }
+  return ''
+}
+
+// Builds the log from the whole transcript; a long session outgrows $.fs.read's 4 MiB cap, so it then streams through the platform's file printer.
+async function load($: EngineInterface) {
+  if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
+  if (!transcript) transcript = await findTranscript($)
+  if (!transcript) return
+  let text = String(await $.fs.read(transcript).catch(() => ''))
+  if (!text) {
+    const isWindows = /^[A-Za-z]:|\\/.test(transcript)
+    // cmd's type rejects forward slashes.
+    const argv = isWindows ? ['cmd', '/c', 'type', transcript.replace(/\//g, '\\')] : ['cat', transcript]
+    for await (const chunk of $.process.spawn({ argv })) {
+      if (chunk.stream === 'stdout') text += chunk.text
+    }
+  }
+  const parsed = new TranscriptFiles(String((await $.session.cwd().catch(() => '')) ?? ''))
+  for (const line of text.split('\n')) if (line.trim()) parsed.feed(line)
+  log = { ...parsed.log, working: false }
+}
+
+// The log the pane shows: the whole session or the latest turn, without what a clear hid.
+function viewOf(current: Log): Log {
+  const scoped = scope === 'turn' ? turnView(current) : scope === 'recent' ? recentView(current, recentTurns) : current
+  return { ...scoped, files: scoped.files.filter(file => file.seq > cleared.seq), steps: scoped.steps.filter(step => step.id > cleared.step) }
 }
 
 // Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
@@ -84,7 +132,9 @@ async function toggleSettings($: EngineInterface) {
 }
 
 async function clearAll($: EngineInterface) {
-  log = emptyLog()
+  const current = await hydrate($)
+  cleared = { seq: current.seq, step: current.steps[current.steps.length - 1]?.id ?? 0 }
+  await $.state.set({ plugin: 'mod-filetree', key: 'cleared' }, cleared)
   mode = 'tree'
   replayTurn = null
   index = 0
@@ -108,7 +158,7 @@ async function answer($: EngineInterface, args: string) {
 
 // Opens the file's latest diff in the replay; a file Claude only read has none.
 async function openDiff($: EngineInterface, path: string) {
-  const current = await hydrate($)
+  const current = viewOf(await hydrate($))
   const step = latestStepOf(current, path)
   if (!step) {
     note = `${MARK.warn} ${path} was only read, there is no diff`
@@ -172,6 +222,11 @@ async function planOf($: EngineInterface, e: ToolEvent) {
   return undefined
 }
 
+// The engine refuses a Client whose drawing is too large, which a whole session's tree reaches; each list draws this many rows.
+const LIST_CHUNK = 40
+
+const chunksOf = <T,>(items: T[]) => Array.from({ length: Math.ceil(items.length / LIST_CHUNK) }, (_, n) => items.slice(n * LIST_CHUNK, (n + 1) * LIST_CHUNK))
+
 // The tree's rows as the Client draws them, cut to `width` with the counts and status flush right.
 function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, width: number): ListRow[] {
   const icon = (name: string) => glyphs.glyph.icon[name] ?? ''
@@ -185,7 +240,11 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
     // Safe mode has no folder icon, so a trailing slash tells a folder from a file.
     const name = row.isDir && !glyphs.nerd ? `${row.name}/` : row.name
     const status = !entry ? '' : isLive ? WORD[entry.last].live : STATUS[entry.kind].letter
-    const stats = !entry ? 0 : (entry.add > 0 ? `+${entry.add} `.length : 0) + (entry.del > 0 ? `−${entry.del} `.length : 0)
+    // A folded folder shows what its files add up to, so folding hides no change.
+    const inside = row.isDir && row.isFolded ? current.files.filter(file => file.path.startsWith(`${row.key}/`)) : []
+    const add = entry?.add ?? inside.reduce((sum, file) => sum + file.add, 0)
+    const del = entry?.del ?? inside.reduce((sum, file) => sum + file.del, 0)
+    const stats = (add > 0 ? `+${add} `.length : 0) + (del > 0 ? `−${del} `.length : 0)
     const used = guides.length + (mark ? [...mark].length + 1 : 0) + stats + status.length
     const shown = fit(name, Math.max(6, width - used - 1))
     return {
@@ -193,8 +252,8 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
       mark,
       name: shown,
       tone: !entry ? 'dir' : isLive ? 'live' : STATUS[entry.kind].tone,
-      add: entry?.add ?? 0,
-      del: entry?.del ?? 0,
+      add,
+      del,
       status,
       pad: width - used - shown.length,
     }
@@ -205,6 +264,26 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
 let tipShown = false
 
 const toasts = new ToastList('filetree')
+
+// The entry shimmers from the click until the pane draws, so a slow open never looks ignored.
+const OPEN_WAIT_MS = 8000
+let isOpening = false
+
+function endOpening($: EngineInterface) {
+  if (!isOpening) return
+  isOpening = false
+  $.ui.invalidate('ui.render')
+}
+
+async function openingPane($: EngineInterface) {
+  if (!(await isOpen($, PANE))) {
+    isOpening = true
+    $.ui.invalidate('ui.render')
+    $.clock.after(OPEN_WAIT_MS, () => endOpening($))
+  }
+  await togglePane($)
+  if (!(await isOpen($, PANE))) endOpening($)
+}
 
 export const register: Register = (on, options) => {
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
@@ -220,6 +299,7 @@ export const register: Register = (on, options) => {
 
   showReads = options.show_reads !== false
   wrapDiff = options.wrap_diff !== false
+  recentTurns = Math.min(20, Math.max(2, Math.round(Number(options.recent_turns ?? 5)) || 5))
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto waits for session.start to read the terminal font.
   look = lookFor(iconMode === 'nerd')
@@ -268,7 +348,19 @@ export const register: Register = (on, options) => {
   // Observes only: the call is recorded before it runs (the tree shows it live) and its diff once it succeeds.
   on('tool.call', async ($, e, next) => {
     const plan = await planOf($, e as ToolEvent).catch(() => undefined)
-    if (!plan) return next(e)
+    if (!plan) {
+      if (e.tool !== 'Bash') return next(e)
+      // A shell command's edits come back with its result, as Claude Code diffed them.
+      const ran = await next(e)
+      const cwd = String((await $.session.cwd().catch(() => '')) ?? '')
+      const shells = shellPlans((ran as { result?: { bashEditDiff?: unknown } })?.result?.bashEditDiff, cwd)
+      if (shells.length > 0) {
+        await hydrate($)
+        for (const shell of shells) log = commit(touch(log!, shell.path, shell.kind), shell.path, shell.tool, shell.kind, shell.note, shell.lines)
+        await save($)
+      }
+      return ran
+    }
 
     await hydrate($)
     log = touch(log!, plan.path, plan.kind)
@@ -278,7 +370,7 @@ export const register: Register = (on, options) => {
     const isFailed = typeof result === 'object' && result !== null && ('deny' in result || ('isError' in result && result.isError === true))
     if (plan.kind !== 'read' && !isFailed) {
       log = commit(log!, plan.path, plan.tool, plan.kind, plan.note, plan.lines)
-      if (replayTurn === null) index = Math.max(0, stepsOfTurn(log, null).length - 1)
+      if (replayTurn === null) index = Math.max(0, stepsOfTurn(viewOf(log), null).length - 1)
       await save($)
     }
 
@@ -307,6 +399,22 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // Only the settings hook event names the transcript. A compact keeps the same file and the log already holds it, so only a new transcript is read.
+  on('classic.SessionStart', async ($, e, next) => {
+    if (e.transcript_path !== transcript || !log) {
+      transcript = e.transcript_path
+      log = undefined
+      cleared = { seq: 0, step: 0 }
+      await $.state.set({ plugin: 'mod-filetree', key: 'cleared' }, cleared)
+      await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
+      await load($)
+      log ??= emptyLog()
+      await save($)
+    }
+
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
@@ -324,7 +432,7 @@ export const register: Register = (on, options) => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = (
       <Box key="menu-pad-filetree">
-        <Client key="menu-entry-filetree" module="./entry.tsx" height={1} props={{ id: 'filetree', label: 'Files', isOpen: shown, bg: PILL.primary, idle: THEME.pill }} />
+        <Client key="menu-entry-filetree" module="./entry.tsx" height={1} props={{ id: 'filetree', label: 'Files', isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening }} />
       </Box>
     )
 
@@ -346,14 +454,19 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type !== 'menu-entry') return next(e)
-    if (message.id === 'filetree') await togglePane($)
+    if (message.id === 'filetree') await openingPane($)
     if (message.id === 'tab-tree' || message.id === 'tab-replay') {
       mode = message.id === 'tab-tree' ? 'tree' : 'replay'
       note = ''
       $.ui.invalidate('ui.render')
     }
+    if (message.id === 'scope-turn' || message.id === 'scope-recent' || message.id === 'scope-session') {
+      scope = message.id === 'scope-turn' ? 'turn' : message.id === 'scope-recent' ? 'recent' : 'session'
+      note = ''
+      $.ui.invalidate('ui.render')
+    }
     if (message.id === 'replay-prev' || message.id === 'replay-next') {
-      walk($, message.id === 'replay-prev' ? -1 : 1, stepsOfTurn(await hydrate($), replayTurn).length)
+      walk($, message.id === 'replay-prev' ? -1 : 1, stepsOfTurn(viewOf(await hydrate($)), replayTurn).length)
     }
 
     return next(e)
@@ -363,8 +476,8 @@ export const register: Register = (on, options) => {
   on('ui.message', { requestId: PANE }, async ($, e, next) => {
     const message = e.data as ListMessage
     if (message.type === 'select') {
-      const current = await hydrate($)
-      const row = rowsOf(current, collapsed, showReads)[message.index]
+      const current = viewOf(await hydrate($))
+      const row = rowsOf(current, liveFolds(current, showReads) ?? collapsed, showReads)[message.index]
       if (row?.isDir) fold($, row.key)
       else if (row) await openDiff($, row.key)
     }
@@ -374,6 +487,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE && e.requestId !== SETTINGS) return next(e)
+    if (isOpening) $.clock.after(0, () => endOpening($))
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const elements = { Box, Button, Text }
@@ -402,9 +516,10 @@ export const register: Register = (on, options) => {
 
     // Reading the log subscribes the pane to every tool call; a reload empties the copy, so it is read again.
     await $.state.get({ plugin: 'mod-filetree', key: 'log' })
-    const current = await hydrate($)
-    const rows = rowsOf(current, collapsed, showReads)
-    const touched = rows.filter(row => !row.isDir).length
+    const current = viewOf(await hydrate($))
+    const rows = rowsOf(current, liveFolds(current, showReads) ?? collapsed, showReads)
+    // Every file in the view, folded or not.
+    const touched = current.files.filter(file => showReads || file.kind !== 'read').length
     const { glyph } = look
 
     // Tabs and the replay's steppers are entries: text that lights on hover, the active tab on its own surface.
@@ -420,7 +535,13 @@ export const register: Register = (on, options) => {
     const tree =
       rows.length === 0
         ? <Text key="tree-empty" color={THEME.muted}>No files touched yet. Reads and edits show up here as Claude works.</Text>
-        : <Client key="list" module="./list.tsx" height={rows.length} props={{ rows: listRows(current, rows, look, width) }} />
+        : (
+            <Box key="lists" flexDirection="column">
+              {chunksOf(listRows(current, rows, look, width)).map((chunk, n) => (
+                <Client key={`list-${n}`} module="./list.tsx" height={chunk.length} props={{ rows: chunk, offset: n * LIST_CHUNK }} />
+              ))}
+            </Box>
+          )
     const root = rootOf(current, showReads)
     const rootName = root.split('/').pop() || String(await $.session.cwd().catch(() => '')).replace(/\\/g, '/').split('/').pop() || 'Files'
 
@@ -471,6 +592,10 @@ export const register: Register = (on, options) => {
         <Box key="tabs" flexDirection="row" columnGap={1} marginTop={1}>
           {tab('tab-tree', mode === 'tree', 'files', 'Tree')}
           {tab('tab-replay', mode === 'replay', 'replay', 'Replay')}
+          {mode === 'tree' ? <Text key="scope-sep" color={THEME.border}>│</Text> : null}
+          {mode === 'tree' ? entry('scope-turn', 'This turn', scope === 'turn', scope === 'turn' ? THEME.surface2 : THEME.bg) : null}
+          {mode === 'tree' ? entry('scope-recent', `Last ${recentTurns} turns`, scope === 'recent', scope === 'recent' ? THEME.surface2 : THEME.bg) : null}
+          {mode === 'tree' ? entry('scope-session', 'Session', scope === 'session', scope === 'session' ? THEME.surface2 : THEME.bg) : null}
         </Box>
         {mode === 'tree' ? section(elements, look, 'tree', 'folder-open', rootName, tree) : section(elements, look, 'replay', 'replay', `Turn ${MARK.sep} ${steps.length} ${steps.length === 1 ? 'edit' : 'edits'}`, replay)}
       </Box>

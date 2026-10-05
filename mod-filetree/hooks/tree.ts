@@ -4,8 +4,8 @@ export type Line = { op: '+' | '-' | ' ' | '~'; t: string }
 
 export type Step = { id: number; turn: number; path: string; tool: string; kind: Kind; note: string; add: number; del: number; lines: Line[] }
 
-// One touched file: its strongest action, the latest one, and the line counts its edits added up to.
-export type Entry = { path: string; kind: Kind; last: Kind; seq: number; add: number; del: number }
+// One touched file: its strongest action, the latest one, the last turn that touched it, and the line counts its edits added up to.
+export type Entry = { path: string; kind: Kind; last: Kind; seq: number; lastTurn: number; add: number; del: number }
 
 export type Log = { turn: number; seq: number; working: boolean; files: Entry[]; steps: Step[] }
 
@@ -89,8 +89,8 @@ export function touch(log: Log, path: string, kind: Kind): Log {
   const seq = log.seq + 1
   const found = log.files.find(file => file.path === path)
   const files = found
-    ? log.files.map(file => (file === found ? { ...file, last: kind, seq, kind: STRENGTH[kind] > STRENGTH[file.kind] ? kind : file.kind } : file))
-    : [...log.files, { path, kind, last: kind, seq, add: 0, del: 0 }]
+    ? log.files.map(file => (file === found ? { ...file, last: kind, seq, lastTurn: log.turn, kind: STRENGTH[kind] > STRENGTH[file.kind] ? kind : file.kind } : file))
+    : [...log.files, { path, kind, last: kind, seq, lastTurn: log.turn, add: 0, del: 0 }]
   return { ...log, seq, files }
 }
 
@@ -108,6 +108,24 @@ export function commit(log: Log, path: string, tool: string, kind: Kind, note: s
 export const stepsOfTurn = (log: Log, turn: number | null) => {
   const at = turn ?? log.steps[log.steps.length - 1]?.turn
   return log.steps.filter(step => step.turn === at)
+}
+
+// Only the files the latest turn touched, with that turn's own counts and strongest action.
+export const turnView = (log: Log) => windowView(log, file => file.lastTurn === log.turn, step => step.turn === log.turn)
+
+// Only the files the last `turns` turns touched, with their counts from those turns.
+export const recentView = (log: Log, turns: number) => windowView(log, file => file.lastTurn > log.turn - turns, step => step.turn > log.turn - turns)
+
+function windowView(log: Log, hasFile: (file: Entry) => boolean, hasStep: (step: Step) => boolean): Log {
+  const steps = log.steps.filter(hasStep)
+  const files = log.files
+    .filter(hasFile)
+    .map(file => {
+      const own = steps.filter(step => step.path === file.path)
+      const kind = own.reduce<Kind>((strongest, step) => (STRENGTH[step.kind] > STRENGTH[strongest] ? step.kind : strongest), 'read')
+      return { ...file, kind, add: own.reduce((sum, step) => sum + step.add, 0), del: own.reduce((sum, step) => sum + step.del, 0) }
+    })
+  return { ...log, files, steps }
 }
 
 export const latestStepOf = (log: Log, path: string) => [...log.steps].reverse().find(step => step.path === path)
@@ -132,6 +150,15 @@ export function rootOf(log: Log, showReads: boolean) {
 }
 
 // Flat rows below the root, folders first; single-folder chains merge into one row, like VS Code's compact folders.
+// While Claude is on a file, every folder that doesn't hold it folds, so the live file is always in view; null when nothing is live.
+export function liveFolds(log: Log, showReads: boolean): string[] | null {
+  const live = log.working ? log.files.filter(file => file.seq === log.seq) : []
+  if (live.length === 0) return null
+  return rowsOf(log, [], showReads)
+    .filter(row => row.isDir && !live.some(file => file.path.startsWith(`${row.key}/`)))
+    .map(row => row.key)
+}
+
 export function rowsOf(log: Log, collapsed: string[], showReads: boolean): Row[] {
   const rootPath = rootOf(log, showReads)
   const root: Node = { name: '', key: rootPath, dirs: new Map(), files: [] }

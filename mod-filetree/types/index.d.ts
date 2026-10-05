@@ -6,9 +6,10 @@ declare module 'claude-code' {
         turn: number
         seq: number
         working: boolean
-        files: { path: string; kind: string; last: string; seq: number; add: number; del: number }[]
+        files: { path: string; kind: string; last: string; seq: number; lastTurn: number; add: number; del: number }[]
         steps: { id: number; turn: number; path: string; tool: string; kind: string; note: string; add: number; del: number; lines: { op: string; t: string }[] }[]
       }
+      cleared: { seq: number; step: number }
     }
     'mod-menu': { hidden: boolean }
   }

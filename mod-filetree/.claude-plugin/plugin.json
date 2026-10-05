@@ -27,6 +27,12 @@
       "title": "Wrap long diff lines",
       "description": "Long lines in the replay wrap onto the next row. Off, they are cut at the pane edge",
       "default": true
+    },
+    "recent_turns": {
+      "type": "number",
+      "title": "Turns in the recent view",
+      "description": "How many of the latest turns the middle view of the tree covers, from 2 to 20",
+      "default": 5
     }
   }
 }
