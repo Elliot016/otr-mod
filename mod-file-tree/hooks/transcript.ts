@@ -1,3 +1,5 @@
+import text from './text'
+import { fill } from './theme'
 import { commit, diffLines, emptyLog, relPath, touch, type Kind, type Line, type Log } from './tree'
 
 // What a call does to which file: the live hook and the transcript parse both reduce a call to this.
@@ -23,7 +25,7 @@ export function patchLines(patch: unknown): Line[] | undefined {
   if (!Array.isArray(patch) || patch.length === 0) return undefined
   const out: Line[] = []
   patch.forEach((hunk: any, at) => {
-    if (at > 0) out.push({ op: '~', t: '...' })
+    if (at > 0) out.push({ op: '~', t: text.skipped })
     for (const line of Array.isArray(hunk?.lines) ? hunk.lines : []) {
       if (typeof line !== 'string') continue
       const sign = line[0]
@@ -38,12 +40,12 @@ export function planOfUse(name: string, input: any, cwd: string): Plan | undefin
   const at = (path: unknown) => relPath(cwd, String(path))
   if (name === 'Read' && input?.file_path) return { path: at(input.file_path), tool: 'Read', kind: 'read', note: '', lines: [] }
   if ((name === 'Edit' || name === 'MultiEdit') && input?.file_path) {
-    return { path: at(input.file_path), tool: name, kind: 'edit', note: input.replace_all ? 'replace all' : '', lines: diffLines(String(input.old_string ?? ''), String(input.new_string ?? '')) }
+    return { path: at(input.file_path), tool: name, kind: 'edit', note: input.replace_all ? text.notes.replaceAll : '', lines: diffLines(String(input.old_string ?? ''), String(input.new_string ?? '')) }
   }
   if (name === 'NotebookEdit' && input?.notebook_path) {
-    return { path: at(input.notebook_path), tool: name, kind: 'edit', note: `${String(input.edit_mode ?? 'replace')} cell`, lines: diffLines('', String(input.new_source ?? '')) }
+    return { path: at(input.notebook_path), tool: name, kind: 'edit', note: fill(text.notes.cell, { mode: String(input.edit_mode ?? 'replace') }), lines: diffLines('', String(input.new_source ?? '')) }
   }
-  if (name === 'Write' && input?.file_path) return { path: at(input.file_path), tool: 'Write', kind: 'write', note: 'rewrite', lines: diffLines('', String(input.content ?? '')) }
+  if (name === 'Write' && input?.file_path) return { path: at(input.file_path), tool: 'Write', kind: 'write', note: text.notes.rewrite, lines: diffLines('', String(input.content ?? '')) }
   return undefined
 }
 
@@ -55,11 +57,11 @@ export function shellPlans(diff: any, cwd: string): Plan[] {
     path: at(file.filePath),
     tool: 'Bash',
     kind: file.created ? 'new' : 'edit',
-    note: file.created ? 'new file' : file.deleted ? 'deleted' : 'shell',
+    note: file.created ? text.notes.newFile : file.deleted ? text.notes.deleted : text.notes.shell,
     lines: patchLines(file.hunks) ?? [],
   }))
   const named = (Array.isArray(diff.changedFiles) ? diff.changedFiles : []).map((path: unknown) => at(path)).filter((path: string) => !shown.some(plan => plan.path === path))
-  return [...shown, ...named.map((path: string): Plan => ({ path, tool: 'Bash', kind: 'edit', note: 'shell, no diff kept', lines: [] }))]
+  return [...shown, ...named.map((path: string): Plan => ({ path, tool: 'Bash', kind: 'edit', note: text.notes.shellNoDiff, lines: [] }))]
 }
 
 // Builds the tree and the replay from the transcript, a line at a time, so a re-read feeds only the new lines.
@@ -118,7 +120,7 @@ export class TranscriptFiles {
         const isNew = plan.tool === 'Write' && result?.type === 'create'
         const kind: Kind = isNew ? 'new' : plan.kind
         if (isNew) this.log = touch(this.log, plan.path, 'new')
-        const note = isNew ? 'new file' : plan.note
+        const note = isNew ? text.notes.newFile : plan.note
         const lines = isNew ? diffLines('', String(result?.content ?? '')) : patchLines(result?.structuredPatch) ?? plan.lines
         this.log = commit(this.log, plan.path, plan.tool, kind, note, lines)
       }

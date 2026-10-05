@@ -6,7 +6,7 @@
     { "title": "Replay", "detail": "Steps through the edits of the last turn one diff at a time with Prev and Next; a click on a file in the tree opens its latest diff." }
   ],
   "actions": [
-    { "label": "Clear the tree and the replay", "command": "mod-filetree", "args": "clear" }
+    { "label": "Clear the tree and the replay", "command": "mod-file-tree", "args": "clear" }
   ],
   "previews": {
     "show_reads": {

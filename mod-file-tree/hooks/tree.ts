@@ -1,3 +1,6 @@
+import text from './text'
+import { fill } from './theme'
+
 export type Kind = 'read' | 'edit' | 'write' | 'new'
 
 export type Line = { op: '+' | '-' | ' ' | '~'; t: string }
@@ -42,7 +45,7 @@ function trimContext(lines: Line[]): Line[] {
   let skipped = false
   lines.forEach((line, at) => {
     if (keep[at]) {
-      if (skipped && out.length) out.push({ op: '~', t: '...' })
+      if (skipped && out.length) out.push({ op: '~', t: text.skipped })
       out.push(line)
       skipped = false
     } else skipped = true
@@ -97,7 +100,7 @@ export function touch(log: Log, path: string, kind: Kind): Log {
 // Records a finished edit: its diff steps through the replay, and its counts join the file's.
 export function commit(log: Log, path: string, tool: string, kind: Kind, note: string, lines: Line[]): Log {
   const { add, del } = countOf(lines)
-  const shown = lines.length > MAX_LINES ? [...lines.slice(0, MAX_LINES), { op: '~' as const, t: `... ${lines.length - MAX_LINES} more lines` }] : lines
+  const shown = lines.length > MAX_LINES ? [...lines.slice(0, MAX_LINES), { op: '~' as const, t: fill(text.moreLines, { n: lines.length - MAX_LINES }) }] : lines
   const id = log.steps.length === 0 ? 1 : log.steps[log.steps.length - 1]!.id + 1
   const step: Step = { id, turn: log.turn, path, tool, kind, note, add, del, lines: shown }
   const files = log.files.map(file => (file.path === path ? { ...file, add: file.add + add, del: file.del + del } : file))

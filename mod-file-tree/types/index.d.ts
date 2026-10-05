@@ -1,6 +1,6 @@
 declare module 'claude-code' {
   interface PluginState {
-    'mod-filetree': {
+    'mod-file-tree': {
       pane: boolean
       log: {
         turn: number

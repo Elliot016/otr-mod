@@ -7,7 +7,7 @@ import { diffLines, emptyLog, commit, iconOf, relPath, rootOf, rowsOf, touch, tu
 const nf = (code: number) => String.fromCodePoint(code)
 
 const PANE = {
-  plugin: 'mod-filetree',
+  plugin: 'mod-file-tree',
   surface: 'terminal',
   component: 'Pane',
   requestId: 'filetree',
@@ -93,16 +93,23 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   await $.tool.call({ tool: 'Write', file_path: '/w/docs/new.md', content: 'hi\n' } as never)
 
   const ui = await $.ui.mount(PANE)
-  expect(await ui.find({ type: 'Text', text: '▸ Files · 2 · working' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ Files · 2 · Working' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn({ in: 'tab-tree' }))).toContain(' Tree ')
-  // While Claude is on docs/new.md, the folder without it folds, so the live file stays in view.
+  // The folder without docs/new.md folds; new.md's write landed, so it glows with its letter, not the action word.
   const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
-  expect(drawn).toContain('creating')
+  expect(drawn).not.toContain('creating')
+  expect(drawn).toContain('"A"')
+  expect(drawn).toContain('"backgroundColor":"#252a42"')
   expect(drawn).toContain('▸')
   expect(drawn).not.toContain('a.ts')
   // The folded src/ carries a.ts's counts, so folding hides no change.
-  expect(drawn).toContain('+2 ')
-  expect(drawn).toContain('−1 ')
+  expect(drawn).toContain('"+2"')
+  expect(drawn).toContain('"−1"')
+  // A folder the person opens stays open while Claude works; a second click folds it again.
+  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 3, y: 2 })
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('a.ts')
+  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 3, y: 2 })
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).not.toContain('a.ts')
 
   await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false, reason: 'end_turn' } as never)
   const idle = JSON.stringify(await ui.drawn({ in: 'list-0' }))
@@ -193,13 +200,40 @@ test('the settings pane shows the mod settings and its clear action', async ($, 
   stubs(on)
   on('config.list', () => ({
     value: [
-      { key: 'mod-filetree.show_reads', label: 'Show files Claude only read', kind: 'boolean', value: true, description: 'd' },
+      { key: 'mod-file-tree.show_reads', label: 'Show files Claude only read', kind: 'boolean', value: true, description: 'd' },
     ],
   }) as never)
   await $.tool.call({ tool: 'Edit', file_path: '/w/e.md', old_string: 'a', new_string: 'b' } as never)
   const ui = await $.ui.mount({ ...(PANE as object), requestId: 'filetree-settings' } as never)
-  expect(await ui.find({ type: 'Text', text: '▸ mod-filetree · settings' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ Files · Settings' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Show files Claude only read' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the title row pill swaps the panel for its settings and back', async ($, on) => {
+  const opened: string[] = []
+  stubs(on, opened)
+  on('config.list', () => ({ value: [] }) as never)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'filetree-settings' }))).toContain('Settings')
+  await ui.pointer({ in: 'filetree-settings', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(opened).toEqual(['filetree-settings'])
+  await ui.unmount()
+
+  const settings = await $.ui.mount({ ...(PANE as object), requestId: 'filetree-settings' } as never)
+  expect(JSON.stringify(await settings.drawn({ in: 'filetree-back' }))).toContain('Files')
+  await settings.pointer({ in: 'filetree-back', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(opened).toEqual(['filetree-settings', 'filetree'])
+  await settings.unmount()
+})
+
+test('the live action word sits in its own pill', async ($, on) => {
+  stubs(on)
+  await $.turn.start({ turnId: 't1' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/w/live.ts' } as never)
+  const ui = await $.ui.mount(PANE)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).toContain('"color":"#CED9FF","backgroundColor":"#3A3F5C"},"children":["reading"]')
   await ui.unmount()
 })
 
@@ -208,7 +242,7 @@ test('the Files pill opens the pane from the band', async ($, on) => {
   stubs(on, opened)
   on('state.get', () => ({ value: false, version: 0 }) as never)
   const band = await $.ui.mount({
-    plugin: 'mod-filetree',
+    plugin: 'mod-file-tree',
     surface: 'terminal',
     component: 'AbovePrompt',
     props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} },
@@ -308,7 +342,7 @@ test('a shell command shows the files it changed: diffed ones with their lines, 
   const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(drawn).toContain('meter.tsx')
   expect(drawn).toContain('levels.ts')
-  expect(drawn).toContain('+2 ')
+  expect(drawn).toContain('"+2"')
   await ui.unmount()
 
   const parsed = new TranscriptFiles('/w')
@@ -358,16 +392,27 @@ test('the file Claude is on shimmers: its name draws a letter at a time, in a ba
   await ui.unmount()
 })
 
+test('animations off: the file Claude is on draws whole, without the shimmer', { options: { animations: false } }, async ($, on) => {
+  stubs(on)
+  await $.turn.start({ turnId: 't1' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/w/live.ts' } as never)
+  const ui = await $.ui.mount(PANE)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).toContain('"live.ts"')
+  expect(drawn).toContain('#252A42')
+  await ui.unmount()
+})
+
 test('clear hides what came before it, though the transcript still holds it', async ($, on) => {
   const transcript = { text: SESSION.replace(/C:\\\\repo/g, '/w'), reads: 0 }
   stubs(on, [], transcript)
-  await $.command.run({ command: 'mod-filetree', args: 'clear' })
+  await $.command.run({ command: 'mod-file-tree', args: 'clear' })
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: /^No files touched yet/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('session.start registers the command and /mod-filetree toggles the pane', async ($, on) => {
+test('session.start registers the command and /mod-file-tree toggles the pane', async ($, on) => {
   const opened: string[] = []
   const registered: string[] = []
   stubs(on, opened)
@@ -377,7 +422,7 @@ test('session.start registers the command and /mod-filetree toggles the pane', a
     return { value: undefined } as never
   })
   await $.session.start({ cwd: '/w' } as never)
-  expect(registered).toEqual(['mod-filetree'])
-  await $.command.run({ command: 'mod-filetree', args: 'settings' })
+  expect(registered).toEqual(['mod-file-tree'])
+  await $.command.run({ command: 'mod-file-tree', args: 'settings' })
   expect(opened).toEqual(['filetree-settings'])
 })

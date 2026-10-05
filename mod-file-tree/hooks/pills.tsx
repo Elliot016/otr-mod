@@ -1,14 +1,15 @@
 // Shared pill row, see mod-builder/references/standard.md. Copy unchanged into every mod that draws in the row.
 import type { RenderElement } from 'claude-code'
 
+import style from './style'
+import { CAPS, THEME } from './theme'
+
 // The menu group on Moonlight surface-3, readouts on surface-2.
-export const PILL = { primary: '#252A42', secondary: '#1C2033' }
+export const PILL = { primary: style.colors.pills.primary, secondary: style.colors.pills.secondary }
 
 // Menu entries left to right, by the id in their `menu-pad-<id>` Box key; an unknown id goes last.
 const ENTRY_ORDER = ['manager', 'skills', 'prompts', 'filetree']
 
-const CAP_LEFT ='\uE0B6'
-const CAP_RIGHT = '\uE0B4'
 
 type Node = { props?: Record<string, unknown>; children?: unknown[] } | null | undefined
 type Elements = { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }
@@ -35,7 +36,7 @@ export function splitRow(others: unknown) {
 // The one-line tip above the pill row, filled while the pointer is on an entry.
 export const tipLine = ({ Box, Text }: Elements, text: string) => (
   <Box key="menu-tip" paddingLeft={2}>
-    <Text color="#9BA3C4">{text}</Text>
+    <Text color={THEME.muted}>{text}</Text>
   </Box>
 )
 
@@ -43,11 +44,11 @@ export const tipLine = ({ Box, Text }: Elements, text: string) => (
 export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: unknown, key = 'menu-pill') {
   return (
     <Box key={key} flexDirection="row">
-      {nerd ? <Text key={`${key}-cap-left`} color={bg}>{CAP_LEFT}</Text> : null}
+      {nerd ? <Text key={`${key}-cap-left`} color={bg}>{CAPS.left}</Text> : null}
       <Box key={`${key}-body`} flexDirection="row" backgroundColor={bg}>
         {body}
       </Box>
-      {nerd ? <Text key={`${key}-cap-right`} color={bg}>{CAP_RIGHT}</Text> : null}
+      {nerd ? <Text key={`${key}-cap-right`} color={bg}>{CAPS.right}</Text> : null}
     </Box>
   )
 }
@@ -63,7 +64,7 @@ export function pillRow(elements: Elements, nerd: boolean, group: unknown[], row
   const sorted = [...group].sort((a, b) => rank(a) - rank(b))
   const entries = sorted.flatMap((entry, index) =>
     // Boxes keep their key in the drawn tree and Texts lose it, so the separator sits in a keyed Box the next mod can drop.
-    index === 0 ? [entry] : [<Box key={`menu-group-sep-${index}`}><Text color="#5C6380">•</Text></Box>, entry],
+    index === 0 ? [entry] : [<Box key={`menu-group-sep-${index}`}><Text color={style.colors.pills.separator}>{style.marks.bullet}</Text></Box>, entry],
   )
   return (
     <Box key="menu-rows" flexDirection="column">
@@ -74,6 +75,17 @@ export function pillRow(elements: Elements, nerd: boolean, group: unknown[], row
         {group.length > 0 ? pill(elements, nerd, PILL.primary, entries, 'menu-group') : null}
         {row}
       </Box>
+    </Box>
+  )
+}
+
+// A panel's title row: the title, then a pill entry at the right end that swaps the panel and its settings.
+export function titleRow({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, title: unknown, id: string, label: string, still: boolean) {
+  const entry = <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: false, bg: PILL.primary, idle: THEME.pill, still }} />
+  return (
+    <Box key="title-row" flexDirection="row">
+      <Box key="title-row-text" flexGrow={1} flexShrink={1}>{title}</Box>
+      {pill({ Box, Text }, nerd, PILL.primary, entry, `${id}-pill`)}
     </Box>
   )
 }
