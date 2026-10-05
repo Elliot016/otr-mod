@@ -1,5 +1,7 @@
 // Read-only previews; `$` cannot cross an import, so the caller hands in plain functions (Io).
 import type { Risk } from './risk'
+import text from './text'
+import { fill, MARK } from './theme'
 
 export type Io = {
   cwd: () => Promise<string>
@@ -24,6 +26,8 @@ export type Facts = {
   items?: { path: string; stats: string }[]
   count?: number
   subject?: string
+  // The measured paths in full, so the verdict can tell whether any sits outside the working folder.
+  paths?: string[]
 }
 
 export type Report = {
@@ -55,7 +59,9 @@ export function formatSize(bytes: number) {
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[at]}`
 }
 
-const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`
+type Unit = { one: string; many: string }
+const plural = (count: number, unit: Unit) => fill(count === 1 ? unit.one : unit.many, { n: count })
+const capped = (isCapped: boolean) => (isCapped ? text.atLeast : '')
 
 // Absolute, forward-slash, `.` and `..` folded. Git Bash spells C:\x as /c/x, which a Windows host reads as C:/x.
 export function resolvePath(base: string, home: string, path: string) {
@@ -187,8 +193,8 @@ async function measurePaths(io: Io, paths: string[]) {
 
 const describe = (item: Measured) =>
   item.kind === 'dir'
-    ? `${item.path}/  ${plural(item.tally.files, 'file')}${`, ${plural(item.tally.dirs + 1, 'folder')}`}, ${item.tally.isCapped ? 'at least ' : ''}${formatSize(item.tally.bytes)}`
-    : `${item.path}  ${formatSize(item.size)}`
+    ? fill(text.preview.dirLine, { path: item.path, files: plural(item.tally.files, text.units.file), folders: plural(item.tally.dirs + 1, text.units.folder), capped: capped(item.tally.isCapped), size: formatSize(item.tally.bytes) })
+    : fill(text.preview.fileLine, { path: item.path, size: formatSize(item.size) })
 
 // Home spelled as ~, forward slashes.
 export function tilde(path: string, home: string) {
@@ -200,7 +206,7 @@ const baseOf = (path: string) => path.replace(/\/$/, '').split('/').pop() || pat
 
 const statsOf = (item: Measured) =>
   item.kind === 'dir'
-    ? `${plural(item.tally.files, 'file')} · ${plural(item.tally.dirs + 1, 'folder')} · ${item.tally.isCapped ? 'at least ' : ''}${formatSize(item.tally.bytes)}`
+    ? [plural(item.tally.files, text.units.file), plural(item.tally.dirs + 1, text.units.folder), `${capped(item.tally.isCapped)}${formatSize(item.tally.bytes)}`].join(` ${MARK.sep} `)
     : formatSize(item.size)
 
 const itemsOf = (measured: Measured[], home: string) => measured.map(item => ({ path: `${tilde(item.path, home)}${item.kind === 'dir' ? '/' : ''}`, stats: statsOf(item) }))
@@ -225,72 +231,72 @@ const unknown = (summary: string, note: string): Report => ({ summary, groups: [
 
 const linesOf = (text: string) => text.split(/\r?\n/).filter(line => line !== '')
 
-const capped = (lines: string[], title: string): Group => ({ title, lines: lines.slice(0, LIST_MAX), more: Math.max(0, lines.length - LIST_MAX), all: lines })
+const cappedGroup = (lines: string[], title: string): Group => ({ title, lines: lines.slice(0, LIST_MAX), more: Math.max(0, lines.length - LIST_MAX), all: lines })
 
 type Scope = { io: Io; base: string; home: string }
 
 async function measureRm({ io, base, home }: Scope, risk: Risk): Promise<Report> {
-  if (!risk.targets.length) return unknown(`${risk.label} (no paths to list)`, 'The paths come from a pipe or another command, so none can be listed here.')
+  if (!risk.targets.length) return unknown(fill(text.preview.noPaths, { label: risk.label }), text.preview.rmNoPathsNote)
   const { existing, missing } = await resolveTargets(io, base, home, risk.targets)
-  if (!existing.length) return { summary: 'delete nothing: no path matches', groups: [], note: `Targets: ${risk.targets.join(' ')}` }
+  if (!existing.length) return { summary: text.preview.deleteNothing, groups: [], note: fill(text.preview.targets, { targets: risk.targets.join(' ') }) }
   const measured = await measurePaths(io, existing)
   const total = totals(measured)
-  const folders = total.dirs ? ` and ${plural(total.dirs, 'folder')}` : ''
-  const note = [missing ? `${plural(missing, 'named path')} not found.` : '', 'Deleted files skip the recycle bin.'].filter(Boolean).join(' ')
+  const folders = total.dirs ? fill(text.preview.andFolders, { folders: plural(total.dirs, text.units.folder) }) : ''
+  const note = [missing ? fill(text.preview.notFound, { paths: plural(missing, text.units.namedPath) }) : '', text.preview.recycleNote].filter(Boolean).join(' ')
   return {
-    summary: `delete ${plural(total.files, 'file')}${folders} (${total.isCapped ? 'at least ' : ''}${formatSize(total.bytes)})`,
-    groups: [pathGroup('Would be deleted', measured)],
-    listTitle: `Would delete · ${plural(total.files, 'file')} · ${total.isCapped ? 'at least ' : ''}${formatSize(total.bytes)}`,
-    facts: { files: total.files, folders: total.dirs, bytes: total.bytes, items: itemsOf(measured, home), subject: measured.length === 1 ? baseOf(measured[0]!.path) : plural(measured.length, 'path') },
+    summary: fill(text.preview.deleteSummary, { files: plural(total.files, text.units.file), folders, capped: capped(total.isCapped), size: formatSize(total.bytes) }),
+    groups: [pathGroup(text.preview.wouldBeDeleted, measured)],
+    listTitle: [text.preview.wouldDelete, plural(total.files, text.units.file), `${capped(total.isCapped)}${formatSize(total.bytes)}`].join(` ${MARK.sep} `),
+    facts: { files: total.files, folders: total.dirs, bytes: total.bytes, items: itemsOf(measured, home), paths: measured.map(item => item.path), subject: measured.length === 1 ? baseOf(measured[0]!.path) : plural(measured.length, text.units.path) },
     note,
   }
 }
 
 async function measureMv({ io, base, home }: Scope, risk: Risk): Promise<Report> {
-  if (!risk.targets.length) return unknown('mv (no source paths to list)', 'The sources come from a pipe or another command.')
+  if (!risk.targets.length) return unknown(text.preview.mvNoSources, text.preview.mvNoSourcesNote)
   const dest = resolvePath(base, home, risk.dest ?? '')
   const destStat = await io.stat(dest).catch(() => null)
-  if (!destStat) return { summary: 'overwrite nothing: the destination does not exist', groups: [], note: '', isHarmless: true }
+  if (!destStat) return { summary: text.preview.overwriteNoDest, groups: [], note: '', isHarmless: true }
   const { existing } = await resolveTargets(io, base, home, risk.targets)
   const hit: string[] = []
   for (const source of existing) {
     const target = destStat.kind === 'dir' ? `${dest.replace(/\/$/, '')}/${source.split('/').pop()}` : dest
     if (await io.stat(target).then(() => true, () => false)) hit.push(target)
   }
-  if (!hit.length) return { summary: 'overwrite nothing: no destination file exists yet', groups: [], note: '', isHarmless: true }
+  if (!hit.length) return { summary: text.preview.overwriteNoFile, groups: [], note: '', isHarmless: true }
   const measured = await measurePaths(io, [...new Set(hit)])
   return {
-    summary: `replace ${plural(measured.length, 'existing path')}`,
-    groups: [pathGroup('Would be replaced', measured)],
-    note: 'The old content is gone once mv runs.',
-    facts: { items: itemsOf(measured, home), count: measured.length, subject: measured.length === 1 ? baseOf(measured[0]!.path) : plural(measured.length, 'file') },
+    summary: fill(text.preview.replaceSummary, { paths: plural(measured.length, text.units.existingPath) }),
+    groups: [pathGroup(text.preview.wouldBeReplaced, measured)],
+    note: text.preview.mvNote,
+    facts: { items: itemsOf(measured, home), paths: measured.map(item => item.path), count: measured.length, subject: measured.length === 1 ? baseOf(measured[0]!.path) : plural(measured.length, text.units.file) },
   }
 }
 
 async function measureRedirect({ io, base, home }: Scope, risk: Risk): Promise<Report> {
   const target = risk.args[0] ?? ''
-  if (/[$*?`]/.test(target)) return { summary: 'truncate nothing: the target is built at run time', groups: [], note: '', isHarmless: true }
+  if (/[$*?`]/.test(target)) return { summary: text.preview.truncateBuilt, groups: [], note: '', isHarmless: true }
   const path = resolvePath(base, home, target)
   const stat = await io.stat(path).catch(() => null)
-  if (!stat || stat.kind !== 'file') return { summary: 'truncate nothing: the file does not exist', groups: [], note: '', isHarmless: true }
+  if (!stat || stat.kind !== 'file') return { summary: text.preview.truncateMissing, groups: [], note: '', isHarmless: true }
   const item: Measured = { path, kind: 'file', size: stat.size, tally: { files: 1, dirs: 0, bytes: stat.size, isCapped: false, items: [{ path, size: stat.size }] } }
   return {
-    summary: `empty ${path} (${formatSize(stat.size)} now)`,
-    groups: [pathGroup('Would be overwritten', [item])],
-    note: 'A single > replaces the whole file. >> would append.',
-    facts: { items: itemsOf([item], home), subject: baseOf(path) },
+    summary: fill(text.preview.emptySummary, { path, size: formatSize(stat.size) }),
+    groups: [pathGroup(text.preview.wouldBeOverwritten, [item])],
+    note: text.preview.redirectNote,
+    facts: { items: itemsOf([item], home), paths: [path], subject: baseOf(path) },
   }
 }
 
 async function measureTree({ io, base, home }: Scope, risk: Risk): Promise<Report> {
-  if (!risk.targets.length) return unknown(`${risk.label} (no paths to list)`, 'The paths come from a pipe or another command.')
+  if (!risk.targets.length) return unknown(fill(text.preview.noPaths, { label: risk.label }), text.preview.treeNoPaths)
   const { existing } = await resolveTargets(io, base, home, risk.targets)
-  if (!existing.length) return { summary: `${risk.label}: no path matches`, groups: [], note: `Targets: ${risk.targets.join(' ')}` }
+  if (!existing.length) return { summary: fill(text.preview.noPathMatches, { label: risk.label }), groups: [], note: fill(text.preview.targets, { targets: risk.targets.join(' ') }) }
   const measured = await measurePaths(io, existing)
   const total = totals(measured)
-  const reach = `${plural(total.files + total.dirs, 'entry', 'entries')}${total.isCapped ? ' or more' : ''}`
-  if (risk.kind === 'chmod') return { summary: `${risk.label}: up to ${reach}`, groups: [pathGroup('Reaches', measured)], note: 'Every file and folder under these paths changes.', facts: { items: itemsOf(measured, home), count: total.files + total.dirs, subject: measured.length === 1 ? baseOf(measured[0]!.path) : plural(measured.length, 'path') } }
-  return { summary: `delete matching files under ${plural(measured.length, 'start path')} (up to ${plural(total.files, 'file')})`, groups: [pathGroup('Searches under', measured)], note: 'The find expression picks which of these go; it is not evaluated here.', facts: { items: itemsOf(measured, home), count: total.files, subject: measured.length === 1 ? baseOf(measured[0]!.path) : plural(measured.length, 'path') } }
+  const reach = `${plural(total.files + total.dirs, text.units.entry)}${total.isCapped ? text.orMore : ''}`
+  if (risk.kind === 'chmod') return { summary: fill(text.preview.chmodSummary, { label: risk.label, reach }), groups: [pathGroup(text.preview.reaches, measured)], note: text.preview.chmodNote, facts: { items: itemsOf(measured, home), count: total.files + total.dirs, subject: measured.length === 1 ? baseOf(measured[0]!.path) : plural(measured.length, text.units.path) } }
+  return { summary: fill(text.preview.findSummary, { paths: plural(measured.length, text.units.startPath), files: plural(total.files, text.units.file) }), groups: [pathGroup(text.preview.searchesUnder, measured)], note: text.preview.findNote, facts: { items: itemsOf(measured, home), count: total.files, subject: measured.length === 1 ? baseOf(measured[0]!.path) : plural(measured.length, text.units.path) } }
 }
 
 async function measureClean({ io, base }: Scope, risk: Risk): Promise<Report> {
@@ -312,36 +318,36 @@ async function measureClean({ io, base }: Scope, risk: Risk): Promise<Report> {
     } else if (!arg.startsWith('-')) paths.push(arg)
   }
   const run = await io.run(['git', 'clean', '-n', ...flags, '--', ...paths], base)
-  if (run.exitCode !== 0) return unknown('git clean (dry run failed)', run.stderr.trim().slice(0, 200))
+  if (run.exitCode !== 0) return unknown(text.preview.cleanFailed, run.stderr.trim().slice(0, 200))
   const gone = linesOf(run.stdout).filter(line => line.startsWith('Would remove ')).map(line => line.slice(13))
   return {
-    summary: gone.length ? `remove ${plural(gone.length, 'untracked path')}` : 'remove nothing: no untracked path matches',
-    groups: gone.length ? [capped(gone, 'Would be removed')] : [],
-    note: 'From git clean -n. Untracked files are not in git, so they cannot be recovered.',
+    summary: gone.length ? fill(text.preview.removeSummary, { paths: plural(gone.length, text.units.untrackedPath) }) : text.preview.removeNothing,
+    groups: gone.length ? [cappedGroup(gone, text.preview.wouldBeRemoved)] : [],
+    note: text.preview.cleanNote,
     facts: { count: gone.length },
   }
 }
 
 async function measureReset({ io, base }: Scope, risk: Risk): Promise<Report> {
   const status = await io.run(['git', 'status', '--porcelain'], base)
-  if (status.exitCode !== 0) return unknown('git reset --hard (not a git repo here?)', status.stderr.trim().slice(0, 200))
+  if (status.exitCode !== 0) return unknown(text.preview.resetNotRepo, status.stderr.trim().slice(0, 200))
   const lost = linesOf(status.stdout).filter(line => !line.startsWith('??')).map(line => `${line.slice(0, 2)} ${line.slice(3)}`)
   const ref = risk.args.find(arg => !arg.startsWith('-'))
-  const groups: Group[] = lost.length ? [capped(lost, 'Uncommitted changes lost')] : []
+  const groups: Group[] = lost.length ? [cappedGroup(lost, text.preview.uncommittedLost)] : []
   let dropped = 0
   if (ref) {
     const log = await io.run(['git', 'log', '--oneline', '--no-decorate', `${ref}..HEAD`], base)
     const commits = log.exitCode === 0 ? linesOf(log.stdout) : []
     dropped = commits.length
-    if (commits.length) groups.push(capped(commits, `Commits the branch leaves (${ref})`))
+    if (commits.length) groups.push(cappedGroup(commits, fill(text.preview.branchLeaves, { ref })))
   }
   const stat = await io.run(['git', 'diff', '--shortstat', 'HEAD'], base)
-  const parts = [lost.length ? `discard uncommitted changes in ${plural(lost.length, 'file')}` : '', dropped ? `move the branch off ${plural(dropped, 'commit')}` : ''].filter(Boolean)
+  const parts = [lost.length ? fill(text.preview.discardUncommitted, { files: plural(lost.length, text.units.file) }) : '', dropped ? fill(text.preview.moveOff, { commits: plural(dropped, text.units.commit) }) : ''].filter(Boolean)
   const shortstat = stat.exitCode === 0 ? stat.stdout.trim() : ''
   return {
-    summary: parts.length ? parts.join(' and ') : 'discard nothing: no uncommitted changes',
+    summary: parts.length ? parts.join(text.preview.joinAnd) : text.preview.discardNothing,
     groups,
-    note: shortstat ? `${shortstat}. Uncommitted changes cannot be recovered.` : 'From git status --porcelain. Untracked files stay.',
+    note: shortstat ? fill(text.preview.resetStatNote, { stat: shortstat }) : text.preview.resetNote,
     facts: { count: lost.length, files: dropped },
   }
 }
@@ -352,13 +358,13 @@ async function measureCheckout({ io, base }: Scope, risk: Risk): Promise<Report>
   const paths = cut >= 0 ? risk.args.slice(cut + 1) : isRestore ? risk.args.filter(arg => !arg.startsWith('-')) : risk.args.filter(arg => arg === '.')
   const isForced = risk.args.some(arg => arg === '-f' || arg === '--force')
   const status = await io.run(['git', 'status', '--porcelain', '--', ...paths], base)
-  if (status.exitCode !== 0) return unknown(`${risk.label} (not a git repo here?)`, status.stderr.trim().slice(0, 200))
+  if (status.exitCode !== 0) return unknown(fill(text.preview.notRepo, { label: risk.label }), status.stderr.trim().slice(0, 200))
   const rows = linesOf(status.stdout).filter(line => !line.startsWith('??'))
   const lost = (isForced ? rows : rows.filter(line => line[1] !== ' ')).map(line => `${line.slice(0, 2)} ${line.slice(3)}`)
   return {
-    summary: lost.length ? `discard changes in ${plural(lost.length, 'file')}` : 'discard nothing: no unstaged changes there',
-    groups: lost.length ? [capped(lost, 'Changes lost')] : [],
-    note: 'From git status --porcelain. Unstaged changes cannot be recovered.',
+    summary: lost.length ? fill(text.preview.discardChanges, { files: plural(lost.length, text.units.file) }) : text.preview.discardNothingUnstaged,
+    groups: lost.length ? [cappedGroup(lost, text.preview.changesLost)] : [],
+    note: text.preview.checkoutNote,
     facts: { count: lost.length },
   }
 }
@@ -378,36 +384,36 @@ async function measurePush({ io, base }: Scope, risk: Risk): Promise<Report> {
   source = source || 'HEAD'
   const ref = `${remote}/${branch}`
   const known = await io.run(['git', 'rev-parse', '--verify', '--quiet', ref], base)
-  if (known.exitCode !== 0) return unknown(`force-push to ${ref}`, `No local copy of ${ref}, so the commits it would drop are unknown. Run git fetch first.`)
+  if (known.exitCode !== 0) return unknown(fill(text.preview.forcePushTo, { ref }), fill(text.preview.noLocalCopy, { ref }))
   const log = await io.run(['git', 'log', '--oneline', '--no-decorate', `${source}..${ref}`], base)
   const dropped = linesOf(log.stdout)
   return {
-    summary: dropped.length ? `force-push to ${ref}: drops ${plural(dropped.length, 'commit')}` : `force-push to ${ref}: drops no commits`,
-    groups: dropped.length ? [capped(dropped, `Commits on ${ref} that ${source} lacks`)] : [],
-    note: 'As of the last fetch.',
+    summary: dropped.length ? fill(text.preview.forcePushDrops, { ref, commits: plural(dropped.length, text.units.commit) }) : fill(text.preview.forcePushDropsNone, { ref }),
+    groups: dropped.length ? [cappedGroup(dropped, fill(text.preview.commitsLack, { ref, source }))] : [],
+    note: text.preview.pushNote,
     facts: { count: dropped.length, subject: ref },
   }
 }
 
 async function measureBranches({ io, base }: Scope, risk: Risk): Promise<Report> {
   const names = risk.targets.slice(0, 5)
-  if (!names.length) return unknown('git branch -D (no branch named)', '')
+  if (!names.length) return unknown(text.preview.noBranchNamed, '')
   const groups: Group[] = []
   let total = 0
   for (const name of names) {
     const log = await io.run(['git', 'log', '--oneline', '--no-decorate', `HEAD..${name}`], base)
     if (log.exitCode !== 0) {
-      groups.push({ title: name, lines: ['not found as a local branch'], more: 0 })
+      groups.push({ title: name, lines: [text.preview.branchNotFound], more: 0 })
       continue
     }
     const commits = linesOf(log.stdout)
     total += commits.length
-    groups.push(capped(commits.length ? commits : ['no commits missing from the current branch'], `Only on ${name}`))
+    groups.push(cappedGroup(commits.length ? commits : [text.preview.noCommitsMissing], fill(text.preview.onlyOn, { name })))
   }
   return {
-    summary: `delete ${plural(names.length, 'branch', 'branches')}, ${plural(total, 'commit')} not on the current branch`,
+    summary: fill(text.preview.deleteBranches, { branches: plural(names.length, text.units.branch), commits: plural(total, text.units.commit) }),
     groups,
-    note: 'The commits stay in the reflog for a while, then git collects them.',
+    note: text.preview.branchNote,
     facts: { count: total, subject: names.join(', ') },
   }
 }
@@ -415,9 +421,9 @@ async function measureBranches({ io, base }: Scope, risk: Risk): Promise<Report>
 function measureSql(risk: Risk): Report {
   const statements = risk.statements ?? []
   return {
-    summary: `run ${plural(statements.length, 'destructive SQL statement')}`,
-    groups: [capped(statements, 'Statements')],
-    note: 'Row counts and the target database cannot be read from the command line.',
+    summary: fill(text.preview.runSql, { statements: plural(statements.length, text.units.destructiveStatement) }),
+    groups: [cappedGroup(statements, text.preview.statements)],
+    note: text.preview.sqlNote,
   }
 }
 
@@ -427,10 +433,10 @@ export async function measure(io: Io, risk: Risk): Promise<Report> {
     const session = await io.cwd()
     const home = await io.home()
     let base = session
-    if (risk.dir === '-') return unknown(`${risk.label} (runs after cd -)`, 'The command changes to the previous folder first, so where it runs is unknown.')
+    if (risk.dir === '-') return unknown(fill(text.preview.afterCdDash, { label: risk.label }), text.preview.afterCdDashNote)
     if (risk.dir) {
       base = resolvePath(session, home, risk.dir)
-      if (!(await io.stat(base).then(() => true, () => false))) return unknown(`${risk.label} (folder ${risk.dir} not found)`, 'The folder does not exist yet, so nothing could be measured.')
+      if (!(await io.stat(base).then(() => true, () => false))) return unknown(fill(text.preview.folderMissing, { label: risk.label, dir: risk.dir }), text.preview.folderMissingNote)
     }
     const scope = { io, base, home }
     switch (risk.kind) {
@@ -445,9 +451,9 @@ export async function measure(io: Io, risk: Risk): Promise<Report> {
       case 'git-push-force': return await measurePush(scope, risk)
       case 'git-branch-delete': return await measureBranches(scope, risk)
       case 'sql': return measureSql(risk)
-      default: return unknown(risk.isError ? `${risk.label} (could not evaluate)` : "change files that can't be listed before it runs", risk.isError ? risk.reason : 'Its files are only known once it runs, so nothing can be listed ahead.')
+      default: return unknown(risk.isError ? fill(text.preview.couldNotEvaluate, { label: risk.label }) : text.preview.cantList, risk.isError ? risk.reason : text.preview.cantListNote)
     }
   } catch (error) {
-    return unknown(`${risk.label} (preview failed)`, `Could not measure: ${String((error as Error)?.message ?? error).slice(0, 200)}`)
+    return unknown(fill(text.preview.previewFailed, { label: risk.label }), fill(text.preview.couldNotMeasure, { why: String((error as Error)?.message ?? error).slice(0, 200) }))
   }
 }

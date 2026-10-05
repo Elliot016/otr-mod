@@ -1,4 +1,6 @@
 // Pure matcher: which Bash commands are risky. No engine calls, so tests feed it plain strings.
+import words from './text'
+import { fill } from './theme'
 
 export type RiskKind =
   | 'rm'
@@ -340,18 +342,18 @@ export function heredocs(command: string): { code: string; found: Heredoc[] } {
 export const stripHeredocs = (command: string) => heredocs(command).code
 
 const REASON: Record<RiskKind, string> = {
-  rm: 'File deletion (rm, rmdir, del, Remove-Item)',
-  mv: 'Move over an existing file',
-  chmod: 'Recursive chmod/chown/chgrp',
-  'find-delete': 'find -exec rm (can be as destructive as rm -rf)',
-  redirect: 'Truncating an existing file with > redirection',
-  sql: 'Destructive database command (DROP/TRUNCATE/DELETE/VACUUM/ALTER DROP)',
-  'git-reset': 'Git force push or hard reset',
-  'git-clean': 'Destructive git operation (clean, checkout ., restore ., branch -D)',
-  'git-checkout': 'Destructive git operation (clean, checkout ., restore ., branch -D)',
-  'git-push-force': 'Git force push or hard reset',
-  'git-branch-delete': 'Destructive git operation (clean, checkout ., restore ., branch -D)',
-  rule: 'Matched a rule',
+  rm: words.reasons.kindRm,
+  mv: words.reasons.kindMv,
+  chmod: words.reasons.kindChmod,
+  'find-delete': words.reasons.kindFindExec,
+  redirect: words.reasons.kindRedirect,
+  sql: words.reasons.sql,
+  'git-reset': words.reasons.gitForce,
+  'git-clean': words.reasons.gitDestructive,
+  'git-checkout': words.reasons.gitDestructive,
+  'git-push-force': words.reasons.gitForce,
+  'git-branch-delete': words.reasons.gitDestructive,
+  rule: words.reasons.kindRule,
 }
 
 // ---- Port of block-destructive-with-askuser.py: temp-safe deletion logic ----
@@ -491,7 +493,7 @@ export const CHECKS: Check[] = [
     cmd: /^rm$/,
     unmasked: true,
     pattern: /\brm\s+.*(-[a-zA-Z]*[rf][a-zA-Z]*\s+|(-[a-zA-Z]*\s+)*)(~|\$HOME|\.\.|\s+\/\s*$|\s+\/[^tv])/,
-    reason: 'Recursive deletion of a root, home or parent directory',
+    reason: words.reasons.rootDelete,
     source: 'temp',
     kinds: ['rm'],
   },
@@ -500,7 +502,7 @@ export const CHECKS: Check[] = [
     cmd: /^rm$/,
     unmasked: true,
     pattern: new RegExp(String.raw`\brm\s+.*(-r|-R|--recursive).*\s+(${CRITICAL_DIRS})(/|$|\s)`),
-    reason: 'Recursive deletion of a critical project directory',
+    reason: words.reasons.criticalDelete,
     source: 'temp',
     kinds: ['rm'],
   },
@@ -509,7 +511,7 @@ export const CHECKS: Check[] = [
     cmd: /^rm$/,
     unmasked: true,
     pattern: /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*|--recursive)\b/,
-    reason: 'Recursive deletion (rm -r/rm -rf)',
+    reason: words.reasons.recursiveDelete,
     source: 'temp',
     kinds: ['rm'],
   },
@@ -519,7 +521,7 @@ export const CHECKS: Check[] = [
     cmd: /^rm$/,
     unmasked: true,
     pattern: /\brm\s+(-[a-zA-Z]*\s+)*[^-]/,
-    reason: 'File deletion with rm',
+    reason: words.reasons.fileDelete,
     source: 'temp',
     kinds: ['rm'],
   },
@@ -527,7 +529,7 @@ export const CHECKS: Check[] = [
     // Unity Catalog widens the destructive DDL surface to SCHEMA, CATALOG and VOLUME; VACUUM drops Delta history.
     label: 'sql',
     pattern: /\bDROP\s+(TABLE|DATABASE|SCHEMA|CATALOG|VIEW|FUNCTION|VOLUME)\b|\bTRUNCATE\s+(TABLE\s+)?\S|\bDELETE\s+FROM\s+\S+\s*;?\s*$|\bALTER\s+TABLE\s+\S+\s+DROP\s+(COLUMN|CONSTRAINT|FEATURE)\b|\bALTER\s+(TABLE|SCHEMA)\s+\S+\s+RENAME\b|\bVACUUM\s+\S/i,
-    reason: 'Destructive database command (DROP/TRUNCATE/DELETE/VACUUM/ALTER DROP)',
+    reason: words.reasons.sql,
     source: 'normalized',
     kinds: ['sql'],
     kind: 'sql',
@@ -537,7 +539,7 @@ export const CHECKS: Check[] = [
     label: 'git push --force',
     cmd: /^git$/,
     pattern: /\bgit\s+push\b.*\s(--force|-f)(\s|$)|\bgit\s+push\b.*--force-with-lease\b|\bgit\s+reset\s+--hard\b/,
-    reason: 'Git force push or hard reset',
+    reason: words.reasons.gitForce,
     source: 'normalized',
     kinds: ['git-push-force', 'git-reset'],
   },
@@ -545,7 +547,7 @@ export const CHECKS: Check[] = [
     label: 'git destructive',
     cmd: /^git$/,
     pattern: /\bgit\s+(clean\s+-[a-zA-Z]*[fd]|checkout\s+\.|restore\s+\.|branch\s+-D)\b/,
-    reason: 'Destructive git operation (clean, checkout ., restore ., branch -D)',
+    reason: words.reasons.gitDestructive,
     source: 'normalized',
     kinds: ['git-clean', 'git-checkout', 'git-branch-delete'],
   },
@@ -553,7 +555,7 @@ export const CHECKS: Check[] = [
     label: 'git stash',
     cmd: /^git$/,
     pattern: /\bgit\s+stash\s+(drop|clear)\b/,
-    reason: 'git stash drop/clear destroys local work permanently',
+    reason: words.reasons.gitStash,
     source: 'normalized',
     kinds: [],
   },
@@ -561,7 +563,7 @@ export const CHECKS: Check[] = [
     label: 'git push --delete',
     cmd: /^git$/,
     pattern: /\bgit\s+push\b.*--delete\b/,
-    reason: 'git push --delete removes a remote branch or tag permanently',
+    reason: words.reasons.gitPushDelete,
     source: 'normalized',
     kinds: [],
   },
@@ -570,7 +572,7 @@ export const CHECKS: Check[] = [
     label: 'make deploy',
     cmd: /^make$/,
     pattern: /\bmake\s+(bundle-deploy|app-deploy|deploy)\b.*(STAGE|TARGET|ENV)=(prod|production)\b|\bmake\s+app-deploy\b/i,
-    reason: 'Application or bundle deploy to production',
+    reason: words.reasons.makeDeploy,
     source: 'normalized',
     kinds: [],
   },
@@ -579,7 +581,7 @@ export const CHECKS: Check[] = [
     label: 'make migrate',
     cmd: /^make$/,
     pattern: /\bmake\s+warehouse-migrate\b|\bmake\s+pipeline\b.*\bTARGET=prod\b/i,
-    reason: 'Database migration or pipeline run in production',
+    reason: words.reasons.makeMigrate,
     source: 'normalized',
     kinds: [],
   },
@@ -587,7 +589,7 @@ export const CHECKS: Check[] = [
     label: 'databricks bundle destroy',
     cmd: /^databricks$/,
     pattern: /\bdatabricks\s+bundle\s+destroy\b/,
-    reason: 'databricks bundle destroy removes every bundle resource from the environment',
+    reason: words.reasons.bundleDestroy,
     source: 'normalized',
     kinds: [],
   },
@@ -595,7 +597,7 @@ export const CHECKS: Check[] = [
     label: 'deploy to prod',
     cmd: /deploy|^gcloud$/,
     pattern: /\bdeploy.*--env[= ](prod|production)\b|\bgcloud.*--project[= ]acme-prod\b/i,
-    reason: 'Deploy or operation in production (gcloud/generic)',
+    reason: words.reasons.deployProd,
     source: 'normalized',
     kinds: [],
   },
@@ -603,7 +605,7 @@ export const CHECKS: Check[] = [
     label: 'gcloud delete',
     cmd: /^(gcloud|gsutil)$/,
     pattern: /\bgsutil\s+(rm|del|delete).*-r\b|\bgcloud\s+(dataproc|composer|sql).*delete\b|\bgcloud\s+projects\s+delete\b/i,
-    reason: 'Destructive cloud operation (GCP bucket or resource deletion)',
+    reason: words.reasons.gcloudDelete,
     source: 'normalized',
     kinds: [],
   },
@@ -611,7 +613,7 @@ export const CHECKS: Check[] = [
     label: 'az delete',
     cmd: /^az$/,
     pattern: /\baz\s+group\s+delete\b|\baz\s+storage\s+(blob|container)\s+(delete|delete-batch)\b|\baz\s+databricks\s+workspace\s+delete\b|\baz\s+keyvault\s+(delete|purge)\b/i,
-    reason: 'Destructive cloud operation (Azure resource deletion)',
+    reason: words.reasons.azDelete,
     source: 'normalized',
     kinds: [],
   },
@@ -619,7 +621,7 @@ export const CHECKS: Check[] = [
     label: 'databricks delete',
     cmd: /^databricks$/,
     pattern: /\bdatabricks\s+secrets\s+delete-scope\b|\bdatabricks\s+workspace\s+delete\b/,
-    reason: 'Databricks CLI: delete-scope removes every secret in the scope; workspace delete removes workspace objects',
+    reason: words.reasons.databricksDelete,
     source: 'normalized',
     kinds: [],
   },
@@ -627,7 +629,7 @@ export const CHECKS: Check[] = [
     label: 'chmod',
     cmd: /^(chmod|chown)$/,
     pattern: /\b(chmod|chown)\s+.*-R\b|\bchmod\s+.*777\b/,
-    reason: 'Recursive chmod/chown or unsafe permissions (777)',
+    reason: words.reasons.chmodUnsafe,
     source: 'normalized',
     kinds: ['chmod'],
   },
@@ -635,7 +637,7 @@ export const CHECKS: Check[] = [
     label: 'curl | sh',
     cmd: /^(curl|wget|fetch)$/,
     pattern: /\b(curl|wget|fetch)\b.*\|\s*(bash|sh|zsh|python|perl|ruby)\b/,
-    reason: 'Piping remote content into a shell (curl | bash)',
+    reason: words.reasons.curlSh,
     source: 'raw',
     kinds: [],
   },
@@ -643,7 +645,7 @@ export const CHECKS: Check[] = [
     label: 'secret read',
     cmd: /^(cat|less|head|tail|more|source|grep|sed|awk|bat|echo)$/,
     pattern: /\b(cat|less|head|tail|more|source|grep|sed|awk|bat)\s+(\.env\b|\.databrickscfg\b|\.mcp\.json\b)|\becho.*\$\(.*\.env/,
-    reason: 'Sensitive file access through the shell (possible credential exposure)',
+    reason: words.reasons.secretRead,
     source: 'normalized',
     kinds: [],
   },
@@ -651,7 +653,7 @@ export const CHECKS: Check[] = [
     label: 'credential read',
     cmd: /^(cat|less|head|tail|more|bat)$/,
     pattern: /\b(cat|less|head|tail|more|bat)\b.+(\.databricks\/\.databricks\.env|\.aws\/(credentials|config)|\.ssh\/(config|known_hosts|authorized_keys)|id_rsa|id_ed25519)/,
-    reason: 'Reading a credential file through the shell',
+    reason: words.reasons.credentialRead,
     source: 'raw',
     kinds: [],
   },
@@ -659,7 +661,7 @@ export const CHECKS: Check[] = [
     label: 'mv /dev/null',
     cmd: /^mv$/,
     pattern: /\bmv\s+.*\s+\/dev\/null\b/,
-    reason: 'Moving files into /dev/null',
+    reason: words.reasons.mvDevNull,
     source: 'normalized',
     kinds: [],
   },
@@ -667,7 +669,7 @@ export const CHECKS: Check[] = [
     label: 'find -delete',
     cmd: /^find$/,
     pattern: /\bfind\s+.*-delete\b/,
-    reason: 'find -delete (can be as destructive as rm -rf)',
+    reason: words.reasons.findDelete,
     source: 'temp',
     kinds: ['find-delete'],
   },
@@ -677,7 +679,7 @@ export const CHECKS: Check[] = [
     cmd: /^rm$/,
     viaXargs: true,
     pattern: /\bxargs\s+.*\brm\b/,
-    reason: 'xargs rm (potential mass deletion)',
+    reason: words.reasons.xargsRm,
     source: 'normalized',
     kinds: ['rm'],
   },
@@ -898,7 +900,7 @@ export function classify(original: string, rules: UserRule[] = [], depth = 0): R
 
   for (const rule of rules) {
     rule.re.lastIndex = 0
-    if (rule.re.test(command)) return { ...RULE, label: 'your rule', reason: rule.reason, pattern: rule.re.source, source: 'rules' }
+    if (rule.re.test(command)) return { ...RULE, label: words.labels.yourRule, reason: rule.reason, pattern: rule.re.source, source: 'rules' }
   }
   return null
 }
@@ -911,7 +913,7 @@ export function evaluate(value: unknown, rules: UserRule[] = []): { risk: Risk |
     return { risk: classify(command, rules), command }
   } catch (error) {
     const why = String((error as Error)?.message ?? error).slice(0, 80)
-    return { risk: { kind: 'rule', label: 'could not evaluate', reason: `Blast radius could not evaluate this command (${why})`, targets: [], args: [], dir: null, isError: true, source: 'error' }, command }
+    return { risk: { kind: 'rule', label: words.labels.couldNotEvaluate, reason: fill(words.reasons.evaluateError, { why }), targets: [], args: [], dir: null, isError: true, source: 'error' }, command }
   }
 }
 
@@ -921,21 +923,21 @@ export function compileRules(text: string): { rules: UserRule[]; notes: string[]
   try {
     data = JSON.parse(text)
   } catch (error) {
-    return { rules: [], notes: [`rules.json is not valid JSON (${String((error as Error).message).slice(0, 60)}), no rules loaded`] }
+    return { rules: [], notes: [fill(words.rulesNotes.notJson, { why: String((error as Error).message).slice(0, 60) })] }
   }
-  if (!Array.isArray(data)) return { rules: [], notes: ['rules.json must be an array of { pattern, reason }, no rules loaded'] }
+  if (!Array.isArray(data)) return { rules: [], notes: [words.rulesNotes.notArray] }
   const rules: UserRule[] = []
   const notes: string[] = []
   data.forEach((entry, index) => {
     const item = entry as { pattern?: unknown; reason?: unknown; flags?: unknown } | null
     if (!item || typeof item.pattern !== 'string' || typeof item.reason !== 'string' || (item.flags !== undefined && typeof item.flags !== 'string')) {
-      notes.push(`rule ${index + 1} skipped: it needs a string pattern and reason`)
+      notes.push(fill(words.rulesNotes.needsFields, { n: index + 1 }))
       return
     }
     try {
       rules.push({ re: new RegExp(item.pattern, (item.flags ?? '').replace(/[gy]/g, '')), reason: item.reason })
     } catch (error) {
-      notes.push(`rule ${index + 1} skipped: ${String((error as Error).message).slice(0, 60)}`)
+      notes.push(fill(words.rulesNotes.skipped, { n: index + 1, why: String((error as Error).message).slice(0, 60) }))
     }
   })
   return { rules, notes }

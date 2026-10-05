@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { describePrompt, parseDescribed } from '../hooks/haiku'
+import { describePrompt, parseDescribed, verdictOf } from '../hooks/haiku'
 
 const PLUGIN = 'mod-blast-radius'
 const PANE = (requestId: string) =>
@@ -15,7 +15,7 @@ const bandOf = (maxRows = 24, bodyColumns = 80) =>
 const BAND = bandOf()
 
 const ASK = '\u26a0\ufe0f Destructive operation detected: Recursive deletion (rm -r/rm -rf)\n\nCommand:\nrm -rf build'
-const RULES_PATH = 'C:/Users/me/.claude/mod-blast-radius/rules.json'
+const RULES_PATH = 'C:/Users/me/.claude/mods-data/mod-blast-radius/rules.json'
 const LONG = 'C:/Users/me/blast-radius-demonstration-folder/drafts-of-the-quarterly-report/archive'
 
 const FILES: Record<string, { kind: 'file' | 'dir'; size: number }> = {
@@ -205,12 +205,26 @@ test('other kinds speak plainly: overwrite, drop table, and a check with no prev
 })
 
 test('Haiku answers only a filled template: wrong step counts, long fields and junk are dropped', () => {
-  const good = '{"verb":"Delete the build folder","does":"Removes the build output and everything in it.","undo":"No, rebuild it to get it back.","steps":["Deletes the build folder"]}'
+  const good = '{"verb":"Delete the build folder","does":"Removes the build output and everything in it.","undo":"No, rebuild it to get it back.","steps":["Deletes the build folder"],"targets":"the build folder","verdict":"ok","why":"build output can be rebuilt"}'
   expect(parseDescribed(`Sure!\n${good}`, 1)?.verb).toBe('Delete the build folder')
   expect(parseDescribed(good, 2)).toBeNull()
   expect(parseDescribed(good.replace('Delete the build folder', 'x'.repeat(80)), 1)).toBeNull()
   expect(parseDescribed('not json', 1)).toBeNull()
   expect(describePrompt('rm -rf build', 'rule', '', ['rm -rf build'])).toContain('<command>\nrm -rf build\n</command>')
+  expect(parseDescribed(good.replace(',"targets":"the build folder"', ''), 1)).toBeNull()
+  expect(parseDescribed(good.replace('"verdict":"ok"', '"verdict":"sure"'), 1)?.verdict).toBe('check')
+})
+
+test('the rules overrule an ok verdict: nothing measured, or a path outside the working folder', () => {
+  const found = parseDescribed(
+    '{"verb":"Delete the build folder","does":"Removes the build output.","undo":"No.","steps":["Deletes it"],"targets":"the build folder","verdict":"ok","why":"build output can be rebuilt"}',
+    1,
+  )!
+  const inside = { summary: '', groups: [], note: '', facts: { paths: ['C:/w/build'] } }
+  expect(verdictOf(found, inside, 'C:\\w')).toEqual({ isOk: true, why: 'build output can be rebuilt' })
+  expect(verdictOf(found, { ...inside, facts: { paths: ['C:/other/build'] } }, 'C:\\w').isOk).toBe(false)
+  expect(verdictOf(found, { summary: '', groups: [], note: '', isUnknown: true }, 'C:\\w').isOk).toBe(false)
+  expect(verdictOf({ ...found, verdict: 'check' }, inside, 'C:\\w').isOk).toBe(false)
 })
 
 test('Haiku words replace the heading and the sentence, while Run keeps the rule wording', async ($, on) => {
@@ -218,7 +232,7 @@ test('Haiku words replace the heading and the sentence, while Run keeps the rule
   const asked: string[] = []
   on('model.complete', (_$: unknown, e: { model: string; prompt: string }) => {
     asked.push(e.model)
-    return { value: { isAnswered: true, usage: {}, text: '{"verb":"Delete the build folder","does":"Removes the build output and everything in it.","undo":"No, rebuild it to get it back.","steps":["Deletes the build folder"]}' } }
+    return { value: { isAnswered: true, usage: {}, text: '{"verb":"Delete the build folder","does":"Removes the build output and everything in it.","undo":"No, rebuild it to get it back.","steps":["Deletes the build folder"],"targets":"the build folder","verdict":"ok","why":"build output can be rebuilt"}' } }
   })
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
@@ -229,6 +243,7 @@ test('Haiku words replace the heading and the sentence, while Run keeps the rule
   expect(asked).toEqual(['haiku'])
   expect(await textOf(band, /Delete the build folder/)).toBeDefined()
   expect(await textOf(band, /Removes the build output/)).toBeDefined()
+  expect(await textOf(band, /Looks OK to run: build output can be rebuilt/)).toBeDefined()
   expect(await labelOf(band, 'blast-run')).toMatch(/Delete/)
   await cancel($)
   await call
@@ -247,7 +262,7 @@ test('while Haiku writes the card words, a shimmering Explaining shows on the ac
   await band.redraw()
   expect(await band.find({ key: 'hold-explaining' })).toBeDefined()
 
-  release({ isAnswered: true, usage: {}, text: '{"verb":"Delete the build folder","does":"Removes the build output.","undo":"No.","steps":["Deletes the build folder"]}' })
+  release({ isAnswered: true, usage: {}, text: '{"verb":"Delete the build folder","does":"Removes the build output.","undo":"No.","steps":["Deletes the build folder"],"targets":"the build folder","verdict":"ok","why":"build output can be rebuilt"}' })
   await clock.settle()
   await band.redraw()
   expect(await band.find({ key: 'hold-explaining' })).toBeUndefined()
@@ -393,7 +408,7 @@ test('icons=nerd gives the Details pane a Nerd title icon', { options: { icons: 
   expect(await textOf(band, /Delete 2 files/)).toMatch(new RegExp(`^${String.fromCodePoint(0xea6c)} Delete 2 files`))
   await click(band, 'blast-details')
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
-  expect(await textOf(pane, /details$/)).toBe(`${String.fromCodePoint(0xf120)} Delete 2 files \u00b7 details`)
+  expect(await textOf(pane, /Details$/)).toBe(`${String.fromCodePoint(0xf120)} Delete 2 files · Details`)
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
@@ -407,7 +422,7 @@ test('icons=safe gives the Details pane the safe heading mark', { options: { ico
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
   await click(band, 'blast-details')
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
-  expect(await textOf(pane, /details$/)).toBe('\u25b8 Delete 2 files \u00b7 details')
+  expect(await textOf(pane, /Details$/)).toBe('\u25b8 Delete 2 files · Details')
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
@@ -457,7 +472,7 @@ test('Details is on every card, even a short one, and opens the read-only pane; 
   await click(band, 'blast-details')
   expect(seen.opened).toEqual(['blast-radius-list'])
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
-  expect(await textOf(pane, /details$/)).toContain('Delete 2 files \u00b7 details')
+  expect(await textOf(pane, /Details$/)).toContain('Delete 2 files \u00b7 Details')
   expect(await textOf(pane, /read-only/)).toBeDefined()
   for (const title of ['What this command does', 'What it touches', 'Can it be undone', 'Full command']) expect(await textOf(pane, new RegExp(title))).toBeDefined()
   expect(seen.ran).toBe(0)
@@ -552,7 +567,7 @@ test('Details names where a rule comes from, for the person\u2019s own rules too
   expect(await labelOf(band, 'blast-run')).toBe(' Run anyway ')
   await click(band, 'blast-details')
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
-  expect(await textOf(pane, /^Held by: /)).toBe('Held by: Your rule, from ~/.claude/mod-blast-radius/rules.json')
+  expect(await textOf(pane, /^Held by: /)).toBe('Held by: Your rule, from ~/.claude/mods-data/mod-blast-radius/rules.json')
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
@@ -665,7 +680,7 @@ test('a broken rules.json never disables the built-in checks and shows one note 
 
   const settings = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...SETTINGS })
   expect((await settings.find({ type: 'Text', text: /rule 1 skipped/ }))?.text).toContain('(+1 more)')
-  expect(await settings.find({ type: 'Text', text: '~/.claude/mod-blast-radius/rules.json' })).toBeDefined()
+  expect(await settings.find({ type: 'Text', text: '~/.claude/mods-data/mod-blast-radius/rules.json' })).toBeDefined()
   expect(await settings.find({ type: 'Text', text: /"pattern"/ })).toBeDefined()
   await settings.unmount()
 })

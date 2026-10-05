@@ -1,11 +1,14 @@
 // Plain-words copy for the card and the details pane, and the fitting rules that keep the card inside the band. Pure: no engine calls.
 import { formatSize, type Report } from './preview'
 import { classify, heredocs, type Risk, type UserRule } from './risk'
+import text from './text'
+import { fill, MARK } from './theme'
 
-const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`
+type Unit = { one: string; many: string }
+const plural = (count: number, unit: Unit) => fill(count === 1 ? unit.one : unit.many, { n: count })
 
-const NO_UNDO_RM = 'No. Deleted files skip the Recycle Bin.'
-const NO_UNDO_GIT_LOSS = 'Uncommitted changes are lost for good.'
+const NO_UNDO_RM = text.noUndoRm
+const NO_UNDO_GIT_LOSS = text.noUndoGitLoss
 
 export type Plain = {
   // What happens, verb first: the heading and the Run label share its wording.
@@ -15,32 +18,17 @@ export type Plain = {
   run: string
   does: string
   undo: string
+  // Haiku's words for what the command touches, shown when the preview measured nothing.
+  targets?: string
+  verdict?: { isOk: boolean; why: string }
 }
 
 type Fallback = { verb: string; run: string; does: string; undo: string }
 
 // Checks the hook has no preview for: what they do, in words.
-const BY_LABEL: Record<string, Fallback> = {
-  'git stash': { verb: 'Delete stashed changes', run: 'Delete stash', does: 'Removes work you saved with git stash. No undo.', undo: 'No. Stashed work is deleted for good.' },
-  'git push --delete': { verb: 'Delete a remote branch or tag', run: 'Delete remote branch', does: 'Removes a branch or tag from the remote repository.', undo: 'Only if you or someone else still has the commits.' },
-  'make deploy': { verb: 'Deploy to production', run: 'Deploy to production', does: 'Puts a new version live for real users.', undo: 'Depends on the project. A rollback may be needed.' },
-  'make migrate': { verb: 'Change the production database', run: 'Migrate production', does: 'Changes the production database or its data.', undo: 'Often no. Check that you have a backup.' },
-  'databricks bundle destroy': { verb: 'Destroy the Databricks bundle', run: 'Destroy bundle', does: 'Removes every resource of the bundle from the environment.', undo: 'No. The resources can be rebuilt, their data cannot.' },
-  'deploy to prod': { verb: 'Change production', run: 'Change production', does: 'Runs a deploy or cloud command against production.', undo: 'Depends on the command.' },
-  'gcloud delete': { verb: 'Delete Google Cloud resources', run: 'Delete cloud resources', does: 'Removes buckets or services from Google Cloud.', undo: 'No, unless the resource has a backup.' },
-  'az delete': { verb: 'Delete Azure resources', run: 'Delete cloud resources', does: 'Removes resources from Azure.', undo: 'No, unless the resource has a backup.' },
-  'databricks delete': { verb: 'Delete Databricks secrets or objects', run: 'Delete from Databricks', does: 'Removes a secret scope or workspace objects.', undo: 'No. Secrets and objects are deleted for good.' },
-  chmod: { verb: 'Change file permissions', run: 'Change permissions', does: 'Changes who can read, write or run these files.', undo: 'Yes, by setting the old permissions again, if you know them.' },
-  'curl | sh': { verb: 'Run a downloaded script', run: 'Run the script', does: 'Downloads code from the internet and runs it at once.', undo: 'No. Check what the script does first.' },
-  'secret read': { verb: 'Show a secret on screen', run: 'Show the secret', does: 'Prints a file that can hold passwords or keys into this chat.', undo: 'The secret is exposed. Change it if it matters.' },
-  'credential read': { verb: 'Show a credential file', run: 'Show the file', does: 'Prints a file that holds access keys into this chat.', undo: 'The credentials are exposed. Change them if it matters.' },
-  'mv /dev/null': { verb: 'Throw files away', run: 'Throw files away', does: 'Moves files into /dev/null, which discards them.', undo: 'No. The files are gone.' },
-  'xargs rm': { verb: 'Delete files piped in from another command', run: 'Delete piped files', does: 'Deletes whatever files the earlier command prints.', undo: NO_UNDO_RM },
-  rm: { verb: 'Delete files', run: 'Delete files', does: 'Removes files for good.', undo: NO_UNDO_RM },
-  'rm -r': { verb: 'Delete folders', run: 'Delete folders', does: 'Removes folders and everything inside them. No undo.', undo: NO_UNDO_RM },
-}
+const BY_LABEL: Record<string, Fallback> = text.byLabel
 
-const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`)
+const sentence = (line: string) => (/[.!?]$/.test(line) ? line : `${line}.`)
 
 // "DROP TABLE users" becomes "Drop table users": keywords lower-cased, names kept as written.
 function sqlVerb(statement: string) {
@@ -63,84 +51,79 @@ export function plainFor(risk: Risk, report: Report | null): Plain {
     case 'rm': {
       if (!facts || facts.files === undefined) return { ...(BY_LABEL[risk.label.startsWith('rm -r') ? 'rm -r' : 'rm'] ?? BY_LABEL.rm!) }
       const isOneFile = facts.files === 1 && items.length === 1 && !hasFolder
-      const what = isOneFile ? facts.subject! : plural(facts.files, 'file')
+      const what = isOneFile ? facts.subject! : plural(facts.files, text.units.file)
       return {
-        verb: `Delete ${what}`,
+        verb: fill(text.plain.deleteWhat, { what }),
         subject: isOneFile ? undefined : facts.subject,
-        run: `Delete ${what}`,
-        does: hasFolder ? 'Removes the folder and everything inside it. No undo.' : isOneFile ? 'Removes the file. No undo.' : `Removes ${plural(facts.files, 'file')}. No undo.`,
+        run: fill(text.plain.deleteWhat, { what }),
+        does: hasFolder ? text.plain.removeFolder : isOneFile ? text.plain.removeFile : fill(text.plain.removeFiles, { files: plural(facts.files, text.units.file) }),
         undo: NO_UNDO_RM,
       }
     }
     case 'mv': {
-      const what = facts?.subject ?? 'the destination'
-      return { verb: `Replace ${what}`, run: `Replace ${what}`, does: 'Moves a file over one that already exists. The old file is gone.', undo: 'No. The old file is replaced for good.' }
+      const what = facts?.subject ?? text.plain.theDestination
+      return { verb: fill(text.plain.replaceWhat, { what }), run: fill(text.plain.replaceWhat, { what }), does: text.plain.mvDoes, undo: text.plain.mvUndo }
     }
     case 'redirect': {
-      const what = facts?.subject ?? risk.targets[0] ?? 'the file'
-      return { verb: `Overwrite ${what}`, run: `Overwrite ${what}`, does: "Replaces everything in the file with this command's output. No undo.", undo: 'No. The old content is lost unless git or a backup has it.' }
+      const what = facts?.subject ?? risk.targets[0] ?? text.plain.theFile
+      return { verb: fill(text.plain.overwriteWhat, { what }), run: fill(text.plain.overwriteWhat, { what }), does: text.plain.redirectDoes, undo: text.plain.redirectUndo }
     }
     case 'chmod':
-      return { verb: `Change permissions on ${plural(facts?.count ?? 0, 'file')}`, subject: facts?.subject, run: 'Change permissions', does: 'Changes who can read, write or run these files and everything under them.', undo: 'Yes, by setting the old permissions again, if you know them.' }
+      return { verb: fill(text.plain.chmodVerb, { files: plural(facts?.count ?? 0, text.units.file) }), subject: facts?.subject, run: text.plain.chmodRun, does: text.plain.chmodDoes, undo: text.plain.chmodUndo }
     case 'find-delete':
-      return { verb: 'Delete matching files', subject: facts?.subject, run: 'Delete matching files', does: 'Deletes every file the find expression matches. Details shows the expression.', undo: NO_UNDO_RM }
+      return { verb: text.plain.deleteMatching, subject: facts?.subject, run: text.plain.deleteMatching, does: text.plain.findDoes, undo: NO_UNDO_RM }
     case 'git-reset': {
       const lost = facts?.count ?? 0
       const dropped = facts?.files ?? 0
-      const what = lost ? `Discard ${plural(lost, 'changed file')}` : dropped ? `Move the branch back ${plural(dropped, 'commit')}` : 'Reset to the last commit'
-      return { verb: what, run: what, does: `Sets files back to the last commit. ${NO_UNDO_GIT_LOSS}`, undo: NO_UNDO_GIT_LOSS }
+      const what = lost ? fill(text.plain.discardChanged, { files: plural(lost, text.units.changedFile) }) : dropped ? fill(text.plain.moveBack, { commits: plural(dropped, text.units.commit) }) : text.plain.resetToLast
+      return { verb: what, run: what, does: fill(text.plain.resetDoes, { loss: NO_UNDO_GIT_LOSS }), undo: NO_UNDO_GIT_LOSS }
     }
     case 'git-clean': {
-      const what = facts?.count !== undefined ? `Delete ${plural(facts.count, 'untracked file')}` : 'Delete untracked files'
-      return { verb: what, run: what, does: 'Deletes files git does not track. No undo.', undo: 'Untracked files are deleted for good.' }
+      const what = facts?.count !== undefined ? fill(text.plain.deleteUntracked, { files: plural(facts.count, text.units.untrackedFile) }) : text.plain.deleteUntrackedAny
+      return { verb: what, run: what, does: text.plain.cleanDoes, undo: text.plain.cleanUndo }
     }
     case 'git-checkout': {
-      const what = facts?.count !== undefined ? `Discard ${plural(facts.count, 'changed file')}` : 'Discard changed files'
-      return { verb: what, run: what, does: 'Sets files back to the last commit. Unstaged changes are lost for good.', undo: 'Unstaged changes are lost for good.' }
+      const what = facts?.count !== undefined ? fill(text.plain.discardChanged, { files: plural(facts.count, text.units.changedFile) }) : text.plain.discardChangedAny
+      return { verb: what, run: what, does: text.plain.checkoutDoes, undo: text.plain.checkoutUndo }
     }
     case 'git-push-force': {
-      const where = facts?.subject ?? 'the remote'
-      const commits = facts?.count ? ` ${plural(facts.count, 'commit')} there are lost.` : ''
+      const where = facts?.subject ?? text.plain.theRemote
+      const lost = facts?.count ? fill(text.plain.commitsLost, { commits: plural(facts.count, text.units.commit) }) : ''
       return {
-        verb: `Force push to ${where}`,
-        run: `Force push to ${where}`,
-        does: `Replaces the branch on the remote with yours.${commits}`,
-        undo: "The remote's commits are replaced. Others who pulled them can recover them, you may not.",
+        verb: fill(text.plain.forcePushTo, { where }),
+        run: fill(text.plain.forcePushTo, { where }),
+        does: fill(text.plain.pushDoes, { lost }),
+        undo: text.plain.pushUndo,
       }
     }
     case 'git-branch-delete': {
       const what = facts?.subject ?? risk.targets.join(', ')
-      return { verb: `Delete branch ${what}`, run: `Delete branch ${what}`, does: 'Removes the branch. Commits only on it become hard to reach.', undo: "Hard. The commits stay in git's reflog for a while." }
+      return { verb: fill(text.plain.deleteBranch, { what }), run: fill(text.plain.deleteBranch, { what }), does: text.plain.branchDoes, undo: text.plain.branchUndo }
     }
     case 'sql': {
-      const first = sqlVerb(risk.statements?.[0] ?? 'Run SQL')
+      const first = sqlVerb(risk.statements?.[0] ?? text.plain.runSql)
       const many = (risk.statements?.length ?? 0) > 1
-      return { verb: many ? `Run ${risk.statements!.length} destructive SQL statements` : first, run: many ? 'Run SQL' : first, does: 'Changes or removes data in the database.', undo: 'No, unless you have a backup.' }
+      return { verb: many ? fill(text.plain.runManySql, { statements: plural(risk.statements!.length, text.units.destructiveStatement) }) : first, run: many ? text.plain.runSql : first, does: text.plain.sqlDoes, undo: text.plain.sqlUndo }
     }
     default: {
-      if (risk.source === 'rules') return { verb: risk.reason, run: 'Run anyway', does: sentence(`Matches your rule: ${risk.reason}`), undo: 'Check the command before you run it.' }
-      if (risk.source === 'error') return { verb: 'Check this command', run: 'Run anyway', does: 'Blast radius could not read it, so it holds it.', undo: 'Unknown.' }
+      if (risk.source === 'rules') return { verb: risk.reason, run: text.plain.runAnyway, does: sentence(fill(text.plain.matchesRule, { reason: risk.reason })), undo: text.plain.checkRule }
+      if (risk.source === 'error') return { verb: text.plain.checkThis, run: text.plain.runAnyway, does: text.plain.errorDoes, undo: text.plain.unknown }
       const known = BY_LABEL[risk.label]
       if (known) return { ...known }
-      return { verb: risk.reason, run: 'Run anyway', does: sentence(risk.reason), undo: 'Unknown.' }
+      return { verb: risk.reason, run: text.plain.runAnyway, does: sentence(risk.reason), undo: text.plain.unknown }
     }
   }
 }
 
 const WHY: Record<string, string> = {
-  'Recursive deletion of a root, home or parent directory': 'It deletes a root, home or parent folder.',
-  'Recursive deletion of a critical project directory': 'It deletes a folder this project depends on.',
-  'Recursive deletion (rm -r/rm -rf)': 'It deletes folders and everything inside them.',
-  'File deletion with rm': 'It deletes files for good.',
-  'Git force push or hard reset': 'It rewrites history or throws away your changes.',
+  [text.reasons.rootDelete]: text.why.rootDelete,
+  [text.reasons.criticalDelete]: text.why.criticalDelete,
+  [text.reasons.recursiveDelete]: text.why.recursiveDelete,
+  [text.reasons.fileDelete]: text.why.fileDelete,
+  [text.reasons.gitForce]: text.why.gitForce,
 }
 
-const SOURCE: Record<NonNullable<Risk['source']> | 'blast', string> = {
-  hook: 'Built-in rule (from your destructive-command hook).',
-  blast: 'Built-in rule (from blast radius).',
-  rules: 'Your rule, from ~/.claude/mod-blast-radius/rules.json.',
-  error: 'Blast radius could not read this command, so it holds it to be safe.',
-}
+const SOURCE: Record<NonNullable<Risk['source']> | 'blast', string> = text.source
 
 export const whyOf = (risk: Risk) => ({ why: risk.source === 'error' ? risk.reason : sentence(WHY[risk.reason] ?? risk.reason), source: SOURCE[risk.source ?? 'blast'] })
 
@@ -183,23 +166,23 @@ const SCRIPT_RUNNERS = new Set(['node', 'python', 'python3', 'ruby', 'perl', 'de
 export function segmentsOf(command: string, rules: UserRule[] = []): Segment[] {
   const { code, found } = heredocs(command)
   let at = 0
-  return pieces(code).map(text => {
-    const heredoc = /(?<!<)<<(?!<)/.test(text) ? found[at++] : undefined
+  return pieces(code).map(piece => {
+    const heredoc = /(?<!<)<<(?!<)/.test(piece) ? found[at++] : undefined
     if (heredoc && !heredoc.isCode) {
-      const name = heredoc.receiver || 'The command'
-      const says = SCRIPT_RUNNERS.has(heredoc.receiver) ? `${name} runs a ${heredoc.lines}-line script` : `${name} reads ${plural(heredoc.lines, 'line')} of text`
-      return { text, risk: null, says, isScript: true }
+      const name = heredoc.receiver || text.steps.theCommand
+      const says = SCRIPT_RUNNERS.has(heredoc.receiver) ? fill(text.steps.runsScript, { name, lines: heredoc.lines }) : fill(text.steps.readsText, { name, lines: plural(heredoc.lines, text.units.line) })
+      return { text: piece, risk: null, says, isScript: true }
     }
-    const bare = text.replace(/^(?:do|then|else)\s+/, '')
+    const bare = piece.replace(/^(?:do|then|else)\s+/, '')
     const risk = classify(bare, rules)
-    if (!risk) return { text, risk: null, says: '' }
+    if (!risk) return { text: piece, risk: null, says: '' }
     if (risk.kind === 'rm' && risk.targets.length) {
       const isRecursive = /^rm\s+-[a-zA-Z]*[rR]|--recursive|^rmdir/.test(bare) || risk.label.includes('-r')
       const what = risk.targets.join(', ')
-      return { text, risk, says: isRecursive ? `Deletes the folder ${what} and everything in it` : `Deletes ${what}` }
+      return { text: piece, risk, says: fill(isRecursive ? text.steps.deletesFolder : text.steps.deletes, { what }) }
     }
     const plain = plainFor(risk, null)
-    return { text, risk, says: `${plain.verb}. ${plain.does}` }
+    return { text: piece, risk, says: fill(text.steps.says, { verb: plain.verb, does: plain.does }) }
   })
 }
 
@@ -209,7 +192,7 @@ export function stepsView(segments: Segment[]) {
   const safe = segments.filter(segment => !segment.risk && !segment.isScript)
   const names = [...new Set(safe.map(segment => segment.text.replace(/^(?:do|then|else)\s+/, '').split(/\s+/)[0]!).filter(Boolean))]
   const list = names.slice(0, 4).join(', ') + (names.length > 4 ? '…' : '')
-  return { shown, rest: safe.length ? `and ${plural(safe.length, 'safe step')} (${list})` : '' }
+  return { shown, rest: safe.length ? fill(text.steps.safeRest, { steps: plural(safe.length, text.units.safeStep), list }) : '' }
 }
 
 // The full command as rows no wider than the pane, at most maxRows of them; what is left over is counted.
@@ -237,13 +220,13 @@ export function midCut(path: string, width: number) {
   return `…/${tail}`.length <= width ? `…/${tail}` : `…${tail.slice(Math.max(0, tail.length - width + 1))}`
 }
 
-export const cutEnd = (text: string, width: number) => (text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`)
+export const cutEnd = (line: string, width: number) => (line.length <= width ? line : `${line.slice(0, Math.max(0, width - 1))}…`)
 
 // Words wrapped to the width, at most maxRows rows; what does not fit ends the last row with an ellipsis.
-export function wrapRows(text: string, width: number, maxRows: number) {
+export function wrapRows(sentenceText: string, width: number, maxRows: number) {
   const rows: string[] = []
   let line = ''
-  for (const word of text.split(/\s+/).filter(Boolean)) {
+  for (const word of sentenceText.split(/\s+/).filter(Boolean)) {
     if (line && line.length + 1 + word.length > width) {
       rows.push(line)
       line = word
@@ -258,16 +241,16 @@ export function wrapRows(text: string, width: number, maxRows: number) {
 
 // The heading text after the glyph: the folder name shrinks first, then goes; the counts in the verb stay.
 export function fitHeading(plain: Plain, width: number) {
-  const full = plain.subject ? `${plain.verb} in ${plain.subject}` : plain.verb
+  const full = plain.subject ? fill(text.card.inFolder, { verb: plain.verb, subject: plain.subject }) : plain.verb
   if (full.length <= width) return full
   if (plain.subject) {
     const room = width - plain.verb.length - 4
-    if (room >= 6) return `${plain.verb} in ${midCut(plain.subject, room)}`
+    if (room >= 6) return fill(text.card.inFolder, { verb: plain.verb, subject: midCut(plain.subject, room) })
   }
   return cutEnd(plain.verb, width)
 }
 
-export type CardRow = { kind: 'head' | 'does' | 'path' | 'line' | 'note'; text: string; stats?: string }
+export type CardRow = { kind: 'head' | 'does' | 'path' | 'line' | 'note' | 'verdict'; text: string; stats?: string; isOk?: boolean }
 
 // Heading, figures, sentence, then its second row, as many as the band holds; the command stays in Details.
 export function cardRows(plain: Plain, report: Report, width: number, bodyRows: number): CardRow[] {
@@ -277,17 +260,22 @@ export function cardRows(plain: Plain, report: Report, width: number, bodyRows: 
   const candidates: { order: number; priority: number; row: CardRow }[] = [{ order: 0, priority: 0, row: { kind: 'head', text: fitHeading(plain, width - 3) } }]
   if (items.length) {
     const first = items[0]!
-    const stats = items.length > 1 && facts?.files !== undefined ? `${plural(facts.files, 'file')} · ${plural(facts.folders ?? 0, 'folder')} · ${formatSize(facts.bytes ?? 0)}` : first.stats
-    const more = items.length > 1 ? ` and ${items.length - 1} more` : ''
+    const stats = items.length > 1 && facts?.files !== undefined ? [plural(facts.files, text.units.file), plural(facts.folders ?? 0, text.units.folder), formatSize(facts.bytes ?? 0)].join(` ${MARK.sep} `) : first.stats
+    const more = items.length > 1 ? fill(text.card.andMore, { n: items.length - 1 }) : ''
     const room = Math.max(8, width - stats.length - more.length - 3)
     candidates.push({ order: 10, priority: 1, row: { kind: 'path', text: `${midCut(first.path, room)}${more}`, stats } })
   } else if (report.isUnknown) {
-    candidates.push({ order: 10, priority: 1, row: { kind: 'note', text: "Can't preview this before it runs" } })
+    const note = plain.targets ? fill(text.card.fromCommand, { targets: plain.targets }) : text.card.cantPreview
+    candidates.push({ order: 10, priority: 1, row: { kind: 'note', text: cutEnd(note, width) } })
   } else if (report.groups[0]?.lines[0]) {
     candidates.push({ order: 10, priority: 1, row: { kind: 'line', text: cutEnd(report.groups[0].lines[0], width) } })
   }
   candidates.push({ order: 1, priority: 2, row: { kind: 'does', text: wrapped[0]! } })
   if (wrapped[1]) candidates.push({ order: 2, priority: 5, row: { kind: 'does', text: wrapped[1] } })
+  if (plain.verdict) {
+    const line = fill(text.card.verdict, { lead: plain.verdict.isOk ? text.card.verdictOk : text.card.verdictCheck, why: plain.verdict.why })
+    candidates.push({ order: 20, priority: 1.5, row: { kind: 'verdict', text: cutEnd(line, width - 2), isOk: plain.verdict.isOk } })
+  }
   const chosen = [...candidates].sort((a, b) => a.priority - b.priority).slice(0, Math.max(1, bodyRows))
   return chosen.sort((a, b) => a.order - b.order).map(candidate => candidate.row)
 }
@@ -295,8 +283,8 @@ export function cardRows(plain: Plain, report: Report, width: number, bodyRows: 
 // The three action labels, shortened together so the row fits: Cancel, Details and the consequence stay in that order.
 export function actionLabels(plain: Plain, width: number) {
   const separators = 2 * 3
-  const fixed = ' Cancel '.length + ' Details '.length + 2
+  const fixed = ` ${text.card.cancel} `.length + ` ${text.card.details} `.length + 2
   const run = cutEnd(plain.run, Math.max(8, width - fixed - separators))
-  return { cancel: 'Cancel', details: 'Details', run }
+  return { cancel: text.card.cancel, details: text.card.details, run }
 }
 

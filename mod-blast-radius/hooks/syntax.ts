@@ -1,5 +1,7 @@
 // Shell syntax roles for drawing a command: one scanner for the colors, the same step rules the matcher uses for what is risky. Pure.
 import { classify, HEREDOC_MARK, receiverOf, RUNS_BODY, type UserRule } from './risk'
+import words from './text'
+import { MARK } from './theme'
 
 export type Role = 'command' | 'option' | 'text' | 'variable' | 'number' | 'operator' | 'plain' | 'risk' | 'muted'
 export type Span = { text: string; role: Role }
@@ -148,18 +150,20 @@ export function wrapSpans(lines: Span[][], width: number, maxRows: number) {
 }
 
 // What each color means, drawn in those colors.
+const GAP: Span = { text: ` ${MARK.sep} `, role: 'muted' }
+
 export const LEGEND: Span[] = [
-  { text: 'command', role: 'command' },
-  { text: ' · ', role: 'muted' },
-  { text: '--option', role: 'option' },
-  { text: ' · ', role: 'muted' },
-  { text: '"text"', role: 'text' },
-  { text: ' · ', role: 'muted' },
-  { text: '$var', role: 'variable' },
-  { text: ' · ', role: 'muted' },
-  { text: '12', role: 'number' },
-  { text: ' · ', role: 'muted' },
-  { text: '&&', role: 'operator' },
-  { text: ' · ', role: 'muted' },
-  { text: 'risky part', role: 'risk' },
+  { text: words.legend.command, role: 'command' },
+  GAP,
+  { text: words.legend.option, role: 'option' },
+  GAP,
+  { text: words.legend.quoted, role: 'text' },
+  GAP,
+  { text: words.legend.variable, role: 'variable' },
+  GAP,
+  { text: words.legend.number, role: 'number' },
+  GAP,
+  { text: words.legend.operator, role: 'operator' },
+  GAP,
+  { text: words.legend.risk, role: 'risk' },
 ]

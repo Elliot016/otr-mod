@@ -7,6 +7,12 @@
   },
   "types": "./types/index.d.ts",
   "userConfig": {
+    "animations": {
+      "type": "boolean",
+      "title": "Animations",
+      "description": "Entries shimmer while they wait and hover colors fade. Off, everything draws still",
+      "default": true
+    },
     "enabled": {
       "type": "boolean",
       "title": "Hold risky commands",

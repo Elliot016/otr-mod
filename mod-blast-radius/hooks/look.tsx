@@ -1,88 +1,16 @@
 // Shared look, see mod-builder/references/standard.md. Master in templates/cli-mod; copy unchanged into every mod that draws a pane or a pill.
 import type { RenderElement } from 'claude-code'
 
-import { THEME } from './theme'
+import style from './style'
+import { CAPS, decodeAll, THEME } from './theme'
 
-// A Nerd Font glyph by its code point; Write and Edit drop private-use characters typed into a file.
-const nf = (code: number) => String.fromCodePoint(code)
+type Glyphs = Omit<typeof style.glyphs.nerd, 'icon' | 'mark'> & { icon: Record<string, string>; mark: Record<string, string> }
 
 // Safe mode: common Unicode that every modern terminal font draws. Headings and rows carry no icon.
-const SAFE = {
-  on: '[◉]',
-  off: '[○]',
-  go: '[↵]',
-  cycle: '[↻]',
-  down: '[−]',
-  up: '[+]',
-  locked: '[■]',
-  close: '[×]',
-  warn: '!',
-  ok: '✓',
-  expanded: '▾',
-  collapsed: '▸',
-  back: '<',
-  title: '▸',
-  gear: '⚙',
-  icon: {} as Record<string, string>,
-}
+const SAFE: Glyphs = decodeAll(style.glyphs.safe)
 
-// Nerd mode: Font Awesome and Material glyphs from any Nerd Font, controls padded to the same three cells.
-const NERD: typeof SAFE = {
-  on: ` ${nf(0xf205)} `,
-  off: ` ${nf(0xf204)} `,
-  go: ` ${nf(0xf054)} `,
-  cycle: ` ${nf(0xf021)} `,
-  down: ` ${nf(0xf068)} `,
-  up: ` ${nf(0xf067)} `,
-  locked: ` ${nf(0xf023)} `,
-  close: ` ${nf(0xf00d)} `,
-  warn: nf(0xea6c),
-  ok: nf(0xeab2),
-  expanded: nf(0xeab4),
-  collapsed: nf(0xeab6),
-  back: nf(0xf053),
-  title: nf(0xf054),
-  gear: nf(0xf013),
-  icon: {
-    settings: nf(0xf1de),
-    actions: nf(0xf0e7),
-    features: nf(0xf005),
-    mod: nf(0xf12e),
-    installed: nf(0xf487),
-    skill: nf(0xf0d0),
-    prompt: nf(0xf075),
-    fold: nf(0xf066),
-    // VS Code's own sets: codicons for chrome, seti for file types.
-    files: nf(0xeb86),
-    replay: nf(0xea82),
-    folder: nf(0xea83),
-    'folder-open': nf(0xeaf7),
-    file: nf(0xea7b),
-    'ext-ts': nf(0xe628),
-    'ext-react': nf(0xe625),
-    'ext-js': nf(0xe781),
-    'ext-json': nf(0xe60b),
-    'ext-md': nf(0xe609),
-    'ext-py': nf(0xe73c),
-    'ext-config': nf(0xe615),
-    'ext-sh': nf(0xf489),
-    Edit: nf(0xf040),
-    MultiEdit: nf(0xf040),
-    NotebookEdit: nf(0xf040),
-    Write: nf(0xf15b),
-    Read: nf(0xf02d),
-    Bash: nf(0xf120),
-    Grep: nf(0xf002),
-    Glob: nf(0xf002),
-    Agent: nf(0xf06a9),
-    Task: nf(0xf06a9),
-    Skill: nf(0xf0d0),
-    WebFetch: nf(0xf0ac),
-    WebSearch: nf(0xf0ac),
-    TodoWrite: nf(0xf0ae),
-    tool: nf(0xf0ad),
-  },
-}
+// Nerd mode: Font Awesome, Material and VS Code glyphs from any Nerd Font, controls padded to the same three cells.
+const NERD: Glyphs = decodeAll(style.glyphs.nerd)
 
 export type Look = { nerd: boolean; glyph: typeof SAFE }
 
@@ -127,11 +55,11 @@ export function heading({ Box, Text }: Elements, look: Look, key: string, icon: 
   }
   return (
     <Box key={`${key}-head`} flexDirection="row">
-      <Text color={THEME.border}>{nf(0xe0b6)}</Text>
+      <Text color={THEME.border}>{CAPS.left}</Text>
       <Box key={`${key}-head-body`} backgroundColor={THEME.border}>
         <Text color={THEME.onSurface} bold>{withIcon(look, icon, title)}</Text>
       </Box>
-      <Text color={THEME.border}>{nf(0xe0b4)}</Text>
+      <Text color={THEME.border}>{CAPS.right}</Text>
     </Box>
   )
 }

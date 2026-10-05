@@ -5,18 +5,22 @@ import type { EntryMessage } from './entry'
 import { pillRow, splitRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { actionLabels, cardRows, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
-import { describePrompt, parseDescribed, SYSTEM, type Described } from './haiku'
+import { describePrompt, parseDescribed, SYSTEM, verdictOf, type Described } from './haiku'
 import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from './syntax'
 import { measure, tilde, type Io, type Report } from './preview'
 import { CHECKS, compileRules, evaluate, type Risk, type UserRule } from './risk'
 import { settingsBody, type Action, type Previews } from './settings'
-import { MARK, statusColor, SYNTAX, THEME } from './theme'
+import text from './text'
+import { fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 
 const SETTINGS_PANE = 'blast-radius-settings'
 const LIST_PANE = 'blast-radius-list'
-const RULES_FILE = '.claude/mod-blast-radius/rules.json'
+const RULES_FILE = '.claude/mods-data/mod-blast-radius/rules.json'
 const DESTRUCTIVE_ASK = 'Destructive operation detected'
 const BUILT_IN = [...new Set(CHECKS.map(check => check.reason))]
+
+type Unit = { one: string; many: string }
+const plural = (count: number, unit: Unit) => fill(count === 1 ? unit.one : unit.many, { n: count })
 
 type Decision = 'run' | 'cancel' | 'interrupted' | 'error'
 // isDescribing: Haiku is still writing the card's words.
@@ -82,7 +86,7 @@ async function loadRules($: EngineInterface): Promise<Rules> {
     const compiled = compileRules(String(await $.fs.read(path)))
     return (rulesCache = { path, mtimeMs: stat.mtimeMs, ...compiled })
   } catch (error) {
-    return { path, mtimeMs: -1, rules: [], notes: [`could not read rules.json (${String((error as Error)?.message ?? error).slice(0, 60)})`] }
+    return { path, mtimeMs: -1, rules: [], notes: [fill(text.rulesNotes.unreadable, { why: String((error as Error)?.message ?? error).slice(0, 60) })] }
   }
 }
 
@@ -100,16 +104,17 @@ async function describe($: EngineInterface, mine: Held) {
     mine.isDescribing = true
     $.ui.invalidate('ui.render')
     const prompt = describePrompt(mine.command, mine.risk.reason, mine.report?.summary ?? '', risky.map(step => step.text))
-    const reply = await $.model.complete({ model: 'haiku', system: SYSTEM, prompt, maxTokens: 400, timeoutMs: 15000 }).catch(() => null)
+    const reply = await $.model.complete({ model: 'haiku', system: SYSTEM, prompt, maxTokens: 500, timeoutMs: 15000 }).catch(() => null)
     mine.isDescribing = false
     $.ui.invalidate('ui.render')
     found = reply?.isAnswered ? parseDescribed(reply.text, risky.length) ?? undefined : undefined
     if (!found) return
     describedCache.set(mine.command, found)
   }
+  const cwd = String((await $.session.cwd().catch(() => '')) ?? '')
   if (held !== mine || mine.decision !== null || !mine.plain) return
   mine.described = found
-  mine.plain = { ...mine.plain, verb: found.verb, subject: undefined, does: found.does, undo: found.undo }
+  mine.plain = { ...mine.plain, verb: found.verb, subject: undefined, does: found.does, undo: found.undo, targets: found.targets, verdict: verdictOf(found, mine.report, cwd) }
   $.ui.invalidate('ui.render')
 }
 
@@ -125,7 +130,7 @@ const approvedCommands = new Set<string>()
 const isApproved = (id: unknown, command: unknown) => approved.has(String(id)) || approvedCommands.has(String(command))
 
 // The settings hook's ask, wherever the engine carries it; matched loosely because a prefix may precede its text.
-const isDestructiveAsk = (text: unknown) => typeof text === 'string' && text.includes(DESTRUCTIVE_ASK)
+const isDestructiveAsk = (ask: unknown) => typeof ask === 'string' && ask.includes(DESTRUCTIVE_ASK)
 
 const isPaneOpen = async ($: EngineInterface, id: string) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
@@ -145,8 +150,8 @@ async function toggleList($: EngineInterface) {
   }
   if (!held?.report) return
   await closePanes($, LIST_PANE)
-  const opened = await $.ui.open({ id: LIST_PANE, title: 'Details', closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(`List waiting: ${opened.reason}`)
+  const opened = await $.ui.open({ id: LIST_PANE, title: text.card.details, closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(fill(text.ui.listWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, opened.isPlaced)
 }
 
@@ -183,11 +188,11 @@ async function toggleSettings($: EngineInterface) {
   }
   await closePanes($, SETTINGS_PANE)
   note = ''
-  const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
+  const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(file => JSON.parse(String(file))).catch(() => null)
   previews = showcase?.previews
   actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-blast-radius' }))
-  const opened = await $.ui.open({ id: SETTINGS_PANE, title: 'mod-blast-radius', closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(`Settings panel waiting: ${opened.reason}`)
+  const opened = await $.ui.open({ id: SETTINGS_PANE, title: text.ui.paneName, closeOnEscape: true })
+  if (!opened.isPlaced) $.ui.toast(fill(text.ui.settingsWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, opened.isPlaced)
 }
 
@@ -198,9 +203,9 @@ async function answer($: EngineInterface, args: string) {
     return ''
   }
   const { rules, notes } = await loadRules($)
-  const mine = rules.length ? `, ${rules.length} of yours` : ''
-  const bad = notes.length ? `, ${notes.length} problem(s) in rules.json` : ''
-  return isEnabled ? `Blast radius is on: ${BUILT_IN.length} built-in checks${mine}${bad}` : 'Blast radius is off'
+  const mine = rules.length ? fill(text.ui.mine, { n: rules.length }) : ''
+  const bad = notes.length ? fill(text.ui.bad, { n: notes.length }) : ''
+  return isEnabled ? fill(text.ui.isOn, { builtIn: BUILT_IN.length, mine, bad }) : text.ui.isOff
 }
 
 const refusal = (decision: Decision | null) =>
@@ -214,7 +219,7 @@ type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => Re
 
 // Counts and sizes in a line get the warning color.
 const FIGURE = /(\d[\d.,]*\s(?:[KMGT]?B|files?|folders?|commits?|paths?|entr(?:y|ies)|branch(?:es)?|statements?)\b)/
-const NOT_LOST = ['Searches under', 'Reaches', 'Statements']
+const NOT_LOST = [text.preview.searchesUnder, text.preview.reaches, text.preview.statements]
 
 function figures(Text: Elements['Text'], text: string, key: string) {
   return text.split(FIGURE).map((part, index) => (index % 2 ? <Text key={`${key}-${index}`} color={THEME.warn}>{part}</Text> : part))
@@ -240,8 +245,6 @@ function spansText(Text: Elements['Text'], spans: Span[], key: string) {
 }
 
 // The held command as a card above the pills: what happens in plain words, what it touches, then Cancel, Details and the consequence. Every row fits the band.
-const EXPLAINING = 'Explaining…'
-
 function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number, maxRows: number) {
   const width = Math.max(20, columns - 4)
   // The card's rows are what is left after its border, its action row and the pill row below.
@@ -260,12 +263,13 @@ function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number,
         </Text>
       )
     }
+    if (row.kind === 'verdict') return <Text key={key} color={row.isOk ? THEME.good : THEME.warn}>{`${row.isOk ? MARK.ok : MARK.warn} ${row.text}`}</Text>
     if (row.kind === 'line') return <Text key={key} color={THEME.alert}>{figures(Text, row.text, key)}</Text>
     return <Text key={key} color={THEME.muted}>{row.text}</Text>
   })
   const entry = (id: string, label: string, color?: string) => (
     <Box key={`${id}-pad`}>
-      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface2, ...(color ? { color } : {}) }} />
+      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface2, ...(color ? { color } : {}), still }} />
     </Box>
   )
 
@@ -279,9 +283,9 @@ function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number,
         <Text key="hold-sep-run" color={THEME.border}>│</Text>
         {entry('blast-run', labels.run, THEME.alert)}
         {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
-        {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 6 + EXPLAINING.length + 3 <= width ? (
+        {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 6 + text.card.explaining.length + 3 <= width ? (
           <Box key="hold-explaining-row" flexGrow={1} justifyContent="flex-end">
-            <Client key="hold-explaining" module="./entry.tsx" height={1} props={{ id: 'hold-explaining', label: EXPLAINING, isOpen: false, bg: THEME.surface1, isBusy: true }} />
+            <Client key="hold-explaining" module="./entry.tsx" height={1} props={{ id: 'hold-explaining', label: text.card.explaining, isOpen: false, bg: THEME.surface1, isBusy: true, still }} />
           </Box>
         ) : null}
       </Box>
@@ -290,8 +294,12 @@ function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number,
 }
 
 const toasts = new ToastList('blast')
+// The animations setting, fixed per activation: off, every entry draws still.
+let still = false
 
 export const register: Register = (on, options) => {
+  still = options.animations === false
+  toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
     const id = toasts.add(e.text)
@@ -312,7 +320,7 @@ export const register: Register = (on, options) => {
     look = await detectLook($)
     await $.command.register({
       name: 'mod-blast-radius',
-      description: 'Show what blast radius holds; `settings` opens its settings panel',
+      description: text.ui.commandDescription,
       argumentHint: '[settings]',
     })
     await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, await isSettingsOpen($))
@@ -375,7 +383,7 @@ export const register: Register = (on, options) => {
         approved.add(String(e.tool_use_id))
         approvedCommands.add(command)
         if (approved.size > 100) approved.delete(approved.values().next().value as string)
-        $.ui.toast('Blast radius: running it')
+        $.ui.toast(text.ui.running)
       }
       return next(e)
     }
@@ -392,7 +400,7 @@ export const register: Register = (on, options) => {
     if (!isEnabled || verdict.decision === 'deny' || (await canDraw($))) return verdict
     const { risk } = await judge($, command)
 
-    return risk ? { decision: 'ask', reason: `Blast radius: ${risk.reason}` } : verdict
+    return risk ? { decision: 'ask', reason: fill(text.ui.askReason, { reason: risk.reason }) } : verdict
   })
 
   on('ui.close', async ($, e, next) => {
@@ -443,7 +451,7 @@ export const register: Register = (on, options) => {
       const { report, plain, risk, command } = held
       const { source } = whyOf(risk)
       const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
-      const text = (key: string, value: string, color: string, extra: Record<string, unknown> = {}) => <Text key={key} color={color} wrap="wrap" {...extra}>{value}</Text>
+      const plainText = (key: string, value: string, color: string, extra: Record<string, unknown> = {}) => <Text key={key} color={color} wrap="wrap" {...extra}>{value}</Text>
       const rules = (await loadRules($)).rules
       const { shown, rest } = stepsView(segmentsOf(command, rules))
       // Haiku's step sentences line up with the risky steps only, so a shown step maps to its place among them.
@@ -453,24 +461,24 @@ export const register: Register = (on, options) => {
         ...shown.map((step, index) => (
           <Box key={`does-${index}`} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
             {spansText(Text, colorStep(step.text, rules), `does-${index}-text`)}
-            {text(`does-${index}-says`, (step.risk && held!.described?.steps[riskyIndex(index)]) || step.says, step.risk ? THEME.alert : THEME.muted)}
+            {plainText(`does-${index}-says`, (step.risk && held!.described?.steps[riskyIndex(index)]) || step.says, step.risk ? THEME.alert : THEME.muted)}
           </Box>
         )),
-        rest ? text('does-rest', rest, THEME.muted) : null,
+        rest ? plainText('does-rest', rest, THEME.muted) : null,
       ]
       const full = wrapSpans(colorLines(command, rules), Math.max(20, e.props.bodyColumns - 6), 12)
       const fullRows = [
         ...full.rows.map((row, index) => spansText(Text, row.length ? row : [{ text: ' ', role: 'plain' }], `full-${index}`)),
-        full.more ? <Text key="full-more" color={THEME.muted}>{`and ${full.more} more lines`}</Text> : null,
+        full.more ? <Text key="full-more" color={THEME.muted}>{fill(text.ui.andMoreLines, { n: full.more })}</Text> : null,
       ]
       const legend = <Text key="legend" wrap="wrap">{LEGEND.map((span, index) => <Text key={`legend-${index}`} {...roleProps(span.role)}>{span.text}</Text>)}</Text>
 
       const touches: unknown[] = [
-        <Text key="touch-total" color={THEME.onSurface} wrap="wrap">{figures(Text, report.listTitle ?? `Would ${report.summary}`, 'touch-total')}</Text>,
+        <Text key="touch-total" color={THEME.onSurface} wrap="wrap">{figures(Text, report.listTitle ?? fill(text.ui.wouldSummary, { summary: report.summary }), 'touch-total')}</Text>,
       ]
       report.groups.forEach((group, index) => {
         const color = NOT_LOST.includes(group.title) ? THEME.onSurface : THEME.alert
-        touches.push(text(`touch-${index}-title`, group.title, THEME.muted, { bold: true }))
+        touches.push(plainText(`touch-${index}-title`, group.title, THEME.muted, { bold: true }))
         if (group.entries) {
           // Grouped by folder, in the order the preview found them.
           const byDir = new Map<string, { name: string; detail: string }[]>()
@@ -478,7 +486,7 @@ export const register: Register = (on, options) => {
           let drawn = 0
           for (const [dir, files] of byDir) {
             if (drawn >= 400) break
-            touches.push(text(`dir-${index}-${drawn}`, `${tilde(dir, home)}/`, THEME.muted))
+            touches.push(plainText(`dir-${index}-${drawn}`, `${tilde(dir, home)}/`, THEME.muted))
             for (const file of files) {
               touches.push(
                 <Text key={`file-${index}-${drawn}`} wrap="wrap">
@@ -489,21 +497,21 @@ export const register: Register = (on, options) => {
               drawn++
             }
           }
-          if (group.entries.length > drawn) touches.push(text(`touch-${index}-rest`, `and ${group.entries.length - drawn} more not shown`, THEME.muted))
+          if (group.entries.length > drawn) touches.push(plainText(`touch-${index}-rest`, fill(text.ui.andMoreNotShown, { n: group.entries.length - drawn }), THEME.muted))
         } else {
           ;(group.all ?? group.lines).forEach((line, at) => touches.push(<Text key={`line-${index}-${at}`} color={color} wrap="wrap">{figures(Text, line, `line-${index}-${at}`)}</Text>))
         }
       })
-      if (report.isUnknown && report.note) touches.push(text('touch-note', report.note, THEME.muted))
+      if (report.isUnknown && report.note) touches.push(plainText('touch-note', report.note, THEME.muted))
 
       return (
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-          {paneTitle({ Box, Text }, look, 'Bash', `${plain.run} ${MARK.sep} details`)}
-          <Text color={THEME.muted} wrap="wrap">{`read-only ${MARK.sep} answer on the card above the prompt: Cancel or ${plain.run}`}</Text>
-          {section({ Box, Text }, look, 'does', 'Bash', 'What this command does', [...does, text('why-source', `Held by: ${source.replace(/\.$/, '')}`, THEME.muted, { key: 'why-source' })])}
-          {section({ Box, Text }, look, 'touches', 'tool', 'What it touches', touches)}
-          {section({ Box, Text }, look, 'undo', 'actions', 'Can it be undone', [text('undo-text', plain.undo, THEME.onSurface)])}
-          {section({ Box, Text }, look, 'full', 'prompt', 'Full command', fullRows)}
+          {paneTitle({ Box, Text }, look, 'Bash', `${plain.run} ${MARK.sep} ${text.card.details}`)}
+          <Text color={THEME.muted} wrap="wrap">{`${text.ui.readOnly} ${MARK.sep} ${fill(text.ui.answerOnCard, { cancel: text.card.cancel, run: plain.run })}`}</Text>
+          {section({ Box, Text }, look, 'does', 'Bash', text.ui.sectionDoes, [...does, plainText('why-source', fill(text.ui.heldBy, { source: source.replace(/\.$/, '') }), THEME.muted, { key: 'why-source' })])}
+          {section({ Box, Text }, look, 'touches', 'tool', text.ui.sectionTouches, touches)}
+          {section({ Box, Text }, look, 'undo', 'actions', text.ui.sectionUndo, [plainText('undo-text', plain.undo, THEME.onSurface)])}
+          {section({ Box, Text }, look, 'full', 'prompt', text.ui.sectionFull, fullRows)}
           <Box key="legend-row" marginTop={1}>{legend}</Box>
         </Box>
       )
@@ -514,12 +522,12 @@ export const register: Register = (on, options) => {
     // A saved change reloads this mod, which redraws the panel with the new value.
     const set = async (row: ConfigRow, value: ConfigValue) => {
       const result = await $.config.set({ key: row.key, value })
-      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${row.label} saved`
+      note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.ui.settingSaved, { label: row.label })}`
       $.ui.invalidate('ui.render')
     }
     const run = async (action: Action) => {
-      const said = action.command === 'mod-blast-radius' ? answer($, action.args ?? '') : $.command.run({ command: action.command, args: action.args ?? '' }).then(() => `ran /${action.command}`)
-      note = await said.then(text => `${MARK.ok} ${text || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
+      const said = action.command === 'mod-blast-radius' ? answer($, action.args ?? '') : $.command.run({ command: action.command, args: action.args ?? '' }).then(() => fill(text.ui.ran, { command: action.command }))
+      note = await said.then(reply => `${MARK.ok} ${reply || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
       $.ui.invalidate('ui.render')
     }
     const patterns = BUILT_IN.map((name, index) => (
@@ -529,20 +537,20 @@ export const register: Register = (on, options) => {
       </Box>
     ))
     const loaded = await loadRules($)
-    const bad = loaded.notes.length ? `${MARK.warn} ${loaded.notes[0]}${loaded.notes.length > 1 ? ` (+${loaded.notes.length - 1} more)` : ''}` : ''
+    const bad = loaded.notes.length ? `${MARK.warn} ${loaded.notes[0]}${loaded.notes.length > 1 ? fill(text.ui.moreProblems, { n: loaded.notes.length - 1 }) : ''}` : ''
     const ruleLines = [
       <Text key="rules-path" color={THEME.onSurface} wrap="truncate-end">{`~/${RULES_FILE}`}</Text>,
       <Text key="rules-format" color={THEME.muted} wrap="truncate-end">{'[{ "pattern": "terraform\\s+destroy", "reason": "Destroys infrastructure", "flags": "i" }]'}</Text>,
-      <Text key="rules-count" color={THEME.muted}>{`${loaded.rules.length} ${loaded.rules.length === 1 ? 'rule' : 'rules'} loaded ${MARK.sep} JS regexes on the whole command, read again when the file changes`}</Text>,
+      <Text key="rules-count" color={THEME.muted}>{`${fill(text.ui.rulesLoaded, { rules: plural(loaded.rules.length, text.units.rule) })} ${MARK.sep} ${text.ui.rulesNote}`}</Text>,
     ]
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {paneTitle({ Box, Text }, look, 'settings', `Blast radius ${MARK.sep} settings`)}
-        <Text color={statusColor(note || bad)}>{note || bad || `click a control to change it ${MARK.sep} saved at once, the mod reloads`}</Text>
+        {paneTitle({ Box, Text }, look, 'settings', `${text.ui.settingsTitle} ${MARK.sep} ${text.ui.settings}`)}
+        <Text color={statusColor(note || bad)}>{note || bad || `${text.ui.statusHint} ${MARK.sep} ${text.ui.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews })}
-        {section({ Box, Text }, look, 'rules', 'Bash', 'Your rules', ruleLines)}
-        {section({ Box, Text }, look, 'built-in', 'Bash', 'Held commands', patterns)}
+        {section({ Box, Text }, look, 'rules', 'Bash', text.ui.sectionRules, ruleLines)}
+        {section({ Box, Text }, look, 'built-in', 'Bash', text.ui.sectionBuiltIn, patterns)}
       </Box>
     )
   })
