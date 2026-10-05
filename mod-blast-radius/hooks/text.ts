@@ -121,12 +121,12 @@ export default {
     "verdictCheck": "Open Details to be sure",
     "verdict": "{lead}: {why}",
     "cancel": "Cancel",
-    "details": "Details",
-    "explaining": "Explaining…"
+    "details": "Details",    "explaining": "Explaining…"
   },
   "verdict": {
     "nothingMeasured": "nothing could be measured before it runs",
-    "outsideFolder": "it reaches outside the working folder"
+    "outsideFolder": "it reaches outside the working folder",
+    "noAnswer": "no explanation came back"
   },
   "reasons": {
     "rootDelete": "Recursive deletion of a root, home or parent directory",

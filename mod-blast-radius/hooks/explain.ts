@@ -268,7 +268,10 @@ export function cardRows(plain: Plain, report: Report, width: number, bodyRows: 
     const note = plain.targets ? fill(text.card.fromCommand, { targets: plain.targets }) : text.card.cantPreview
     candidates.push({ order: 10, priority: 1, row: { kind: 'note', text: cutEnd(note, width) } })
   } else if (report.groups[0]?.lines[0]) {
-    candidates.push({ order: 10, priority: 1, row: { kind: 'line', text: cutEnd(report.groups[0].lines[0], width) } })
+    const group = report.groups[0]
+    const rest = group.lines.length - 1 + group.more
+    const more = rest > 0 ? fill(text.card.andMore, { n: rest }) : ''
+    candidates.push({ order: 10, priority: 1, row: { kind: 'line', text: `${cutEnd(group.lines[0]!, Math.max(8, width - more.length))}${more}` } })
   }
   candidates.push({ order: 1, priority: 2, row: { kind: 'does', text: wrapped[0]! } })
   if (wrapped[1]) candidates.push({ order: 2, priority: 5, row: { kind: 'does', text: wrapped[1] } })
@@ -281,9 +284,13 @@ export function cardRows(plain: Plain, report: Report, width: number, bodyRows: 
 }
 
 // The three action labels, shortened together so the row fits: Cancel, Details and the consequence stay in that order.
+// The digit that presses each action from an empty prompt, drawn as a keycap before its label.
+export const HOTKEY = { cancel: '1', details: '2', run: '3' }
+const KEYCAP_WIDTH = 3
+
 export function actionLabels(plain: Plain, width: number) {
   const separators = 2 * 3
-  const fixed = ` ${text.card.cancel} `.length + ` ${text.card.details} `.length + 2
+  const fixed = ` ${text.card.cancel} `.length + ` ${text.card.details} `.length + 2 + 3 * KEYCAP_WIDTH
   const run = cutEnd(plain.run, Math.max(8, width - fixed - separators))
   return { cancel: text.card.cancel, details: text.card.details, run }
 }

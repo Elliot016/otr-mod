@@ -4,7 +4,7 @@ import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMod
 import type { EntryMessage } from './entry'
 import { pillRow, splitRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { actionLabels, cardRows, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
+import { actionLabels, cardRows, HOTKEY, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
 import { describePrompt, parseDescribed, SYSTEM, verdictOf, type Described } from './haiku'
 import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from './syntax'
 import { measure, tilde, type Io, type Report } from './preview'
@@ -108,7 +108,12 @@ async function describe($: EngineInterface, mine: Held) {
     mine.isDescribing = false
     $.ui.invalidate('ui.render')
     found = reply?.isAnswered ? parseDescribed(reply.text, risky.length) ?? undefined : undefined
-    if (!found) return
+    // No answer still gets a verdict line: with nothing to go on, it points to Details.
+    if (!found) {
+      if (held === mine && mine.decision === null && mine.plain) mine.plain = { ...mine.plain, verdict: { isOk: false, why: text.verdict.noAnswer } }
+      $.ui.invalidate('ui.render')
+      return
+    }
     describedCache.set(mine.command, found)
   }
   const cwd = String((await $.session.cwd().catch(() => '')) ?? '')
@@ -245,7 +250,7 @@ function spansText(Text: Elements['Text'], spans: Span[], key: string) {
 }
 
 // The held command as a card above the pills: what happens in plain words, what it touches, then Cancel, Details and the consequence. Every row fits the band.
-function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number, maxRows: number) {
+function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: any) => RenderElement }, state: Held, columns: number, maxRows: number, onKey: (id: string) => unknown) {
   const width = Math.max(20, columns - 4)
   // The card's rows are what is left after its border, its action row and the pill row below.
   const rows = cardRows(state.plain!, state.report!, width, Math.max(1, maxRows - 2 - 3))
@@ -267,9 +272,17 @@ function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number,
     if (row.kind === 'line') return <Text key={key} color={THEME.alert}>{figures(Text, row.text, key)}</Text>
     return <Text key={key} color={THEME.muted}>{row.text}</Text>
   })
-  const entry = (id: string, label: string, color?: string) => (
-    <Box key={`${id}-pad`}>
+  // The entry draws the action; a Button nobody sees carries its digit, since only a Button takes a hotkey and a visible one inverts under the pointer.
+  const entry = (id: string, label: string, hotkey: string, color?: string) => (
+    <Box key={`${id}-pad`} flexDirection="row">
+      {/* The digit sits in a keycap of its own, apart from the label. */}
+      <Box key={`${id}-cap`} backgroundColor={THEME.surface3} flexShrink={0}>
+        <Text color={THEME.accent} bold>{` ${hotkey} `}</Text>
+      </Box>
       <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface2, ...(color ? { color } : {}), still }} />
+      <Box key={`${id}-key`} width={0} height={0} overflow="hidden">
+        <Button key={`${id}-hotkey`} label={label} hotkey={hotkey} plain onPress={() => onKey(id)} />
+      </Box>
     </Box>
   )
 
@@ -277,13 +290,13 @@ function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number,
     <Box key="blast-card" flexDirection="column" borderStyle="round" borderColor={THEME.alert} backgroundColor={THEME.surface1} paddingX={1}>
       {body}
       <Box key="hold-actions" flexDirection="row" columnGap={1}>
-        {entry('blast-cancel', labels.cancel)}
+        {entry('blast-cancel', labels.cancel, HOTKEY.cancel)}
         <Text key="hold-sep-details" color={THEME.border}>│</Text>
-        {entry('blast-details', labels.details)}
+        {entry('blast-details', labels.details, HOTKEY.details)}
         <Text key="hold-sep-run" color={THEME.border}>│</Text>
-        {entry('blast-run', labels.run, THEME.alert)}
+        {entry('blast-run', labels.run, HOTKEY.run, THEME.alert)}
         {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
-        {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 6 + text.card.explaining.length + 3 <= width ? (
+        {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 6 + 9 + text.card.explaining.length + 3 <= width ? (
           <Box key="hold-explaining-row" flexGrow={1} justifyContent="flex-end">
             <Client key="hold-explaining" module="./entry.tsx" height={1} props={{ id: 'hold-explaining', label: text.card.explaining, isOpen: false, bg: THEME.surface1, isBusy: true, still }} />
           </Box>
@@ -291,6 +304,15 @@ function holdCard({ Box, Client, Text }: Elements, state: Held, columns: number,
       </Box>
     </Box>
   )
+}
+
+// A card action, from a click on its entry or its digit typed into the empty prompt.
+async function choose($: EngineInterface, id: string) {
+  if (!held || held.decision !== null) return
+  if (id === 'blast-run') held.decision = 'run'
+  if (id === 'blast-cancel') held.decision = 'cancel'
+  if (id === 'blast-details') await toggleList($)
+  $.ui.invalidate('ui.render')
 }
 
 const toasts = new ToastList('blast')
@@ -565,19 +587,14 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     const message = e.data as EntryMessage
-    if (message?.type === 'menu-entry' && held && held.decision === null) {
-      if (message.id === 'blast-run') held.decision = 'run'
-      if (message.id === 'blast-cancel') held.decision = 'cancel'
-      if (message.id === 'blast-details') await toggleList($)
-      $.ui.invalidate('ui.render')
-    }
+    if (message?.type === 'menu-entry') await choose($, message.id)
 
     return next(e)
   })
 
   // The hold is a card above the pill row, so it draws wherever the band does, desktop included.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const { Box, Client, Text } = $.ui.resolve(e)
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
     if (!held || !held.report || !held.plain || held.decision !== null) {
       if (toasts.items.length === 0) return next(e)
       const others = await next(e)
@@ -594,6 +611,6 @@ export const register: Register = (on, options) => {
     const { group, row, tip } = splitRow(await next(e))
 
     // While a call is held only the card and the pill row draw, so other rows cannot fill the band and cut the card off.
-    return pillRow({ Box, Text }, look.nerd, group, row, [holdCard({ Box, Client, Text }, held, e.props.bodyColumns, e.props.maxRows)], tip)
+    return pillRow({ Box, Text }, look.nerd, group, row, [holdCard({ Box, Button, Client, Text }, held, e.props.bodyColumns, e.props.maxRows, id => choose($, id))], tip)
   })
 }

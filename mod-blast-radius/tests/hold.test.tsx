@@ -172,7 +172,7 @@ test('git reset --hard card: discards the changed files in plain words', async (
     expect(await textOf(band, /Discard 2 changed files/)).toBe('\! Discard 2 changed files')
     expect(await textOf(band, /lost for good/)).toBe('Sets files back to the last commit. Uncommitted changes are lost for good.')
     expect(await labelOf(band, 'blast-run')).toBe(' Discard 2 changed files ')
-    expect(await textOf(band, /M a\.ts/)).toBe(' M a.ts')
+    expect(await textOf(band, /M a\.ts/)).toBe(' M a.ts and 1 more')
   })
 })
 
@@ -204,10 +204,12 @@ test('other kinds speak plainly: overwrite, drop table, and a check with no prev
   }
 })
 
-test('Haiku answers only a filled template: wrong step counts, long fields and junk are dropped', () => {
+test('Haiku answers only a filled template: long fields and junk are dropped, a wrong step count keeps the rest', () => {
   const good = '{"verb":"Delete the build folder","does":"Removes the build output and everything in it.","undo":"No, rebuild it to get it back.","steps":["Deletes the build folder"],"targets":"the build folder","verdict":"ok","why":"build output can be rebuilt"}'
   expect(parseDescribed(`Sure!\n${good}`, 1)?.verb).toBe('Delete the build folder')
-  expect(parseDescribed(good, 2)).toBeNull()
+  // Haiku often writes a step for a safe one too, so a wrong count keeps the answer but no steps: the rule's sentences show.
+  expect(parseDescribed(good, 2)?.steps).toEqual(['', ''])
+  expect(parseDescribed(good.replace('["Deletes the build folder"]', '["Lists the status","Deletes the build folder"]'), 1)?.steps).toEqual([''])
   expect(parseDescribed(good.replace('Delete the build folder', 'x'.repeat(80)), 1)).toBeNull()
   expect(parseDescribed('not json', 1)).toBeNull()
   expect(describePrompt('rm -rf build', 'rule', '', ['rm -rf build'])).toContain('<command>\nrm -rf build\n</command>')
@@ -272,13 +274,16 @@ test('while Haiku writes the card words, a shimmering Explaining shows on the ac
   await band.unmount()
 })
 
-test('a failed Haiku call leaves the rule wording in place', async ($, on) => {
-  const { seen } = world(on)
+test('a failed Haiku call leaves the rule wording in place, and the verdict points to Details', async ($, on) => {
+  const { seen, clock } = world(on)
   on('model.complete', () => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } }))
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await clock.advance(1)
+  await band.redraw()
   expect(await textOf(band, /Delete/)).toBeDefined()
+  expect(await textOf(band, /Open Details to be sure: no explanation came back/)).toBeDefined()
   await cancel($)
   await call
   await band.unmount()
@@ -299,6 +304,24 @@ test('Run runs the command, and nothing else answers the hold', async ($, on) =>
 
   expect(seen.ran).toBe(1)
   expect(JSON.stringify(result)).toContain('ran')
+})
+
+test('a digit typed into the empty prompt answers the hold: 1 cancels, 3 runs', async ($, on) => {
+  const { seen } = world(on)
+  const first = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  let band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await band.press({ key: 'blast-cancel-hotkey' })
+  expect(JSON.stringify(await first)).toContain('pressed Cancel')
+  await band.unmount()
+
+  const second = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await band.press({ key: 'blast-run-hotkey' })
+  await second
+  await band.unmount()
+  expect(seen.ran).toBe(1)
 })
 
 test('Cancel refuses the call with a reason Claude reads, and the command never runs', async ($, on) => {
@@ -600,7 +623,7 @@ for (const [name, command, setup] of FIT_CASES) {
         const rows = (await band.findAll({ type: 'Text' })) as { text: string }[]
         for (const row of rows) expect(row.text.length, row.text).toBeLessThanOrEqual(width)
         // The sentence, the paths and the command go to Details; the figures stay in the heading and the Run label.
-        expect(rows.filter(row => !row.text.startsWith('!') && row.text !== '│' && row.text.trim() !== '').map(row => row.text)).toEqual([])
+        expect(rows.filter(row => !row.text.startsWith('!') && row.text !== '│' && !/^ \d $/.test(row.text) && row.text.trim() !== '').map(row => row.text)).toEqual([])
         expect(await labelOf(band, 'blast-run')).toBeTruthy()
       }, bandOf(6, columns))
     })

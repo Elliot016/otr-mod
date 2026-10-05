@@ -53,7 +53,7 @@ const clean = (value: unknown, max: number) => {
   return line && line.length <= max ? line : null
 }
 
-// The answer, or null when any field is missing, too long, or the step count is off.
+// The answer, or null when any field is missing or too long. Steps are kept only when there is one per risky step; with any other count their order can't be trusted, so every step is empty and the rule's own sentences show.
 export function parseDescribed(reply: string, stepCount: number): Described | null {
   const start = reply.indexOf('{')
   const end = reply.lastIndexOf('}')
@@ -67,10 +67,11 @@ export function parseDescribed(reply: string, stepCount: number): Described | nu
   const verb = clean(raw?.verb, 60)
   const does = clean(raw?.does, 140)
   const undo = clean(raw?.undo, 120)
-  const steps = Array.isArray(raw?.steps) ? raw.steps.map((step: unknown) => clean(step, 120)) : []
+  const given: unknown[] = Array.isArray(raw?.steps) ? raw.steps : []
+  const steps = Array.from({ length: stepCount }, (_, index) => (given.length === stepCount ? clean(given[index], 120) ?? '' : ''))
   const targets = clean(raw?.targets, 100)
   const why = clean(raw?.why, 90)
   const verdict = raw?.verdict === 'ok' ? 'ok' : 'check'
-  if (!verb || !does || !undo || !targets || !why || steps.length !== stepCount || steps.some((step: string | null) => !step)) return null
+  if (!verb || !does || !undo || !targets || !why) return null
   return { verb, does, undo, steps, targets, verdict, why }
 }
