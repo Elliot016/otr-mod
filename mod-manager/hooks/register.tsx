@@ -1,15 +1,14 @@
-import type { ConfigRow, ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
 import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
-import { actionColumn } from './rows'
-import type { EntryMessage } from './entry'
-import { PILL, pillRow, splitRow, tipLine } from './pills'
+import type { EntryMessage, EntryProps } from './entry'
+import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { isNerdFace, lookFor, paneTitle, section, terminalSettings, type IconMode, withMark } from './look'
-import { settingsBody, type Action } from './settings'
-import type { ListMessage } from './list'
+import { isNerdFace, lookFor, section, terminalSettings, type IconMode, withMark } from './look'
+import { settingChoice, settingsBody, type Action } from './settings'
+import { type ListMessage, type ListProps } from './list'
 
 // `$` cannot cross an import, so the registry gets plain functions instead.
 const ioOf = ($: EngineInterface): Io => ({
@@ -94,6 +93,17 @@ async function togglePane($: EngineInterface) {
 const openPage = ($: EngineInterface, index: number) => {
   page = index
   note = ''
+  $.ui.invalidate('ui.render')
+}
+
+// The panel's title: the list as a tab with its count; on a mod's page a click on it goes back.
+const listTab = (isShown: boolean) => ({ id: 'manager-tab', label: text.paneTitle, icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: isShown, count: mods.length })
+
+// A saved change reloads that mod, which redraws its page with the new value.
+async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
+  const row = (await $.config.list()).find(each => each.key === key)
+  const result = await $.config.set({ key, value })
+  note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row?.label ?? key })}`
   $.ui.invalidate('ui.render')
 }
 
@@ -235,11 +245,7 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = (
-      <Box key="menu-pad-manager">
-        <Client key="menu-entry-manager" module="./entry.tsx" height={1} props={{ id: 'manager', label: look.glyph.gear, isOpen: shown, bg: PILL.primary, idle: THEME.pill, isBusy: isOpening, still }} />
-      </Box>
-    )
+    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'manager', { label: look.glyph.gear, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
     return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
   })
@@ -260,6 +266,10 @@ export const register: Register = (on, options) => {
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && message.id === 'manager') await openingPane($)
     if (message?.type === 'menu-entry' && message.id.startsWith('icons-')) await setAllIcons($, message.id.slice('icons-'.length))
+    // The Mods tab on a mod's page goes back to the list; the open tab does nothing.
+    if (message?.type === 'menu-entry' && message.id === 'manager-tab' && page >= 0) openPage($, -1)
+    const change = settingChoice(e.data)
+    if (change) await saveSetting($, change.key, change.value)
 
     return next(e)
   })
@@ -267,6 +277,11 @@ export const register: Register = (on, options) => {
   // A click on a mod's name opens its page.
   on('ui.message', { requestId: 'manager' }, async ($, e, next) => {
     const message = e.data as ListMessage
+    // A click posts only its own message, so a toggle also says which row the pointer is on.
+    if (message.type === 'toggle') {
+      hovering = message.index
+      await toggleMod($, message.index)
+    }
     if (message.type === 'select') {
       hovering = -1
       openPage($, message.index)
@@ -299,22 +314,11 @@ export const register: Register = (on, options) => {
       // /config lists a plugin's settings as `<plugin>.<field>`, and only while the plugin is on.
       const rows = mod.enabled ? (await $.config.list()).filter(row => row.key.startsWith(`${mod.name}.`)) : []
       const actions: Action[] = mod.enabled ? (mod.showcase?.actions ?? []) : []
-      // A saved change reloads that mod, which redraws this page with the new value.
-      const set = async (row: ConfigRow, value: ConfigValue) => {
-        const result = await $.config.set({ key: row.key, value })
-        note = 'deny' in result && result.deny ? `${MARK.warn} ${result.deny}` : `${MARK.ok} ${fill(text.settingSaved, { label: row.label })}`
-        redraw()
-      }
       const run = async (action: Action) => {
         note = await $.command
           .run({ command: action.command, args: action.args ?? '' })
           .then(() => `${MARK.ok} ${fill(text.actionRan, { command: [action.command, action.args].filter(Boolean).join(' ') })}`)
           .catch(error => `${MARK.warn} ${String(error)}`)
-        redraw()
-      }
-      const back = () => {
-        page = -1
-        note = ''
         redraw()
       }
       const hint = rows.length || actions.length ? fill(text.pageHint, { sep: MARK.sep }) : text.pageHintBack
@@ -329,12 +333,10 @@ export const register: Register = (on, options) => {
       ))
 
       return frame([
-        <Box key="back-row">
-          <Button key="back" label={`${look.glyph.back} ${text.back}`} plain hover={{ scope: 'back-row', color: THEME.accent }} onPress={back} />
-        </Box>,
-        <Box key="page-head" flexDirection="row" columnGap={2} marginTop={1}>
-          {paneTitle({ Box, Text }, look, 'mod', fill(text.pageTitle, { name: shownName(mod.name), sep: MARK.sep, version: mod.version }))}
-          <Text color={mod.enabled ? THEME.good : THEME.muted}>{mod.enabled ? text.stateOn : text.stateOff}</Text>
+        <Box key="page-head" flexDirection="row" columnGap={1}>
+          {tabRow({ Box, Client, Text }, look.nerd, [listTab(false), { id: 'manager-page', label: shownName(mod.name), icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: true }], still)}
+          <Text color={THEME.muted}>{mod.version}</Text>
+          <Text color={mod.enabled ? THEME.good : THEME.muted}>{`${MARK.sep} ${mod.enabled ? text.stateOn : text.stateOff}`}</Text>
         </Box>,
         <Text key="page-note" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
         <Box key="page-about" flexDirection="column" marginTop={1}>
@@ -342,7 +344,7 @@ export const register: Register = (on, options) => {
           {mod.showcase?.tagline ? <Text color={THEME.secondary}>{mod.showcase.tagline}</Text> : null}
         </Box>,
         mod.enabled || mod.settings === 0 ? (
-          settingsBody({ Box, Button, Text }, look, { rows, actions, working, set, run, previews: mod.showcase?.previews })
+          settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews: mod.showcase?.previews, still })
         ) : (
           <Box key="page-off" marginTop={1}>
             <Text color={THEME.muted}>{fill(text.turnOnFirst, { name: shownName(mod.name) })}</Text>
@@ -374,32 +376,30 @@ export const register: Register = (on, options) => {
         `list-${source}`,
         icon,
         title,
-        <Box key={`rows-${source}`} flexDirection="row" columnGap={1}>
-          {actionColumn(
-            { Box, Button, Text },
-            `mods-${source}`,
-            members.map(({ item, index }) => ({ label: item.enabled ? look.glyph.on : look.glyph.off, isInactive: !item.enabled, onPress: () => toggleMod($, index) })),
-          )}
-          <Client
-            key={`list-${source}`}
-            module="./list.tsx"
-            height={members.length}
-            props={{
-              rows: members.map(({ item, index }) => ({
-                index,
-                name: shownName(item.name),
-                slug: item.name,
-                enabled: item.enabled,
-                // A command named after its mod repeats the name, so only other commands show.
-                commands: item.commands.filter(name => name !== item.name),
-                hasSettings: item.settings > 0,
-              })),
-              gear: look.glyph.gear,
-              nameWidth: Math.max(...members.map(({ item }) => shownName(item.name).length)),
-              icon: look.glyph.icon[icon] ?? '',
-            }}
-          />
-        </Box>,
+        <Client
+          key={`list-${source}`}
+          module="./list.tsx"
+          height={members.length}
+          props={{
+            rows: members.map(({ item, index }) => ({
+              index,
+              name: shownName(item.name),
+              slug: item.name,
+              version: item.version,
+              enabled: item.enabled,
+              // A command named after its mod repeats the folder, so only other commands show.
+              commands: item.commands.filter(name => name !== item.name),
+              hasSettings: item.settings > 0,
+            })),
+            gear: look.glyph.gear,
+            nameWidth: Math.max(...members.map(({ item }) => shownName(item.name).length)),
+            slugWidth: Math.max(...members.map(({ item }) => item.name.length)),
+            icon: look.glyph.icon[icon] ?? '',
+            nerd: look.nerd,
+            on: text.stateOn,
+            off: text.stateOff,
+          } satisfies ListProps}
+        />,
       )
     }
     const pending = changed.size
@@ -425,21 +425,27 @@ export const register: Register = (on, options) => {
     const iconRows = await iconRowsOf($)
     const iconValues = new Set(iconRows.map(row => String(row.value)))
     const iconsNow = iconValues.size === 1 ? [...iconValues][0] : ''
+    const iconOption = (mode: (typeof ICON_MODES)[number]) => {
+      const isChosen = iconsNow === mode
+      const bg = isChosen ? THEME.lifted : THEME.surface3
+      const entry = <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, isOpen: isChosen, bg, color: THEME.accent, idle: THEME.muted, still } satisfies EntryProps} />
+      // The chosen option is a pill of its own inside the bar, as the settings cards draw a choice.
+      return isChosen ? pill({ Box, Text }, look.nerd, bg, entry, `icons-${mode}-pill`, THEME.surface3) : <Box key={`icons-${mode}-pad`}>{entry}</Box>
+    }
     const iconsSwitch = iconRows.length ? (
       <Box key="icons-switch" flexDirection="row" columnGap={1} marginTop={1}>
         <Text color={THEME.muted}>{text.iconsLabel}</Text>
-        {ICON_MODES.map(mode => (
-          <Box key={`icons-${mode}-pad`}>
-            <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode], isOpen: iconsNow === mode, bg: iconsNow === mode ? THEME.surface2 : THEME.bg, still }} />
-          </Box>
-        ))}
+        {pill({ Box, Text }, look.nerd, THEME.surface3, ICON_MODES.map(iconOption), 'icons-bar', THEME.bg)}
         {iconsNow ? null : <Text color={THEME.muted}>{`${MARK.sep} ${text.iconsMixed}`}</Text>}
       </Box>
     ) : null
 
     return frame([
-      paneTitle({ Box, Text }, look, 'mod', fill(text.listTitle, { sep: MARK.sep, on: onCount, total: mods.length })),
-      <Text key="list-note" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { on: look.glyph.on.trim(), sep: MARK.sep })}</Text>,
+      <Box key="list-head" flexDirection="row" columnGap={1}>
+        {tabRow({ Box, Client, Text }, look.nerd, [listTab(true)], still)}
+        <Text color={THEME.muted}>{fill(text.onCount, { on: onCount, total: mods.length })}</Text>
+      </Box>,
+      <Text key="list-note" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { sep: MARK.sep })}</Text>,
       iconsSwitch,
       mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>{text.noMods}</Text> : null,
       group('dir', text.sectionYours, 'mod'),

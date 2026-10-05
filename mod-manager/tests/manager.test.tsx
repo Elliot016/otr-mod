@@ -203,43 +203,45 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   } as never)
 
   const dirs = () => String(JSON.parse(files[settingsPath]!).env.CLAUDE_CODE_PLUGIN_DIRS)
-  expect(await ui.find({ type: 'Text', text: /^▸ Mods · 2 of 3 on$/ })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-tab' }))).toContain('3')
+  expect(await ui.find({ type: 'Text', text: '2 of 3 on' })).toBeDefined()
   // Rows group by source, and nothing toggled yet means nothing to reload.
   expect(await ui.find({ type: 'Text', text: /^Yours$/ })).toBeDefined()
   // Beside each readable name, the package name: the folder to open.
-  expect(JSON.stringify(await ui.drawn({ in: 'list-dir' }))).toMatch(/"alpha"/)
+  expect(JSON.stringify(await ui.drawn({ in: 'list-dir' }))).toContain('" alpha"')
   expect(await ui.find({ type: 'Text', text: /^Installed$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^No changes to apply$/ })).toBeDefined()
 
-  // The row's [◉] action toggles; the list itself shows no details.
-  await ui.press({ key: 'mods-dir-action-1' })
+  // The switch pill at the row's start toggles; the rest of the row opens the mod.
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 1 })
   expect(dirs()).toContain('beta')
-  await ui.press({ key: 'mods-dir-action-0' })
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
   expect(JSON.parse(files[settingsPath]!).enabledPlugins['alpha@inline']).toBe(false)
   expect(await ui.find({ type: 'Text', text: /Alpha disabled, reload plugins to apply/ })).toBeDefined()
   expect(await ui.find({ type: 'Button', text: /^Reload plugins to apply 2 changes$/ })).toBeDefined()
   // Toggling alpha back leaves one change pending.
-  await ui.press({ key: 'mods-dir-action-0' })
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await ui.find({ type: 'Button', text: /^Reload plugins to apply 1 change$/ })).toBeDefined()
   // While Claude works the reload would only queue as a prompt, so it waits.
   await $.turn.start({ turnId: 't1' } as never)
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: /^Reload plugins to apply 1 change · available once Claude is idle$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /alpha does a thing/ })).toBeUndefined()
-
-  // Hovering a row shows that mod's description in a card at the bottom; leaving the list hides it.
-  await ui.pointer({ in: 'list-dir', type: 'move', x: 2, y: 0 })
+  // The last toggle left the pointer on alpha's row, so its card shows; leaving the list hides it, hovering again shows it.
+  expect(await ui.find({ type: 'Text', text: /alpha does a thing/ })).toBeDefined()
+  await ui.pointer({ in: 'list-dir', type: 'leave', x: 0, y: 0 })
+  expect(await ui.find({ key: 'hover-card' })).toBeUndefined()
+  await ui.pointer({ in: 'list-dir', type: 'move', x: 12, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'alpha does a thing' })).toBeDefined()
   expect(await ui.find({ key: 'hover-card' })).toBeDefined()
   await ui.pointer({ in: 'list-dir', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ key: 'hover-card' })).toBeUndefined()
 
-  // A click on a name opens that mod's page, and < back returns to the list.
-  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 2, y: 1 })
+  // A click on a name opens that mod's page as a second tab, and the Mods tab returns to the list.
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 12, y: 1 })
   expect(await ui.find({ type: 'Text', text: /beta does a thing/ })).toBeDefined()
-  expect(await ui.find({ type: 'Button', text: /^< Back$/ })).toBeDefined()
-  await ui.press({ key: 'back' })
-  expect(await ui.find({ type: 'Text', text: /^▸ Mods · 3 of 3 on$/ })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-page' }))).toContain('Beta')
+  await ui.pointer({ in: 'manager-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: '3 of 3 on' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -293,16 +295,16 @@ test('a mod page changes its settings, runs its actions, and holds them while Cl
   } as never)
   // A mod that declares settings carries the gear in the list; a mod without settings does not.
   const listed = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
-  expect(listed).toContain('⚙')
-  expect(listed.split('⚙').length).toBe(2)
-  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 2, y: 0 })
+  expect(listed).toContain('⊛')
+  expect(listed.split('⊛').length).toBe(2)
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 12, y: 0 })
 
   // Only alpha's own rows show, and a click saves through /config.
   expect(await ui.find({ type: 'Text', text: /^Loud$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Not alpha$/ })).toBeUndefined()
   // The example card for the current value comes from the mod's showcase.json, as in its own panel.
   expect(await ui.find({ type: 'Text', text: /^quiet example$/ })).toBeDefined()
-  await ui.press({ key: 'setting-0-flip' })
+  await ui.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
   expect(saved).toEqual([['alpha.loud', true]])
   expect(await ui.find({ type: 'Text', text: /Loud saved/ })).toBeDefined()
 
@@ -404,7 +406,7 @@ const iconsPane = async ($: any, on: any) => {
     requestId: 'manager',
     props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   } as never)
-  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 2, y: 0 })
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 12, y: 0 })
   return ui
 }
 
@@ -453,7 +455,6 @@ test('the icons switch shows Mixed when mods differ, and one click sets every mo
   await ui.unmount()
 })
 
-const SWITCH_ON = String.fromCodePoint(0xf205)
 const PILL_CAP = String.fromCodePoint(0xe0b6)
 
 test('icons=nerd draws Nerd controls and pill headings', { options: { icons: 'nerd' } }, async ($, on) => {
@@ -461,8 +462,8 @@ test('icons=nerd draws Nerd controls and pill headings', { options: { icons: 'ne
   expect(await ui.find({ type: 'Text', text: PILL_CAP })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Features$/ })).toBeDefined()
   expect(await ui.find({ key: 'features-head' })).toBeDefined()
-  await ui.press({ key: 'back' })
-  expect(await ui.find({ type: 'Button', text: SWITCH_ON })).toBeDefined()
+  await ui.pointer({ in: 'manager-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(JSON.stringify(await ui.drawn({ in: 'list-dir' }))).toContain(PILL_CAP)
   await ui.unmount()
 })
 
@@ -471,8 +472,9 @@ test('icons=safe keeps the common Unicode glyphs and plain headings', { options:
   expect(await ui.find({ type: 'Text', text: PILL_CAP })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^Features$/ })).toBeDefined()
   expect(await ui.find({ key: 'features-head' })).toBeDefined()
-  await ui.press({ key: 'back' })
-  expect(await ui.find({ type: 'Button', text: /^\[◉\]$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Button', text: SWITCH_ON })).toBeUndefined()
+  await ui.pointer({ in: 'manager-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
+  expect(rows).toContain('● On')
+  expect(rows).not.toContain(PILL_CAP)
   await ui.unmount()
 })
