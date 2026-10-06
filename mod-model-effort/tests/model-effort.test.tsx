@@ -100,6 +100,12 @@ test('a click on the model name lists the models used before, and a pick switche
   const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never)
   expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
 
+  // The × closes the menu without switching.
+  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  await ui.pointer({ in: 'effort-model-close', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
+  expect(ran).toEqual([])
+
   // The current model leads, then the others in the order they were used; a model never seen before still shows.
   await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
   // Each entry is a pill: the current one on surface3 with a green ✓ subpill, the others on surface2 with a blank as wide, so names line up.

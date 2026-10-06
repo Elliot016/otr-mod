@@ -173,17 +173,17 @@ test('the prompt row shows when it was sent, the head how long the turn took, an
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
   expect(await prompt.find({ type: 'Text', text: '41s ' })).toBeUndefined()
   await pick(prompt, 1)
-  expect(await prompt.find({ type: 'Button', text: /^ \S Bash\(claude plugin test/ })).toBeDefined()
+  expect(await prompt.find({ key: 'toggle-call-0-colored' })).toBeDefined()
   expect(await prompt.find({ type: 'Text', text: '41s ' })).toBeDefined()
   // A click on a call's line opens it: what the call gave back shows under the line, the tool row stays hidden, and a second click closes it.
-  await prompt.press({ key: 'toggle-call-0-button' })
+  await prompt.pointer({ in: 'toggle-call-0-colored', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await prompt.find({ type: 'Text', text: /^ok$/ })).toBeDefined()
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
-  await prompt.press({ key: 'toggle-call-0-button' })
+  await prompt.pointer({ in: 'toggle-call-0-colored', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await prompt.find({ type: 'Text', text: /^ok$/ })).toBeUndefined()
   // A second click on the open chip closes it.
   await pick(prompt, 1)
-  expect(await prompt.find({ type: 'Button', text: /^ \S Bash\(claude plugin test/ })).toBeUndefined()
+  expect(await prompt.find({ key: 'toggle-call-0-colored' })).toBeUndefined()
 })
 
 // The same turn still running: no turn_duration row yet, and Claude is working.
@@ -191,29 +191,35 @@ const LIVE = TIMED.split('\n').slice(0, 4).join('\n')
 
 test('the running turn shows its tool rows in full, then folds once it ends', async ($, on) => {
   const { tool } = await mountTimed($, on, LIVE, true)
-  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
-  expect(await tool.find({ type: 'Button', text: /^Bash\(claude plugin test/ })).toBeUndefined()
+  expect(await tool.find({ key: 'bash-row' })).toBeDefined()
+  expect(await tool.find({ key: 'toggle-tool-colored' })).toBeUndefined()
+  // turn-fold draws the Bash row itself, so the command keeps blast-radius's shell colors: the command word bold blue, a plain word in the text color.
+  const word = await tool.find({ type: 'Text', text: /^claude$/ })
+  expect(word?.props).toMatchObject({ color: '#7386D0', bold: true })
+  expect((await tool.find({ type: 'Text', text: /^\.$/ }))?.props.color).toBe('#EEEEFA')
 })
 
 test('a mod reload mid-turn misses turn.start and still shows the running turn in full', async ($, on) => {
   const { tool } = await mountTimed($, on, LIVE, true, false)
-  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  expect(await tool.find({ key: 'bash-row' })).toBeDefined()
 })
 
 test('a tool row drawn before the transcript holds it counts as the running turn and shows in full', async ($, on) => {
   const { tool } = await mountTimed($, on, TIMED.split('\n').slice(0, 1).join('\n'), true)
-  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  expect(await tool.find({ key: 'bash-row' })).toBeDefined()
 })
 
 test('a finished turn stays open until the next prompt', async ($, on) => {
   // Its turn_duration row is read, so the turn has ended; only the next prompt folds it.
   const { tool } = await mountTimed($, on, TIMED.split('\n').slice(0, 5).join('\n') + '\n')
-  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  expect(await tool.find({ key: 'bash-row' })).toBeDefined()
 })
 
 test('with expand_live off, the running turn folds its finished tool rows at once', { options: { expand_live: false } }, async ($, on) => {
   const { tool } = await mountTimed($, on, LIVE, true)
-  expect(await tool.find({ type: 'Button', text: /^Bash\(claude plugin test/ })).toBeDefined()
+  expect(await tool.find({ key: 'toggle-tool-colored' })).toBeDefined()
+  // The folded line keeps the command's colors inside `Bash(…)`.
+  expect(JSON.stringify(await tool.drawn({ in: 'toggle-tool-colored' }))).toContain('#7386D0')
 })
 
 test('icons=nerd draws the times as rounded pills', { options: { icons: 'nerd' } }, async ($, on) => {
@@ -242,7 +248,7 @@ test('with timestamps off, rows show no times', { options: { timestamps: false }
   expect(await prompt.find({ type: 'Text', text: /^\d\d:\d\d $/ })).toBeUndefined()
   await prompt.press({ key: 'toggle-turn-button' })
   await pick(prompt, 1)
-  expect(await prompt.find({ type: 'Button', text: /^ \S Bash\(claude plugin test/ })).toBeDefined()
+  expect(await prompt.find({ key: 'toggle-call-0-colored' })).toBeDefined()
   expect(await prompt.find({ type: 'Text', text: /41s/ })).toBeUndefined()
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
 })
@@ -293,6 +299,24 @@ test('before the transcript is read, turns come from the session messages and ro
   log.adopt(ID(10), 'prompt', 'now the docs')
   log.adopt(ID(11), 'text', 'ok')
   expect(log.turnOf(ID(11))).toBe(log.turns[1])
+})
+
+test('a block holding a markdown table drops the bubble padding, since Claude Code sizes the table to the whole terminal', async ($, on) => {
+  const table = 'Two ways:\n\n| | How |\n| --- | --- |\n| A | Copy the scanner |'
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.messages', () => ({ value: [{ role: 'user', text: 'compare them', toolUses: [] }, { role: 'assistant', text: table, toolUses: [] }, { role: 'assistant', text: 'Plain text.', toolUses: [] }] }))
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{`base ${e.component}`}</Text>
+  })
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  await mount('UserMessage', ID(1), { text: 'compare them', origin: { kind: 'composer' }, isExpanded: true })
+  const withTable = await mount('AssistantMessage', ID(2), { text: table })
+  const plain = await mount('AssistantMessage', ID(3), { text: 'Plain text.' })
+  expect((await withTable.find({ key: 'toggle-bubble-body' }))?.props.paddingX).toBe(0)
+  expect((await plain.find({ key: 'toggle-bubble-body' }))?.props.paddingX).toBe(1)
 })
 
 test('rows drawn before the transcript is read already fold, so none changes height once it is read', async ($, on) => {
@@ -351,7 +375,7 @@ test('the transcript is read once; rows drawn later join their turn and fold at 
   const fresh = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true })
   const tool = await mount('ToolUse', 'toolu_new', toolProps)
   await $.turn.complete({ turnId: 't2', reason: 'answer', answer: 'ok', isAborted: false } as never)
-  expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  expect(await tool.find({ key: 'bash-row' })).toBeDefined()
   // Rows draw in no fixed order, so the prompt opens Claude's bubble and the duration line closes it; no row in between does.
   const took = await mount('TurnDuration', ID(22), { durationMs: 3000 })
   expect(await fresh.find({ key: 'toggle-bubble-open-edge' })).toBeDefined()

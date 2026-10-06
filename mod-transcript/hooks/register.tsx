@@ -3,13 +3,16 @@ import type { ConfigValue, EngineInterface, Register, RenderElement } from 'clau
 import type { BarMessage, BarProps } from './bar'
 import type { Chip, ChipsMessage, ChipsProps } from './chips'
 import type { EdgeProps } from './edge'
+import type { DotProps } from './dot'
 import type { FoldProps } from './fold'
+import type { LabelPart, LabelProps } from './label'
 import { isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
 import { tabRow } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import style from './style'
 import text from './text'
-import { CAPS, fill, MARK, statusColor, THEME } from './theme'
+import { tokenizeLine, type Role } from './shell'
+import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
 
 let transcript = ''
@@ -187,14 +190,14 @@ const edge = ({ Box, Client }: Bars, key: string, props: EdgeProps) =>
 // A finished turn with tools opens its bubble at the head under the prompt; its card rows and its reply carry on inside.
 const hasHead = (turn: Turn) => isDone(turn) && turn.tools.length > 0
 
-function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean, isBottom: boolean) {
+function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean, isBottom: boolean, isTight = false) {
   const parts = { Box, Client }
   return (
     <Box key={key} flexDirection="column" flexGrow={1}>
       {isTop ? edge(parts, `${key}-top`, { kind: 'top', color: THEME.accent, wedge: true }) : null}
       <Box key={`${key}-sides`} flexDirection="row">
         {edge(parts, `${key}-left`, { kind: 'side', color: THEME.accent })}
-        <Box key={`${key}-body`} flexDirection="column" flexGrow={1} paddingX={1}>{body}</Box>
+        <Box key={`${key}-body`} flexDirection="column" flexGrow={1} paddingX={isTight ? 0 : 1}>{body}</Box>
         {edge(parts, `${key}-right`, { kind: 'side', color: THEME.accent })}
       </Box>
       {isBottom ? edge(parts, `${key}-bottom`, { kind: 'bottom', color: THEME.accent }) : null}
@@ -206,7 +209,7 @@ function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean
 const cardRow = (parts: Bars, body: unknown, fold: BarProps) => frame(parts, 'toggle-frame', slice(parts, 'toggle-card', THEME.accent, body, fold), false, false)
 
 // Rows draw in no fixed order, so the prompt and duration rows carry the edges; a finished turn's reply closes it.
-function bubble(parts: Bars, key: string, turn: Turn, body: unknown, isTool = false) {
+function bubble(parts: Bars, key: string, turn: Turn, body: unknown, isTool = false, isTight = false) {
   const { Box } = parts
   // Claude Code starts each row with a blank line; in a tool row it rides out of the band, where it paints nothing.
   const inner = isTool ? (
@@ -215,8 +218,11 @@ function bubble(parts: Bars, key: string, turn: Turn, body: unknown, isTool = fa
       <Box key={`${key}-tool`} flexDirection="column" flexGrow={1} paddingLeft={1} marginTop={-1}>{body}</Box>
     </Box>
   ) : body
-  return frame(parts, key, inner, false, isDone(turn))
+  return frame(parts, key, inner, false, isDone(turn), isTight)
 }
+
+// Claude Code sizes a markdown table to the whole terminal, so a block holding one drops the bubble's padding to fit it.
+const hasTable = (text: string) => /^\s*\|.*\|\s*$/m.test(text) && /^\s*\|?\s*:?-{3,}/m.test(text)
 
 // Claude's bubble opens under the prompt: as the head of a finished turn with tools, else as a bare top edge.
 const opening = (parts: Bars) => edge(parts, 'toggle-bubble-open', { kind: 'top', color: THEME.accent, wedge: true })
@@ -225,17 +231,80 @@ type Controls = Elements & { Button: (props: any) => RenderElement }
 
 // A fold control: a colored pill showing + or the minus sign, then the line's text; a click on either toggles.
 // Without a Nerd Font the pill's ends are a space each, so the chip takes three cells either way.
-const toggleLine = ({ Box, Button, Client }: Controls & { Client: (props: any) => RenderElement }, key: string, chip: string, isOpen: boolean, label: string, fold: BarProps, onPress: () => unknown, extra: unknown = null) => (
+// A label given as colored `parts` is a Client that folds on click; a plain one stays a Button.
+const toggleLine = ({ Box, Button, Client }: Controls & { Client: (props: any) => RenderElement }, key: string, chip: string, isOpen: boolean, label: string, fold: BarProps, onPress: () => unknown, extra: unknown = null, parts?: LabelPart[]) => (
   <Box key={key} flexDirection="row" columnGap={1}>
     <Box key={`${key}-chip-pill`} flexShrink={0}>
       <Client key={`${key}-chip`} module="./fold.tsx" width={3} height={1} props={{ ...fold, color: chip, isOpen, nerd: look.nerd, still: false } satisfies FoldProps} />
     </Box>
     <Box key={`${key}-label`} flexShrink={1}>
-      <Button key={`${key}-button`} label={label} plain dimColor={!isOpen} hover={{ scope: `${key}-label`, color: THEME.accent }} onPress={onPress} />
+      {parts ? (
+        <Client key={`${key}-colored`} module="./label.tsx" width={partsWidth(parts)} height={1} props={{ ...fold, parts, isDim: !isOpen, hover: THEME.accent } satisfies LabelProps} />
+      ) : (
+        <Button key={`${key}-button`} label={label} plain dimColor={!isOpen} hover={{ scope: `${key}-label`, color: THEME.accent }} onPress={onPress} />
+      )}
     </Box>
     {extra}
   </Box>
 )
+
+// Blast-radius's Moonlight roles for a shell command: the command word bold, then options, quoted text, variables, numbers and operators.
+const ROLE_LOOK: Partial<Record<Role, Omit<LabelPart, 'text'>>> = {
+  command: { color: SYNTAX.command, bold: true },
+  option: { color: SYNTAX.option },
+  text: { color: SYNTAX.text },
+  variable: { color: SYNTAX.variable },
+  number: { color: SYNTAX.number },
+  operator: { color: SYNTAX.operator },
+}
+
+const commandParts = (command: string): LabelPart[] => tokenizeLine(command).map(span => ({ text: span.text, ...ROLE_LOOK[span.role] }))
+
+const partsWidth = (parts: LabelPart[]) => parts.reduce((sum, part) => sum + [...part.text].length, 0)
+
+// A tool's one-line label, cut to `width`; a Bash call's command keeps its shell colors.
+function labelParts(name: string, input: any, width: number): LabelPart[] {
+  const label = fit(toolLabel(name, input, 0, 0), width)
+  if (name !== 'Bash' || !label.startsWith('Bash(')) return [{ text: label }]
+  const isClosed = label.endsWith(')')
+  return [{ text: 'Bash(' }, ...commandParts(label.slice('Bash('.length, isClosed ? -1 : undefined)), ...(isClosed ? [{ text: ')' }] : [])]
+}
+
+// A Bash call under the Ran chip: the fold glyph and the colored command, spaced like the plain call lines beside it.
+function callParts(call: Turn['tools'][number], isOpen: boolean, width: number): LabelPart[] {
+  const glyph = isOpen ? look.glyph.expanded : look.glyph.collapsed
+  const isLifted = look.nerd && isOpen
+  return [{ text: isLifted ? `${glyph} ` : ` ${glyph} ` }, ...labelParts(call.name, call.input, width - 28), ...(isLifted ? [] : [{ text: ' ' }])]
+}
+
+// Claude Code's own Bash row, drawn here so the command keeps its colors; the blank first line stands in for the one the tool band lifts away.
+function bashRow({ Box, Client, Text }: Rows, input: any, isRunning: boolean, isFailed: boolean) {
+  const command = String(input?.command ?? '')
+  const dot = isRunning
+    ? <Client key="bash-dot" module="./dot.tsx" width={1} height={1} props={{ color: THEME.accent, dim: THEME.border, still: false } satisfies DotProps} />
+    : <Text key="bash-dot" color={isFailed ? THEME.alert : THEME.good}>●</Text>
+  return (
+    <Box key="bash-row" flexDirection="column">
+      <Text key="bash-blank"> </Text>
+      <Box key="bash-head" flexDirection="row" columnGap={1}>
+        {dot}
+        <Text key="bash-description" bold>{String(input?.description || 'Bash')}</Text>
+      </Box>
+      {command.split('\n').map((line, n) => (
+        <Box key={`bash-line-${n}`} flexDirection="row" paddingLeft={2}>
+          <Text key="bash-lead" color={THEME.muted}>{n === 0 ? '└ $ ' : '    '}</Text>
+          <Box key="bash-command" flexShrink={1}>
+            <Text>
+              {commandParts(line).map((part, at) => (
+                <Text key={`part-${at}`} color={part.color ?? THEME.onSurface} bold={part.bold}>{part.text}</Text>
+              ))}
+            </Text>
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  )
+}
 
 // An unfolded tool's own row and result, set in under its line.
 const nested = ({ Box, Client }: Bars, key: string, body: unknown, fold: BarProps) => (
@@ -323,14 +392,24 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
           <Box key={`toggle-call-${n}-line`} flexDirection="row" flexShrink={1}>
             {look.nerd && openTools.includes(call.id) ? <Text color={THEME.lifted}>{CAPS.left}</Text> : null}
             <Box key={`toggle-call-${n}-pick`} flexShrink={1} {...(openTools.includes(call.id) ? { backgroundColor: THEME.lifted } : {})}>
-              <Button
-                key={`toggle-call-${n}-button`}
-                label={look.nerd && openTools.includes(call.id) ? `${look.glyph.expanded} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)}` : ` ${openTools.includes(call.id) ? look.glyph.expanded : look.glyph.collapsed} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)} `}
-                plain
-                dimColor={!openTools.includes(call.id)}
-                hover={{ scope: `toggle-call-${n}-pick`, color: THEME.accent }}
-                onPress={() => onCall(call.id)}
-              />
+              {call.name === 'Bash' ? (
+                <Client
+                  key={`toggle-call-${n}-colored`}
+                  module="./label.tsx"
+                  height={1}
+                  width={partsWidth(callParts(call, openTools.includes(call.id), width))}
+                  props={{ kind: 'tools', id: call.id, parts: callParts(call, openTools.includes(call.id), width), isDim: !openTools.includes(call.id), hover: THEME.accent } satisfies LabelProps}
+                />
+              ) : (
+                <Button
+                  key={`toggle-call-${n}-button`}
+                  label={look.nerd && openTools.includes(call.id) ? `${look.glyph.expanded} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)}` : ` ${openTools.includes(call.id) ? look.glyph.expanded : look.glyph.collapsed} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)} `}
+                  plain
+                  dimColor={!openTools.includes(call.id)}
+                  hover={{ scope: `toggle-call-${n}-pick`, color: THEME.accent }}
+                  onPress={() => onCall(call.id)}
+                />
+              )}
             </Box>
             {look.nerd && openTools.includes(call.id) ? <Text color={THEME.lifted}>{CAPS.right}</Text> : null}
           </Box>,
@@ -637,7 +716,7 @@ export const register: Register = (on, options) => {
     seen.set(`AssistantMessage ${e.requestId}`, Boolean(turn))
     const place = await placeOf($, turn, e.requestId)
     const { Box, Client } = $.ui.resolve(e)
-    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await next(e)) : next(e)
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await next(e), false, hasTable(e.props.text)) : next(e)
 
     return place === 'hidden' ? <Box key="toggle-hidden" /> : cardRow({ Box, Client }, await next(e), { kind: 'turns', id: turn!.prompt })
   })
@@ -658,9 +737,12 @@ export const register: Register = (on, options) => {
     // In an open turn the head's kind rows list every call, so the row itself draws nothing.
     if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
     const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body, true) : body)
-    if (e.props.isRunning || !foldTools || isLive(turn)) return place === 'card' ? cardRow({ Box, Client }, await next(e), { kind: 'turns', id: turn!.prompt }) : inBubble(await next(e))
-
     const isFailed = e.props.isErrored || e.props.isInterrupted
+    if (e.props.isRunning || !foldTools || isLive(turn)) {
+      const row = e.props.tool === 'Bash' ? bashRow({ Box, Client, Text }, e.props.input, e.props.isRunning, isFailed) : await next(e)
+      return place === 'card' ? cardRow({ Box, Client }, row, { kind: 'turns', id: turn!.prompt }) : inBubble(row)
+    }
+
     const { added, removed } = diffStat(e.props.tool, e.props.input, e.props.output, isFailed)
     const isOpen = (await opened($, 'tools')).includes(e.props.tool_use_id)
     const when = showTimes ? callTime(log.callOf(e.props.tool_use_id)) : ''
@@ -677,6 +759,7 @@ export const register: Register = (on, options) => {
       { kind: 'tools', id: e.props.tool_use_id },
       () => flip($, 'tools', e.props.tool_use_id),
       stats,
+      e.props.tool === 'Bash' ? labelParts('Bash', e.props.input, widthOf(e) - 16 - (when ? WHEN_WIDTH : 0)) : undefined,
     )
     // Start time and duration lead the line, in a fixed-width column so the labels stay aligned.
     const timed = when ? (
@@ -724,8 +807,11 @@ export const register: Register = (on, options) => {
     const turn = log.turnOf(id)
     seen.set(`ToolGroup ${e.requestId}`, Boolean(turn))
     const place = await placeOf($, turn, id)
-    const { Box, Client } = $.ui.resolve(e)
-    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await next(e), true) : next(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
+    // A group shows its running call while it runs; a Bash one is drawn here so its command keeps its colors.
+    const running = e.props.calls.find(call => call.isRunning && call.tool === 'Bash')
+    const group = running ? bashRow({ Box, Client, Text }, running.input, true, false) : await next(e)
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, group, true) : group
 
     // In an open turn the head's kind rows list every call, so the group draws nothing.
     if (place === 'hidden' || foldTools) return <Box key="toggle-hidden" />

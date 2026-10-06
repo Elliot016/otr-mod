@@ -164,14 +164,21 @@ function modelMenu(elements: Elements, currentId: string) {
   const ok = bare(look.glyph.ok)
   // The others start with blanks as wide as the ✓ subpill, so every name lines up.
   const blank = ' '.repeat([...ok].length + 2)
+  const entries = menuModels.map((id, index) =>
+    id === currentId
+      ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: true, idle: THEME.muted, subLead: ok, subLeadColor: THEME.good })
+      : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: true }),
+  )
+  // The × closes the menu without a pick, as on a toast card; it shares the first entry's row.
+  const close = menuEntry(elements, 'effort-model-close', THEME.surface3, { label: bare(look.glyph.close), isOpen: false })
   return (
     <Box key="effort-models-row" flexDirection="row" justifyContent="flex-end">
       <Box key="effort-models" flexDirection="column" alignItems="flex-start" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-        {menuModels.map((id, index) =>
-          id === currentId
-            ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: true, idle: THEME.muted, subLead: ok, subLeadColor: THEME.good })
-            : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: true }),
-        )}
+        <Box key="effort-models-head" flexDirection="row" columnGap={1}>
+          {entries[0] ?? null}
+          {close}
+        </Box>
+        {entries.slice(1)}
         {menuEntry(elements, 'effort-model-all', THEME.surface2, { label: text.allModels, isOpen: false, subLead: bare(look.glyph.go) })}
       </Box>
     </Box>
@@ -275,6 +282,11 @@ export const register: Register = (on, options) => {
     const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
     if (dismissed !== undefined) {
       toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
+    if (clicked?.type === 'menu-entry' && clicked.id === 'effort-model-close') {
+      isModelMenuOpen = false
       $.ui.invalidate('ui.render')
       return next(e)
     }
