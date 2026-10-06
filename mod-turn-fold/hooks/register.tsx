@@ -2,6 +2,8 @@ import type { ConfigValue, EngineInterface, Register, RenderElement } from 'clau
 
 import type { BarMessage, BarProps } from './bar'
 import type { Chip, ChipsMessage, ChipsProps } from './chips'
+import type { EdgeProps } from './edge'
+import type { FoldProps } from './fold'
 import { isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
 import { tabRow } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -13,6 +15,14 @@ import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, tu
 let transcript = ''
 let log = new TurnLog()
 let isLoaded = false
+// Until the transcript is read, turns come from the in-memory messages: a row that folds later off screen keeps its height and eats the scroll.
+let guessing: Promise<void> | null = null
+const guess = ($: EngineInterface) =>
+  (guessing ??= $.session.messages().then(messages => {
+    if (!isLoaded) log = TurnLog.fromMessages(messages)
+  }).catch(() => {
+    // Without the messages, rows draw as before: unfolded until the transcript is read.
+  }))
 let working = false
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let foldTurns = true
@@ -160,18 +170,79 @@ const slice = ({ Box, Client }: Bars, key: string, bar: string, body: unknown, f
 // A strip is clickable, so drawing one takes a Client.
 type Bars = Elements & { Client: (props: any) => RenderElement }
 
+// The first and the latest row each turn drew in Claude's bubble: the first carries the top edge, the latest the bottom once the turn ends.
+const bubbleTop = new Map<string, string>()
+const bubbleLast = new Map<string, string>()
+const bubbleRows = new Set<string>()
+
+const isEnded = (turn: Turn) => isDone(turn) || turn.durationMs !== undefined || turn.prompt === endedPrompt
+
+const edge = ({ Box, Client }: Bars, key: string, props: EdgeProps) =>
+  props.kind === 'top' || props.kind === 'bottom' ? (
+    <Box key={key} height={1}>
+      <Client key={`${key}-edge`} module="./edge.tsx" width="100%" height={1} props={props} />
+    </Box>
+  ) : (
+    // Absolute, so the lines it draws for the last height never stretch the row they measure.
+    <Box key={key} width={1} flexShrink={0}>
+      <Box key={`${key}-pin`} position="absolute" top={0} left={0} width={1} height="100%">
+        <Client key={`${key}-edge`} module="./edge.tsx" width={1} height="100%" props={props} />
+      </Box>
+    </Box>
+  )
+
+// A finished turn with tools opens its bubble at the head under the prompt; its card rows and its reply carry on inside.
+const hasHead = (turn: Turn) => isDone(turn) && turn.tools.length > 0
+
+function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean, isBottom: boolean) {
+  const parts = { Box, Client }
+  return (
+    <Box key={key} flexDirection="column" flexGrow={1}>
+      {isTop ? edge(parts, `${key}-top`, { kind: 'top', color: THEME.accent, wedge: true }) : null}
+      <Box key={`${key}-sides`} flexDirection="row">
+        {edge(parts, `${key}-left`, { kind: 'side', color: THEME.accent })}
+        <Box key={`${key}-body`} flexDirection="column" flexGrow={1} paddingX={1}>{body}</Box>
+        {edge(parts, `${key}-right`, { kind: 'side', color: THEME.accent })}
+      </Box>
+      {isBottom ? edge(parts, `${key}-bottom`, { kind: 'bottom', color: THEME.accent }) : null}
+    </Box>
+  )
+}
+
+// An unfolded finished turn's row, inside the bubble its head opened.
+const cardRow = (parts: Bars, body: unknown, fold: BarProps) => frame(parts, 'toggle-frame', slice(parts, 'toggle-card', THEME.accent, body, fold), false, false)
+
+function bubble(parts: Bars, key: string, turn: Turn, rowId: string, body: unknown, isTool = false) {
+  const { Box } = parts
+  if (!bubbleTop.has(turn.prompt)) bubbleTop.set(turn.prompt, rowId)
+  if (!bubbleRows.has(rowId)) {
+    bubbleRows.add(rowId)
+    bubbleLast.set(turn.prompt, rowId)
+  }
+  // A finished turn shows its reply alone: the bubble's end, and its start too when no head opened it.
+  const isWhole = isDone(turn)
+  const isTop = isWhole ? !hasHead(turn) : bubbleTop.get(turn.prompt) === rowId
+  const isBottom = isWhole || (isEnded(turn) && bubbleLast.get(turn.prompt) === rowId)
+  // Claude Code starts each row with a blank line; it rides up under the top edge or out of the band, where it paints nothing.
+  const inner = isTool ? (
+    <Box key={`${key}-band`} flexDirection="row" flexGrow={1} marginTop={isTop ? 0 : 1} backgroundColor={THEME.surface1}>
+      {edge(parts, `${key}-rail`, { kind: 'rail', color: THEME.accent })}
+      <Box key={`${key}-tool`} flexDirection="column" flexGrow={1} paddingLeft={1} marginTop={-1}>{body}</Box>
+    </Box>
+  ) : isTop ? (
+    <Box key={`${key}-lift`} flexDirection="column" marginTop={-1}>{body}</Box>
+  ) : body
+  return frame(parts, key, inner, isTop, isBottom)
+}
+
 type Controls = Elements & { Button: (props: any) => RenderElement }
 
 // A fold control: a colored pill showing + or the minus sign, then the line's text; a click on either toggles.
 // Without a Nerd Font the pill's ends are a space each, so the chip takes three cells either way.
-const toggleLine = ({ Box, Button, Text }: Controls & { Text: (props: any) => RenderElement }, key: string, chip: string, isOpen: boolean, label: string, onPress: () => unknown, extra: unknown = null) => (
+const toggleLine = ({ Box, Button, Client }: Controls & { Client: (props: any) => RenderElement }, key: string, chip: string, isOpen: boolean, label: string, fold: BarProps, onPress: () => unknown, extra: unknown = null) => (
   <Box key={key} flexDirection="row" columnGap={1}>
-    <Box key={`${key}-chip-pill`} flexDirection="row" flexShrink={0}>
-      {look.nerd ? <Text color={chip}>{CAPS.left}</Text> : null}
-      <Box key={`${key}-chip`} backgroundColor={chip} flexShrink={0}>
-        <Button key={`${key}-chip-button`} label={look.nerd ? (isOpen ? '−' : '+') : ` ${isOpen ? '−' : '+'} `} plain hover={{ scope: `${key}-chip`, color: THEME.onSurface }} onPress={onPress} />
-      </Box>
-      {look.nerd ? <Text color={chip}>{CAPS.right}</Text> : null}
+    <Box key={`${key}-chip-pill`} flexShrink={0}>
+      <Client key={`${key}-chip`} module="./fold.tsx" width={3} height={1} props={{ ...fold, color: chip, isOpen, nerd: look.nerd, still: false } satisfies FoldProps} />
     </Box>
     <Box key={`${key}-label`} flexShrink={1}>
       <Button key={`${key}-button`} label={label} plain dimColor={!isOpen} hover={{ scope: `${key}-label`, color: THEME.accent }} onPress={onPress} />
@@ -478,6 +549,7 @@ export const register: Register = (on, options) => {
       transcript = e.transcript_path
       log = new TurnLog()
       isLoaded = false
+      guessing = null
       await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
       await load($)
     }
@@ -514,42 +586,54 @@ export const register: Register = (on, options) => {
     // A subagent's report opens a turn of its own, as in the transcript.
     if (isLoaded && (e.props.origin.kind === 'peer' || (e.props.origin.kind === 'composer' && isPrompt(e.props.text)))) log.claim(e.requestId, 'prompt')
     if (e.props.origin.kind !== 'composer') return next(e)
+    if (!isLoaded && e.props.origin.kind === 'composer') {
+      await guess($)
+      log.adopt(e.requestId, 'prompt', e.props.text)
+    }
     const turn = log.turnAt(e.requestId)
     seen.set(`UserMessage ${e.requestId}`, Boolean(turn))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const prompt = await next(e)
-    const row =
-      showTimes && turn?.at !== undefined ? (
-        <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1}>
-          {/* Claude Code draws a prompt with a blank row above it, so the time steps down one row to sit beside the text. */}
-          {/* The column takes the prompt's background (Moonlight userMessageBackground) down every wrapped line, so no empty cell shows under the time. */}
-          {/* alignItems keeps the pill one row tall at the top; stretched, its body would paint the wrapped lines below it too. */}
-          <Box key="toggle-prompt-time-row" marginTop={1} flexShrink={0} alignItems="flex-start" backgroundColor={THEME.surface2}>{timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at), THEME.surface3)}</Box>
-          <Box key="toggle-prompt-text" flexDirection="column" flexGrow={1} flexShrink={1}>{prompt}</Box>
+    // The wedge is an absolute sibling: Claude Code refuses its row under a positioned Box.
+    const row = (
+      <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1} justifyContent="flex-end">
+        <Box key="toggle-prompt-bubble" flexDirection="column" flexShrink={1}>
+          <Box key="toggle-prompt-outline" flexDirection="row" borderStyle="round" borderColor={THEME.secondary}>
+            {showTimes && turn?.at !== undefined ? (
+              // The column takes the prompt's background (Moonlight userMessageBackground) down every wrapped line; the pill stays one row tall.
+              <Box key="toggle-prompt-time-col" flexShrink={0} alignItems="flex-start" backgroundColor={THEME.surface2}>
+                {timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at), THEME.surface3)}
+              </Box>
+            ) : showTimes && turn ? (
+              // A guessed turn has no time until the transcript is read; the space keeps the prompt's wrap, so its height holds.
+              <Box key="toggle-prompt-time-col" flexShrink={0} width={look.nerd ? 8 : 6} backgroundColor={THEME.surface2} />
+            ) : null}
+            <Box key="toggle-prompt-lift" flexDirection="column" flexShrink={1} marginTop={-1}>{prompt}</Box>
+          </Box>
+          <Box key="toggle-prompt-wedge" position="absolute" top={0} right={0}>
+            <Text color={THEME.secondary}>◥</Text>
+          </Box>
         </Box>
-      ) : (
-        <Box key="toggle-prompt-row" flexDirection="column" flexGrow={1}>{prompt}</Box>
-      )
+      </Box>
+    )
     if (!turn || !isDone(turn) || turn.tools.length === 0) return row
 
     const isOpen = isTurnOpen(await opened($, 'turns'), turn)
-    // The head: what the turn did, its line counts in a pill, and how long it took on the right.
+    // The head: what the turn did, then its line counts and how long it took, each a pill.
     const added = turn.tools.reduce((sum, call) => sum + call.added, 0)
     const removed = turn.tools.reduce((sum, call) => sum + call.removed, 0)
     const head = (
-      <Box key="toggle-head-line" flexDirection="row">
-        <Box key="toggle-head-left" flexDirection="row" columnGap={1} flexGrow={1} flexShrink={1}>
-          {toggleLine({ Box, Button, Text }, 'toggle-turn', THEME.accent, isOpen, fit(turnLine(turn), widthOf(e) - 30), () => flip($, 'turns', turn.prompt))}
-          {countsPill({ Box, Text }, 'toggle-head-counts', added, removed)}
-        </Box>
-        {turn.durationMs !== undefined ? timePill({ Box, Text }, 'toggle-head-time', elapsed(turn.durationMs), THEME.surface3) : null}
+      <Box key="toggle-head-line" flexDirection="row" columnGap={1}>
+        {toggleLine({ Box, Button, Client }, 'toggle-turn', THEME.accent, isOpen, fit(turnLine(turn), widthOf(e) - 30), { kind: 'turns', id: turn.prompt }, () => flip($, 'turns', turn.prompt))}
+        {countsPill({ Box, Text }, 'toggle-head-counts', added, removed)}
+        {turn.durationMs !== undefined ? timePill({ Box, Text }, 'toggle-head-time', fill(text.turnTook, { time: elapsed(turn.durationMs) }), THEME.surface3) : null}
       </Box>
     )
     const kinds = isOpen && foldTools ? chipSection({ Box, Button, Client, Text }, turn, await opened($, 'tools'), widthOf(e), id => flip($, 'tools', id)) : null
     return (
       <Box key="toggle-prompt" flexDirection="column" flexGrow={1}>
         {row}
-        {slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, [head, kinds], { kind: 'turns', id: turn.prompt })}
+        {frame({ Box, Client }, 'toggle-head-frame', slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, [head, kinds], { kind: 'turns', id: turn.prompt }), true, false)}
       </Box>
     )
   })
@@ -558,13 +642,17 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'reply')
+    else {
+      await guess($)
+      log.adopt(e.requestId, 'text', e.props.text)
+    }
     const turn = log.turnOf(e.requestId)
     seen.set(`AssistantMessage ${e.requestId}`, Boolean(turn))
     const place = await placeOf($, turn, e.requestId)
-    if (place === 'plain') return next(e)
-
     const { Box, Client } = $.ui.resolve(e)
-    return place === 'hidden' ? <Box key="toggle-hidden" /> : slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt })
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, rowKey(e.requestId), await next(e)) : next(e)
+
+    return place === 'hidden' ? <Box key="toggle-hidden" /> : cardRow({ Box, Client }, await next(e), { kind: 'turns', id: turn!.prompt })
   })
 
   // A finished tool row folds to one line of its own; a click shows Claude Code's full row and result under it.
@@ -572,13 +660,18 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claimCall(e.props.tool_use_id, e.props.tool, e.props.input, e.props.isRunning, e.props.output, e.props.isErrored || e.props.isInterrupted)
+    else {
+      await guess($)
+      log.follow(e.props.tool_use_id)
+    }
     const turn = log.turnOf(e.requestId)
     seen.set(`ToolUse ${e.requestId}`, Boolean(turn))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const place = await placeOf($, turn, e.requestId)
     // In an open turn the head's kind rows list every call, so the row itself draws nothing.
     if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
-    if (e.props.isRunning || !foldTools || isLive(turn)) return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt }) : next(e)
+    const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, e.props.tool_use_id, body, true) : body)
+    if (e.props.isRunning || !foldTools || isLive(turn)) return place === 'card' ? cardRow({ Box, Client }, await next(e), { kind: 'turns', id: turn!.prompt }) : inBubble(await next(e))
 
     const isFailed = e.props.isErrored || e.props.isInterrupted
     const { added, removed } = diffStat(e.props.tool, e.props.input, e.props.output, isFailed)
@@ -589,11 +682,12 @@ export const register: Register = (on, options) => {
       removed ? <Box key="toggle-tool-removed"><Text color={THEME.alert}>{`−${removed}`}</Text></Box> : null,
     ]
     const line = toggleLine(
-      { Box, Button, Text },
+      { Box, Button, Client },
       'toggle-tool',
       isFailed ? THEME.alert : THEME.border,
       isOpen,
       fit(toolLabel(e.props.tool, e.props.input, 0, 0), widthOf(e) - 16 - (when ? WHEN_WIDTH : 0)),
+      { kind: 'tools', id: e.props.tool_use_id },
       () => flip($, 'tools', e.props.tool_use_id),
       stats,
     )
@@ -605,13 +699,17 @@ export const register: Register = (on, options) => {
       </Box>
     ) : line
     const body = isOpen ? [timed, nested({ Box, Client }, 'toggle-tool-row', await next(e), { kind: 'tools', id: e.props.tool_use_id })] : timed
-    return <Box key="toggle-tool-plain" flexDirection="column">{body}</Box>
+    return inBubble(<Box key="toggle-tool-plain" flexDirection="column">{body}</Box>)
   })
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'row')
+    else {
+      await guess($)
+      log.follow(e.requestId)
+    }
     const turn = log.turnOf(e.requestId)
     seen.set(`ToolResult ${e.requestId}`, Boolean(turn))
     const { Box, Client } = $.ui.resolve(e)
@@ -619,7 +717,8 @@ export const register: Register = (on, options) => {
     if (place === 'hidden' || (place === 'card' && foldTools) || (foldTools && !isLive(turn) && !(await opened($, 'tools')).includes(e.props.tool_use_id))) return <Box key="toggle-hidden" />
 
     const body = nested({ Box, Client }, 'toggle-result', await next(e), { kind: 'tools', id: e.props.tool_use_id })
-    return place === 'card' ? slice({ Box, Client }, 'toggle-card', THEME.accent, body, { kind: 'turns', id: turn!.prompt }) : body
+    if (place === 'card') return cardRow({ Box, Client }, body, { kind: 'turns', id: turn!.prompt })
+    return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, e.requestId, body, true) : body
   })
 
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
@@ -630,21 +729,30 @@ export const register: Register = (on, options) => {
     // A group of thinking alone has no calls; it joins the turn by its own message id.
     if (isLoaded && e.props.calls.length === 0) log.claim(e.requestId.replace(/^collapsed-/, ''), 'row')
     const id = e.props.calls.find(call => call.tool_use_id)?.tool_use_id ?? e.requestId
+    if (!isLoaded) {
+      await guess($)
+      if (e.props.calls.length === 0) log.adoptNear(e.requestId)
+      else log.follow(id)
+    }
     const turn = log.turnOf(id)
     seen.set(`ToolGroup ${e.requestId}`, Boolean(turn))
     const place = await placeOf($, turn, id)
-    if (place === 'plain') return next(e)
-
     const { Box, Client } = $.ui.resolve(e)
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, e.requestId, await next(e), true) : next(e)
+
     // In an open turn the head's kind rows list every call, so the group draws nothing.
     if (place === 'hidden' || foldTools) return <Box key="toggle-hidden" />
-    return slice({ Box, Client }, 'toggle-card', THEME.accent, await next(e), { kind: 'turns', id: turn!.prompt })
+    return cardRow({ Box, Client }, await next(e), { kind: 'turns', id: turn!.prompt })
   })
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'row')
+    else {
+      await guess($)
+      log.adoptNear(e.requestId)
+    }
     const turn = log.turnOf(e.requestId)
     seen.set(`TurnDuration ${e.requestId}`, Boolean(turn))
     // A turn learned as it drew has no duration row from the transcript; this line carries it.

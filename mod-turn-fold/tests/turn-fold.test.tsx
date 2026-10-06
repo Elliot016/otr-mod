@@ -25,6 +25,8 @@ const TRANSCRIPT = [
 // The open turn's chip line, drawn by its Client, and a click at a cell of it.
 const chipsOf = async (ui: any) => JSON.stringify(await ui.drawn({ in: 'toggle-chips-line' }))
 const pick = (ui: any, x: number) => ui.pointer({ in: 'toggle-chips-line', type: 'down', button: 'left', x, y: 0 })
+// The head's fold pill is a Client, so its + or − is the isOpen it was handed.
+const isChipOpen = async (ui: any) => (await ui.find({ type: 'Client', key: 'toggle-turn-chip' }))?.props.props?.isOpen
 
 const logOf = (text: string) => {
   const log = new TurnLog()
@@ -164,7 +166,7 @@ async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsT
 test('the prompt row shows when it was sent, the head how long the turn took, and a picked chip how long each call took', async ($, on) => {
   const { prompt, tool } = await mountTimed($, on)
   expect(await prompt.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:00.000Z'))} ` })).toBeDefined()
-  expect(await prompt.find({ type: 'Text', text: '47s ' })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: 'took 47s ' })).toBeDefined()
   // The finished turn starts folded; its chip line shows under the head once it opens, and the tool row itself draws nothing.
   await prompt.press({ key: 'toggle-turn-button' })
   expect(await chipsOf(prompt)).toContain('Ran')
@@ -175,10 +177,10 @@ test('the prompt row shows when it was sent, the head how long the turn took, an
   expect(await prompt.find({ type: 'Text', text: '41s ' })).toBeDefined()
   // A click on a call's line opens it: what the call gave back shows under the line, the tool row stays hidden, and a second click closes it.
   await prompt.press({ key: 'toggle-call-0-button' })
-  expect(await prompt.find({ type: 'Text', text: 'ok' })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: /^ok$/ })).toBeDefined()
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
   await prompt.press({ key: 'toggle-call-0-button' })
-  expect(await prompt.find({ type: 'Text', text: 'ok' })).toBeUndefined()
+  expect(await prompt.find({ type: 'Text', text: /^ok$/ })).toBeUndefined()
   // A second click on the open chip closes it.
   await pick(prompt, 1)
   expect(await prompt.find({ type: 'Button', text: /^ \S Bash\(claude plugin test/ })).toBeUndefined()
@@ -219,7 +221,7 @@ test('icons=nerd draws the times as rounded pills', { options: { icons: 'nerd' }
   const drawn = JSON.stringify(await prompt.drawn())
   expect(drawn).toContain(String.fromCodePoint(0xe0b6))
   // The time's column carries the prompt's background down a wrapped prompt, and the pill a lighter one so it still shows.
-  expect(drawn).toMatch(/"key":"toggle-prompt-time-row"[^}]*"backgroundColor":"#1C2033"/)
+  expect(drawn).toMatch(/"key":"toggle-prompt-time-col"[^}]*"backgroundColor":"#1C2033"/)
   expect(drawn).toMatch(/"key":"toggle-prompt-time-body","backgroundColor":"#252A42"/)
   expect(await prompt.find({ type: 'Text', text: timeOfDay(Date.parse('2026-10-03T14:32:00.000Z')) })).toBeDefined()
   await prompt.press({ key: 'toggle-turn-button' })
@@ -257,6 +259,66 @@ test('a subagent report opens its own turn, so the prompt keeps its own reply; a
   expect(log.turns.map(turn => turn.prompt)).toEqual([ID(1), ID(3)])
   expect(log.turns[0]!.reply).toBe(rowKey(ID(2)))
   expect(log.turns[1]!.reply).toBe(rowKey(ID(6)))
+})
+
+// The same finished turn as the engine holds it in memory, then a second prompt whose reply repeats a word of the first turn.
+const MESSAGES = [
+  { role: 'user', text: 'fix the bug', toolUses: [] },
+  { role: 'assistant', text: 'Looking.', toolUses: [] },
+  { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'toolu_edit', tool: 'Edit', input: { file_path: 'C:\\repo\\hooks\\a.ts' }, result: { structuredPatch: PATCH } }] },
+  { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'toolu_edit', text: 'ok', isError: false }] },
+  { role: 'assistant', text: 'Fixed.', toolUses: [] },
+  { role: 'user', text: 'now the docs', toolUses: [] },
+  { role: 'assistant', text: 'ok', toolUses: [] },
+] as const
+
+test('before the transcript is read, turns come from the session messages and rows join them by id, text or draw order', () => {
+  const log = TurnLog.fromMessages(MESSAGES)
+  expect(log.turns.length).toBe(2)
+  expect(log.turns[0]!.tools.map(call => [call.name, call.added, call.removed])).toEqual([['Edit', 2, 1]])
+
+  log.adopt(ID(1), 'prompt', 'fix the bug')
+  expect(log.turnAt(ID(1))).toBe(log.turns[0])
+  log.adopt(ID(2), 'text', 'Looking.')
+  expect(log.turnOf(ID(2))).toBe(log.turns[0])
+  expect(log.turns[0]!.reply).toBeUndefined()
+  // A tool row is found by its id; a row with nothing to match joins the turn drawn just before it.
+  log.follow('toolu_edit')
+  log.adoptNear(`collapsed-${ID(30)}`)
+  expect(log.turnOf(ID(30))).toBe(log.turns[0])
+  log.adopt(ID(7), 'text', 'Fixed.')
+  expect(log.turns[0]!.reply).toBe(rowKey(ID(7)))
+
+  // "ok" is also inside "Looking.", yet rows draw in order, so it lands in the turn after the last match.
+  log.adopt(ID(10), 'prompt', 'now the docs')
+  log.adopt(ID(11), 'text', 'ok')
+  expect(log.turnOf(ID(11))).toBe(log.turns[1])
+})
+
+test('rows drawn before the transcript is read already fold, so none changes height once it is read', async ($, on) => {
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.messages', () => ({ value: MESSAGES }))
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{`base ${e.component}`}</Text>
+  })
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
+  const step = await mount('AssistantMessage', ID(2), { text: 'Looking.' })
+  const edit = await mount('ToolUse', 'toolu_edit', { tool_use_id: 'toolu_edit', tool: 'Edit', input: { file_path: 'C:\\repo\\hooks\\a.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} })
+  const reply = await mount('AssistantMessage', ID(7), { text: 'Fixed.' })
+  await mount('UserMessage', ID(10), { text: 'now the docs', origin: { kind: 'composer' }, isExpanded: true })
+
+  // The messages already hold the next prompt, so even the first draw folds the finished turn and keeps its reply.
+  expect(await prompt.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+  expect(await step.find({ type: 'Text' })).toBeUndefined()
+  expect(await edit.find({ type: 'Button' })).toBeUndefined()
+  expect(await reply.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
+  // No time yet, but its space is kept, so the prompt wraps the same once the time arrives.
+  expect(await prompt.find({ key: 'toggle-prompt-time-col' })).toBeDefined()
 })
 
 test('the transcript is read once; rows drawn later join their turn and fold at the next prompt', async ($, on) => {
@@ -371,22 +433,26 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   // Folded: the prompt and its summary line, the reply; the step, the tool row and its result draw nothing.
   expect(await prompt.find({ type: 'Text', text: 'base UserMessage' })).toBeDefined()
   expect(await prompt.find({ type: 'Button', text: '2 tools · Edit(hooks/a.ts) · Skill(tidy)' })).toBeDefined()
-  expect(await prompt.find({ type: 'Button', text: /^ \+ $/ })).toBeDefined()
+  expect(await isChipOpen(prompt)).toBe(false)
   expect(await reply.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
+  // One bubble: the head under the prompt opens it, the reply closes it.
+  expect(await prompt.find({ key: 'toggle-head-frame-top-edge' })).toBeDefined()
+  expect(await reply.find({ key: 'toggle-bubble-top-edge' })).toBeUndefined()
+  expect(await reply.find({ key: 'toggle-bubble-bottom-edge' })).toBeDefined()
   expect(await step.find({ type: 'Text' })).toBeUndefined()
   expect(await edit.find({ type: 'Button' })).toBeUndefined()
   expect(await result.find({ type: 'Text' })).toBeUndefined()
 
   // Unfolded: the step draws again in the card; the head lists the work by kind, so the tool row and result draw nothing.
   await prompt.press({ key: 'toggle-turn-button' })
-  expect(await prompt.find({ type: 'Button', text: /^ \u2212 $/ })).toBeDefined()
+  expect(await isChipOpen(prompt)).toBe(true)
   expect(await step.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
   // Unfolded rows sit in the turn's card; the reply stays outside it.
   expect(await step.find({ key: 'toggle-card-bar' })).toBeDefined()
   expect(await reply.find({ key: 'toggle-card-bar' })).toBeUndefined()
   expect(await chipsOf(prompt)).toContain('Edited')
   expect(await chipsOf(prompt)).toContain('Other')
-  // The head carries the turn's counts as a pill and its time on the right.
+  // The head carries the turn's counts and how long it took, each a pill.
   expect(await prompt.find({ type: 'Text', text: /^\+2$/ })).toBeDefined()
   expect(await prompt.find({ type: 'Text', text: /^ \u22121$/ })).toBeDefined()
   expect(await prompt.find({ type: 'Text', text: '1m 4s ' })).toBeDefined()
@@ -400,7 +466,7 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
 
   // A click on the card's strip folds the turn back.
   await step.pointer({ in: 'toggle-card-strip', type: 'down', button: 'left', x: 0, y: 0 })
-  expect(await prompt.find({ type: 'Button', text: /^ \+ $/ })).toBeDefined()
+  expect(await isChipOpen(prompt)).toBe(false)
   expect(await step.find({ type: 'Text' })).toBeUndefined()
 
   for (const ui of [prompt, step, reply, edit, result]) await ui.unmount()
@@ -469,11 +535,11 @@ test('with fold_turns off, finished turns start open and the line folds them', {
   const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
 
-  expect(await prompt.find({ type: 'Button', text: /^ − $/ })).toBeDefined()
+  expect(await isChipOpen(prompt)).toBe(true)
   expect(await step.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
 
   await prompt.press({ key: 'toggle-turn-button' })
-  expect(await prompt.find({ type: 'Button', text: /^ \+ $/ })).toBeDefined()
+  expect(await isChipOpen(prompt)).toBe(false)
   expect(await step.find({ type: 'Text' })).toBeUndefined()
 
   for (const ui of [prompt, step]) await ui.unmount()

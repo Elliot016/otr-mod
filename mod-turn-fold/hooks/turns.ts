@@ -12,7 +12,13 @@ export type Turn = {
   durationMs?: number
   // When the prompt was sent, in epoch ms.
   at?: number
+  // A turn guessed from the session's messages: the prompt's and the text blocks' text, for matching rows that carry no id yet.
+  promptText?: string
+  texts?: string[]
 }
+
+// The part of a session message (`$.session.messages()`) a guessed turn reads.
+type MessageRow = { role: 'user' | 'assistant'; text: string; toolUses: readonly { tool_use_id: string; tool: string; input: any; result?: unknown; isError?: true }[]; toolResults?: readonly unknown[] }
 
 // Times in epoch ms; thought is the thinking just before the call, empty when it kept no text.
 export type ToolCall = { id: string; name: string; input: any; added: number; removed: number; startedAt?: number; endedAt?: number; thought?: string; preview?: Preview }
@@ -230,6 +236,65 @@ export class TurnLog {
   turnAt(requestId: string) {
     const key = rowKey(requestId)
     return this.turns.find(turn => rowKey(turn.prompt) === key)
+  }
+
+  // The turns from the session's messages, which the engine holds before the transcript is read; rows join them as they draw.
+  static fromMessages(messages: readonly MessageRow[]) {
+    const log = new TurnLog()
+    messages.forEach((message, n) => {
+      if (message.role === 'user') {
+        if (!message.toolResults?.length && isPrompt(message.text)) {
+          log.start(`guess-${n}`, undefined)
+          log.turns[log.turns.length - 1]!.promptText = message.text.trim()
+        }
+        return
+      }
+      const current = log.turns[log.turns.length - 1]
+      if (!current) return
+      if (message.text.trim()) current.texts = [...(current.texts ?? []), message.text.trim()]
+      for (const use of message.toolUses) {
+        const call: ToolCall = { id: use.tool_use_id, name: use.tool, input: use.input, ...diffStat(use.tool, use.input, use.result, use.isError === true) }
+        current.tools.push(call)
+        log.calls.set(call.id, call)
+        log.add(current, call.id)
+      }
+    })
+    return log
+  }
+
+  // Rows draw in transcript order, so a match is looked for from the last matched turn on; duplicates ("ok") then land right.
+  private cursor = 0
+
+  // A prompt or text row drawn before the transcript was read joins the guessed turn whose text it carries.
+  adopt(requestId: string, kind: 'prompt' | 'text', rowText: string) {
+    if (this.turnOf(requestId) || this.turnAt(requestId)) return
+    const textOf = rowText.trim()
+    const order = [...this.turns.keys()]
+    for (const n of [...order.slice(this.cursor), ...order.slice(0, this.cursor)]) {
+      const turn = this.turns[n]!
+      const isMatch = kind === 'prompt' ? turn.promptText === textOf : turn.texts?.some(block => block === textOf || block.includes(textOf))
+      if (!isMatch) continue
+      this.cursor = n
+      if (kind === 'prompt') turn.prompt = requestId
+      else {
+        this.add(turn, rowKey(requestId))
+        if (turn.texts?.[turn.texts.length - 1]?.includes(textOf)) turn.reply = rowKey(requestId)
+      }
+      return
+    }
+  }
+
+  // A tool row found by its id moves the cursor too, so the rows after it match from its turn on.
+  follow(requestId: string) {
+    const turn = this.turnOf(requestId)
+    if (turn) this.cursor = this.turns.indexOf(turn)
+  }
+
+  // A row with no text or id to match (a turn's duration, a group of thinking) joins the turn of the row drawn before it.
+  adoptNear(requestId: string) {
+    if (this.turnOf(requestId) || this.turnAt(requestId)) return
+    const turn = this.turns[this.cursor]
+    if (turn) this.add(turn, rowKey(requestId.replace(/^collapsed-/, '')))
   }
 
   private start(uuid: string, at: number | undefined) {

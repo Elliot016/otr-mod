@@ -16,6 +16,7 @@ export default {
   "durationSeconds": "{s}s",
   "durationMinutes": "{m}m {s}s",
   "durationHours": "{h}h {m}m",
+  "turnTook": "took {time}",
   "thought": "Thought",
   "kindChip": {
     "read": "Read",
