@@ -1,6 +1,6 @@
 import type { ConfigValue, EngineInterface, Register, SessionMessage } from 'claude-code'
 
-import { checkPrompt, parseCheck, parseRewrite, rewritePrompt, type Direction } from './ask'
+import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt, type Direction } from './ask'
 import type { EntryMessage, EntryProps } from './entry'
 import { isNerdFace, lookFor, section, subpill, terminalSettings, withMark, type IconMode } from './look'
 import { byTurn, canFork, CLEAR_AFTER_PROMPTS, emptySaved, KNOWN_KEPT, pack, remember, sameText, savedOf, SEEN_KEPT, shouldCheck, stringsOf, unreadCount, type Note, type Saved } from './notes'
@@ -78,6 +78,8 @@ let lastEffort: string | number | undefined
 // A check runs at most once per turn.
 let checkedTurn = ''
 let isChecking = false
+// Main requests seen so far, so a check knows whether the session moved on while it ran.
+let mainSteps = 0
 // `<direction>-<note id>` while a rewrite runs.
 let rewriting = ''
 // The note opened in the panel.
@@ -125,10 +127,16 @@ async function check($: EngineInterface) {
   try {
     await ensureLoaded($)
     const session = loadedSession
+    const startStep = mainSteps
     const reply = await ask($, checkPrompt(seen, known))
     const found = reply ? parseCheck(reply) : null
     // A /clear while the check ran makes it another session's.
     if (!found || seen.includes(found.learn) || session !== (await $.session.id())) return
+    // The main agent often catches the same thing within a step or two, so a finding that a newer step may have overtaken is asked about once more.
+    if (mainSteps !== startStep) {
+      const verdict = await ask($, recheckPrompt(found))
+      if (!verdict || !parseRecheck(verdict) || session !== (await $.session.id())) return
+    }
     const at = await $.clock.now()
     const added: Note = { ...found, id: `n${saved.notes.length + 1}-${at}`, turn: saved.prompts, prompt: saved.lastPrompt, at, isRead: false }
     saved = { ...saved, notes: [...saved.notes, added], card: added.id, since: 0 }
@@ -362,6 +370,7 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       lastModel = e.model
       lastEffort = e.effort
+      mainSteps += 1
       if (enabled && shouldCheck(e.index, e.turnId, checkedTurn, Boolean(saved.card))) {
         checkedTurn = e.turnId
         $.clock.after(0, () => check($))

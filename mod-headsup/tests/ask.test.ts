@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkPrompt, parseCheck, parseRewrite, rewritePrompt } from '../hooks/ask'
+import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt } from '../hooks/ask'
 import { byTurn, canFork, pack, remember, savedOf, shouldCheck, type Note } from '../hooks/notes'
 
 test('a check runs on every sixth main step, once per turn, never over a shown card', () => {
@@ -64,6 +64,15 @@ test('the prompt lists what was offered and what the person knows; a rewrite car
   expect(rewrite).toContain('At most 45 words')
   expect(parseRewrite('title: Shorter\nexplain:\n- just this')).toEqual({ title: 'Shorter', body: ['just this'] })
   expect(parseRewrite('no body here')).toBe(null)
+})
+
+test('the check skips what the main agent is already on; a recheck keeps a note only on a clear keep', () => {
+  expect(checkPrompt([], [])).toContain('The main agent is not already on it')
+  const recheck = recheckPrompt({ learn: 'The rm ran without a hold.', tag: 'Heads up', title: '', body: [] })
+  expect(recheck).toContain('learn: The rm ran without a hold.')
+  expect(recheck).toContain('keep or drop')
+  expect(['keep', 'Keep.', '**keep**'].map(parseRecheck)).toEqual([true, true, true])
+  expect(['drop', 'Drop: the agent fixed it', 'unsure', '', 'I would keep it'].map(parseRecheck)).toEqual([false, false, false, false, false])
 })
 
 test('the packed conversation keeps the newest messages within its budget, oldest first', () => {

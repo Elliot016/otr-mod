@@ -148,6 +148,33 @@ test('the entry shimmers while the check runs, then the card shows the note abov
   await ui.unmount()
 })
 
+for (const [verdict, isShown] of [['drop', false], ['keep', true]] as const) {
+  test(`when the main turn moves on while the check runs, a recheck answering ${verdict} ${isShown ? 'shows' : 'drops'} the note`, async ($, on) => {
+    let release = (_: unknown) => {}
+    const first = new Promise(resolve => (release = resolve))
+    let calls = 0
+    const { clock, forks } = setup(on, { reply: () => (calls++ === 0 ? first : answered(verdict)) })
+    await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+    await step($, 6)
+    await clock.settle()
+    // The main agent takes another step before the check answers.
+    await step($, 7)
+    release(answered(FULL))
+    await clock.settle()
+    expect(forks.length).toBe(2)
+    expect(forks[1]).toContain('keep or drop')
+    const ui = await band($)
+    expect(Boolean(await ui.find({ key: 'headsup-card' }))).toBe(isShown)
+    await ui.unmount()
+  })
+}
+
+test('with no newer step there is no recheck', async ($, on) => {
+  const { clock, forks } = setup(on)
+  await finding($, clock)
+  expect(forks.length).toBe(1)
+})
+
 test('above medium effort the check goes to the session model at medium with the packed conversation', async ($, on) => {
   const { clock, forks, completes } = setup(on)
   await $.prompt.submit({ text: 'Add follow-ups to /ask' })

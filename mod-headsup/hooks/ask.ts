@@ -17,6 +17,7 @@ const PRINCIPLES = [
   'Only flag a topic when all of these hold:',
   '- Not understanding it costs something real: money, time, wasted work, a wrong result, or a decision they are in the middle of. "Their understanding would be more complete" is not enough.',
   '- They have not engaged with it: they did not ask about it, reply to it, and it was not the main point of an answer. A decision or detail mentioned in passing, inside a long answer or a long run of tool calls, still counts, because people do not read everything.',
+  '- The main agent is not already on it. It keeps working while you answer and often catches problems itself, so skip anything its latest tool calls or words are already looking into, checking or about to fix.',
   '- It fits what they showed they know: never teach what they already understand, and never assume knowledge they have not shown.',
   '- It is not trivia: how files are laid out, naming, what a file holds, minor edge cases.',
   '- You are confident it is true. When unsure, say learn: none.',
@@ -76,6 +77,22 @@ export function rewritePrompt(finding: Finding, direction: Direction) {
     '<short bullet lines starting with "- ">',
   ].join('\n')
 }
+
+// Asked when the main turn moved on while the check ran: the session may have caught up with the finding.
+export function recheckPrompt(finding: Finding) {
+  return [
+    PREAMBLE,
+    '',
+    'A moment ago you flagged this to the person:',
+    `learn: ${finding.learn}`,
+    '',
+    'The main agent kept working since. Read the session as it is now. Is this still true, and still not noticed, addressed or being looked into by the main agent?',
+    'Answer with one word: keep or drop. When unsure, drop.',
+  ].join('\n')
+}
+
+// Only a clear keep shows the note.
+export const parseRecheck = (reply: string) => /^\W*keep\b/i.test(reply.trim())
 
 // Markdown the card cannot draw: bold and code marks, and a bullet's own lead.
 const plainLine = (line: string) =>
