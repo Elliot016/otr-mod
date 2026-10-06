@@ -134,16 +134,16 @@ test('a digit or a click fills the prompt without sending; the digit itself neve
   await ui.unmount()
 })
 
-test('hover lights the row under the pointer', { options: { animations: false } }, async ($, on) => {
+test('rows rest muted under the heads-up card and the hovered one lights up', { options: { animations: false } }, async ($, on) => {
   const { clock } = setup(on, () => answered('alpha\nbeta'))
   await $.turn.complete(DONE as never)
   await clock.settle()
   const ui = await mount($)
   await ui.pointer({ in: 'steps-row-1', type: 'move', x: 4, y: 0 })
   expect(await labelColor(ui, 1, ' Beta ')).toBe('#7386D0')
-  expect(await labelColor(ui, 0, ' Alpha ')).toBe('#EEEEFA')
+  expect(await labelColor(ui, 0, ' Alpha ')).toBe('#9BA3C4')
   await ui.pointer({ in: 'steps-row-1', type: 'leave', x: 0, y: 0 })
-  expect(await labelColor(ui, 1, ' Beta ')).toBe('#EEEEFA')
+  expect(await labelColor(ui, 1, ' Beta ')).toBe('#9BA3C4')
   await ui.unmount()
 })
 
@@ -305,3 +305,22 @@ for (const icons of ['nerd', 'safe']) {
     await ui.unmount()
   })
 }
+
+test('a heads-up card drawn below still sits above the suggestions', async ($, on) => {
+  const { clock } = setup(on, () => answered('add a test'), ({ Box, Text }: any) => (
+    <Box key="menu-rows" flexDirection="column">
+      <Box key="headsup-card"><Text>Heads up</Text></Box>
+      <Box key="other-row"><Text>other</Text></Box>
+      <Box key="menu-row" flexDirection="row"><Text key="pill">Files</Text></Box>
+    </Box>
+  ))
+  await $.turn.complete(DONE as never)
+  await clock.settle()
+  const ui = await mount($)
+  const tree = JSON.stringify(await ui.drawn())
+  expect(tree.indexOf('"headsup-card"') < tree.indexOf('"nextsteps-rows"')).toBe(true)
+  // Rows that are not a heads-up keep their place under the suggestions.
+  expect(tree.indexOf('"nextsteps-rows"') < tree.indexOf('"other-row"')).toBe(true)
+  expect(tree.split('"headsup-card"').length - 1).toBe(1)
+  await ui.unmount()
+})

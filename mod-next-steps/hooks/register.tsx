@@ -14,6 +14,8 @@ const MAX_CHARS = 100
 const ROW_CHROME = 19
 const MIN_ROOM = 10
 
+const keyOf = (node: unknown) => String((node as { props?: { key?: unknown } } | null)?.props?.key ?? '')
+
 const fit = (line: string, width: number) => (line.length <= width ? line : `${line.slice(0, width - 1)}…`)
 
 // A control glyph without the brackets and padding it carries as a Button label, for drawing inside a pill.
@@ -291,7 +293,13 @@ export const register: Register = (on, options) => {
     // Joins the shared pill row's top section when other mods drew one below; wrapping it would hide the row from mods drawn around this one, which then start a second row.
     const above = (below: unknown, items: unknown[]) => {
       const { group, row, rest, tip } = splitRow(below)
-      if (group.length || row.length || tip) return pillRow({ Box, Text }, look.nerd, group, row, [...items, ...rest], tip)
+      // A heads-up card drawn below this mod still goes above the suggestions: it is rarer and more urgent. Without mod-headsup nothing matches.
+      const isHeadsup = (node: unknown) => keyOf(node).startsWith('headsup-')
+      const ours = items.findIndex(item => keyOf(item).startsWith('nextsteps'))
+      const lifted = rest.filter(isHeadsup)
+      const ordered = ours < 0 ? items : [...items.slice(0, ours), ...lifted, ...items.slice(ours)]
+      const others = ours < 0 ? rest : rest.filter(node => !isHeadsup(node))
+      if (group.length || row.length || tip) return pillRow({ Box, Text }, look.nerd, group, row, [...ordered, ...others], tip)
       return <Box key="nextsteps" flexDirection="column">{items}{below}</Box>
     }
     if (steps.length === 0 || isHolding) {
@@ -311,17 +319,17 @@ export const register: Register = (on, options) => {
     // Each suggestion a numbered pill; its digit, typed alone into the empty prompt, fills it through a Button nobody sees.
     const row = (step: string, index: number) => (
       <Box key={`steps-line-${index}`} flexDirection="row">
-        {pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={`steps-row-${index}`} module="./entry.tsx" height={1} props={{ id: `steps-row-${index}`, label: fit(step, room), isOpen: true, bg: THEME.surface3, subLead: String(index + 1), nerd: look.nerd, still } satisfies EntryProps} />, `steps-pill-${index}`, THEME.surface1)}
+        {pill({ Box, Text }, look.nerd, THEME.surface2, <Client key={`steps-row-${index}`} module="./entry.tsx" height={1} props={{ id: `steps-row-${index}`, label: fit(step, room), isOpen: false, bg: THEME.surface2, idle: THEME.muted, subLead: String(index + 1), subLeadColor: THEME.muted, nerd: look.nerd, still } satisfies EntryProps} />, `steps-pill-${index}`, THEME.surface1)}
         <Box key={`steps-hotkey-${index}`} width={0} height={0} overflow="hidden">
           <Button key={`steps-hotkey-button-${index}`} label={step} hotkey={String(index + 1)} plain onPress={() => fillFrom($, index)} />
         </Box>
       </Box>
     )
-    const dismiss = pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="steps-dismiss" module="./entry.tsx" height={1} props={{ id: 'steps-dismiss', label: bare(look.glyph.close), isOpen: false, bg: THEME.surface3, nerd: look.nerd, still } satisfies EntryProps} />, 'steps-dismiss-pill', THEME.surface1)
+    const dismiss = pill({ Box, Text }, look.nerd, THEME.surface2, <Client key="steps-dismiss" module="./entry.tsx" height={1} props={{ id: 'steps-dismiss', label: bare(look.glyph.close), isOpen: false, bg: THEME.surface2, nerd: look.nerd, still } satisfies EntryProps} />, 'steps-dismiss-pill', THEME.surface1)
 
     return above(below, [
         ...cards,
-        <Box key="nextsteps-rows" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+        <Box key="nextsteps-rows" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
           <Box key="steps-first" flexDirection="row" justifyContent="space-between" columnGap={1}>
             {row(steps[0]!, 0)}
             {dismiss}
