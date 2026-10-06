@@ -574,7 +574,10 @@ export const register: Register = (on, options) => {
           section(elements, look, `turn-${group.turn}`, '', '', [
             <Box key={`turn-head-${group.turn}`} flexDirection="row" columnGap={1}>
               {subpill({ Box, Text }, nerd, THEME.surface1, fill(text.turnNumber, { n: group.turn }), `turn-number-${group.turn}`)}
-              <Text color={THEME.muted}>{clock(group.at)}</Text>
+              {/* Only the prompt gives way: a wrapped time made the row two lines and stretched the ↗ pill with it. */}
+              <Box key={`turn-time-${group.turn}`} flexShrink={0}>
+                <Text color={THEME.muted}>{clock(group.at)}</Text>
+              </Box>
               <Box key={`turn-prompt-${group.turn}`} flexGrow={1} flexShrink={1}>
                 <Text color={THEME.onSurface} wrap="truncate-end">{group.prompt}</Text>
               </Box>
