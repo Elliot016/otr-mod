@@ -352,8 +352,14 @@ test('the transcript is read once; rows drawn later join their turn and fold at 
   const tool = await mount('ToolUse', 'toolu_new', toolProps)
   await $.turn.complete({ turnId: 't2', reason: 'answer', answer: 'ok', isAborted: false } as never)
   expect(await tool.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  // Rows draw in no fixed order, so the prompt opens Claude's bubble and the duration line closes it; no row in between does.
+  const took = await mount('TurnDuration', ID(22), { durationMs: 3000 })
+  expect(await fresh.find({ key: 'toggle-bubble-open-edge' })).toBeDefined()
+  expect(await took.find({ key: 'toggle-bubble-close-edge' })).toBeDefined()
+  expect(await tool.find({ key: 'toggle-bubble-bottom-edge' })).toBeUndefined()
   await fresh.unmount()
   await tool.unmount()
+  await took.unmount()
 
   // The next prompt folds it: its row draws nothing, and its prompt carries the fold line.
   await mount('UserMessage', ID(21), { text: 'and the docs', origin: { kind: 'composer' }, isExpanded: true })

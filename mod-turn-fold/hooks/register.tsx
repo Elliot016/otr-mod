@@ -170,13 +170,6 @@ const slice = ({ Box, Client }: Bars, key: string, bar: string, body: unknown, f
 // A strip is clickable, so drawing one takes a Client.
 type Bars = Elements & { Client: (props: any) => RenderElement }
 
-// The first and the latest row each turn drew in Claude's bubble: the first carries the top edge, the latest the bottom once the turn ends.
-const bubbleTop = new Map<string, string>()
-const bubbleLast = new Map<string, string>()
-const bubbleRows = new Set<string>()
-
-const isEnded = (turn: Turn) => isDone(turn) || turn.durationMs !== undefined || turn.prompt === endedPrompt
-
 const edge = ({ Box, Client }: Bars, key: string, props: EdgeProps) =>
   props.kind === 'top' || props.kind === 'bottom' ? (
     <Box key={key} height={1}>
@@ -212,28 +205,21 @@ function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean
 // An unfolded finished turn's row, inside the bubble its head opened.
 const cardRow = (parts: Bars, body: unknown, fold: BarProps) => frame(parts, 'toggle-frame', slice(parts, 'toggle-card', THEME.accent, body, fold), false, false)
 
-function bubble(parts: Bars, key: string, turn: Turn, rowId: string, body: unknown, isTool = false) {
+// Rows draw in no fixed order, so the prompt and duration rows carry the edges; a finished turn's reply closes it.
+function bubble(parts: Bars, key: string, turn: Turn, body: unknown, isTool = false) {
   const { Box } = parts
-  if (!bubbleTop.has(turn.prompt)) bubbleTop.set(turn.prompt, rowId)
-  if (!bubbleRows.has(rowId)) {
-    bubbleRows.add(rowId)
-    bubbleLast.set(turn.prompt, rowId)
-  }
-  // A finished turn shows its reply alone: the bubble's end, and its start too when no head opened it.
-  const isWhole = isDone(turn)
-  const isTop = isWhole ? !hasHead(turn) : bubbleTop.get(turn.prompt) === rowId
-  const isBottom = isWhole || (isEnded(turn) && bubbleLast.get(turn.prompt) === rowId)
-  // Claude Code starts each row with a blank line; it rides up under the top edge or out of the band, where it paints nothing.
+  // Claude Code starts each row with a blank line; in a tool row it rides out of the band, where it paints nothing.
   const inner = isTool ? (
-    <Box key={`${key}-band`} flexDirection="row" flexGrow={1} marginTop={isTop ? 0 : 1} backgroundColor={THEME.surface1}>
+    <Box key={`${key}-band`} flexDirection="row" flexGrow={1} marginTop={1} backgroundColor={THEME.surface1}>
       {edge(parts, `${key}-rail`, { kind: 'rail', color: THEME.accent })}
       <Box key={`${key}-tool`} flexDirection="column" flexGrow={1} paddingLeft={1} marginTop={-1}>{body}</Box>
     </Box>
-  ) : isTop ? (
-    <Box key={`${key}-lift`} flexDirection="column" marginTop={-1}>{body}</Box>
   ) : body
-  return frame(parts, key, inner, isTop, isBottom)
+  return frame(parts, key, inner, false, isDone(turn))
 }
+
+// Claude's bubble opens under the prompt: as the head of a finished turn with tools, else as a bare top edge.
+const opening = (parts: Bars) => edge(parts, 'toggle-bubble-open', { kind: 'top', color: THEME.accent, wedge: true })
 
 type Controls = Elements & { Button: (props: any) => RenderElement }
 
@@ -596,7 +582,7 @@ export const register: Register = (on, options) => {
     const prompt = await next(e)
     // The wedge is an absolute sibling: Claude Code refuses its row under a positioned Box.
     const row = (
-      <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1} justifyContent="flex-end">
+      <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1} justifyContent="flex-end" backgroundColor={THEME.bg}>
         <Box key="toggle-prompt-bubble" flexDirection="column" flexShrink={1}>
           <Box key="toggle-prompt-outline" flexDirection="row" borderStyle="round" borderColor={THEME.secondary}>
             {showTimes && turn?.at !== undefined ? (
@@ -616,7 +602,8 @@ export const register: Register = (on, options) => {
         </Box>
       </Box>
     )
-    if (!turn || !isDone(turn) || turn.tools.length === 0) return row
+    if (!turn) return row
+    if (!hasHead(turn)) return <Box key="toggle-prompt" flexDirection="column" flexGrow={1}>{row}{opening({ Box, Client })}</Box>
 
     const isOpen = isTurnOpen(await opened($, 'turns'), turn)
     // The head: what the turn did, then its line counts and how long it took, each a pill.
@@ -650,7 +637,7 @@ export const register: Register = (on, options) => {
     seen.set(`AssistantMessage ${e.requestId}`, Boolean(turn))
     const place = await placeOf($, turn, e.requestId)
     const { Box, Client } = $.ui.resolve(e)
-    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, rowKey(e.requestId), await next(e)) : next(e)
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await next(e)) : next(e)
 
     return place === 'hidden' ? <Box key="toggle-hidden" /> : cardRow({ Box, Client }, await next(e), { kind: 'turns', id: turn!.prompt })
   })
@@ -670,7 +657,7 @@ export const register: Register = (on, options) => {
     const place = await placeOf($, turn, e.requestId)
     // In an open turn the head's kind rows list every call, so the row itself draws nothing.
     if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
-    const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, e.props.tool_use_id, body, true) : body)
+    const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body, true) : body)
     if (e.props.isRunning || !foldTools || isLive(turn)) return place === 'card' ? cardRow({ Box, Client }, await next(e), { kind: 'turns', id: turn!.prompt }) : inBubble(await next(e))
 
     const isFailed = e.props.isErrored || e.props.isInterrupted
@@ -718,7 +705,7 @@ export const register: Register = (on, options) => {
 
     const body = nested({ Box, Client }, 'toggle-result', await next(e), { kind: 'tools', id: e.props.tool_use_id })
     if (place === 'card') return cardRow({ Box, Client }, body, { kind: 'turns', id: turn!.prompt })
-    return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, e.requestId, body, true) : body
+    return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body, true) : body
   })
 
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
@@ -738,7 +725,7 @@ export const register: Register = (on, options) => {
     seen.set(`ToolGroup ${e.requestId}`, Boolean(turn))
     const place = await placeOf($, turn, id)
     const { Box, Client } = $.ui.resolve(e)
-    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, e.requestId, await next(e), true) : next(e)
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await next(e), true) : next(e)
 
     // In an open turn the head's kind rows list every call, so the group draws nothing.
     if (place === 'hidden' || foldTools) return <Box key="toggle-hidden" />
@@ -757,9 +744,18 @@ export const register: Register = (on, options) => {
     seen.set(`TurnDuration ${e.requestId}`, Boolean(turn))
     // A turn learned as it drew has no duration row from the transcript; this line carries it.
     if (turn && turn.durationMs === undefined && typeof e.props.durationMs === 'number') turn.durationMs = e.props.durationMs
-    if ((await placeOf($, turn, e.requestId)) !== 'hidden') return next(e)
-
-    const { Box } = $.ui.resolve(e)
-    return <Box key="toggle-hidden" />
+    const place = await placeOf($, turn, e.requestId)
+    const { Box, Client } = $.ui.resolve(e)
+    if (place === 'hidden') return <Box key="toggle-hidden" />
+    // The running turn's last line closes its bubble; a finished turn's reply closes its own.
+    if (turn && !isDone(turn)) {
+      return (
+        <Box key="toggle-close" flexDirection="column">
+          {edge({ Box, Client }, 'toggle-bubble-close', { kind: 'bottom', color: THEME.accent })}
+          {await next(e)}
+        </Box>
+      )
+    }
+    return next(e)
   })
 }
