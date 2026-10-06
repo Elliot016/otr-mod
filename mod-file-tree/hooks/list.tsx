@@ -149,7 +149,8 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
             )}
             <Text>{' '.repeat(Math.max(1, row.pad))}</Text>
             {/* The live word sits left of the counts, so the counts keep one right edge whether a row is live or not. */}
-            {isLive && row.status ? livePill(Text, row.status, props.nerd === true) : null}
+            {/* It never shrinks: a row a cell too wide takes the cell from the gap, not from the word. */}
+            {isLive && row.status ? <Box key="live" flexDirection="row" flexShrink={0}>{livePill(Text, row.status, props.nerd === true)}</Box> : null}
             {isLive && row.status && (row.add > 0 || row.del > 0) ? <Text> </Text> : null}
             {row.add > 0 || row.del > 0 ? countsPill(Text, row.add, row.del, props.nerd === true) : null}
             {row.endMark ? openPill(Text, row.endMark, row.endColor, props.nerd === true) : null}
