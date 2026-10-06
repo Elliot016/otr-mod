@@ -384,7 +384,7 @@ async function openingPane($: EngineInterface) {
   if (!(await isOpen($, PANE))) endOpening($)
 }
 
-// The share of each status color left in its legend pill, as the turn-fold chips tint their counts.
+// The share of each status color left in its legend pill, as the mod-transcript chips tint their counts.
 const LEGEND_WASH = 0.72
 
 // A settings card's click: its row, saved through /config; a saved change reloads this mod.

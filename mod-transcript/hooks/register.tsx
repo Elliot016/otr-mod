@@ -45,20 +45,20 @@ let note = ''
 
 const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
 
-// `/mod-turn-fold settings` toggles the panel; an unplaced pane is waiting, not open.
+// `/mod-transcript settings` toggles the panel; an unplaced pane is waiting, not open.
 async function toggleSettings($: EngineInterface) {
   if (await isPaneOpen($)) {
     await $.ui.close({ id: PANE })
-    await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, false)
+    await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, false)
     return
   }
   note = ''
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
-  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-turn-fold' }))
+  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-transcript' }))
   const result = await $.ui.open({ id: PANE, title: text.panePlacedTitle, closeOnEscape: true })
   if (!result.isPlaced) $.ui.toast(fill(text.paneWaiting, { reason: String(result.reason) }))
-  await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, result.isPlaced)
+  await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, result.isPlaced)
 }
 
 // Read once, since a long session's file is large (past $.fs.read's cap it streams through the file printer); later rows are claimed as they render.
@@ -116,15 +116,15 @@ const markEnded = () => {
 
 // Reading the lists subscribes the row to redraws when a click changes them.
 async function opened($: EngineInterface, kind: Kind) {
-  const value = (kind === 'turns' ? await $.state.get({ plugin: 'mod-turn-fold', key: 'turns' }) : await $.state.get({ plugin: 'mod-turn-fold', key: 'tools' })).value
+  const value = (kind === 'turns' ? await $.state.get({ plugin: 'mod-transcript', key: 'turns' }) : await $.state.get({ plugin: 'mod-transcript', key: 'tools' })).value
   return Array.isArray(value) ? value : []
 }
 
 async function flip($: EngineInterface, kind: Kind, id: string) {
   const list = await opened($, kind)
   const value = list.includes(id) ? list.filter(open => open !== id) : [...list, id]
-  if (kind === 'turns') await $.state.set({ plugin: 'mod-turn-fold', key: 'turns' }, value)
-  else await $.state.set({ plugin: 'mod-turn-fold', key: 'tools' }, value)
+  if (kind === 'turns') await $.state.set({ plugin: 'mod-transcript', key: 'turns' }, value)
+  else await $.state.set({ plugin: 'mod-transcript', key: 'tools' }, value)
 }
 
 const fit = (text: string, width: number) => {
@@ -339,7 +339,7 @@ async function pickChip($: EngineInterface, turnId: string, kind: string) {
   const list = await opened($, 'tools')
   const key = `${turnId}:${kind}`
   const others = list.filter(open => !open.startsWith(`${turnId}:`))
-  await $.state.set({ plugin: 'mod-turn-fold', key: 'tools' }, list.includes(key) ? others : [...others, key])
+  await $.state.set({ plugin: 'mod-transcript', key: 'tools' }, list.includes(key) ? others : [...others, key])
 }
 
 // An open turn's work under its head: a line of kind chips (Thought first, then each kind in order of first use) and, under the picked one, its calls or its thinking.
@@ -439,7 +439,7 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
   ]
 }
 
-// What `/mod-turn-fold <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
+// What `/mod-transcript <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
 async function answer($: EngineInterface, args: string) {
   if (args.trim() === 'settings') {
     await toggleSettings($)
@@ -448,15 +448,15 @@ async function answer($: EngineInterface, args: string) {
   if (args.trim() === 'debug') {
     const temp = ((await $.env.get('TEMP')) ?? (await $.env.get('TMPDIR')) ?? '/tmp').replace(/\\/g, '/')
     const rows = [...seen].map(([row, isPlaced]) => `${isPlaced ? 'placed  ' : 'unplaced'} ${row}`)
-    await $.fs.write(`${temp}/mod-turn-fold-ids.txt`, `${log.turns.length} turns\n${rows.join('\n')}\n`)
-    return `${rows.length} drawn rows written to ${temp}/mod-turn-fold-ids.txt`
+    await $.fs.write(`${temp}/mod-transcript-ids.txt`, `${log.turns.length} turns\n${rows.join('\n')}\n`)
+    return `${rows.length} drawn rows written to ${temp}/mod-transcript-ids.txt`
   }
   const flippedNow = await opened($, 'turns')
   const done = log.turns.filter(isDone)
   const isAnyOpen = done.some(turn => isTurnOpen(flippedNow, turn))
   // Folding all clears the flips when turns fold by default, and flips every turn when they open by default.
   const flipAll = isAnyOpen !== foldTurns
-  await $.state.set({ plugin: 'mod-turn-fold', key: 'turns' }, flipAll ? done.map(turn => turn.prompt) : [])
+  await $.state.set({ plugin: 'mod-transcript', key: 'turns' }, flipAll ? done.map(turn => turn.prompt) : [])
 
   return isAnyOpen ? text.noteFolded : text.noteUnfolded
 }
@@ -541,11 +541,11 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await loadLook($)
     await $.command.register({
-      name: 'mod-turn-fold',
+      name: 'mod-transcript',
       description: text.commandDescription,
       argumentHint: '[settings|debug]',
     })
-    await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, await isPaneOpen($))
+    await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, await isPaneOpen($))
     await load($)
 
     return next(e)
@@ -564,18 +564,18 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, false)
+    if (e.id === PANE) await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, false)
 
     return next(e)
   })
 
   // One panel at a time: another mod's pane opening closes this one, deferred past that plugin's dispatch.
   on('state.set', async ($, e, next) => {
-    if (e.key === 'pane' && e.plugin !== 'mod-turn-fold' && e.value === true) {
+    if (e.key === 'pane' && e.plugin !== 'mod-transcript' && e.value === true) {
       $.clock.after(0, async () => {
         if (!(await isPaneOpen($))) return
         await $.ui.close({ id: PANE })
-        await $.state.set({ plugin: 'mod-turn-fold', key: 'pane' }, false)
+        await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, false)
       })
     }
 
@@ -587,11 +587,11 @@ export const register: Register = (on, options) => {
     if (e.requestId !== PANE) return next(e)
 
     const { Box, Button, Client, Text } = $.ui.resolve(e)
-    const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-turn-fold.'))
+    const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-transcript.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
     const run = async (action: Action) => {
       const said =
-        action.command === 'mod-turn-fold'
+        action.command === 'mod-transcript'
           ? answer($, action.args ?? '')
           : $.command.run({ command: action.command, args: action.args ?? '' }).then(() => fill(text.noteCommandRan, { command: [action.command, action.args].filter(Boolean).join(' ') }))
       note = await said.then(text => `${MARK.ok} ${text || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
@@ -600,7 +600,7 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-turn-fold-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`, icon: look.glyph.gear, isOpen: true }], false)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-transcript-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`, icon: look.glyph.gear, isOpen: true }], false)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.paneHintClick} ${MARK.sep} ${text.paneHintSaved}`}</Text>
         <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: false })}</Box>
       </Box>
@@ -642,7 +642,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'mod-turn-fold' }, async ($, e) => ({ text: await answer($, e.args) }))
+  on('command.run', { command: 'mod-transcript' }, async ($, e) => ({ text: await answer($, e.args) }))
 
   // The prompt row carries the card's head: one line naming what the turn did, which a click folds or unfolds.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {

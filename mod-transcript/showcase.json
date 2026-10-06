@@ -6,8 +6,8 @@
     { "title": "Card", "detail": "An open turn draws as one tinted card with a bar down its left edge; the final reply stays outside it." }
   ],
   "actions": [
-    { "label": "Fold or unfold every turn", "command": "mod-turn-fold" },
-    { "label": "Write the drawn row ids to %TEMP%", "command": "mod-turn-fold", "args": "debug" }
+    { "label": "Fold or unfold every turn", "command": "mod-transcript" },
+    { "label": "Write the drawn row ids to %TEMP%", "command": "mod-transcript", "args": "debug" }
   ],
   "previews": {
     "fold_turns": {

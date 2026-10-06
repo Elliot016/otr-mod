@@ -12,7 +12,7 @@ export type ListProps = { rows: Row[]; gear: string; icon: string; nameWidth: nu
 // hover names the mod under the pointer, or -1 once it leaves, so the pane can show that mod's card.
 export type ListMessage = { type: 'select'; index: number } | { type: 'hover'; index: number } | { type: 'toggle'; index: number }
 
-// The share of green left in an on switch, as the turn-fold chips tint their counts.
+// The share of green left in an on switch, as the mod-transcript chips tint their counts.
 const WASH = 0.72
 
 // Cells the switch pill takes: its two ends, the dot, a space and the longer label.

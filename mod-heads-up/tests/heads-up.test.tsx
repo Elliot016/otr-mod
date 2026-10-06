@@ -83,8 +83,8 @@ async function step($: any, index: number, extra: object = {}) {
   while ((await stream.next()).done !== true);
 }
 
-const band = ($: any) => $.ui.mount({ plugin: 'mod-headsup', surface: 'terminal', ...BAND })
-const pane = ($: any) => $.ui.mount({ plugin: 'mod-headsup', surface: 'terminal', component: 'Pane', requestId: 'headsup', props: PANE_PROPS })
+const band = ($: any) => $.ui.mount({ plugin: 'mod-heads-up', surface: 'terminal', ...BAND })
+const pane = ($: any) => $.ui.mount({ plugin: 'mod-heads-up', surface: 'terminal', component: 'Pane', requestId: 'headsup', props: PANE_PROPS })
 const click = (ui: any, key: string) => ui.pointer({ in: key, type: 'down', button: 'left', x: 4, y: 0 })
 const drawn = async (ui: any, key: string) => JSON.stringify(await ui.drawn({ in: key }).catch(() => null))
 
@@ -244,13 +244,13 @@ test('the card clears after two prompts, or at once on ×, and stays in the pane
 test('Learn more opens the panel on that note: its turn, the explanation, Chat fills the prompt, Simpler words rewrites it, ↗ scrolls', async ($, on) => {
   let rewritten = false
   const { clock, panes, fills, forks, states } = setup(on, { reply: () => answered(rewritten ? 'title: Plainer\nexplain:\n- in short words' : FULL) })
-  await $.ui.mount({ plugin: 'mod-headsup', surface: 'terminal', component: 'UserMessage', requestId: 'row-1', props: { text: 'Add follow-ups to /ask', origin: { kind: 'composer' } } } as never)
+  await $.ui.mount({ plugin: 'mod-heads-up', surface: 'terminal', component: 'UserMessage', requestId: 'row-1', props: { text: 'Add follow-ups to /ask', origin: { kind: 'composer' } } } as never)
   await finding($, clock)
   const ui = await band($)
   await click(ui, 'headsup-card-learn')
   await clock.settle()
   expect(panes().map(each => each.id)).toEqual(['headsup'])
-  expect(states.get('mod-headsup.pane')).toBe(true)
+  expect(states.get('mod-heads-up.pane')).toBe(true)
   // Read on open: no unread count, and the card is gone.
   expect(JSON.stringify(await ui.find({ key: 'menu-entry-headsup' }))).not.toContain('"badge"')
   expect(await ui.find({ key: 'headsup-card' })).toBeUndefined()
@@ -285,18 +285,18 @@ test('Learn more opens the panel on that note: its turn, the explanation, Chat f
 
 test('the panel contract: the command toggles the panel and the settings, and the pane state follows', async ($, on) => {
   const { panes, states } = setup(on)
-  await $.command.run({ command: 'mod-headsup', args: '' } as never)
+  await $.command.run({ command: 'mod-heads-up', args: '' } as never)
   expect(panes().map(each => each.id)).toEqual(['headsup'])
-  await $.command.run({ command: 'mod-headsup', args: '' } as never)
+  await $.command.run({ command: 'mod-heads-up', args: '' } as never)
   expect(panes()).toEqual([])
-  expect(states.get('mod-headsup.pane')).toBe(false)
+  expect(states.get('mod-heads-up.pane')).toBe(false)
 
-  await $.command.run({ command: 'mod-headsup', args: 'settings' } as never)
+  await $.command.run({ command: 'mod-heads-up', args: 'settings' } as never)
   expect(panes().map(each => each.id)).toEqual(['headsup-settings'])
-  expect(states.get('mod-headsup.pane')).toBe(true)
-  await $.command.run({ command: 'mod-headsup', args: 'settings' } as never)
+  expect(states.get('mod-heads-up.pane')).toBe(true)
+  await $.command.run({ command: 'mod-heads-up', args: 'settings' } as never)
   expect(panes()).toEqual([])
-  expect(states.get('mod-headsup.pane')).toBe(false)
+  expect(states.get('mod-heads-up.pane')).toBe(false)
 })
 
 test('enabled off makes no model call; forget empties the known topics', { options: { enabled: false } }, async ($, on) => {
@@ -304,7 +304,7 @@ test('enabled off makes no model call; forget empties the known topics', { optio
   store.set('known', ['A topic'])
   await finding($, clock)
   expect(forks.length + completes.length).toBe(0)
-  await $.command.run({ command: 'mod-headsup', args: 'forget' } as never)
+  await $.command.run({ command: 'mod-heads-up', args: 'forget' } as never)
   expect(store.get('known')).toEqual([])
 })
 

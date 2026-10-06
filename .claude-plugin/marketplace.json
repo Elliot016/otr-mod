@@ -36,9 +36,9 @@
       "description": "Colors each skill in the slash list by the color-tag in its frontmatter, and /mod-skill-panel opens a sidebar of skills grouped by tag where pressing one adds it to the prompt"
     },
     {
-      "name": "mod-turn-fold",
-      "source": "./mod-turn-fold",
-      "description": "Folds each finished turn under its prompt to one summary line and each tool call to one line, unfolded in place as a card by a click; /mod-turn-fold settings opens its settings"
+      "name": "mod-transcript",
+      "source": "./mod-transcript",
+      "description": "Restyles the transcript: your prompts and Claude's replies as chat bubbles, each finished turn folded under its prompt to one summary line (tools, file changes, skills, agents) with the final reply kept, each finished tool row folded to one line, and Bash commands in shell colors. A click unfolds a turn or a call in place; /mod-transcript settings opens its settings"
     },
     {
       "name": "mod-wrap-up",
@@ -56,8 +56,8 @@
       "description": "A sidebar tree of the files Claude touched, lit live while it works, with a replay that steps through the last turn's diffs"
     },
     {
-      "name": "mod-headsup",
-      "source": "./mod-headsup",
+      "name": "mod-heads-up",
+      "source": "./mod-heads-up",
       "description": "While Claude works, a side check now and then flags one thing you should know but might miss: a card above the prompt and a Heads up panel with every note by turn"
     },
     {

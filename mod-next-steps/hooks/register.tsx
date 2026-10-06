@@ -293,7 +293,7 @@ export const register: Register = (on, options) => {
     // Joins the shared pill row's top section when other mods drew one below; wrapping it would hide the row from mods drawn around this one, which then start a second row.
     const above = (below: unknown, items: unknown[]) => {
       const { group, row, rest, tip } = splitRow(below)
-      // A heads-up card drawn below this mod still goes above the suggestions: it is rarer and more urgent. Without mod-headsup nothing matches.
+      // A heads-up card drawn below this mod still goes above the suggestions: it is rarer and more urgent. Without mod-heads-up nothing matches.
       const isHeadsup = (node: unknown) => keyOf(node).startsWith('headsup-')
       const ours = items.findIndex(item => keyOf(item).startsWith('nextsteps'))
       const lifted = rest.filter(isHeadsup)

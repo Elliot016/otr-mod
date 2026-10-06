@@ -156,7 +156,7 @@ async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsT
   // A reload fires session.start, not turn.start.
   if (isLive && !startsTurn) await $.session.start({ cwd: '/w' } as never)
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   return {
     prompt: await mount('UserMessage', ID(1), { text: 'run the tests', origin: { kind: 'composer' }, isExpanded: true }),
     tool: await mount('ToolUse', 'toolu_bash', { tool_use_id: 'toolu_bash', tool: 'Bash', input: { command: 'claude plugin test .' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }),
@@ -311,7 +311,7 @@ test('a block holding a markdown table drops the bubble padding, since Claude Co
     return <Text>{`base ${e.component}`}</Text>
   })
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   await mount('UserMessage', ID(1), { text: 'compare them', origin: { kind: 'composer' }, isExpanded: true })
   const withTable = await mount('AssistantMessage', ID(2), { text: table })
   const plain = await mount('AssistantMessage', ID(3), { text: 'Plain text.' })
@@ -328,7 +328,7 @@ test('rows drawn before the transcript is read already fold, so none changes hei
     return <Text>{`base ${e.component}`}</Text>
   })
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
 
   const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.' })
@@ -367,7 +367,7 @@ test('the transcript is read once; rows drawn later join their turn and fold at 
   // A compact keeps the same transcript, so it is not read again.
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'compact', hook_event_name: 'SessionStart', cwd: '/w' } as never)
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const toolProps = { tool_use_id: 'toolu_new', tool: 'Bash', input: { command: 'ls' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }
 
   // The transcript never sees this turn; its rows are claimed as they draw, and the latest turn stays open.
@@ -411,7 +411,7 @@ test('a new session, whose transcript is not written yet, folds its turns; a gro
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
 
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const shell = (id: string) => ({ tool_use_id: id, tool: 'Bash', input: { command: 'ls' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} })
   const live = [
     await mount('UserMessage', ID(30), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true }),
@@ -453,7 +453,7 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
 
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
   const reply = await mount('AssistantMessage', ID(7), { text: 'Fixed.', isFirstOfReply: false })
@@ -517,7 +517,7 @@ test('an open turn shows a chip per kind in order of first use, Thought first, o
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
 
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
   const calls = [
     { tool_use_id: 'toolu_edit', tool: 'Edit', input: { file_path: '/repo/hooks/a.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: { structuredPatch: PATCH } },
@@ -561,7 +561,7 @@ test('with fold_turns off, finished turns start open and the line folds them', {
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
 
   const mount = (component: string, requestId: string, props: object) =>
-    $.ui.mount({ plugin: 'mod-turn-fold', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
 
@@ -575,18 +575,18 @@ test('with fold_turns off, finished turns start open and the line folds them', {
   for (const ui of [prompt, step]) await ui.unmount()
 })
 
-test('/mod-turn-fold settings opens its own panel: a click saves a setting, an action runs, and actions wait while Claude works', async ($, on) => {
+test('/mod-transcript settings opens its own panel: a click saves a setting, an action runs, and actions wait while Claude works', async ($, on) => {
   const saved: unknown[] = []
   const ran: string[] = []
   const ROWS = [
-    { key: 'mod-turn-fold.fold_turns', label: 'Fold finished turns', description: 'Starts folded', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'mod-turn-fold' }, isLocked: false },
+    { key: 'mod-transcript.fold_turns', label: 'Fold finished turns', description: 'Starts folded', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'mod-transcript' }, isLocked: false },
   ]
   on('store.get', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', (_$, e) =>
     String(e.path).endsWith('showcase.json') ? { value: JSON.stringify({
-            actions: [{ label: 'Say hi', command: 'other', args: 'hi' }, { label: 'Fold all', command: 'mod-turn-fold' }],
+            actions: [{ label: 'Say hi', command: 'other', args: 'hi' }, { label: 'Fold all', command: 'mod-transcript' }],
             previews: { fold_turns: { true: [{ bar: 'border', spans: [{ text: ' + ', bg: 'accent' }, { text: ' 2 tools · Edit', color: 'muted' }] }, { spans: [{ text: '● Fixed.' }] }] } },
           }) } : { value: '' },
   )
@@ -606,13 +606,13 @@ test('/mod-turn-fold settings opens its own panel: a click saves a setting, an a
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   mock.clock(on)
 
-  await $.command.run({ command: 'mod-turn-fold', args: 'settings' })
+  await $.command.run({ command: 'mod-transcript', args: 'settings' })
   const ui = await $.ui.mount({
-    plugin: 'mod-turn-fold',
+    plugin: 'mod-transcript',
     surface: 'terminal',
     component: 'Pane',
     requestId: 'toggle-settings',
-    props: { title: 'mod-turn-fold', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} },
+    props: { title: 'mod-transcript', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} },
   } as never)
   expect(await ui.find({ type: 'Text', text: /^Fold finished turns$/ })).toBeDefined()
   expect(JSON.stringify(await ui.drawn({ in: 'setting-0-flip' }))).toContain('On')
@@ -622,7 +622,7 @@ test('/mod-turn-fold settings opens its own panel: a click saves a setting, an a
   expect(await ui.find({ type: 'Text', text: /^● Fixed.$/ })).toBeDefined()
 
   await ui.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
-  expect(saved).toEqual([['mod-turn-fold.fold_turns', false]])
+  expect(saved).toEqual([['mod-transcript.fold_turns', false]])
 
   await ui.press({ key: 'action-0' })
   expect(ran).toEqual(['other hi'])

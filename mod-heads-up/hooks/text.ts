@@ -3,7 +3,7 @@ export default {
   "pillLabel": "Heads up",
   "paneTitle": "Heads up",
   "settingsTab": "Settings",
-  "settingsPaneTitle": "mod-headsup",
+  "settingsPaneTitle": "mod-heads-up",
   "panelWaiting": "Heads up panel waiting: {reason}",
   "settingsWaiting": "Settings panel waiting: {reason}",
   "hint": "Click a note to read it {sep} ↗ scrolls to its turn",

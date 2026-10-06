@@ -6,8 +6,8 @@
     { "title": "The Heads up panel", "detail": "Every note of the session under its turn, opened in place, with Chat in main session and rewrites in simpler words, with less detail or with more detail." }
   ],
   "actions": [
-    { "label": "Close the heads-up card", "command": "mod-headsup", "args": "clear" },
-    { "label": "Forget the topics marked as known", "command": "mod-headsup", "args": "forget" }
+    { "label": "Close the heads-up card", "command": "mod-heads-up", "args": "clear" },
+    { "label": "Forget the topics marked as known", "command": "mod-heads-up", "args": "forget" }
   ],
   "previews": {
     "enabled": {

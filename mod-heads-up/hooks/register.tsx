@@ -207,7 +207,7 @@ const isOpen = async ($: EngineInterface, id = PANE) => (await $.ui.panes()).som
 async function togglePane($: EngineInterface) {
   if (await isOpen($)) {
     await $.ui.close({ id: PANE })
-    await $.state.set({ plugin: 'mod-headsup', key: 'pane' }, false)
+    await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, false)
     return
   }
   await showPane($)
@@ -222,24 +222,24 @@ async function showPane($: EngineInterface) {
   note = ''
   const opened = await $.ui.open({ id: PANE, title: text.paneTitle, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.panelWaiting, { reason: opened.reason }))
-  await $.state.set({ plugin: 'mod-headsup', key: 'pane' }, opened.isPlaced)
+  await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, opened.isPlaced)
 }
 
-// `/mod-headsup settings` and the Settings tab swap the panel for its settings.
+// `/mod-heads-up settings` and the Settings tab swap the panel for its settings.
 async function toggleSettings($: EngineInterface) {
   if (await isOpen($, SETTINGS)) {
     await $.ui.close({ id: SETTINGS })
-    await $.state.set({ plugin: 'mod-headsup', key: 'pane' }, false)
+    await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, false)
     return
   }
   if (await isOpen($)) await $.ui.close({ id: PANE })
   note = ''
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(raw => JSON.parse(String(raw))).catch(() => null)
   previews = showcase?.previews
-  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-headsup' }))
+  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-heads-up' }))
   const opened = await $.ui.open({ id: SETTINGS, title: text.settingsPaneTitle, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
-  await $.state.set({ plugin: 'mod-headsup', key: 'pane' }, opened.isPlaced)
+  await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, opened.isPlaced)
 }
 
 // The entry shimmers from the click until the pane draws, so a slow open never looks ignored.
@@ -270,7 +270,7 @@ async function learnMore($: EngineInterface, id: string) {
   await openingPane($, () => showPane($))
 }
 
-// What `/mod-headsup <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
+// What `/mod-heads-up <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
 async function answer($: EngineInterface, args: string) {
   const word = args.trim()
   if (word === 'clear') {
@@ -354,16 +354,16 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await loadLook($)
-    await $.command.register({ name: 'mod-headsup', description: text.commandDescription, argumentHint: '[settings|clear|forget]' })
+    await $.command.register({ name: 'mod-heads-up', description: text.commandDescription, argumentHint: '[settings|clear|forget]' })
     await ensureLoaded($)
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
-    await $.state.set({ plugin: 'mod-headsup', key: 'pane' }, (await isOpen($)) || (await isOpen($, SETTINGS)))
+    await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, (await isOpen($)) || (await isOpen($, SETTINGS)))
     $.ui.invalidate('ui.render')
 
     return next(e)
   })
 
-  on('command.run', { command: 'mod-headsup' }, async ($, e) => ({ text: await answer($, e.args ?? '') }))
+  on('command.run', { command: 'mod-heads-up' }, async ($, e) => ({ text: await answer($, e.args ?? '') }))
 
   // Main requests only: a subagent's steps carry agentId. The check runs off the hook's time, so the turn never waits.
   on('turn.step', async function* ($, e, next) {
@@ -401,19 +401,19 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-headsup', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
+    if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
 
     return next(e)
   })
 
   // One panel at a time: another mod's pane opening closes this one, deferred past that plugin's dispatch.
   on('state.set', async ($, e, next) => {
-    if (e.key === 'pane' && e.plugin !== 'mod-headsup' && e.value === true) {
+    if (e.key === 'pane' && e.plugin !== 'mod-heads-up' && e.value === true) {
       $.clock.after(0, async () => {
         if (!(await isOpen($)) && !(await isOpen($, SETTINGS))) return
         await $.ui.close({ id: PANE })
         await $.ui.close({ id: SETTINGS })
-        await $.state.set({ plugin: 'mod-headsup', key: 'pane' }, false)
+        await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, false)
       })
     }
 
@@ -499,7 +499,7 @@ export const register: Register = (on, options) => {
       return <Box key="headsup-band" flexDirection="column">{items}{await next(e)}</Box>
     }
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
-    await $.state.get({ plugin: 'mod-headsup', key: 'pane' })
+    await $.state.get({ plugin: 'mod-heads-up', key: 'pane' })
     const isShown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     const unread = unreadCount(saved.notes)
@@ -520,9 +520,9 @@ export const register: Register = (on, options) => {
     const nerd = look.nerd
 
     if (e.requestId === SETTINGS) {
-      const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-headsup.'))
+      const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-heads-up.'))
       const run = async (action: Action) => {
-        const said = action.command === 'mod-headsup' ? answer($, action.args ?? '') : Promise.resolve('')
+        const said = action.command === 'mod-heads-up' ? answer($, action.args ?? '') : Promise.resolve('')
         note = await said.then(result => `${MARK.ok} ${result || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)
         $.ui.invalidate('ui.render')
       }

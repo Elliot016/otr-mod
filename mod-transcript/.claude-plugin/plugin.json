@@ -1,7 +1,7 @@
 {
-  "name": "mod-turn-fold",
+  "name": "mod-transcript",
   "version": "0.1.0",
-  "description": "Folds each finished turn under its prompt to one summary line (tools, file changes, skills, agents), keeping the final reply, and folds each finished tool row to one line. A click unfolds either in place",
+  "description": "Restyles the transcript: your prompts and Claude's replies as chat bubbles, each finished turn folded under its prompt to one summary line (tools, file changes, skills, agents) with the final reply kept, each finished tool row folded to one line, and Bash commands in shell colors. A click unfolds a turn or a call in place",
   "author": {
     "name": "Amorim"
   },

@@ -11,9 +11,9 @@ Add-ons for Claude Code that add panels, buttons and safety checks around the pr
 | `mod-skill-panel` | Lists your skills and agents; a click adds one to the prompt | Skills pill |
 | `mod-prompts` | Every prompt of the session; jump back to any of them | Prompts pill |
 | `mod-file-tree` | The files Claude read and changed, with a replay of each edit | Files pill |
-| `mod-turn-fold` | Folds each finished turn to one line you can open | Automatic |
+| `mod-transcript` | Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors | Automatic |
 | `mod-model-effort` | Shows the model and effort level; a click changes either | The model pill |
-| `mod-headsup` | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
+| `mod-heads-up` | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
 | `mod-next-steps` | Suggests up to three next prompts after each turn | Automatic |
 | `mod-wrap-up` | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
 | `mod-blast-radius` | Holds a risky shell command until you choose Cancel or Run | Automatic |
@@ -61,9 +61,9 @@ block-beta
   block:main:3
     columns 3
     transcript["Transcript"]:3
-    turnfold["mod-turn-fold"]:3
+    transcriptmod["mod-transcript"]:3
     band["Above the prompt"]:3
-    headsup["mod-headsup"]:3
+    headsup["mod-heads-up"]:3
     nextsteps["mod-next-steps"] blast["mod-blast-radius"] wrapup["mod-wrap-up"]
     menu["mod-menu"] effort["mod-model-effort"] toasts["messages, every mod"]
     prompt["Prompt, Claude Code's own"]:3
@@ -76,7 +76,7 @@ block-beta
     files["mod-file-tree"]
     manager["mod-manager"]
     details["mod-blast-radius"]
-    headsuppanel["mod-headsup"]
+    headsuppanel["mod-heads-up"]
   end
   classDef region fill:#252A42,stroke:#252A42,color:#EEEEFA
   classDef ghost fill:transparent,stroke:#7E86A4,stroke-dasharray:4 4,color:#7E86A4
@@ -138,13 +138,13 @@ Your skills grouped by color, and the panel's settings.
 | --- | --- | --- |
 | [![][gif-skill-panel-and-settings]][video-skill-panel-and-settings] | ![][img-skill-panel] | ![][img-skill-panel-settings] |
 
-### mod-turn-fold
+### mod-transcript
 
 Each finished turn folds to one line; open it to see every step.
 
 | Unfolding a turn | Folded | Open |
 | --- | --- | --- |
-| [![][gif-turn-fold-unfold]][video-turn-fold-unfold] | ![][img-turn-fold-folded] | ![][img-turn-fold-open] |
+| [![][gif-transcript-unfold]][video-transcript-unfold] | ![][img-transcript-folded] | ![][img-transcript-open] |
 
 ### mod-model-effort
 
@@ -295,7 +295,7 @@ sequenceDiagram
 [gif-next-steps-keys]: showcase/gif/next-steps-keys.gif
 [gif-prompts-pick]: showcase/gif/prompts-pick.gif
 [gif-skill-panel-and-settings]: showcase/gif/skill-panel-and-settings.gif
-[gif-turn-fold-unfold]: showcase/gif/turn-fold-unfold.gif
+[gif-transcript-unfold]: showcase/gif/transcript-unfold.gif
 [gif-wrap-up-full]: showcase/gif/wrap-up-full.gif
 
 [img-blast-radius-card]: showcase/blast-radius-card.png
@@ -309,8 +309,8 @@ sequenceDiagram
 [img-next-steps]: showcase/next-steps.png
 [img-skill-panel-settings]: showcase/skill-panel-settings.png
 [img-skill-panel]: showcase/skill-panel.png
-[img-turn-fold-folded]: showcase/turn-fold-folded.png
-[img-turn-fold-open]: showcase/turn-fold-open.png
+[img-transcript-folded]: showcase/transcript-folded.png
+[img-transcript-open]: showcase/transcript-open.png
 [img-wrap-up-card]: showcase/wrap-up-card.png
 [img-wrap-up-compact]: showcase/wrap-up-compact.png
 
@@ -321,6 +321,6 @@ sequenceDiagram
 [video-next-steps-keys]: showcase/next-steps-keys.mp4
 [video-prompts-pick]: showcase/prompts-pick.mp4
 [video-skill-panel-and-settings]: showcase/skill-panel-and-settings.mp4
-[video-turn-fold-unfold]: showcase/turn-fold-unfold.mp4
+[video-transcript-unfold]: showcase/transcript-unfold.mp4
 [video-wrap-up-full]: showcase/wrap-up-full.mp4
 <!-- showcase-links:end -->

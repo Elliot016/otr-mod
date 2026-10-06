@@ -1,5 +1,5 @@
 declare module 'claude-code' {
   interface PluginState {
-    'mod-turn-fold': { turns: string[]; tools: string[]; pane: boolean }
+    'mod-transcript': { turns: string[]; tools: string[]; pane: boolean }
   }
 }
