@@ -169,6 +169,7 @@ export default {
       "back": "<",
       "title": "▸",
       "gear": "⊛",
+      "copy": "⧉",
       "icon": {},
       "mark": {
         "thinking": "∴",
@@ -198,6 +199,7 @@ export default {
       "back": "{U+F053}",
       "title": "{U+F054}",
       "gear": "{U+F013}",
+      "copy": "{U+F018F}",
       "icon": {
         "settings": "{U+F1DE}",
         "actions": "{U+F0E7}",
