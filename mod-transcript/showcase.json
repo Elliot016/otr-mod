@@ -3,7 +3,8 @@
   "features": [
     { "title": "Turn line", "detail": "Under each prompt, a line names what the turn did: tool count, file changes with lines added and removed, skills, agents and time." },
     { "title": "Tool lines", "detail": "Inside an open turn, each finished tool call is one line; a click shows its full row and diff." },
-    { "title": "Card", "detail": "An open turn draws as one tinted card with a bar down its left edge; the final reply stays outside it." }
+    { "title": "Card", "detail": "An open turn draws as one tinted card with a bar down its left edge; the final reply stays outside it." },
+    { "title": "Copy button", "detail": "Under each finished reply, a button copies it as markdown, its code, plain text, its tables rebuilt as clean markdown, or its links." }
   ],
   "actions": [
     { "label": "Fold or unfold every turn", "command": "mod-transcript" },
@@ -19,7 +20,7 @@
         { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "+", "color": "onSurface", "bg": "accent", "pill": true }, { "text": " Edit(hooks/a.ts) " }, { "text": "+2 −1", "pill": true, "parts": [{ "text": "+2", "color": "good" }, { "text": " −1", "color": "alert" }] }, { "text": " " }, { "text": "took 1m 4s", "color": "muted", "pill": true }, { "text": "     " }, { "text": " │", "color": "accent" }] },
         { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "" }, { "text": "                                              " }, { "text": " │", "color": "accent" }] },
         { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "● Fixed." }, { "text": "                                      " }, { "text": " │", "color": "accent" }] },
-        { "spans": [{ "text": "╰────────────────────────────────────────────────╯", "color": "accent" }] }
+        { "spans": [{ "text": "╰────────────────────────────────────────────", "color": "accent" }, { "text": "⧉", "pill": true }, { "text": "─╯", "color": "accent" }] }
       ],
       "false": [
         { "spans": [{ "text": "                         " }, { "text": "╭───────────────────────◥", "color": "secondary" }] },
@@ -30,7 +31,7 @@
         { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "Thought", "bg": "lifted", "pill": true }, { "text": " " }, { "text": "Edited 1", "color": "muted", "pill": true }, { "text": " " }, { "text": "Ran 1", "color": "muted", "pill": true }, { "text": "                  " }, { "text": " │", "color": "accent" }] },
         { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "" }, { "text": "                                              " }, { "text": " │", "color": "accent" }] },
         { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "● Fixed." }, { "text": "                                      " }, { "text": " │", "color": "accent" }] },
-        { "spans": [{ "text": "╰────────────────────────────────────────────────╯", "color": "accent" }] }
+        { "spans": [{ "text": "╰────────────────────────────────────────────", "color": "accent" }, { "text": "⧉", "pill": true }, { "text": "─╯", "color": "accent" }] }
       ]
     },
     "fold_tools": {
@@ -43,6 +44,16 @@
         { "spans": [{ "text": "◤────────────────────────────────────────────────╮", "color": "accent" }] },
         { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "┊ ", "color": "accent", "bg": "surface1" }, { "text": "●", "color": "good", "bg": "surface1" }, { "text": " Run the tests", "bg": "surface1" }, { "text": "                             " }, { "text": " │", "color": "accent" }] },
         { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "┊ ", "color": "accent", "bg": "surface1" }, { "text": "  └ $ ", "color": "muted", "bg": "surface1" }, { "text": "npm", "color": "accent", "bg": "surface1" }, { "text": " test", "bg": "surface1" }, { "text": "                              " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "╰────────────────────────────────────────────────╯", "color": "accent" }] }
+      ]
+    },
+    "copy_pill": {
+      "true": [
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "● Fixed." }, { "text": "                                      " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "╰─────────────────────────", "color": "accent" }, { "text": "reply  code  text  ⧉", "pill": true, "parts": [{ "text": "reply", "color": "accent" }, { "text": "  code  text  ", "color": "pill" }, { "text": "⧉", "color": "muted" }] }, { "text": "─╯", "color": "accent" }] }
+      ],
+      "false": [
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "● Fixed." }, { "text": "                                      " }, { "text": " │", "color": "accent" }] },
         { "spans": [{ "text": "╰────────────────────────────────────────────────╯", "color": "accent" }] }
       ]
     }

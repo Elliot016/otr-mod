@@ -757,3 +757,11 @@ test('icons=nerd draws the copy pill with the Nerd copy glyph and rounded caps',
   expect(await pillOf(reply)).not.toContain('⧉')
   for (const ui of [prompt, reply, thanks, welcome, took]) await ui.unmount()
 })
+
+test('with copy_pill off, the reply keeps a plain bottom edge', { options: { copy_pill: false } }, async ($, on) => {
+  const { prompt, reply, thanks, welcome, took } = await mountCopying($, on, [])
+  expect(await reply.find({ key: 'toggle-copy-pill' })).toBeUndefined()
+  expect(await reply.find({ key: 'toggle-bubble-bottom-edge' })).toBeDefined()
+  expect(await took.find({ key: 'toggle-copy-pill' })).toBeUndefined()
+  for (const ui of [prompt, reply, thanks, welcome, took]) await ui.unmount()
+})

@@ -140,11 +140,15 @@ Your skills grouped by color, and the panel's settings.
 
 ### mod-transcript
 
-Each finished turn folds to one line; open it to see every step.
+Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge.
 
 | Unfolding a turn | Folded | Open |
 | --- | --- | --- |
 | [![][gif-transcript-unfold]][video-transcript-unfold] | ![][img-transcript-folded] | ![][img-transcript-open] |
+
+| Copy a reply |
+| --- |
+| ![][img-transcript-copy] |
 
 ### mod-model-effort
 
@@ -309,6 +313,7 @@ sequenceDiagram
 [img-next-steps]: showcase/next-steps.png
 [img-skill-panel-settings]: showcase/skill-panel-settings.png
 [img-skill-panel]: showcase/skill-panel.png
+[img-transcript-copy]: showcase/transcript-copy.png
 [img-transcript-folded]: showcase/transcript-folded.png
 [img-transcript-open]: showcase/transcript-open.png
 [img-wrap-up-card]: showcase/wrap-up-card.png

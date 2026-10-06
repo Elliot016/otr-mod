@@ -1,7 +1,7 @@
 {
   "name": "mod-transcript",
   "version": "0.1.0",
-  "description": "Restyles the transcript: your prompts and Claude's replies as chat bubbles, each finished turn folded under its prompt to one summary line (tools, file changes, skills, agents) with the final reply kept, each finished tool row folded to one line, and Bash commands in shell colors. A click unfolds a turn or a call in place",
+  "description": "Restyles the transcript: your prompts and Claude's replies as chat bubbles, each finished turn folded under its prompt to one summary line (tools, file changes, skills, agents) with the final reply kept, each finished tool row folded to one line, Bash commands in shell colors, and a copy button under each reply. A click unfolds a turn or a call in place",
   "author": {
     "name": "Amorim"
   },
@@ -29,6 +29,12 @@
       "type": "boolean",
       "title": "Show the latest turn in full",
       "description": "The latest turn shows every tool row and result as Claude Code draws them, and folds when your next prompt starts. Off, finished tool calls fold right away",
+      "default": true
+    },
+    "copy_pill": {
+      "type": "boolean",
+      "title": "Copy button",
+      "description": "Each finished reply's bottom edge carries a copy button: point at it to pick reply, code, text, table or links, then click one. Off, the edge stays plain",
       "default": true
     },
     "icons": {

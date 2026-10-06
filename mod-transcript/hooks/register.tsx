@@ -34,6 +34,7 @@ let foldTurns = true
 let foldTools = true
 let showTimes = true
 let expandLive = true
+let showCopy = true
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 type Kind = 'turns' | 'tools'
@@ -232,7 +233,7 @@ const hasEnded = (turn: Turn) => turn !== log.turns[log.turns.length - 1] || tur
 // The copy pill, once the turn has ended with a reply to copy.
 function copyPill({ Box, Client }: Bars, turn: Turn) {
   const choices = copyChoices(turn.replyText)
-  if (!hasEnded(turn) || !choices.length) return null
+  if (!showCopy || !hasEnded(turn) || !choices.length) return null
   const props: CopyProps = { id: turn.prompt, choices: choices.map(what => ({ what, label: text.copyChoice[what] })), icon: look.glyph.copy, copied: text.copied, bg: style.colors.pills.secondary, nerd: look.nerd, lead: { char: '─', color: THEME.accent } }
   return (
     <Box key="toggle-copy" flexShrink={0}>
@@ -568,6 +569,7 @@ export const register: Register = (on, options) => {
   foldTools = options.fold_tools !== false
   showTimes = options.timestamps !== false
   expandLive = options.expand_live !== false
+  showCopy = options.copy_pill !== false
 
   on('session.start', async ($, e, next) => {
     await loadLook($)
