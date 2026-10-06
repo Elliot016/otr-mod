@@ -56,6 +56,11 @@
       "description": "A sidebar tree of the files Claude touched, lit live while it works, with a replay that steps through the last turn's diffs"
     },
     {
+      "name": "mod-headsup",
+      "source": "./mod-headsup",
+      "description": "While Claude works, a side check now and then flags one thing you should know but might miss: a card above the prompt and a Heads up panel with every note by turn"
+    },
+    {
       "name": "mod-next-steps",
       "source": "./mod-next-steps",
       "description": "Suggests up to three next prompts above the input after each turn; a click puts one in the prompt"

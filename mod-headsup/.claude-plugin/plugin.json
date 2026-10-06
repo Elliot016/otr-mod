@@ -1,0 +1,28 @@
+{
+  "name": "mod-headsup",
+  "version": "0.1.0",
+  "description": "While Claude works, a side check now and then flags one thing you should understand and probably missed: a card above the prompt, and a Heads up panel with every note of the session by turn",
+  "author": { "name": "Amorim" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Check while Claude works",
+      "description": "Every sixth step of a turn, at most once per turn, a side check reads the session and flags one thing worth knowing. Off, no request is made",
+      "default": true
+    },
+    "animations": {
+      "type": "boolean",
+      "title": "Animations",
+      "description": "Entries shimmer while they wait and hover colors fade. Off, everything draws still",
+      "default": true
+    },
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "options": ["auto", "nerd", "safe"],
+      "default": "auto"
+    }
+  }
+}

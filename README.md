@@ -13,6 +13,7 @@ Add-ons for Claude Code that add panels, buttons and safety checks around the pr
 | `mod-file-tree` | The files Claude read and changed, with a replay of each edit | Files pill |
 | `mod-turn-fold` | Folds each finished turn to one line you can open | Automatic |
 | `mod-model-effort` | Shows the model and effort level; a click changes either | The model pill |
+| `mod-headsup` | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
 | `mod-next-steps` | Suggests up to three next prompts after each turn | Automatic |
 | `mod-wrap-up` | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
 | `mod-blast-radius` | Holds a risky shell command until you choose Cancel or Run | Automatic |
@@ -62,6 +63,7 @@ block-beta
     transcript["Transcript"]:3
     turnfold["mod-turn-fold"]:3
     band["Above the prompt"]:3
+    headsup["mod-headsup"]:3
     nextsteps["mod-next-steps"] blast["mod-blast-radius"] wrapup["mod-wrap-up"]
     menu["mod-menu"] effort["mod-model-effort"] toasts["messages, every mod"]
     prompt["Prompt, Claude Code's own"]:3
@@ -74,6 +76,7 @@ block-beta
     files["mod-file-tree"]
     manager["mod-manager"]
     details["mod-blast-radius"]
+    headsuppanel["mod-headsup"]
   end
   classDef region fill:#252A42,stroke:#252A42,color:#EEEEFA
   classDef ghost fill:transparent,stroke:#7E86A4,stroke-dasharray:4 4,color:#7E86A4
