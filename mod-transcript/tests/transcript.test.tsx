@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { copyChoices, copyText } from '../hooks/clip'
 import { callTime, elapsed, previewOf, rowKey, timeOfDay, turnLine, TurnLog } from '../hooks/turns'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
@@ -637,4 +638,122 @@ test('/mod-transcript settings opens its own panel: a click saves a setting, an 
   expect(await ui.find({ type: 'Text', text: /Say hi · available once Claude is idle/ })).toBeDefined()
   expect(await ui.find({ type: 'Button', text: /Fold all/ })).toBeDefined()
   await ui.unmount()
+})
+
+// A turn that edits and answers with code, then a turn that only answers; both ended.
+const COPYING = [
+  row(1, 'user', { message: { role: 'user', content: 'fix the bug\nplease' } }),
+  said(2, [{ type: 'tool_use', id: 'toolu_fix', name: 'Edit', input: { file_path: '/repo/a.js' } }]),
+  row(3, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_fix', content: 'ok' }] }, toolUseResult: { structuredPatch: PATCH } }),
+  said(4, [{ type: 'text', text: 'Fixed:\n\n```js\nconst a = 1\n```' }]),
+  row(5, 'system', { subtype: 'turn_duration', durationMs: 3000 }),
+  row(6, 'user', { message: { role: 'user', content: 'thanks' } }),
+  said(7, [{ type: 'text', text: 'You are welcome.' }]),
+  row(8, 'system', { subtype: 'turn_duration', durationMs: 1000 }),
+].join('\n')
+
+test('copy: each turn keeps its reply, and a reply offers only the choices it holds', () => {
+  const [first, second] = logOf(COPYING).turns
+  expect(first!.replyText).toBe('Fixed:\n\n```js\nconst a = 1\n```')
+  expect(copyChoices(first!.replyText)).toEqual(['reply', 'code', 'text'])
+  expect(copyText(first!.replyText!, 'code')).toBe('const a = 1')
+  // Plain prose has no marks to drop, so text would copy the same thing and is left out.
+  expect(copyChoices(second!.replyText)).toEqual(['reply'])
+  expect(copyChoices(undefined)).toEqual([])
+})
+
+const RICH = [
+  '## Result',
+  '',
+  'The **fix** is in `src/cart.js:12`, see [the docs](https://example.com/docs).',
+  '',
+  '- one item',
+  '- [x] done item',
+  '',
+  '| Name | Count |',
+  '|:-----|------:|',
+  '| apples | 3 |',
+  '| kiwi | 12 |',
+  '',
+  '```sh',
+  'npm test -- --grep "a|b" ~/x/y.md',
+  '```',
+].join('\n')
+
+test('copy: text drops the marks, table rebuilds clean markdown, links list URLs and paths, code stays as written', () => {
+  expect(copyChoices(RICH)).toEqual(['reply', 'code', 'text', 'table', 'links'])
+  expect(copyText(RICH, 'text')).toBe(
+    ['Result', '', 'The fix is in src/cart.js:12, see the docs (https://example.com/docs).', '', '• one item', '• done item', '', '| Name | Count |', '|:-----|------:|', '| apples | 3 |', '| kiwi | 12 |', '', 'npm test -- --grep "a|b" ~/x/y.md'].join('\n'),
+  )
+  expect(copyText(RICH, 'table')).toBe(['| Name   | Count |', '| :----- | ----: |', '| apples |     3 |', '| kiwi   |    12 |'].join('\n'))
+  // A pipe inside a code block is not a table, and a path inside one is not a link.
+  expect(copyText(RICH, 'links')).toBe('https://example.com/docs\nsrc/cart.js:12')
+  expect(copyText(RICH, 'code')).toBe('npm test -- --grep "a|b" ~/x/y.md')
+})
+
+async function mountCopying($: any, on: any, copied: string[]) {
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: COPYING.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: COPYING }))
+  on('ui.copy', (_$: unknown, e: { text: string }) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  mock.clock(on)
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{`base ${e.component}`}</Text>
+  })
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  return {
+    prompt: await mount('UserMessage', ID(1), { text: 'fix the bug\nplease', origin: { kind: 'composer' }, isExpanded: true }),
+    reply: await mount('AssistantMessage', ID(4), { text: 'Fixed:\n\n```js\nconst a = 1\n```', isFirstOfReply: true }),
+    thanks: await mount('UserMessage', ID(6), { text: 'thanks', origin: { kind: 'composer' }, isExpanded: true }),
+    welcome: await mount('AssistantMessage', ID(7), { text: 'You are welcome.', isFirstOfReply: true }),
+    took: await mount('TurnDuration', ID(8), { durationMs: 1000 }),
+  }
+}
+
+const pillOf = async (ui: any) => JSON.stringify(await ui.drawn({ in: 'toggle-copy-pill' }))
+const point = (ui: any, type: string, x: number) => ui.pointer({ in: 'toggle-copy-pill', type, button: 'left', x, y: 0 })
+// The pill sits at the right end of its Client; the cells before it are its lead.
+const leadOf = async (ui: any) => String((await ui.drawn({ in: 'toggle-copy-pill' })).children[0].children[0]).length
+
+test('the copy pill opens on hover, and a click on a choice copies it', async ($, on) => {
+  const copied: string[] = []
+  const { prompt, reply, thanks, welcome, took } = await mountCopying($, on, copied)
+  // The pill sits in the reply's bottom edge, under the newest output; the head carries none.
+  expect(await prompt.find({ key: 'toggle-copy-pill' })).toBeUndefined()
+  expect(await reply.find({ key: 'toggle-bubble-bottom-end-edge' })).toBeDefined()
+  // At rest only the icon after the edge's line; without a Nerd Font it is the one-cell stand-in.
+  expect(await pillOf(reply)).toContain('⧉')
+  expect(await pillOf(reply)).toContain('──')
+  expect(await pillOf(reply)).not.toContain('reply')
+  // A move over the line leaves it shut; one on the icon opens it, the choices left of it: " reply ", " code ", " text ".
+  const shut = await leadOf(reply)
+  await point(reply, 'move', shut - 5)
+  expect(await pillOf(reply)).not.toContain(' code ')
+  await point(reply, 'move', shut + 1)
+  expect(await pillOf(reply)).toContain(' code ')
+  const open = await leadOf(reply)
+  await point(reply, 'move', open + 8)
+  await point(reply, 'down', open + 8)
+  expect(copied).toEqual(['const a = 1'])
+  expect(await pillOf(reply)).toContain('copied code')
+  // The newest turn stays open until the next prompt; the line closing its bubble carries the pill once it ended.
+  expect(await welcome.find({ key: 'toggle-copy-pill' })).toBeUndefined()
+  expect(await pillOf(took)).toContain('⧉')
+  for (const ui of [prompt, reply, thanks, welcome, took]) await ui.unmount()
+})
+
+test('icons=nerd draws the copy pill with the Nerd copy glyph and rounded caps', { options: { icons: 'nerd' } }, async ($, on) => {
+  const { prompt, reply, thanks, welcome, took } = await mountCopying($, on, [])
+  expect(await pillOf(reply)).toContain('\u{F018F}')
+  expect(await pillOf(reply)).not.toContain('⧉')
+  for (const ui of [prompt, reply, thanks, welcome, took]) await ui.unmount()
 })

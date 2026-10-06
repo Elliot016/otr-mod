@@ -2,6 +2,7 @@ import type { ConfigValue, EngineInterface, Register, RenderElement } from 'clau
 
 import type { BarMessage, BarProps } from './bar'
 import type { Chip, ChipsMessage, ChipsProps } from './chips'
+import { copyWidth, type CopyMessage, type CopyProps } from './copy'
 import type { EdgeProps } from './edge'
 import type { DotProps } from './dot'
 import type { FoldProps } from './fold'
@@ -13,6 +14,7 @@ import style from './style'
 import text from './text'
 import { tokenizeLine, type Role } from './shell'
 import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
+import { copyChoices, copyText, type CopyChoice } from './clip'
 import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
 
 let transcript = ''
@@ -190,7 +192,7 @@ const edge = ({ Box, Client }: Bars, key: string, props: EdgeProps) =>
 // A finished turn with tools opens its bubble at the head under the prompt; its card rows and its reply carry on inside.
 const hasHead = (turn: Turn) => isDone(turn) && turn.tools.length > 0
 
-function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean, isBottom: boolean, isTight = false) {
+function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean, isBottom: boolean, isTight = false, turn?: Turn) {
   const parts = { Box, Client }
   return (
     <Box key={key} flexDirection="column" flexGrow={1}>
@@ -200,7 +202,7 @@ function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean
         <Box key={`${key}-body`} flexDirection="column" flexGrow={1} paddingX={isTight ? 0 : 1}>{body}</Box>
         {edge(parts, `${key}-right`, { kind: 'side', color: THEME.accent })}
       </Box>
-      {isBottom ? edge(parts, `${key}-bottom`, { kind: 'bottom', color: THEME.accent }) : null}
+      {isBottom ? closing(parts, `${key}-bottom`, turn) : null}
     </Box>
   )
 }
@@ -218,14 +220,43 @@ function bubble(parts: Bars, key: string, turn: Turn, body: unknown, isTool = fa
       <Box key={`${key}-tool`} flexDirection="column" flexGrow={1} paddingLeft={1} marginTop={-1}>{body}</Box>
     </Box>
   ) : body
-  return frame(parts, key, inner, false, isDone(turn), isTight)
+  return frame(parts, key, inner, false, isDone(turn), isTight, turn)
 }
 
 // Claude Code sizes a markdown table to the whole terminal, so a block holding one drops the bubble's padding to fit it.
 const hasTable = (text: string) => /^\s*\|.*\|\s*$/m.test(text) && /^\s*\|?\s*:?-{3,}/m.test(text)
 
+// A turn has ended once a later prompt follows it, its duration is stored, or Claude went idle after it.
+const hasEnded = (turn: Turn) => turn !== log.turns[log.turns.length - 1] || turn.durationMs !== undefined || turn.prompt === endedPrompt
+
+// The copy pill, once the turn has ended with a reply to copy.
+function copyPill({ Box, Client }: Bars, turn: Turn) {
+  const choices = copyChoices(turn.replyText)
+  if (!hasEnded(turn) || !choices.length) return null
+  const props: CopyProps = { id: turn.prompt, choices: choices.map(what => ({ what, label: text.copyChoice[what] })), icon: look.glyph.copy, copied: text.copied, bg: style.colors.pills.secondary, nerd: look.nerd, lead: { char: '─', color: THEME.accent } }
+  return (
+    <Box key="toggle-copy" flexShrink={0}>
+      <Client key="toggle-copy-pill" module="./copy.tsx" width={copyWidth(props)} height={1} props={props} />
+    </Box>
+  )
+}
+
 // Claude's bubble opens under the prompt: as the head of a finished turn with tools, else as a bare top edge.
 const opening = (parts: Bars) => edge(parts, 'toggle-bubble-open', { kind: 'top', color: THEME.accent, wedge: true })
+
+// The bubble's bottom edge, under the newest output, carries the copy pill near its corner once the turn has ended.
+function closing(parts: Bars, key: string, turn: Turn | undefined) {
+  const { Box } = parts
+  const copy = turn ? copyPill(parts, turn) : null
+  if (!copy) return edge(parts, key, { kind: 'bottom', color: THEME.accent })
+  return (
+    <Box key={`${key}-row`} flexDirection="row" height={1}>
+      <Box key={`${key}-run`} flexGrow={1}>{edge(parts, key, { kind: 'bottom', color: THEME.accent, open: 'end' })}</Box>
+      {copy}
+      <Box key={`${key}-corner`} width={2} flexShrink={0}>{edge(parts, `${key}-end`, { kind: 'bottom', color: THEME.accent, open: 'start' })}</Box>
+    </Box>
+  )
+}
 
 type Controls = Elements & { Button: (props: any) => RenderElement }
 
@@ -559,6 +590,12 @@ export const register: Register = (on, options) => {
     if (message?.type === 'fold') await flip($, message.kind, message.id)
     const picked = e.data as ChipsMessage
     if (picked?.type === 'chip') await pickChip($, picked.id, picked.kind)
+    const copy = e.data as CopyMessage
+    if (copy?.type === 'copy') {
+      const turn = log.turns.find(each => each.prompt === copy.id)
+      const result = turn ? await $.ui.copy({ text: copyText(turn.replyText ?? '', copy.what as CopyChoice), surface: e.surface }) : { isCopied: false, reason: text.copyNoTurn }
+      if (!result.isCopied) $.ui.toast(fill(text.copyFailed, { reason: String('reason' in result ? result.reason : '') }))
+    }
 
     return next(e)
   })
@@ -714,6 +751,8 @@ export const register: Register = (on, options) => {
     }
     const turn = log.turnOf(e.requestId)
     seen.set(`AssistantMessage ${e.requestId}`, Boolean(turn))
+    // A reply drawn live is newer than the transcript the log read; the copy pill hands over what it says.
+    if (turn && rowKey(e.requestId) === turn.reply && e.props.text.trim()) turn.replyText = e.props.text.trim()
     const place = await placeOf($, turn, e.requestId)
     const { Box, Client } = $.ui.resolve(e)
     if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await next(e), false, hasTable(e.props.text)) : next(e)
@@ -837,7 +876,7 @@ export const register: Register = (on, options) => {
     if (turn && !isDone(turn)) {
       return (
         <Box key="toggle-close" flexDirection="column">
-          {edge({ Box, Client }, 'toggle-bubble-close', { kind: 'bottom', color: THEME.accent })}
+          {closing({ Box, Client }, 'toggle-bubble-close', turn)}
           {await next(e)}
         </Box>
       )

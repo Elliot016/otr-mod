@@ -15,6 +15,8 @@ export type Turn = {
   // A turn guessed from the session's messages: the prompt's and the text blocks' text, for matching rows that carry no id yet.
   promptText?: string
   texts?: string[]
+  // The reply's markdown, as the copy pill hands it over.
+  replyText?: string
 }
 
 // The part of a session message (`$.session.messages()`) a guessed turn reads.
@@ -143,9 +145,13 @@ export class TurnLog {
 
     if (row.type === 'assistant' && Array.isArray(content)) {
       this.add(current, rowKey(row.uuid))
+      const said = content.filter((block: any) => block?.type === 'text' && typeof block.text === 'string' && block.text.trim()).map((block: any) => block.text.trim())
+      if (said.length) {
+        current.reply = rowKey(row.uuid)
+        current.replyText = said.join('\n\n')
+      }
       for (const block of content) {
         this.thinking = thoughtAfter(this.thinking, block)
-        if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim()) current.reply = rowKey(row.uuid)
         if (block?.type === 'tool_use' && typeof block.id === 'string') {
           const call: ToolCall = { id: block.id, name: String(block.name), input: block.input, added: 0, removed: 0, startedAt: timeOf(row), thought: this.thinking }
           current.tools.push(call)
@@ -251,7 +257,10 @@ export class TurnLog {
       }
       const current = log.turns[log.turns.length - 1]
       if (!current) return
-      if (message.text.trim()) current.texts = [...(current.texts ?? []), message.text.trim()]
+      if (message.text.trim()) {
+        current.texts = [...(current.texts ?? []), message.text.trim()]
+        current.replyText = message.text.trim()
+      }
       for (const use of message.toolUses) {
         const call: ToolCall = { id: use.tool_use_id, name: use.tool, input: use.input, ...diffStat(use.tool, use.input, use.result, use.isError === true) }
         current.tools.push(call)

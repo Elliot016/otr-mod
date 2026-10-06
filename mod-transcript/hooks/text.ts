@@ -28,6 +28,10 @@ export default {
     "tool": "Other"
   },
   "thoughtNoText": "Claude Code kept no text for this thought",
+  "copyChoice": { "reply": "reply", "code": "code", "text": "text", "table": "table", "links": "links" },
+  "copied": "copied {what}",
+  "copyFailed": "Copy failed: {reason}",
+  "copyNoTurn": "its turn is no longer in the log",
   "previewMore": "+ {n} more lines",
   "previewEmpty": "No output",
   "kind": {
