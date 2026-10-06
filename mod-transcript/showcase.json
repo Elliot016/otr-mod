@@ -12,27 +12,38 @@
   "previews": {
     "fold_turns": {
       "true": [
-        { "spans": [{ "text": "❯ fix the bug", "color": "onSurface" }] },
-        { "bar": "border", "spans": [{ "text": "+", "color": "onSurface", "bg": "accent", "pill": true }, { "text": " Edit(hooks/a.ts) ", "color": "onSurface" }, { "text": "", "pill": true, "parts": [{ "text": "+2", "color": "good" }, { "text": " " }, { "text": "−1", "color": "alert" }] }, { "text": " " }, { "text": "1m 4s", "color": "muted", "pill": true }] },
-        { "spans": [{ "text": "● Fixed.", "color": "onSurface" }] }
+        { "spans": [{ "text": "                         " }, { "text": "╭───────────────────────◥", "color": "secondary" }] },
+        { "spans": [{ "text": "                         " }, { "text": "│ ", "color": "secondary" }, { "text": "11:32", "color": "muted", "pill": true }, { "text": " ❯ fix the bug" }, { "text": "" }, { "text": " │", "color": "secondary" }] },
+        { "spans": [{ "text": "                         " }, { "text": "╰───────────────────────╯", "color": "secondary" }] },
+        { "spans": [{ "text": "◤────────────────────────────────────────────────╮", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "+", "color": "onSurface", "bg": "accent", "pill": true }, { "text": " Edit(hooks/a.ts) " }, { "text": "+2 −1", "pill": true, "parts": [{ "text": "+2", "color": "good" }, { "text": " −1", "color": "alert" }] }, { "text": " " }, { "text": "took 1m 4s", "color": "muted", "pill": true }, { "text": "     " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "" }, { "text": "                                              " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "● Fixed." }, { "text": "                                      " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "╰────────────────────────────────────────────────╯", "color": "accent" }] }
       ],
       "false": [
-        { "spans": [{ "text": "❯ fix the bug", "color": "onSurface" }] },
-        { "bar": "accent", "spans": [{ "text": "−", "color": "onSurface", "bg": "accent", "pill": true }, { "text": " Edit(hooks/a.ts) ", "color": "onSurface" }, { "text": "", "pill": true, "parts": [{ "text": "+2", "color": "good" }, { "text": " " }, { "text": "−1", "color": "alert" }] }, { "text": " " }, { "text": "1m 4s", "color": "muted", "pill": true }] },
-        { "bar": "accent", "spans": [{ "text": "Thought", "color": "onSurface", "bg": "lifted", "pill": true }, { "text": " " }, { "text": "Edited 1", "color": "muted", "pill": true }, { "text": " " }, { "text": "Ran 1", "color": "muted", "pill": true }] },
-        { "spans": [{ "text": "● Fixed.", "color": "onSurface" }] }
+        { "spans": [{ "text": "                         " }, { "text": "╭───────────────────────◥", "color": "secondary" }] },
+        { "spans": [{ "text": "                         " }, { "text": "│ ", "color": "secondary" }, { "text": "11:32", "color": "muted", "pill": true }, { "text": " ❯ fix the bug" }, { "text": "" }, { "text": " │", "color": "secondary" }] },
+        { "spans": [{ "text": "                         " }, { "text": "╰───────────────────────╯", "color": "secondary" }] },
+        { "spans": [{ "text": "◤────────────────────────────────────────────────╮", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "−", "color": "onSurface", "bg": "accent", "pill": true }, { "text": " Edit(hooks/a.ts) " }, { "text": "+2 −1", "pill": true, "parts": [{ "text": "+2", "color": "good" }, { "text": " −1", "color": "alert" }] }, { "text": " " }, { "text": "took 1m 4s", "color": "muted", "pill": true }, { "text": "     " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "Thought", "bg": "lifted", "pill": true }, { "text": " " }, { "text": "Edited 1", "color": "muted", "pill": true }, { "text": " " }, { "text": "Ran 1", "color": "muted", "pill": true }, { "text": "                  " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "" }, { "text": "                                              " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "● Fixed." }, { "text": "                                      " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "╰────────────────────────────────────────────────╯", "color": "accent" }] }
       ]
     },
     "fold_tools": {
       "true": [
-        { "bar": "accent", "spans": [{ "text": "+", "bg": "border", "pill": true }, { "text": " Edit(hooks/a.ts) ", "color": "muted" }, { "text": "", "pill": true, "parts": [{ "text": "+2", "color": "good" }, { "text": " " }, { "text": "−1", "color": "alert" }] }] }
+        { "spans": [{ "text": "◤────────────────────────────────────────────────╮", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "┊ ", "color": "accent", "bg": "surface1" }, { "text": "+", "bg": "border", "pill": true }, { "text": " Bash(", "bg": "surface1" }, { "text": "npm", "color": "accent", "bg": "surface1" }, { "text": " test)", "color": "onSurface", "bg": "surface1" }, { "text": "                          " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "╰────────────────────────────────────────────────╯", "color": "accent" }] }
       ],
       "false": [
-        { "bar": "accent", "spans": [{ "text": "● Edit(hooks/a.ts)" }] },
-        { "bar": "accent", "spans": [{ "text": "  ⎿ Added 2 lines, removed 1 line", "color": "muted" }] },
-        { "bar": "accent", "spans": [{ "text": "    - old", "color": "alert" }] },
-        { "bar": "accent", "spans": [{ "text": "    + new", "color": "good" }] },
-        { "bar": "accent", "spans": [{ "text": "    + added", "color": "good" }] }
+        { "spans": [{ "text": "◤────────────────────────────────────────────────╮", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "┊ ", "color": "accent", "bg": "surface1" }, { "text": "●", "color": "good", "bg": "surface1" }, { "text": " Run the tests", "bg": "surface1" }, { "text": "                             " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "│ ", "color": "accent" }, { "text": "┊ ", "color": "accent", "bg": "surface1" }, { "text": "  └ $ ", "color": "muted", "bg": "surface1" }, { "text": "npm", "color": "accent", "bg": "surface1" }, { "text": " test", "bg": "surface1" }, { "text": "                              " }, { "text": " │", "color": "accent" }] },
+        { "spans": [{ "text": "╰────────────────────────────────────────────────╯", "color": "accent" }] }
       ]
     }
   }

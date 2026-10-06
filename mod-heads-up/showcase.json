@@ -13,7 +13,7 @@
     "enabled": {
       "true": [
         { "spans": [{ "text": "The main agent cached /ask, so one-off questions cost more.", "pill": true, "bg": "surface1", "sub": "Heads up" }] },
-        { "spans": [{ "text": "Learn more", "pill": true, "sub": "↵" }, { "text": " " }, { "text": "Know this already", "pill": true, "sub": "✓" }] }
+        { "spans": [{ "text": "Learn more", "pill": true, "sub": "↵" }, { "text": " " }, { "text": "Know this already", "pill": true, "sub": "✓" }, { "text": "  " }, { "text": "×", "color": "muted", "pill": true }] }
       ],
       "false": [
         { "spans": [{ "text": "No checks, no extra requests", "color": "muted" }] }

@@ -11,9 +11,9 @@
   "previews": {
     "enabled": {
       "true": [
-        { "spans": [{ "text": "Add a test for the empty case", "pill": true, "sub": "1" }, { "text": "  " }, { "text": "×", "color": "muted", "pill": true }] },
-        { "spans": [{ "text": "Run the full suite", "pill": true, "sub": "2" }] },
-        { "spans": [{ "text": "Commit the fix", "pill": true, "sub": "3" }] }
+        { "spans": [{ "text": "Add a test for the empty case", "color": "muted", "bg": "surface2", "pill": true, "sub": "1", "subColor": "muted" }, { "text": "  " }, { "text": "×", "color": "muted", "bg": "surface2", "pill": true }] },
+        { "spans": [{ "text": "Run the full suite", "color": "muted", "bg": "surface2", "pill": true, "sub": "2", "subColor": "muted" }] },
+        { "spans": [{ "text": "Commit the fix", "color": "muted", "bg": "surface2", "pill": true, "sub": "3", "subColor": "muted" }] }
       ],
       "false": [
         { "spans": [{ "text": "No suggestions, no extra request", "color": "muted" }] }

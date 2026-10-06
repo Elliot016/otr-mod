@@ -3,7 +3,7 @@ export default {
   "commandDescription": "Fold or unfold every finished turn; `settings` opens its settings panel, `debug` writes the drawn row ids to %TEMP%",
   "panePlacedTitle": "mod-transcript",
   "paneWaiting": "Settings panel waiting: {reason}",
-  "paneHeading": "Toggle",
+  "paneHeading": "Transcript",
   "paneSubheading": "Settings",
   "paneHintClick": "Click a setting to change it",
   "paneHintSaved": "The mod reloads",

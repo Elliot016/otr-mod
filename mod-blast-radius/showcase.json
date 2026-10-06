@@ -14,12 +14,12 @@
   "previews": {
     "enabled": {
       "true": [
-        { "spans": [{ "text": "rm -rf build", "color": "onSurface" }] },
-        { "spans": [{ "text": "Would delete 142 files and 12 folders (3.1 MB)", "color": "muted" }] },
-        { "spans": [{ "text": "Cancel", "pill": true, "sub": "1" }, { "text": "  " }, { "text": "Details", "pill": true, "sub": "2" }, { "text": "  " }, { "text": "Delete folders", "color": "alert", "pill": true, "sub": "3" }] }
+        { "spans": [{ "text": "rm", "color": "alert" }, { "text": " " }, { "text": "build/cache.db", "color": "alert" }] },
+        { "spans": [{ "text": "Would delete 1 file (3.1 MB)", "color": "muted" }] },
+        { "spans": [{ "text": "Cancel", "pill": true, "sub": "1" }, { "text": "  " }, { "text": "Details", "pill": true, "sub": "2" }, { "text": "  " }, { "text": "Delete files", "color": "alert", "pill": true, "sub": "3" }] }
       ],
       "false": [
-        { "spans": [{ "text": "rm -rf build", "color": "muted" }] },
+        { "spans": [{ "text": "rm build/cache.db", "color": "muted" }] },
         { "spans": [{ "text": "runs at once, nothing is held", "color": "muted" }] }
       ]
     }
