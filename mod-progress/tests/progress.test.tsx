@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gaugeColor, isGatesPath, modelInfo, parseGates, settle, type Snap } from '../hooks/progress'
+import { applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gaugeColor, isGatesPath, modelInfo, parseGates, settle, type Snap } from '../hooks/progress'
 
 const GATES = [
   '# Gates: leaf',
@@ -78,6 +78,15 @@ test('gates: met needs a checked box with real evidence, ABANDON gives one up', 
   expect(isGatesPath('C:\\w\\gates\\leaf-1.md')).toBe(true)
   expect(isGatesPath('/w/GATES.md')).toBe(true)
   expect(isGatesPath('/w/src/gates.ts')).toBe(false)
+})
+
+test('an agent pairs with its gates file by name, or by the first word of its description', () => {
+  const one = parseGates('- [ ] G1 one\n  EVIDENCE: pending\n')
+  const snap = { gates: { 'leaf-1.1.1': one } }
+  expect(gatesOf(snap, { name: 'leaf-1.1.1', description: 'anything' })).toBe(one)
+  expect(gatesOf(snap, { description: 'leaf-1.1.1: check the cart totals' })).toBe(one)
+  expect(gatesOf(snap, { description: 'leaf-1.1.1 check the cart totals' })).toBe(one)
+  expect(gatesOf(snap, { description: 'Check the cart totals' })).toBeUndefined()
 })
 
 test('figures: model names, context colors, tokens and time', () => {

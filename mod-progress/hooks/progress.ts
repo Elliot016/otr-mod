@@ -62,6 +62,10 @@ export const isGatesPath = (path: string) => /(^|\/)(GATES\.md|gates\/[^/]+\.md)
 
 export const stemOf = (file: string) => file.replace(/\.md$/i, '')
 
+// An agent's gates file: gates/<name>.md, or, where the Agent tool offers no name, the description's first word ("leaf-1.1.1: ...").
+export const gatesOf = (snap: { gates: Record<string, Gate[]> }, info: { name?: string; description: string }) =>
+  (info.name ? snap.gates[info.name] : undefined) ?? snap.gates[info.description.trim().split(/\s+/)[0]?.replace(/:$/, '') ?? '']
+
 export function applyStep(snap: Snap, agentId: string | undefined, model: string, effort: unknown, usage: Usage | null | undefined) {
   const loop = agentId ? (snap.agents[agentId] ??= { tokens: 0, context: 0 }) : snap.main
   loop.model = model
@@ -187,7 +191,7 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
   }]
   for (const info of list) {
     const loop = snap.agents[info.id] ?? { tokens: 0, context: 0 }
-    const own = info.name ? snap.gates[info.name] : undefined
+    const own = gatesOf(snap, info)
     rows.push({
       id: info.id,
       isMain: false,
