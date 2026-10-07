@@ -30,8 +30,8 @@ Change them with `/mod-transcript settings` or the gear pill.
 | Fold tool rows | on | Each finished tool row is one line with its own toggle. Off, tool rows draw as Claude Code draws them |
 | Show times | on | Each prompt shows when you sent it, and each tool line when it started and how long it took. Off, rows show no times |
 | Show the latest turn in full | on | The latest turn shows every tool row and result as Claude Code draws them, and folds when your next prompt starts. Off, finished tool calls fold right away |
-| Prompt numbers | on | Shows each prompt's number (#N) beside your message, matching the Prompts and Heads up panels |
 | Copy button | on | Each finished reply's bottom edge carries a copy button: point at it to pick reply, code, text, table or links, then click one. Off, the edge stays plain |
+| Prompt numbers | on | Shows each prompt's number (#N) beside your message, matching the Prompts and Heads up panels |
 | Icons | `auto` | auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## Install

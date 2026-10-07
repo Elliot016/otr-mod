@@ -12,8 +12,8 @@ Now and then flags one thing you should know but might miss, kept by turn in a p
 ## Features
 
 - **A side check:** Every sixth step of a long turn, at most once per turn, a check reads the session and flags one thing you should understand and probably missed. Most checks show nothing.
-- **A card above the prompt:** The note shows with its tag, You should know or Heads up, and says who decided. Learn more opens it in the panel; Know this already keeps it from coming back.
-- **The Heads up panel:** Every note of the session under its turn, opened in place, with Chat in main session and rewrites in simpler words, with less detail or with more detail.
+- **A card above the prompt:** The note shows with its tag, You should know or Heads up, and says who decided. Open shows it in the panel, × dismisses it.
+- **The Heads up panel:** Every note of the session under its turn, opened in place, with Got it, Ask Claude and Reword (simpler words, less detail or more detail). Hover any control for what it does.
 
 ## Settings
 

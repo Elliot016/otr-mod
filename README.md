@@ -176,6 +176,14 @@ Now and then, one thing you should know; every note stays in its panel.
 | --- | --- | --- |
 | [![][gif-heads-up-panel]][video-heads-up-panel] | ![][img-heads-up-card] | ![][img-heads-up-note] |
 
+### mod-progress
+
+Every agent at a glance: model, effort, context, tokens, time and gates.
+
+| Two agents running, opened from the pill | The pill | The panel |
+| --- | --- | --- |
+| [![][gif-progress-pane]][video-progress-pane] | ![][img-progress-pill] | ![][img-progress-panel] |
+
 ### mod-blast-radius
 
 A risky command waits for your answer. Type 1, 2 or 3 into the empty prompt, or click.
@@ -318,6 +326,7 @@ sequenceDiagram
 [gif-menu-hover]: showcase/gif/menu-hover.gif
 [gif-model-effort-pick]: showcase/gif/model-effort-pick.gif
 [gif-next-steps-keys]: showcase/gif/next-steps-keys.gif
+[gif-progress-pane]: showcase/gif/progress-pane.gif
 [gif-prompts-pick]: showcase/gif/prompts-pick.gif
 [gif-skill-panel-and-settings]: showcase/gif/skill-panel-and-settings.gif
 [gif-transcript-unfold]: showcase/gif/transcript-unfold.gif
@@ -334,6 +343,8 @@ sequenceDiagram
 [img-menu-band]: showcase/menu-band.png
 [img-model-effort-panel]: showcase/model-effort-panel.png
 [img-next-steps]: showcase/next-steps.png
+[img-progress-panel]: showcase/progress-panel.png
+[img-progress-pill]: showcase/progress-pill.png
 [img-skill-panel-settings]: showcase/skill-panel-settings.png
 [img-skill-panel]: showcase/skill-panel.png
 [img-transcript-copy]: showcase/transcript-copy.png
@@ -349,6 +360,7 @@ sequenceDiagram
 [video-menu-hover]: showcase/menu-hover.mp4
 [video-model-effort-pick]: showcase/model-effort-pick.mp4
 [video-next-steps-keys]: showcase/next-steps-keys.mp4
+[video-progress-pane]: showcase/progress-pane.mp4
 [video-prompts-pick]: showcase/prompts-pick.mp4
 [video-skill-panel-and-settings]: showcase/skill-panel-and-settings.mp4
 [video-transcript-unfold]: showcase/transcript-unfold.mp4
