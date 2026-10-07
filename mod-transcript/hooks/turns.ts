@@ -17,6 +17,8 @@ export type Turn = {
   texts?: string[]
   // The reply's markdown, as the copy pill hands it over.
   replyText?: string
+  // A subagent report opens a turn of its own, yet is not a prompt the person sent, so it takes no number.
+  isReport?: boolean
 }
 
 // The part of a session message (`$.session.messages()`) a guessed turn reads.
@@ -113,6 +115,9 @@ export function previewOf(name: string, input: any, output: any, text: string): 
 export class TurnLog {
   turns: Turn[] = []
   private byId = new Map<string, Turn>()
+  private parents = new Map<string, string | undefined>()
+  private last: string | undefined
+  private numbers: Map<Turn, number> | undefined
   private calls = new Map<string, ToolCall>()
   private thinking: string | undefined
 
@@ -124,12 +129,15 @@ export class TurnLog {
       return
     }
     if (typeof row?.uuid !== 'string' || row.isSidechain === true) return
+    this.parents.set(row.uuid, row.parentUuid ?? row.logicalParentUuid ?? undefined)
+    this.last = row.uuid
+    this.numbers = undefined
     const content = row.message?.content
     const current = this.turns[this.turns.length - 1]
 
     // A subagent's report is a meta row, yet Claude answers it in a turn of its own.
     if (row.type === 'user' && row.isMeta && row.origin?.kind === 'peer') {
-      this.start(row.uuid, timeOf(row))
+      this.start(row.uuid, timeOf(row), true)
       return
     }
     if (row.type === 'user' && !row.isMeta && !row.isCompactSummary && !(Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result'))) {
@@ -177,10 +185,10 @@ export class TurnLog {
   }
 
   // A row drawn after the transcript was read: a new prompt opens a turn, any other row joins the latest one.
-  claim(requestId: string, kind: 'prompt' | 'reply' | 'row', at = Date.now()) {
+  claim(requestId: string, kind: 'prompt' | 'reply' | 'row', at = Date.now(), isReport = false) {
     if (this.turnOf(requestId) || this.turnAt(requestId)) return
     if (kind === 'prompt') {
-      this.start(requestId, at)
+      this.start(requestId, at, isReport)
       return
     }
     const current = this.turns[this.turns.length - 1]
@@ -236,6 +244,19 @@ export class TurnLog {
 
   callOf(toolUseId: string) {
     return this.calls.get(toolUseId)
+  }
+
+  // The number mod-prompts gives the prompt: its place among the prompts on the live branch (the parent chain from the last row, so /rewind's abandoned rows drop out), oldest first.
+  // A turn the file does not hold yet, such as a prompt drawn live, counts as live; a subagent report has none.
+  numberOf(turn: Turn) {
+    if (!this.numbers) {
+      const live = new Set<string>()
+      for (let id = this.last; id !== undefined && !live.has(id); id = this.parents.get(id)) live.add(id)
+      this.numbers = new Map()
+      let n = 0
+      for (const each of this.turns) if (!each.isReport && (!this.parents.has(each.prompt) || live.has(each.prompt))) this.numbers.set(each, ++n)
+    }
+    return this.numbers.get(turn)
   }
 
   // The turn a prompt row opens.
@@ -306,8 +327,9 @@ export class TurnLog {
     if (turn) this.add(turn, rowKey(requestId.replace(/^collapsed-/, '')))
   }
 
-  private start(uuid: string, at: number | undefined) {
-    const turn: Turn = { prompt: uuid, ids: new Set(), tools: [], at }
+  private start(uuid: string, at: number | undefined, isReport = false) {
+    const turn: Turn = { prompt: uuid, ids: new Set(), tools: [], at, ...(isReport ? { isReport } : {}) }
+    this.numbers = undefined
     this.turns.push(turn)
     this.thinking = undefined
   }

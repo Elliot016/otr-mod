@@ -765,3 +765,111 @@ test('with copy_pill off, the reply keeps a plain bottom edge', { options: { cop
   expect(await took.find({ key: 'toggle-copy-pill' })).toBeUndefined()
   for (const ui of [prompt, reply, thanks, welcome, took]) await ui.unmount()
 })
+
+test('hovering a copy choice or the fold chip shows its tip in the band tip row, and leaving clears it', async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: COPYING.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: COPYING }))
+  mock.clock(on)
+  on('ui.render', ($$: any, e: any) => {
+    const { Box, Text } = $$.ui.resolve(e)
+    if (e.component === 'AbovePrompt') return <Box key="menu-rows" flexDirection="column"><Box key="menu-row" flexDirection="row"><Text key="pill">Files</Text></Box></Box>
+    return <Text>{`base ${e.component}`}</Text>
+  })
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  const mount = (component: string, requestId: string, props: object) =>
+    $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
+  const band = await $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug\nplease', origin: { kind: 'composer' }, isExpanded: true })
+  const reply = await mount('AssistantMessage', ID(4), { text: 'Fixed:\n\n```js\nconst a = 1\n```', isFirstOfReply: true })
+  const tip = async () => (await band.find({ type: 'Text', text: /copies|folds or unfolds/ }))?.text
+  expect(await tip()).toBeUndefined()
+  const shut = Number(String((await reply.drawn({ in: 'toggle-copy-pill' })).children[0].children[0]).length)
+  await reply.pointer({ in: 'toggle-copy-pill', type: 'move', button: 'left', x: shut + 1, y: 0 })
+  expect(await tip()).toBe(' copies this reply')
+  const open = Number(String((await reply.drawn({ in: 'toggle-copy-pill' })).children[0].children[0]).length)
+  await reply.pointer({ in: 'toggle-copy-pill', type: 'move', button: 'left', x: open + 8, y: 0 })
+  expect(await tip()).toBe(' copies the code blocks')
+  await reply.pointer({ in: 'toggle-copy-pill', type: 'leave', button: 'left', x: 0, y: 0 })
+  expect(await tip()).toBeUndefined()
+  await prompt.pointer({ in: 'toggle-turn-chip', type: 'enter', button: 'left', x: 1, y: 0 })
+  expect(await tip()).toBe(' folds or unfolds this turn')
+  await prompt.pointer({ in: 'toggle-turn-chip', type: 'leave', button: 'left', x: 1, y: 0 })
+  expect(await tip()).toBeUndefined()
+  for (const ui of [band, prompt, reply]) await ui.unmount()
+})
+
+// Prompts 1 and 2, a subagent report that opens a turn without being a prompt, a rewound branch, then prompt 3 on the live branch.
+const NUMBERED = [
+  row(1, 'user', { message: { role: 'user', content: 'first' } }),
+  said(2, [{ type: 'text', text: 'One.' }]),
+  row(3, 'user', { message: { role: 'user', content: 'second' } }),
+  row(4, 'user', { isMeta: true, origin: { kind: 'peer' }, message: { role: 'user', content: 'report' } }),
+  row(5, 'user', { message: { role: 'user', content: '/clear' } }),
+  JSON.stringify({ type: 'user', uuid: ID(6), parentUuid: ID(2), message: { role: 'user', content: 'abandoned' } }),
+  JSON.stringify({ type: 'user', uuid: ID(7), parentUuid: ID(4), message: { role: 'user', content: 'third' } }),
+].join('\n') + '\n'
+
+test('a prompt\x27s number is its place among the live prompts, as the Prompts panel counts them', () => {
+  const log = logOf(NUMBERED)
+  expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1, 2, undefined, undefined, 3])
+  // row 6 hangs off row 2, so rewinding past row 3 dropped it; row 7 continues the live chain.
+  expect(log.turns.map(turn => turn.prompt)).toEqual([ID(1), ID(3), ID(4), ID(6), ID(7)])
+})
+
+const mountNumbered = async ($: any, on: any, requestId: string, text: string) => {
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: NUMBERED.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: NUMBERED }))
+  mock.clock(on)
+  on('session.start', (_$: unknown, e: unknown) => e)
+  on('command.register', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [] }))
+  mock.env(on, {})
+  on('ui.render', ($$: any, e: any) => {
+    const { Box, Text } = $$.ui.resolve(e)
+    if (e.component === 'AbovePrompt') return <Box key="menu-rows" flexDirection="column"><Box key="menu-row" flexDirection="row"><Text key="pill">Files</Text></Box></Box>
+    return <Text>{`base ${e.component}`}</Text>
+  })
+  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  return $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'UserMessage', requestId, viewport: { columns: 120, rows: 40 }, props: { text, origin: { kind: 'composer' }, isExpanded: true } } as never)
+}
+
+test('icons=nerd draws #N in a rounded pill beside the Nth prompt', { options: { icons: 'nerd' } }, async ($, on) => {
+  const second = await mountNumbered($, on, ID(3), 'second')
+  const drawn = JSON.stringify(await second.drawn({ in: 'toggle-prompt-number' }))
+  expect(drawn).toContain('#2')
+  expect(drawn).toContain(String.fromCodePoint(0xe0b6))
+  expect(drawn).not.toContain(' #2 ')
+})
+
+test('icons=safe draws #N padded, with no Nerd caps', { options: { icons: 'safe' } }, async ($, on) => {
+  const third = await mountNumbered($, on, ID(7), 'third')
+  const drawn = JSON.stringify(await third.drawn({ in: 'toggle-prompt-number' }))
+  expect(drawn).toContain(' #3 ')
+  expect(drawn).not.toContain(String.fromCodePoint(0xe0b6))
+})
+
+test('with prompt_numbers off, no number and no reserved cells', { options: { prompt_numbers: false } }, async ($, on) => {
+  const first = await mountNumbered($, on, ID(1), 'first')
+  expect(await first.find({ key: 'toggle-prompt-gutter' })).toBeUndefined()
+  expect(await first.find({ key: 'toggle-prompt-number' })).toBeUndefined()
+})
+
+test('pointing at the number shows its tip in the band tip row, and leaving clears it', async ($, on) => {
+  const first = await mountNumbered($, on, ID(1), 'first')
+  const band = await $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  const tip = async () => (await band.find({ type: 'Text', text: /of the session/ }))?.text
+  expect(await tip()).toBeUndefined()
+  await first.pointer({ in: 'toggle-prompt-number', type: 'enter', button: 'left', x: 1, y: 1 })
+  expect(await tip()).toBe(' this is prompt 1 of the session')
+  expect(await band.find({ type: 'Text', text: /Prompt #1/ })).toBeDefined()
+  await first.pointer({ in: 'toggle-prompt-number', type: 'leave', button: 'left', x: 1, y: 1 })
+  expect(await tip()).toBeUndefined()
+})

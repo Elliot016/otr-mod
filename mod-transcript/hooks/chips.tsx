@@ -1,6 +1,8 @@
 import type { ClientModule } from 'claude-code'
 
+import { postTip } from './entry'
 import style from './style'
+import text from './text'
 import { CAPS, THEME } from './theme'
 
 export type Chip = { kind: keyof typeof style.colors.kinds; mark: string; label: string; count: number; added: number; removed: number; isOpen: boolean }
@@ -14,6 +16,9 @@ const stat = (chip: Chip) => [chip.added ? `+${chip.added}` : '', chip.removed ?
 // Cells a chip takes: its two ends, mark, label, the count badge with its two ends, and the counts after it.
 const widthOf = (chip: Chip) => 1 + [...chip.mark].length + 1 + chip.label.length + 1 + (2 + String(chip.count).length) + (stat(chip) ? 1 + stat(chip).length : 0) + 1
 
+// The chip under the pointer, per instance, so a tip posts only when it changes.
+const under = new WeakMap<object, string | null>()
+
 // The open turn's kinds as one line of pills; a click on one asks the hooks module to show its calls below.
 const Chips: ClientModule<ChipsProps> = (props, surface) => {
   const { Box, Text } = surface.elements
@@ -23,16 +28,21 @@ const Chips: ClientModule<ChipsProps> = (props, surface) => {
   const right = nerd ? CAPS.right : ' '
 
   surface.onPointer(event => {
-    if (event.type !== 'down' || event.button !== 'left') return
+    let hit: Chip | undefined
     let x = 0
     for (const chip of chips) {
       const width = widthOf(chip)
-      if (event.x >= x && event.x < x + width) {
-        surface.post({ type: 'chip', id: props.id, kind: chip.kind } satisfies ChipsMessage)
-        return
-      }
+      if (event.x >= x && event.x < x + width) hit = chip
       x += width + 1
     }
+    if (event.type === 'down' && event.button === 'left') {
+      if (hit) surface.post({ type: 'chip', id: props.id, kind: hit.kind } satisfies ChipsMessage)
+      return
+    }
+    const now = event.type === 'leave' ? null : (hit?.kind ?? null)
+    if (now === (under.get(surface) ?? null)) return
+    under.set(surface, now)
+    postTip(surface, `chip-${props.id}`, hit && now ? { glyph: '', label: hit.label, text: text.tipChip[hit.kind] } : null)
   })
 
   return (

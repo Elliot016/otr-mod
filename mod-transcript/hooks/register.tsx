@@ -7,8 +7,10 @@ import type { EdgeProps } from './edge'
 import type { DotProps } from './dot'
 import type { FoldProps } from './fold'
 import type { LabelPart, LabelProps } from './label'
-import { isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
-import { tabRow } from './pills'
+import { pillWidth, type NumberProps } from './number'
+import { isTipMessage, tipText, type Tip, type TipMessage } from './entry'
+import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, terminalSettings, type IconMode, withMark } from './look'
+import { pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import style from './style'
 import text from './text'
@@ -35,6 +37,7 @@ let foldTools = true
 let showTimes = true
 let expandLive = true
 let showCopy = true
+let showNumbers = true
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 type Kind = 'turns' | 'tools'
@@ -45,6 +48,10 @@ const PANE = 'toggle-settings'
 let actions: Action[] = []
 let previews: Previews | undefined
 let note = ''
+
+// The control under the pointer, from its tip post: the band's tip row and the Settings footer show it.
+let hovered: TipMessage | null = null
+const hoveredTip = (): Tip | null => (hovered?.id && hovered.label ? { glyph: hovered.glyph ?? '', label: hovered.label, text: hovered.text ?? '' } : null)
 
 const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
 
@@ -570,6 +577,7 @@ export const register: Register = (on, options) => {
   showTimes = options.timestamps !== false
   expandLive = options.expand_live !== false
   showCopy = options.copy_pill !== false
+  showNumbers = options.prompt_numbers !== false
 
   on('session.start', async ($, e, next) => {
     await loadLook($)
@@ -586,6 +594,16 @@ export const register: Register = (on, options) => {
 
   // A click on a card's strip folds the turn or tool it runs beside.
   on('ui.message', async ($, e, next) => {
+    if (isTipMessage(e.data)) {
+      hovered = e.data
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
+    // A click can move or remove the control under the pointer, and a leave may never come.
+    if (hovered) {
+      hovered = null
+      $.ui.invalidate('ui.render')
+    }
     const change = settingChoice(e.data)
     if (change) await saveSetting($, change.key, change.value)
     const message = e.data as BarMessage
@@ -639,11 +657,23 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-transcript-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`, icon: look.glyph.gear, isOpen: true }], false)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-transcript-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSubheading, text: text.tipTabSettings } }], false)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.paneHintClick} ${MARK.sep} ${text.paneHintSaved}`}</Text>
-        <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: false })}</Box>
+        <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: false, tips: text.settingTips })}</Box>
+        <Box key="footer-space" height={FOOTER_ROWS} />
+        {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
+  })
+
+  // The chat rows' controls have no tip row of their own, so their tip shows in the band's, on the shared pill row another mod drew.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.hasSurvey || !hovered?.id) return next(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
+    const others = await next(e)
+    const { group, row, rest } = splitRow(others)
+    if (group.length === 0 && row.length === 0) return others
+    return pillRow({ Box, Client, Text }, look.nerd, group, row, rest, tipLine({ Box, Text }, tipText(hovered)), e.props.bodyColumns)
   })
 
   // Only the settings hook event names the transcript; kept per session so a reload finds it again.
@@ -688,7 +718,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     // A subagent's report opens a turn of its own, as in the transcript.
-    if (isLoaded && (e.props.origin.kind === 'peer' || (e.props.origin.kind === 'composer' && isPrompt(e.props.text)))) log.claim(e.requestId, 'prompt')
+    if (isLoaded && (e.props.origin.kind === 'peer' || (e.props.origin.kind === 'composer' && isPrompt(e.props.text)))) log.claim(e.requestId, 'prompt', Date.now(), e.props.origin.kind === 'peer')
     if (e.props.origin.kind !== 'composer') return next(e)
     if (!isLoaded && e.props.origin.kind === 'composer') {
       await guess($)
@@ -698,9 +728,15 @@ export const register: Register = (on, options) => {
     seen.set(`UserMessage ${e.requestId}`, Boolean(turn))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const prompt = await next(e)
+    const n = showNumbers && turn ? log.numberOf(turn) : undefined
     // The wedge is an absolute sibling: Claude Code refuses its row under a positioned Box.
     const row = (
       <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1} justifyContent="flex-end" backgroundColor={THEME.bg}>
+        {n !== undefined ? (
+          <Box key="toggle-prompt-gutter" flexShrink={0} width={pillWidth(n) + 1} backgroundColor={THEME.bg}>
+            <Client key="toggle-prompt-number" module="./number.tsx" width={pillWidth(n) + 1} height="100%" props={{ id: turn!.prompt, n, nerd: look.nerd } satisfies NumberProps} />
+          </Box>
+        ) : null}
         <Box key="toggle-prompt-bubble" flexDirection="column" flexShrink={1}>
           <Box key="toggle-prompt-outline" flexDirection="row" borderStyle="round" borderColor={THEME.secondary}>
             {showTimes && turn?.at !== undefined ? (

@@ -1,7 +1,8 @@
 import type { ClientModule } from 'claude-code'
 
 import type { BarMessage, BarProps } from './bar'
-import { HOVER_STEPS, hoverMix, mix, stepToward, TICK_MS } from './entry'
+import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, mix, postTip, stepToward } from './entry'
+import text from './text'
 import { CAPS, THEME } from './theme'
 
 // color: the pill's fill at rest; the whole pill, ends included, lightens under the pointer.
@@ -21,7 +22,7 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
 
   if (!surface.state) {
     surface.setState({ isOver: false, at: 0, level: 0 })
-    surface.every(TICK_MS, () => {
+    surface.every(HOVER_TICK_MS, () => {
       const state = surface.state
       if (!state) return
       if (state.level !== (state.isOver ? HOVER_STEPS : 0)) surface.setState({ ...state, level: stepToward(state.level, state.isOver) })
@@ -32,9 +33,10 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
   surface.onPointer(event => {
     const over = event.type !== 'leave'
     const base = surface.state ?? { isOver: false, at: 0, level: 0 }
-    const level = over === base.isOver ? base.level : latest.get(surface)?.still ? (over ? HOVER_STEPS : 0) : stepToward(base.level, over)
+    const level = over === base.isOver ? base.level : latest.get(surface)?.still ? (over ? HOVER_STEPS : 0) : over ? HOVER_STEPS : base.level
     surface.setState({ isOver: over, at: Date.now(), level })
     if (event.type === 'down' && event.button === 'left') surface.post({ type: 'fold', kind: props.kind, id: props.id } satisfies BarMessage)
+    else if (over !== base.isOver) postTip(surface, `fold-${props.id}`, over ? { glyph: '', label: text.tipLabel[props.kind], text: text.tipFold[props.kind] } : null)
   })
 
   const fill = hoverMix(props.color, mix(props.color, THEME.onSurface, 0.35), surface.state?.level ?? 0)

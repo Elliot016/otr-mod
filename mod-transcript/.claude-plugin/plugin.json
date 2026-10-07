@@ -37,6 +37,12 @@
       "description": "Each finished reply's bottom edge carries a copy button: point at it to pick reply, code, text, table or links, then click one. Off, the edge stays plain",
       "default": true
     },
+    "prompt_numbers": {
+      "type": "boolean",
+      "title": "Prompt numbers",
+      "description": "Shows each prompt's number (#N) beside your message, matching the Prompts and Heads up panels",
+      "default": true
+    },
     "icons": {
       "type": "string",
       "title": "Icons",

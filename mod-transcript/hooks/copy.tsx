@@ -1,5 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
+import { postTip } from './entry'
+import text from './text'
 import { CAPS, fill, THEME } from './theme'
 
 // A click on a choice: the turn and what to copy from its reply.
@@ -15,6 +17,9 @@ const TICK_MS = 250
 // A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
 const QUIET_MS = 5000
 const NOTE_MS = 1500
+
+// The part under the pointer (a choice's `what`, 'icon', or none), per instance, so a tip posts only when it changes.
+const under = new WeakMap<object, string | null>()
 
 // The cells the open pill takes; the row gives the Client this width, since the pointer reaches only the cells laid out for it.
 export const copyWidth = (props: Pick<CopyProps, 'choices' | 'copied' | 'nerd'>) => {
@@ -64,6 +69,14 @@ const Copy: ClientModule<CopyProps, State> = (props, surface) => {
       return
     }
     surface.setState({ ...state, over: next, at: Date.now() })
+    const now = next >= 0 ? props.choices[next]!.what : next === -1 ? 'icon' : null
+    if (now === (under.get(surface) ?? null)) return
+    under.set(surface, now)
+    const choice = props.choices.find(each => each.what === now)
+    const tip = choice
+      ? { glyph: '', label: fill(text.tipCopyChoiceLabel, { what: choice.label }), text: text.tipCopyChoice[choice.what as keyof typeof text.tipCopyChoice] }
+      : now === 'icon' ? { glyph: '', label: text.tipCopyLabel, text: text.tipCopyIcon } : null
+    postTip(surface, `copy-${props.id}`, tip)
   })
 
   const body = hasNote

@@ -32,6 +32,23 @@ export default {
   "copied": "copied {what}",
   "copyFailed": "Copy failed: {reason}",
   "copyNoTurn": "its turn is no longer in the log",
+  "tipLabel": { "turns": "Turn", "tools": "Tool" },
+  "tipFold": { "turns": "folds or unfolds this turn", "tools": "shows or hides this tool's output" },
+  "tipBar": { "turns": "folds this turn", "tools": "folds this tool" },
+  "tipChip": {
+    "thinking": "shows what Claude thought",
+    "read": "shows the files Claude read",
+    "search": "shows the searches Claude ran",
+    "edit": "shows the edits Claude made",
+    "shell": "shows the commands Claude ran",
+    "web": "shows the pages Claude fetched",
+    "agent": "shows the agents Claude ran",
+    "tool": "shows the other tool calls"
+  },
+  "tipCopyLabel": "Copy",
+  "tipCopyIcon": "copies this reply",
+  "tipCopyChoiceLabel": "Copy {what}",
+  "tipCopyChoice": { "reply": "copies the whole reply", "code": "copies the code blocks", "text": "copies the reply as plain text", "table": "copies the tables", "links": "copies the links" },
   "previewMore": "+ {n} more lines",
   "previewEmpty": "No output",
   "kind": {
@@ -42,5 +59,10 @@ export default {
     "web": { "one": "Fetched {n} page", "many": "Fetched {n} pages" },
     "agent": { "one": "Ran {n} agent", "many": "Ran {n} agents" },
     "tool": { "one": "Used {n} other tool", "many": "Used {n} other tools" }
-  }
+  },
+  "promptNumber": "#{n}",
+  "tipPromptLabel": "Prompt #{n}",
+  "tipPrompt": "this is prompt {n} of the session",
+  "tipTabSettings": "shows this mod's settings",
+  "settingTips": {"expand_live":"the latest turn stays open until your next prompt","prompt_numbers":"the #N before each of your messages, the same number the Prompts and Heads up panels show","copy_pill":"a copy button on each finished reply's bottom edge"}
 }
