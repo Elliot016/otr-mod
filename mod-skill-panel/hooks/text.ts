@@ -1,11 +1,17 @@
 // Every string this mod shows, see mod-builder/references/standard.md. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "pillLabel": "Skills",
+  "pillShort": "Skills",
   "pillTip": "Skills: browse your skills and add one to the prompt",
   "paneTitle": "Skills",
   "settingsPaneTitle": "mod-skill-panel",
   "settingsTab": "Settings",
   "agentsTab": "Agents",
+  "skillsTabTip": "lists your skills",
+  "agentsTabTip": "lists your agents",
+  "settingsTabTip": "opens this mod's settings",
+  "chipTip": "adds /{name} to the prompt",
+  "agentChipTip": "mentions @agent-{name} in the prompt",
   "agentsHint": "Click an agent to mention it {sep} point at one to read it",
   "agentAdded": "Mentioned @agent-{name}",
   "agentTools": "{count} tools",
@@ -31,5 +37,6 @@ export default {
     "utility": "utility",
     "mods": "mods",
     "personal": "personal"
-  }
+  },
+  "tipToast": {"label":"Dismiss","text":"hides this message"}
 }

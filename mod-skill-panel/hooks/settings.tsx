@@ -1,7 +1,7 @@
 // Shared settings body, see mod-builder/references/standard.md. Master in templates/cli-mod; copy unchanged into every mod with settings or actions.
 import type { ConfigRow, ConfigValue, RenderElement } from 'claude-code'
 
-import type { EntryProps } from './entry'
+import type { EntryProps, Tip } from './entry'
 import { section, subpill, type Look } from './look'
 import style from './style'
 import { CAPS, MARK, mix, THEME, WASH } from './theme'
@@ -21,6 +21,8 @@ export type SettingsProps = {
   run: (action: Action) => unknown
   // The animations setting is off: a clicked control does not shimmer.
   still?: boolean
+  // Hover tips by setting field (the key after the dot); a setting without one shows its description's first sentence.
+  tips?: Record<string, string>
   // The mod's example cards, from its showcase.json, so its own panel and mod-manager draw the same ones.
   previews?: Previews
 }
@@ -87,6 +89,16 @@ function exampleOf(elements: Elements, look: Look, previews: Previews | undefine
 const shown = (row: ConfigRow) =>
   row.kind === 'boolean' ? (row.value === true ? style.text.on : style.text.off) : Array.isArray(row.value) ? row.value.join(', ') : String(row.value)
 
+// Words that stay capitalized when a description follows a tip's label and colon.
+const PROPER = new Set(['Claude', 'Haiku', 'Opus', 'Sonnet', 'Windows', 'Nerd'])
+
+// A setting's description as the tip after "Label: ": its first sentence, led by a lowercase letter unless that word is a proper noun.
+export function descriptionTip(description: string) {
+  const sentence = description.split('. ')[0]!.replace(/\.$/, '')
+  const word = /^[A-Z][a-z]+\b/.exec(sentence)?.[0]
+  return word && !PROPER.has(word) ? sentence[0]!.toLowerCase() + sentence.slice(1) : sentence
+}
+
 // A control is an Entry pill posting `setting:<key>=<value as JSON>`; the mod's ui.message hook saves it with settingChoice.
 const SETTING = 'setting:'
 const settingId = (row: ConfigRow, value: ConfigValue) => `${SETTING}${row.key}=${JSON.stringify(value)}`
@@ -113,11 +125,14 @@ const pillOn = ({ Box, Text }: Elements, look: Look, key: string, bg: string, bo
 )
 
 // Changes the row in place: on/off is one pill that flips, a choice a bar with the chosen option as its own pill, a number steps by one; text is edited in /config.
-function control(elements: Elements, look: Look, row: ConfigRow, index: number, still: boolean) {
+function control(elements: Elements, look: Look, row: ConfigRow, index: number, still: boolean, tips?: Record<string, string>) {
   const { Box, Client, Text } = elements
   const key = `setting-${index}`
-  const entry = (suffix: string, label: string, value: ConfigValue, bg: string, color: string, isOpen: boolean) => (
-    <Client key={`${key}-${suffix}`} module="./entry.tsx" height={1} props={{ id: settingId(row, value), label, isOpen, bg, color, idle: color, still } satisfies EntryProps} />
+  const text = tips?.[row.key.slice(row.key.indexOf('.') + 1)] ?? (row.description ? descriptionTip(row.description) : '')
+  // Client props refuse an undefined value, so a setting with no tip text leaves the key out.
+  const tipFor = (glyph: string) => (text ? { tip: { glyph: bare(glyph), label: row.label, text } satisfies Tip } : {})
+  const entry = (suffix: string, label: string, value: ConfigValue, bg: string, color: string, isOpen: boolean, glyph = look.glyph.cycle) => (
+    <Client key={`${key}-${suffix}`} module="./entry.tsx" height={1} props={{ id: settingId(row, value), label, isOpen, bg, color, idle: color, still, ...tipFor(glyph) } satisfies EntryProps} />
   )
   if (row.isLocked) return <Text color={THEME.muted}>{`${shown(row)} ${bare(look.glyph.locked)} ${style.text.locked}`}</Text>
   if (row.kind === 'boolean') {
@@ -137,8 +152,8 @@ function control(elements: Elements, look: Look, row: ConfigRow, index: number, 
     return (
       <Box key={key} flexDirection="row" columnGap={1}>
         <Text color={THEME.secondary}>{shown(row)}</Text>
-        {pillOn(elements, look, `${key}-down`, THEME.surface3, entry('down', bare(look.glyph.down), row.value - 1, THEME.surface3, THEME.onSurface, false))}
-        {pillOn(elements, look, `${key}-up`, THEME.surface3, entry('up', bare(look.glyph.up), row.value + 1, THEME.surface3, THEME.onSurface, false))}
+        {pillOn(elements, look, `${key}-down`, THEME.surface3, entry('down', bare(look.glyph.down), row.value - 1, THEME.surface3, THEME.onSurface, false, look.glyph.down))}
+        {pillOn(elements, look, `${key}-up`, THEME.surface3, entry('up', bare(look.glyph.up), row.value + 1, THEME.surface3, THEME.onSurface, false, look.glyph.up))}
       </Box>
     )
   }
@@ -146,7 +161,7 @@ function control(elements: Elements, look: Look, row: ConfigRow, index: number, 
 }
 
 // The Settings and Actions sections of a mod's panel or page: one round-bordered card per setting.
-export function settingsBody(elements: Elements, look: Look, { rows, actions, working, run, previews, still = false }: SettingsProps) {
+export function settingsBody(elements: Elements, look: Look, { rows, actions, working, run, previews, tips, still = false }: SettingsProps) {
   const { Box, Button, Text } = elements
   const settings = [
     rows.length === 0 ? <Text key="settings-none" color={THEME.muted}>{style.text.noSettings}</Text> : null,
@@ -156,7 +171,7 @@ export function settingsBody(elements: Elements, look: Look, { rows, actions, wo
         <Box key={`setting-row-${index}`} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1} marginTop={index === 0 ? 0 : 1}>
           <Box key={`setting-head-${index}`} flexDirection="row" columnGap={2}>
             <Text color={THEME.onSurface} bold>{row.label}</Text>
-            {control(elements, look, row, index, still)}
+            {control(elements, look, row, index, still, tips)}
           </Box>
           {row.description ? (
             <Text color={THEME.muted}>{row.kind === 'text' ? `${row.description} ${MARK.sep} ${style.text.editInConfig}` : row.description}</Text>

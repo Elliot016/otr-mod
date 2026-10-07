@@ -1,16 +1,17 @@
 import type { ClientModule } from 'claude-code'
 
-import { mix } from './entry'
+import { mix, postTip } from './entry'
 import { TAG_WASH } from './tags'
 import { CAPS, THEME } from './theme'
 
-export type CloudGroup = { tag: string; label: string; icon: string; hex: string; skills: { index: number; name: string }[] }
+export type CloudGroup = { tag: string; label: string; icon: string; hex: string; skills: { index: number; name: string; tip: string }[] }
 
 export type CloudProps = { groups: CloudGroup[]; width: number; selected: number; nerd: boolean }
 
-export type CloudMessage = { type: 'hover'; index: number } | { type: 'add'; index: number }
+// Pointing at a chip is a tip message with id `chip:<index>` (one post per frame lands, so no separate hover); a click posts `add`.
+export type CloudMessage = { type: 'add'; index: number }
 
-type Placed = { x: number; width: number; index: number; name: string }
+type Placed = { x: number; width: number; index: number; name: string; tip: string }
 
 // Cells a pill takes around its text: both caps in Nerd mode, a space each side in safe mode.
 const ENDS = 2
@@ -31,7 +32,7 @@ export function layoutCloud(groups: CloudGroup[], width: number) {
         rows.push(row)
         x = lead
       }
-      row.chips.push({ x, width: chip, index: skill.index, name: skill.name })
+      row.chips.push({ x, width: chip, index: skill.index, name: skill.name, tip: skill.tip })
       x += chip + 1
     }
   })
@@ -50,11 +51,13 @@ const Cloud: ClientModule<CloudProps, number> = (props, surface) => {
   surface.onPointer(event => {
     const chip = event.type === 'leave' ? undefined : rows[event.y]?.chips.find(each => event.x >= each.x && event.x < each.x + each.width)
     const index = chip?.index ?? -1
+    const isClick = event.type === 'down' && event.button === 'left' && index >= 0
     if (index !== hovered) {
       surface.setState(index)
-      if (index >= 0) surface.post({ type: 'hover', index } satisfies CloudMessage)
+      const group = groups.find(each => each.skills.some(skill => skill.index === index))
+      if (!isClick) postTip(surface, index >= 0 ? `chip:${index}` : 'chip', chip && group ? { glyph: group.icon, label: chip.name, text: chip.tip } : null)
     }
-    if (event.type === 'down' && event.button === 'left' && index >= 0) surface.post({ type: 'add', index } satisfies CloudMessage)
+    if (isClick) surface.post({ type: 'add', index } satisfies CloudMessage)
   })
 
   const pill = (key: string, fill: string, body: unknown) => (

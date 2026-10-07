@@ -275,7 +275,7 @@ test('the title tabs swap the sidebar and its settings, and a settings pill save
   const saved: unknown[] = []
   on('config.set', (_$: unknown, e: { key: string; value: unknown }) => {
     saved.push([e.key, e.value])
-    return { value: {} }
+    return { value: e.value }
   })
   const pane = (requestId: string) =>
     ({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId, props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } }) as never
@@ -372,6 +372,7 @@ test('a pane that waits says why in a wrapped card above the row, not in Claude 
   expect(engineToasts).toEqual([])
   // Hovering the × leaves the card; a click on it dismisses.
   await band.pointer({ type: 'move', x: 0, y: 0, in: 'toast-skills-1' })
+  expect(await band.find({ type: 'Text', text: 'Dismiss:' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeDefined()
   await band.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'toast-skills-1' })
   expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeUndefined()
@@ -443,5 +444,21 @@ test('its entry joins the row another panel opened, above the hint line', async 
   expect(tree.children.length).toBe(3)
   expect(JSON.stringify(tree.children[2])).toMatch(/Skills.*Mods/)
   expect(JSON.stringify(tree.children[0])).toContain('? for shortcuts')
+  await ui.unmount()
+})
+
+test('a hovered tab or chip puts its tip in the pane footer, and leaving clears it', async ($, on) => {
+  on('session.start', () => ({ cwd: '/h' }))
+  on('command.register', () => ({ value: { command: 'mod-skill-panel' } }))
+  on('state.set', () => ({ value: undefined }))
+  const ui = await skillsPane($, on)
+  await $.session.start({ cwd: '/h' } as never)
+  expect(await ui.find({ type: 'Text', text: /^ · / })).toBeUndefined()
+  await ui.pointer({ in: 'skills-agents', type: 'move', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · lists your agents' })).toBeDefined()
+  await ui.pointer({ in: 'skills-agents', type: 'leave', x: 0, y: 0 })
+  expect(await ui.find({ type: 'Text', text: / · lists/ })).toBeUndefined()
+  await ui.pointer({ in: 'skills-cloud', type: 'move', x: 14, y: 2 })
+  expect(await ui.find({ type: 'Text', text: ' · adds /plain to the prompt' })).toBeDefined()
   await ui.unmount()
 })

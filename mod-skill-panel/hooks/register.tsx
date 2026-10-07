@@ -7,8 +7,8 @@ import text from './text'
 import { tagName } from './tags'
 import { groupAgents, modelHue, readAgent, type Agent } from './agents'
 import { cardSpace, stickyCard } from './card'
-import type { EntryMessage } from './entry'
-import { isNerdFace, lookFor, section, subpill, terminalSettings, withMark, type IconMode } from './look'
+import { isTipMessage, type EntryMessage, type Tip } from './entry'
+import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, section, subpill, terminalSettings, withMark, type IconMode } from './look'
 import { menuEntry, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -145,9 +145,9 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
 
 // The panel's title line: skills, agents and settings as tabs, the shown one open.
 const tabs = (open: 'skills' | 'agents' | 'settings') => [
-  { id: 'skills-tab', label: text.paneTitle, icon: look.glyph.icon.skill ?? look.glyph.title, isOpen: open === 'skills', count: listed().length },
-  { id: 'skills-agents', label: text.agentsTab, icon: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, isOpen: open === 'agents', count: agents.length },
-  { id: 'skills-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: open === 'settings' },
+  { id: 'skills-tab', label: text.paneTitle, icon: look.glyph.icon.skill ?? look.glyph.title, isOpen: open === 'skills', count: listed().length, tip: { glyph: look.glyph.icon.skill ?? look.glyph.title, label: text.paneTitle, text: text.skillsTabTip } },
+  { id: 'skills-agents', label: text.agentsTab, icon: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, isOpen: open === 'agents', count: agents.length, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.agentsTab, text: text.agentsTabTip } },
+  { id: 'skills-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: open === 'settings', tip: { glyph: look.glyph.gear, label: text.settingsTab, text: text.settingsTabTip } },
 ]
 
 // A list tab: switch the list, opening the sidebar first when its settings are shown.
@@ -164,6 +164,10 @@ const CARD_ROWS = 9
 
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
+// The control under the pointer in the pane, which the footer describes.
+let hoveredTip: Tip | null = null
+// The toast × under the pointer, shown in the band's tip row.
+let toastTip = ''
 
 const toasts = new ToastList('skills')
 // The animations setting, fixed per activation: off, every entry draws still.
@@ -290,7 +294,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-skills" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
+      return <Box key="toasts-skills" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
     }
     const nerd = look.nerd
 
@@ -300,9 +304,9 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'skills', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'skills', { label: text.pillLabel, icon: look.glyph.icon.skill ?? text.pillShort, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still }, e.props.bodyColumns)
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
+    return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -310,6 +314,19 @@ export const register: Register = (on, options) => {
     const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
     if (dismissed !== undefined) {
       toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
+    if (isTipMessage(e.data)) {
+      const { id, glyph, label, text: tipText } = e.data
+      const isToast = Boolean(id?.startsWith('toast-skills-'))
+      toastTip = isToast ? `${label}: ${tipText}` : ''
+      hoveredTip = !isToast && id && glyph !== undefined && label && tipText ? { glyph, label, text: tipText } : null
+      const chip = id?.startsWith('chip:') ? Number(id.slice(5)) : -1
+      if (chip >= 0) {
+        if (view === 'agents') selectedAgent = chip
+        else selected = chip
+      }
       $.ui.invalidate('ui.render')
       return next(e)
     }
@@ -330,15 +347,9 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // The cloud reports the chip under the pointer, which the card shows, and a click, which adds it to the prompt.
+  // The cloud reports a click, which adds the chip to the prompt; the chip under the pointer arrives as a tip message.
   on('ui.message', { requestId: 'skill-panel' }, async ($, e, next) => {
     const message = e.data as CloudMessage
-    const shown = view === 'agents' ? selectedAgent : selected
-    if (message?.type === 'hover' && message.index !== shown) {
-      if (view === 'agents') selectedAgent = message.index
-      else selected = message.index
-      $.ui.invalidate('ui.render')
-    }
     if (message?.type === 'add') await (view === 'agents' ? addAgent($, message.index) : addSkill($, message.index))
 
     return next(e)
@@ -358,6 +369,8 @@ export const register: Register = (on, options) => {
           {tabRow({ Box, Client, Text }, look.nerd, tabs('settings'), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
     }
@@ -373,7 +386,7 @@ export const register: Register = (on, options) => {
         label: group.model,
         icon: agentIcon,
         hex: modelHue(group.model),
-        skills: group.agents.map(agent => ({ index: index++, name: agent.name })),
+        skills: group.agents.map(agent => ({ index: index++, name: agent.name, tip: fill(text.agentChipTip, { name: agent.name }) })),
       }))
       const agent = orderedAgents()[selectedAgent]
       if (agent) {
@@ -387,7 +400,7 @@ export const register: Register = (on, options) => {
         label: tagName(group.tag),
         icon: group.swatch.icon,
         hex: group.swatch.hex,
-        skills: group.skills.map(skill => ({ index: index++, name: skill.name })),
+        skills: group.skills.map(skill => ({ index: index++, name: skill.name, tip: fill(text.chipTip, { name: skill.name }) })),
       }))
       const entry = groups.flatMap(group => group.skills.map(skill => ({ skill, group })))[selected]
       if (entry) card = { icon: entry.group.swatch.icon, hex: entry.group.swatch.hex, title: `/${entry.skill.name}`, tag: tagName(entry.group.tag), extra: '', description: entry.skill.description }
@@ -420,6 +433,8 @@ export const register: Register = (on, options) => {
               </Box>
             ))
           : null}
+      <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+      {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
   })
