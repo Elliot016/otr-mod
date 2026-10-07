@@ -324,3 +324,25 @@ test('a heads-up card drawn below still sits above the suggestions', async ($, o
   expect(tree.split('"headsup-card"').length - 1).toBe(1)
   await ui.unmount()
 })
+
+test('hovering a suggestion or the dismiss control shows its tip in the band tip row', async ($, on) => {
+  const { clock } = setup(on, () => answered('add a test'), ({ Box, Text }: any) => (
+    <Box key="menu-rows" flexDirection="column">
+      <Box key="menu-row" flexDirection="row">
+        <Text key="pill">Files</Text>
+      </Box>
+    </Box>
+  ))
+  await $.turn.complete(DONE as never)
+  await clock.settle()
+  const ui = await mount($)
+  expect(await ui.find({ type: 'Text', text: /puts this suggestion/ })).toBeUndefined()
+  await ui.pointer({ type: 'enter', x: 1, y: 0, in: 'steps-row-0' })
+  expect((await ui.find({ type: 'Text', text: /puts this suggestion/ }))?.text).toBe(' puts this suggestion into your prompt')
+  expect((await ui.find({ type: 'Text', text: /Suggestion 1:/ }))?.text).toBe('Suggestion 1:')
+  await ui.pointer({ type: 'leave', x: 1, y: 0, in: 'steps-row-0' })
+  expect(await ui.find({ type: 'Text', text: /puts this suggestion/ })).toBeUndefined()
+  await ui.pointer({ type: 'enter', x: 1, y: 0, in: 'steps-dismiss' })
+  expect(await ui.find({ type: 'Text', text: /clears the suggestions/ })).toBeDefined()
+  await ui.unmount()
+})

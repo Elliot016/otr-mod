@@ -8,5 +8,12 @@ export default {
   "paneHeadingSettings": "Settings",
   "statusHint": "Click a setting to change it",
   "statusReload": "The mod reloads",
-  "settingSaved": "{label} saved"
+  "settingSaved": "{label} saved",
+  "tipSuggestionLabel": "Suggestion {n}",
+  "tipSuggestion": "puts this suggestion into your prompt",
+  "tipDismissLabel": "Clear",
+  "tipDismiss": "clears the suggestions",
+  "tipTabSettings": "shows this mod's settings",
+  "tipToast": {"label":"Dismiss","text":"hides this message"},
+  "settingTips": {"enabled":"suggests next prompts after each finished turn"}
 }
