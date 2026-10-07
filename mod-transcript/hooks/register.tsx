@@ -182,9 +182,9 @@ const edge = ({ Box, Client }: Bars, key: string, props: EdgeProps) =>
       <Client key={`${key}-edge`} module="./edge.tsx" width="100%" height={1} props={props} />
     </Box>
   ) : (
-    // Absolute, so the lines it draws for the last height never stretch the row they measure.
+    // Absolute so its lines never stretch the row; clipped so lines left from a taller row never paint below it.
     <Box key={key} width={1} flexShrink={0}>
-      <Box key={`${key}-pin`} position="absolute" top={0} left={0} width={1} height="100%">
+      <Box key={`${key}-pin`} position="absolute" top={0} left={0} width={1} height="100%" overflow="hidden">
         <Client key={`${key}-edge`} module="./edge.tsx" width={1} height="100%" props={props} />
       </Box>
     </Box>
