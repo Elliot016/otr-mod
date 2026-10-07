@@ -19,5 +19,6 @@ export default {
   "defaultNoteTail": "The mod reloads",
   "agoLessThanMinute": "less than a minute ago",
   "agoMinutes": "{minutes} min ago",
-  "agoHoursMinutes": "{hours} h {minutes} min ago"
+  "agoHoursMinutes": "{hours} h {minutes} min ago",
+  "tipTabSettings": "shows this mod's settings"
 }

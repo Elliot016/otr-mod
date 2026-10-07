@@ -204,3 +204,13 @@ test('icons=safe keeps the common Unicode glyphs and plain headings', { options:
   expect(await ui.find({ type: 'Text', text: PILL_CAP })).toBeUndefined()
   await ui.unmount()
 })
+
+test('a control tip posted to the mod reaches the pane footer, and clears on leave', async ($, on) => {
+  const ui = await paneOf($, on)
+  expect(await ui.find({ type: 'Text', text: /Shows this view/ })).toBeUndefined()
+  await ui.post({ type: 'tip', id: 'x', glyph: '>', label: 'Guard edits', text: 'Shows this view' }, { in: 'setting-0-flip' })
+  expect((await ui.find({ type: 'Text', text: /Shows this view/ }))?.text).toContain('Shows this view')
+  await ui.post({ type: 'tip', id: null }, { in: 'setting-0-flip' })
+  expect(await ui.find({ type: 'Text', text: /Shows this view/ })).toBeUndefined()
+  await ui.unmount()
+})

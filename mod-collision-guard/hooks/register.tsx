@@ -1,7 +1,8 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, pathOf, recordEdit, type Io } from './guard'
-import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
+import { isTipMessage, type Tip, type TipMessage } from './entry'
+import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import { tabRow } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
@@ -9,6 +10,9 @@ import { fill, MARK, statusColor, THEME } from './theme'
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let enabled = true
+// The control under the pointer, from its tip post: the pane footer shows it.
+let hovered: TipMessage | null = null
+const hoveredTip = (): Tip | null => (hovered?.id && hovered.label ? { glyph: hovered.glyph ?? '', label: hovered.label, text: hovered.text ?? '' } : null)
 let windowMinutes = 30
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
@@ -141,6 +145,11 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
 export const register: Register = (on, options) => {
   // A settings card's click arrives as a message.
   on('ui.message', async ($, e, next) => {
+    if (isTipMessage(e.data)) {
+      hovered = e.data
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const change = settingChoice(e.data)
     if (change) await saveSetting($, change.key, change.value)
 
@@ -233,9 +242,11 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-collision-guard-settings-tab', label: `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`, icon: look.glyph.gear, isOpen: true }], false)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-collision-guard-settings-tab', label: `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneTitleSettings, text: text.tipTabSettings } }], false)}
         <Text key="settings-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.defaultNote} ${MARK.sep} ${text.defaultNoteTail}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews , still: false })}
+        <Box key="footer-space" height={FOOTER_ROWS} />
+        {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
   })

@@ -145,6 +145,7 @@ export default {
     "stop": "○",
     "stopOpen": "●",
     "rail": "│",
+    "rule": "─",
     "open": "↗"
   },
   "caps": {
