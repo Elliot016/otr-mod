@@ -22,6 +22,7 @@ Add-ons for Claude Code that add panels, buttons and safety checks around the pr
 | `mod-transcript` | Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors | Automatic |
 | `mod-model-effort` | Shows the model and effort level; a click changes either | The model pill |
 | `mod-heads-up` | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
+| `mod-progress` | The main session and every subagent: model, effort, context fill, tokens, time and gate progress | Progress pill |
 | `mod-next-steps` | Suggests up to three next prompts after each turn | Automatic |
 | `mod-wrap-up` | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
 | `mod-blast-radius` | Holds a risky shell command until you choose Cancel or Run | Automatic |
@@ -82,6 +83,7 @@ block-beta
     skills["mod-skill-panel"]
     prompts["mod-prompts"]
     files["mod-file-tree"]
+    progress["mod-progress"]
     manager["mod-manager"]
     details["mod-blast-radius"]
     headsuppanel["mod-heads-up"]

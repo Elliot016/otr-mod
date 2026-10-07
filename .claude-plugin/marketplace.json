@@ -69,6 +69,11 @@
       "name": "mod-blast-radius",
       "source": "./mod-blast-radius",
       "description": "Holds a risky shell command and shows what it would change before it runs, with your own rules in a JSON file"
+    },
+    {
+      "name": "mod-progress",
+      "source": "./mod-progress",
+      "description": "A live view of the main session and every subagent: model, effort, context fill, tokens, elapsed time and gate progress"
     }
   ]
 }
