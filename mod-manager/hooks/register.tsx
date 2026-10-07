@@ -3,10 +3,10 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
 import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
-import { mix, type EntryMessage, type EntryProps } from './entry'
+import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { isNerdFace, lookFor, section, terminalSettings, type IconMode, withMark } from './look'
+import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, section, terminalSettings, type IconMode, withMark } from './look'
 import { settingChoice, settingsBody, type Action } from './settings'
 import { type ListMessage, type ListProps } from './list'
 
@@ -147,7 +147,7 @@ const openPage = ($: EngineInterface, index: number) => {
 }
 
 // The panel's title: the list as a tab with its count; on a mod's page a click on it goes back.
-const listTab = (isShown: boolean) => ({ id: 'manager-tab', label: text.paneTitle, icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: isShown, count: mods.length })
+const listTab = (isShown: boolean) => ({ id: 'manager-tab', label: text.paneTitle, icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: isShown, count: mods.length, tip: { glyph: look.glyph.title, label: text.paneTitle, text: isShown ? text.tipTabList : text.tipTabBack } })
 
 // A saved change reloads that mod, which redraws its page with the new value.
 async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
@@ -159,6 +159,11 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
 
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
+
+// The control the pointer is on in the pane, shown in its footer.
+let paneTip: Tip | null = null
+// The toast × under the pointer, shown in the band's tip row.
+let toastTip = ''
 
 const toasts = new ToastList('manager')
 // The animations setting, fixed per activation: off, every entry draws still.
@@ -193,6 +198,9 @@ const CARD_ROWS = 5
 
 // The share of green left in the on count's pill, as the legend pills tint theirs.
 const COUNT_WASH = 0.72
+
+// A control glyph without the brackets and padding it carries as a Button label.
+const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 const iconRowsOf = async ($: EngineInterface) => (await $.config.list()).filter(row => row.key.startsWith('mod-') && row.key.endsWith('.icons'))
 
@@ -295,7 +303,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-manager" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
+      return <Box key="toasts-manager" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
     }
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
@@ -303,9 +311,9 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'manager', { label: look.glyph.gear, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
+    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'manager', { label: look.glyph.gear, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still }, e.props.bodyColumns)
 
-    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
+    return pillRow({ Box, Client, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -313,6 +321,16 @@ export const register: Register = (on, options) => {
     const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
     if (dismissed !== undefined) {
       toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
+    if (isTipMessage(e.data)) {
+      const tip = e.data
+      const isToast = Boolean(tip.id?.startsWith('toast-manager-'))
+      toastTip = isToast ? `${tip.label}: ${tip.text}` : ''
+      paneTip = tip.id && !isToast ? { glyph: tip.glyph ?? '', label: tip.label ?? '', text: tip.text ?? '' } : null
+      // The list's tip carries the row under the pointer, whose card shows above the list.
+      hovering = tip.id?.startsWith('manager-row-') ? Number(tip.id.slice('manager-row-'.length)) : -1
       $.ui.invalidate('ui.render')
       return next(e)
     }
@@ -343,11 +361,8 @@ export const register: Register = (on, options) => {
     }
     if (message.type === 'select') {
       hovering = -1
+      paneTip = null
       openPage($, message.index)
-    }
-    if (message.type === 'hover' && message.index !== hovering) {
-      hovering = message.index
-      $.ui.invalidate('ui.render')
     }
 
     return next(e)
@@ -366,6 +381,8 @@ export const register: Register = (on, options) => {
     const frame = (children: unknown) => (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {children}
+        <Box key="footer-space" height={FOOTER_ROWS} />
+        {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
 
@@ -393,7 +410,7 @@ export const register: Register = (on, options) => {
 
       return frame([
         <Box key="page-head" flexDirection="row" columnGap={1}>
-          {tabRow({ Box, Client, Text }, look.nerd, [listTab(false), { id: 'manager-page', label: shownName(mod.name), icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: true }], still)}
+          {tabRow({ Box, Client, Text }, look.nerd, [listTab(false), { id: 'manager-page', label: shownName(mod.name), icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: true, tip: { glyph: look.glyph.title, label: shownName(mod.name), text: text.tipTabPage } }], still)}
           <Text color={mod.enabled ? THEME.good : THEME.muted}>{`${MARK.sep} ${mod.enabled ? text.stateOn : text.stateOff}`}</Text>
         </Box>,
         <Text key="page-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
@@ -445,6 +462,8 @@ export const register: Register = (on, options) => {
             nerd: look.nerd,
             on: text.stateOn,
             off: text.stateOff,
+            switchTip: { glyph: bare(look.glyph.on), label: '', text: text.tipSwitch },
+            openTip: text.tipOpen,
           } satisfies ListProps}
         />,
       )
@@ -482,7 +501,7 @@ export const register: Register = (on, options) => {
     const iconOption = (mode: (typeof ICON_MODES)[number]) => {
       const isChosen = iconsNow === mode
       const bg = isChosen ? THEME.surface3 : THEME.surface2
-      const entry = <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, isOpen: isChosen, bg, idle: THEME.muted, still } satisfies EntryProps} />
+      const entry = <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, isOpen: isChosen, bg, idle: THEME.muted, still, tip: { glyph: look.glyph.title, label: text.iconsLabel, text: fill(text.tipIcons, { mode: (text.iconModes as Record<string, string>)[mode]! }) } } satisfies EntryProps} />
       return isChosen ? pill({ Box, Text }, look.nerd, bg, entry, `icons-${mode}-pill`, THEME.surface2) : <Box key={`icons-${mode}-pad`}>{entry}</Box>
     }
     const iconsSwitch = iconRows.length ? (
@@ -518,7 +537,7 @@ export const register: Register = (on, options) => {
           [
             <Text key="apply-count" color={THEME.muted}>{applyLabel}</Text>,
             <Box key="apply-gap" flexGrow={1} />,
-            pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-apply" module="./entry.tsx" height={1} props={{ id: 'manager-apply', label: text.applyAction, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, ...goLead }} />, 'manager-apply-pill', THEME.bg),
+            pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-apply" module="./entry.tsx" height={1} props={{ id: 'manager-apply', label: text.applyAction, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, ...goLead, tip: { glyph: bare(look.glyph.cycle), label: text.applyAction, text: text.tipApply } }} />, 'manager-apply-pill', THEME.bg),
           ]
         )}
       </Box>,

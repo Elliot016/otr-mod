@@ -240,6 +240,14 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   await ui.pointer({ in: 'list-dir', type: 'move', x: 12, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'alpha does a thing' })).toBeDefined()
   expect(await ui.find({ key: 'hover-card' })).toBeDefined()
+  // The control under the pointer names itself in the pane footer: the name part opens, the switch part toggles.
+  expect(await ui.find({ type: 'Text', text: / · opens this mod's page and settings$/ })).toBeDefined()
+  await ui.pointer({ in: 'list-dir', type: 'move', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: / · turns this mod on or off$/ })).toBeDefined()
+  await ui.pointer({ in: 'manager-tab', type: 'move', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: / · shows the list of mods$/ })).toBeDefined()
+  await ui.pointer({ in: 'manager-tab', type: 'leave', x: 0, y: 0 })
+  expect(await ui.find({ type: 'Text', text: / · shows the list of mods$/ })).toBeUndefined()
   await ui.pointer({ in: 'list-dir', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ key: 'hover-card' })).toBeUndefined()
 

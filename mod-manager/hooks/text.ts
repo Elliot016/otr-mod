@@ -30,6 +30,13 @@ export default {
   "iconsMixed": "Mixed",
   "iconsDescription": "Sets every mod's icons at once: Auto follows the terminal font.",
   "iconsSaved": "Icons set to {mode} in {n} mods, each reloads",
+  "tipTabList": "shows the list of mods",
+  "tipTabBack": "goes back to the list of mods",
+  "tipTabPage": "shows this mod's page",
+  "tipIcons": "sets icons in every mod to {mode}",
+  "tipSwitch": "turns this mod on or off",
+  "tipOpen": "opens this mod's page and settings",
+  "tipApply": "reloads plugins to apply the changes",
   "stateOn": "On",
   "stateOff": "Off",
   "pageHint": "Click a setting to change it {sep} The mod reloads",
@@ -52,5 +59,6 @@ export default {
   "refuseSelf": "the manager cannot disable itself",
   "refuseUnreadable": "cannot read settings.json",
   "refuseInvalid": "settings.json is not valid JSON, left untouched",
-  "refuseOtherSettings": "write would change other settings, refused"
+  "refuseOtherSettings": "write would change other settings, refused",
+  "tipToast": {"label":"Dismiss","text":"hides this message"}
 }
