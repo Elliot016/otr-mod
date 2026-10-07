@@ -154,9 +154,17 @@ Each finished turn folds to one line; open it to see every step, or copy a reply
 
 The model and its effort level, one click to change.
 
-| Effort pill and its settings |
-| --- |
-| ![][img-model-effort] |
+| Effort on hover, models on click | The model panel |
+| --- | --- |
+| [![][gif-model-effort-pick]][video-model-effort-pick] | ![][img-model-effort-panel] |
+
+### mod-heads-up
+
+Now and then, one thing you should know; every note stays in its panel.
+
+| The panel and a note opened | Card | Note |
+| --- | --- | --- |
+| [![][gif-heads-up-panel]][video-heads-up-panel] | ![][img-heads-up-card] | ![][img-heads-up-note] |
 
 ### mod-blast-radius
 
@@ -294,8 +302,10 @@ sequenceDiagram
 <!-- showcase-links:start -->
 [gif-blast-radius-hold]: showcase/gif/blast-radius-hold.gif
 [gif-file-tree-live]: showcase/gif/file-tree-live.gif
+[gif-heads-up-panel]: showcase/gif/heads-up-panel.gif
 [gif-manager-hover-and-icons]: showcase/gif/manager-hover-and-icons.gif
 [gif-menu-hover]: showcase/gif/menu-hover.gif
+[gif-model-effort-pick]: showcase/gif/model-effort-pick.gif
 [gif-next-steps-keys]: showcase/gif/next-steps-keys.gif
 [gif-prompts-pick]: showcase/gif/prompts-pick.gif
 [gif-skill-panel-and-settings]: showcase/gif/skill-panel-and-settings.gif
@@ -306,10 +316,12 @@ sequenceDiagram
 [img-blast-radius-details]: showcase/blast-radius-details.png
 [img-collision-guard]: showcase/collision-guard.png
 [img-file-tree-panel]: showcase/file-tree-panel.png
+[img-heads-up-card]: showcase/heads-up-card.png
+[img-heads-up-note]: showcase/heads-up-note.png
 [img-manager-icons-auto]: showcase/manager-icons-auto.png
 [img-manager-icons-plain]: showcase/manager-icons-plain.png
 [img-menu-band]: showcase/menu-band.png
-[img-model-effort]: showcase/model-effort.png
+[img-model-effort-panel]: showcase/model-effort-panel.png
 [img-next-steps]: showcase/next-steps.png
 [img-skill-panel-settings]: showcase/skill-panel-settings.png
 [img-skill-panel]: showcase/skill-panel.png
@@ -321,8 +333,10 @@ sequenceDiagram
 
 [video-blast-radius-hold]: showcase/blast-radius-hold.mp4
 [video-file-tree-live]: showcase/file-tree-live.mp4
+[video-heads-up-panel]: showcase/heads-up-panel.mp4
 [video-manager-hover-and-icons]: showcase/manager-hover-and-icons.mp4
 [video-menu-hover]: showcase/menu-hover.mp4
+[video-model-effort-pick]: showcase/model-effort-pick.mp4
 [video-next-steps-keys]: showcase/next-steps-keys.mp4
 [video-prompts-pick]: showcase/prompts-pick.mp4
 [video-skill-panel-and-settings]: showcase/skill-panel-and-settings.mp4
