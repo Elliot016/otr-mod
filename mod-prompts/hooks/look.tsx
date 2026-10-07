@@ -1,4 +1,4 @@
-// Shared look, see mod-builder/references/standard.md. Master in templates/cli-mod; copy unchanged into every mod that draws a pane or a pill.
+// Shared look; every mod carries the same copy.
 import type { RenderElement } from 'claude-code'
 
 import style from './style'

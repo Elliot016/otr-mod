@@ -1,4 +1,4 @@
-// Shared mod theme, see mod-builder/references/standard.md. Copy unchanged; edit the template first. Colors, marks and glyphs live in style.ts.
+// Shared mod theme; every mod carries the same copy. Colors, marks and glyphs live in style.ts.
 import style from './style'
 
 export const THEME = style.colors.theme

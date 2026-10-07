@@ -215,7 +215,7 @@ Pick what carries over, then hand off or compact. Played at double speed.
 | Goal | How |
 | --- | --- |
 | Install from GitHub | `claude plugin marketplace add v-amorim/moonlight-claude-mods`, then `claude plugin install <name>@claude-mods` |
-| Try one mod in one session | `claude --plugin-dir ~/.claude/mods/<name>` |
+| Try one mod in one session | `claude --plugin-dir <clone>/<name>` |
 | Load them every session | Add each folder to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `;` on Windows and `:` elsewhere |
 | Apply changes in an open session | `/reload-plugins` |
 | Turn one off, or change its settings | The gear pill, or `/mod-<name> settings` |
@@ -228,10 +228,10 @@ Pick what carries over, then hand off or compact. Played at double speed.
 <details>
 <summary>Make a new mod</summary>
 
-1. Copy an existing mod's folder to `~/.claude/mods/<name>` and rename it in `plugin.json` and its test.
-2. Check it with `claude plugin validate ~/.claude/mods/<name>`.
-3. Test it with `claude plugin test ~/.claude/mods/<name>`.
-4. Try it with `--plugin-dir`, then add it to `CLAUDE_CODE_PLUGIN_DIRS`.
+1. Clone the repo, then copy an existing mod's folder to `<clone>/<name>` and rename it in `plugin.json` and its test.
+2. Check it with `claude plugin validate <clone>/<name>`.
+3. Test it with `claude plugin test <clone>/<name>`.
+4. Try it with `claude --plugin-dir <clone>/<name>`, then add its folder to `CLAUDE_CODE_PLUGIN_DIRS`.
 
 Each mod's folder:
 

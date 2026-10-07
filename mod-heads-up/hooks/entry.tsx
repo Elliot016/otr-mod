@@ -1,4 +1,4 @@
-// Shared pill entry, see mod-builder/references/standard.md. Master in mod-menu; copy unchanged into every mod that draws a menu entry.
+// Shared pill entry. Master in mod-menu; copy unchanged into every mod that draws a menu entry.
 import type { ClientModule, ClientSurface } from 'claude-code'
 
 import style from './style'

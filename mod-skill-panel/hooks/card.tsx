@@ -1,4 +1,4 @@
-// Shared sticky card, see mod-builder/references/standard.md. Copy unchanged into every mod whose pane has a card.
+// Shared sticky card. Copy unchanged into every mod whose pane has a card.
 import type { RenderElement } from 'claude-code'
 
 import { THEME } from './theme'

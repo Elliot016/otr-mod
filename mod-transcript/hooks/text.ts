@@ -1,4 +1,4 @@
-// Every string this mod shows, see mod-builder/references/standard.md. Edit the values to reword or translate; keep the keys and the {slots}.
+// Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "commandDescription": "Fold or unfold every finished turn; `settings` opens its settings panel, `debug` writes the drawn row ids to %TEMP%",
   "panePlacedTitle": "mod-transcript",

@@ -1,4 +1,4 @@
-// Every string this mod shows, see mod-builder/references/standard.md. Edit the values to reword or translate; keep the keys and the {slots}.
+// Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "sendFirst": "mod-model-effort: send a message first, so the meter knows the model",
   "settingsNotJson": "mod-model-effort: {mark} settings.json left untouched, it is not valid JSON",

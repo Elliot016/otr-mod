@@ -1,4 +1,4 @@
-// Shared pill row, see mod-builder/references/standard.md. Copy unchanged into every mod that draws in the row.
+// Shared pill row. Copy unchanged into every mod that draws in the row.
 import type { RenderElement } from 'claude-code'
 
 import { mix, type EntryProps, type Tip } from './entry'

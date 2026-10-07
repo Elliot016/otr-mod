@@ -1,4 +1,4 @@
-// Shared settings body, see mod-builder/references/standard.md. Master in templates/cli-mod; copy unchanged into every mod with settings or actions.
+// Shared settings body; every mod carries the same copy.
 import type { ConfigRow, ConfigValue, RenderElement } from 'claude-code'
 
 import type { EntryProps, Tip } from './entry'

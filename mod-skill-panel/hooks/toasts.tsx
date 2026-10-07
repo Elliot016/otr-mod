@@ -1,4 +1,4 @@
-// Shared toast cards, see mod-builder/references/recipes.md. Master in mod-menu; copy unchanged into every mod that toasts.
+// Shared toast cards. Master in mod-menu; copy unchanged into every mod that toasts.
 import type { RenderElement } from 'claude-code'
 
 import type { Tip } from './entry'
