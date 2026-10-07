@@ -39,6 +39,9 @@ const thoughtAfter = (pending: string | undefined, block: any) => {
   return pending
 }
 
+// Claude Code draws a prompt once under this id as it is sent, then again under its own uuid; only the second is a turn.
+const PLACEHOLDER = 'placeholder'
+
 const WRAPPER = /^<(command-|local-command-|bash-|system-reminder|task-notification|user-prompt-submit-hook)/
 const INTERRUPTED = /^\[Request interrupted by user/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -188,6 +191,7 @@ export class TurnLog {
   claim(requestId: string, kind: 'prompt' | 'reply' | 'row', at = Date.now(), isReport = false) {
     if (this.turnOf(requestId) || this.turnAt(requestId)) return
     if (kind === 'prompt') {
+      if (requestId === PLACEHOLDER) return
       this.start(requestId, at, isReport)
       return
     }
@@ -297,7 +301,7 @@ export class TurnLog {
 
   // A prompt or text row drawn before the transcript was read joins the guessed turn whose text it carries.
   adopt(requestId: string, kind: 'prompt' | 'text', rowText: string) {
-    if (this.turnOf(requestId) || this.turnAt(requestId)) return
+    if (this.turnOf(requestId) || this.turnAt(requestId) || (kind === 'prompt' && requestId === PLACEHOLDER)) return
     const textOf = rowText.trim()
     const order = [...this.turns.keys()]
     for (const n of [...order.slice(this.cursor), ...order.slice(0, this.cursor)]) {

@@ -873,3 +873,21 @@ test('pointing at the number shows its tip in the band tip row, and leaving clea
   await first.pointer({ in: 'toggle-prompt-number', type: 'leave', button: 'left', x: 1, y: 1 })
   expect(await tip()).toBeUndefined()
 })
+
+test('in a fresh session the first prompt is #1 although Claude Code draws it first under a placeholder id', () => {
+  const log = new TurnLog()
+  log.claim('placeholder', 'prompt')
+  log.claim(ID(1), 'prompt')
+  log.claim('placeholder', 'prompt')
+  expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1])
+  log.claim('placeholder', 'prompt')
+  log.claim(ID(3), 'prompt')
+  expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1, 2])
+})
+
+test('a guessed prompt is not adopted by the placeholder row', () => {
+  const log = TurnLog.fromMessages([{ role: 'user', text: 'first', toolUses: [] }])
+  log.adopt('placeholder', 'prompt', 'first')
+  log.adopt(ID(1), 'prompt', 'first')
+  expect(log.turns.map(turn => turn.prompt)).toEqual([ID(1)])
+})
