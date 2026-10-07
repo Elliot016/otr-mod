@@ -103,9 +103,11 @@ export function modelInfo(model: string | undefined) {
   return { name: version ? `${label} ${version[1]}${version[2] ? `.${version[2]}` : ''}` : label, family, hue: HUES[family]! }
 }
 
-export function windowFor(model: string | undefined, mainModel: string | undefined, mainWindow: number | undefined) {
+// A request never exceeds its window, so context past the default proves the 1M window; a 1M main session gives its agents 1M too.
+export function windowFor(model: string | undefined, mainModel: string | undefined, mainWindow: number | undefined, context = 0) {
   if (mainWindow && model === mainModel) return mainWindow
-  return model?.includes('[1m]') ? marks.windows.oneMillion : marks.windows.default
+  const isLong = model?.includes('[1m]') || context > marks.windows.default || (mainWindow ?? 0) >= marks.windows.oneMillion
+  return isLong ? marks.windows.oneMillion : marks.windows.default
 }
 
 export const gaugeColor = (percent: number) => {
@@ -201,7 +203,7 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
       model: loop.model ?? '',
       hue: modelInfo(loop.model).hue,
       effort: loop.effort,
-      percent: percent(loop, windowFor(loop.model, model, usage?.window)),
+      percent: percent(loop, windowFor(loop.model, model, usage?.window, loop.context)),
       tokens: loop.tokens,
       elapsed: loop.spawnedAt === undefined ? '' : formatElapsed((loop.endedAt ?? now) - loop.spawnedAt),
       gates: own ?? [],

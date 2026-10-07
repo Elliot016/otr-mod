@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gaugeColor, isGatesPath, modelInfo, parseGates, settle, type Snap } from '../hooks/progress'
+import { applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gaugeColor, windowFor, isGatesPath, modelInfo, parseGates, settle, type Snap } from '../hooks/progress'
 
 const GATES = [
   '# Gates: leaf',
@@ -87,6 +87,14 @@ test('an agent pairs with its gates file by name, or by the first word of its de
   expect(gatesOf(snap, { description: 'leaf-1.1.1: check the cart totals' })).toBe(one)
   expect(gatesOf(snap, { description: 'leaf-1.1.1 check the cart totals' })).toBe(one)
   expect(gatesOf(snap, { description: 'Check the cart totals' })).toBeUndefined()
+})
+
+test('a subagent window: the main one for the same model, 1M once its context passes 200k or the main session runs 1M', () => {
+  expect(windowFor('opus', 'opus', 1000000)).toBe(1000000)
+  expect(windowFor('sonnet', 'opus', 200000, 150000)).toBe(200000)
+  expect(windowFor('sonnet', 'opus', 200000, 250000)).toBe(1000000)
+  expect(windowFor('sonnet', 'opus', 1000000, 50000)).toBe(1000000)
+  expect(windowFor('sonnet[1m]', 'opus', 200000)).toBe(1000000)
 })
 
 test('figures: model names, context colors, tokens and time', () => {
