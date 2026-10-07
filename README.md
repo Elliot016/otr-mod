@@ -86,6 +86,10 @@ block-beta
 
 ## See them
 
+[![The claude-mods reel: twelve mods in one Claude Code session](showcase/claude-mods.png)](showcase/claude-mods.mp4)
+
+All twelve in one minute: click the image to play the reel.
+
 <!-- showcase:start -->
 
 Click a GIF to open its full video.
