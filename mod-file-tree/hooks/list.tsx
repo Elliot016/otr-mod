@@ -1,6 +1,6 @@
 import type { ClientModule } from 'claude-code'
 
-import { HOVER_STEPS, hoverMix, mix, shimmerColor, stepToward, TICK_MS } from './entry'
+import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, mix, postTip, shimmerColor, stepToward, TICK_MS } from './entry'
 import { CAPS, THEME } from './theme'
 
 // live: Claude is on this file right now; added, changed and read set the name's color.
@@ -25,12 +25,16 @@ export type Row = {
   endMark: string
   // The open mark's color: a folder's differs from a file's arrow.
   endColor: string
+  // What the footer says while the pointer is on the row text, and on the end mark.
+  tip: string
+  tipLabel: string
+  openTip: string
 }
 
 // offset is the first row's index in the whole tree: a long tree draws as several lists.
 // still: the animations setting is off: no shimmer, no glow, and the hover switches at once.
 // nerd: the font has the rounded caps the live word's pill uses. width: every row's cells, the open mark in the last.
-export type ListProps = { rows: Row[]; offset?: number; still?: boolean; nerd?: boolean; width: number }
+export type ListProps = { rows: Row[]; offset?: number; still?: boolean; nerd?: boolean; width: number; glyph: string; openLabel: string }
 
 export type ListMessage = { type: 'select' | 'open'; index: number }
 
@@ -48,7 +52,7 @@ const countsPill = (Text: (props: any) => unknown, add: number, del: number, ner
 }
 
 // levels: each row's hover fade, kept only while it is above 0.
-type State = { hovered: number; phase: number; levels: Record<number, number> }
+type State = { hovered: number; phase: number; levels: Record<number, number>; onMark?: boolean }
 
 // Moonlight surface-3: the row Claude is on stands out from the tree's surface-1 as a band.
 const LIVE_BG = THEME.surface3
@@ -112,17 +116,26 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
       const shown = latest.get(surface)?.rows ?? []
       const now = Date.now()
       // A glow keeps the ticker one step past its end, so the row's last frame is its own colors.
-      const isMoving = shown.some(row => row.tone === 'live' || (row.changedAt !== undefined && now - row.changedAt < GLOW_MS + TICK_MS * 2)) || isFading(state?.levels ?? {}, state?.hovered ?? -1)
-      if (state && isMoving && !latest.get(surface)?.still) surface.setState({ ...state, phase: state.phase + 1, levels: fadeLevels(state.levels ?? {}, state.hovered) })
+      const isMoving = shown.some(row => row.tone === 'live' || (row.changedAt !== undefined && now - row.changedAt < GLOW_MS + TICK_MS * 2))
+      if (state && isMoving && !latest.get(surface)?.still) surface.setState({ ...state, phase: state.phase + 1 })
+    })
+    // The hover fade runs on its own, faster timer.
+    surface.every(HOVER_TICK_MS, () => {
+      const state = surface.state
+      if (state && !latest.get(surface)?.still && isFading(state.levels ?? {}, state.hovered)) surface.setState({ ...state, levels: fadeLevels(state.levels ?? {}, state.hovered) })
     })
   }
 
   surface.onPointer(event => {
     const row = event.type !== 'leave' && event.y >= 0 && event.y < rows.length ? event.y : -1
     const next = props.still ? (row >= 0 ? { [row]: HOVER_STEPS } : {}) : fadeLevels(levels, row)
-    if (row !== hovered) surface.setState({ hovered: row, phase, levels: next })
-    if (event.type !== 'down' || event.button !== 'left' || row < 0) return
-    const isOpenMark = rows[row]!.endMark !== '' && event.x >= props.width - OPEN_CELLS
+    const isOpenMark = row >= 0 && rows[row]!.endMark !== '' && event.x >= props.width - OPEN_CELLS
+    const isClick = event.type === 'down' && event.button === 'left' && row >= 0
+    if (row !== hovered || isOpenMark !== (surface.state?.onMark === true)) {
+      surface.setState({ hovered: row, phase, levels: row !== hovered ? next : levels, onMark: isOpenMark })
+      if (!isClick) postTip(surface, 'row', row >= 0 ? { glyph: props.glyph, label: isOpenMark ? props.openLabel : rows[row]!.tipLabel, text: isOpenMark ? rows[row]!.openTip : rows[row]!.tip } : null)
+    }
+    if (!isClick) return
     surface.post({ type: isOpenMark ? 'open' : 'select', index: (props.offset ?? 0) + row } satisfies ListMessage)
   })
 

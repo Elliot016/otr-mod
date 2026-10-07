@@ -1,8 +1,8 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { NAME_COLOR, OPEN_CELLS, type ListMessage, type Row as ListRow } from './list'
-import { heading, isNerdFace, lookFor, section, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
-import { mix, type EntryMessage, type EntryProps } from './entry'
+import { FOOTER_ROWS, heading, isNerdFace, lookFor, section, paneFooter, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
+import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -352,6 +352,9 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
       pad: width - used - shown.length,
       endMark: row.isDir ? glyphs.glyph.reveal : MARK.open,
       endColor: row.isDir ? THEME.folder : THEME.accent,
+      tip: row.isDir ? text.folderRowTip : entry?.kind === 'read' ? text.readRowTip : text.fileRowTip,
+      tipLabel: row.isDir ? text.folderRowLabel : entry?.kind === 'read' ? text.readRowLabel : text.fileRowLabel,
+      openTip: row.isDir ? text.openFolderTip : text.openFileTip,
       ...(done ? { changedAt: done.at } : {}),
     }
   })
@@ -359,6 +362,10 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
 
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
+// The control under the pointer in the pane, which the footer describes.
+let hoveredTip: Tip | null = null
+// The toast × under the pointer, shown in the band's tip row.
+let toastTip = ''
 
 const toasts = new ToastList('filetree')
 // The animations setting, fixed per activation: off, every entry draws still.
@@ -398,8 +405,8 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
 
 // The panel's title line: the files and their settings as tabs, the shown one open.
 const tabs = (isSettings: boolean, touched: number) => [
-  { id: 'filetree-tab', label: text.pill, icon: look.glyph.icon.files ?? look.glyph.title, isOpen: !isSettings, ...(isSettings ? {} : { count: touched }) },
-  { id: 'filetree-settings', label: text.settingsLabel, icon: look.glyph.gear, isOpen: isSettings },
+  { id: 'filetree-tab', label: text.pill, icon: look.glyph.icon.files ?? look.glyph.title, isOpen: !isSettings, ...(isSettings ? {} : { count: touched }), tip: { glyph: look.glyph.icon.files ?? look.glyph.title, label: text.pill, text: text.filesTabTip } },
+  { id: 'filetree-settings', label: text.settingsLabel, icon: look.glyph.gear, isOpen: isSettings, tip: { glyph: look.glyph.gear, label: text.settingsLabel, text: text.settingsTabTip } },
 ]
 
 export const register: Register = (on, options) => {
@@ -546,7 +553,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-filetree" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
+      return <Box key="toasts-filetree" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
     }
 
     const { Box, Client, Text } = $.ui.resolve(e)
@@ -555,9 +562,9 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($, PANE)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'filetree', { label: text.pill, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
+    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'filetree', { label: text.pill, icon: look.glyph.icon.files ?? text.pillShort, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still }, e.props.bodyColumns)
 
-    return pillRow({ Box, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look), ...rest], tipShown ? tipLine({ Box, Text }, text.pillTip) : tip)
+    return pillRow({ Box, Client, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -565,6 +572,14 @@ export const register: Register = (on, options) => {
     const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
     if (dismissed !== undefined) {
       toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
+    if (isTipMessage(e.data)) {
+      const { id, glyph, label, text: tipText } = e.data
+      const isToast = Boolean(id?.startsWith('toast-filetree-'))
+      toastTip = isToast ? `${label}: ${tipText}` : ''
+      hoveredTip = !isToast && id && glyph !== undefined && label && tipText ? { glyph, label, text: tipText } : null
       $.ui.invalidate('ui.render')
       return next(e)
     }
@@ -641,6 +656,8 @@ export const register: Register = (on, options) => {
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true, 0), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, still })}</Box>
+          <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+          {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
     }
@@ -662,11 +679,11 @@ export const register: Register = (on, options) => {
     // A Nerd icon as a subpill before the label; safe mode has none, so the prop stays out.
     const iconLead = (name: string, color: string) => (look.glyph.icon[name] ? { subLead: look.glyph.icon[name], subLeadColor: color } : {})
     // A switch is a choice bar, as on a settings page: the options on one surface-2 pill, the chosen one on its own surface-3 pill.
-    const choiceBar = (key: string, options: { id: string; label: string; isOn: boolean; icon?: string }[]) =>
+    const choiceBar = (key: string, options: { id: string; label: string; isOn: boolean; icon?: string; tip: string }[]) =>
       pill({ Box, Text }, look.nerd, THEME.surface2, (
         <Box key={`${key}-options`} flexDirection="row" backgroundColor={THEME.surface2}>
           {options.map(option => {
-            const lead = option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}
+            const lead = { ...(option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}), tip: { glyph: look.glyph.icon[option.icon ?? ''] ?? look.glyph.title, label: option.label, text: option.tip } }
             return option.isOn
               ? pill({ Box, Text }, look.nerd, THEME.surface3, entry(option.id, option.label, true, THEME.surface3, { idle: THEME.muted, ...lead }), `${option.id}-chosen`, THEME.surface2)
               : entry(option.id, option.label, false, THEME.surface2, lead)
@@ -682,7 +699,7 @@ export const register: Register = (on, options) => {
         : (
             <Box key="lists" flexDirection="column">
               {chunksOf(listRows(current, rows, look, width)).map((chunk, n) => (
-                <Client key={`list-${n}`} module="./list.tsx" height={chunk.length} props={{ rows: chunk, offset: n * LIST_CHUNK, still, nerd: look.nerd, width }} />
+                <Client key={`list-${n}`} module="./list.tsx" height={chunk.length} props={{ rows: chunk, offset: n * LIST_CHUNK, still, nerd: look.nerd, width, glyph: look.glyph.icon.files ?? look.glyph.title, openLabel: text.openLabel }} />
               ))}
             </Box>
           )
@@ -722,9 +739,9 @@ export const register: Register = (on, options) => {
     const arrow = { color: THEME.accent, bg: mix(THEME.accent, THEME.surface3, LEGEND_WASH) }
     const replayNav = step ? (
       <Box key="replay-nav" flexDirection="row" columnGap={1}>
-        {pill({ Box, Text }, look.nerd, THEME.surface3, entry('replay-prev', text.prev, at > 0, THEME.surface3, { subLead: glyph.back, subLeadColor: THEME.accent }), 'replay-prev-pill', THEME.surface1)}
+        {pill({ Box, Text }, look.nerd, THEME.surface3, entry('replay-prev', text.prev, at > 0, THEME.surface3, { subLead: glyph.back, subLeadColor: THEME.accent, tip: { glyph: glyph.back, label: text.prev, text: text.prevTip } }), 'replay-prev-pill', THEME.surface1)}
         <Text color={THEME.onSurface} bold>{fill(text.stepOf, { at: at + 1, total: steps.length })}</Text>
-        {pill({ Box, Text }, look.nerd, THEME.surface3, entry('replay-next', text.next, at < steps.length - 1, THEME.surface3, { badge: { text: glyph.title, ...arrow }, nerd: look.nerd }), 'replay-next-pill', THEME.surface1)}
+        {pill({ Box, Text }, look.nerd, THEME.surface3, entry('replay-next', text.next, at < steps.length - 1, THEME.surface3, { badge: { text: glyph.title, ...arrow }, nerd: look.nerd, tip: { glyph: glyph.title, label: text.next, text: text.nextTip } }), 'replay-next-pill', THEME.surface1)}
       </Box>
     ) : null
     const replayTitle = fill(text.replayHeading, { sep: MARK.sep, n: steps.length, unit: steps.length === 1 ? text.editOne : text.editMany })
@@ -750,14 +767,14 @@ export const register: Register = (on, options) => {
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || hint}</Text>
         <Box key="tabs" flexDirection="row" columnGap={1} marginTop={1}>
           {choiceBar('view', [
-            { id: 'tab-tree', label: text.tabTree, isOn: mode === 'tree', icon: 'files' },
-            { id: 'tab-replay', label: text.tabReplay, isOn: mode === 'replay', icon: 'replay' },
+            { id: 'tab-tree', label: text.tabTree, isOn: mode === 'tree', icon: 'files', tip: text.tabTreeTip },
+            { id: 'tab-replay', label: text.tabReplay, isOn: mode === 'replay', icon: 'replay', tip: text.tabReplayTip },
           ])}
           {mode === 'tree'
             ? choiceBar('scope', [
-                { id: 'scope-turn', label: text.scopeTurn, isOn: scope === 'turn' },
-                { id: 'scope-recent', label: fill(text.scopeRecent, { n: recentTurns }), isOn: scope === 'recent' },
-                { id: 'scope-session', label: text.scopeSession, isOn: scope === 'session' },
+                { id: 'scope-turn', label: text.scopeTurn, isOn: scope === 'turn', tip: text.scopeTurnTip },
+                { id: 'scope-recent', label: fill(text.scopeRecent, { n: recentTurns }), isOn: scope === 'recent', tip: text.scopeRecentTip },
+                { id: 'scope-session', label: text.scopeSession, isOn: scope === 'session', tip: text.scopeSessionTip },
               ])
             : null}
         </Box>
@@ -773,10 +790,12 @@ export const register: Register = (on, options) => {
               )}
               <Box key="legend-gap" flexGrow={1} />
               {/* The session's own folder opens from a pill at the footer's right end, with the folder rows' mark. */}
-              {pill({ Box, Text }, look.nerd, THEME.surface3, entry('session-reveal', text.sessionFolder, false, THEME.surface3, { subLead: look.glyph.icon.folder ?? look.glyph.reveal, subLeadColor: THEME.folder }), 'session-reveal-pill', THEME.bg)}
+              {pill({ Box, Text }, look.nerd, THEME.surface3, entry('session-reveal', text.sessionFolder, false, THEME.surface3, { subLead: look.glyph.icon.folder ?? look.glyph.reveal, subLeadColor: THEME.folder, tip: { glyph: look.glyph.icon.folder ?? look.glyph.reveal, label: text.sessionFolder, text: text.sessionFolderTip } }), 'session-reveal-pill', THEME.bg)}
             </Box>
           </Box>
         ) : null}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
   })

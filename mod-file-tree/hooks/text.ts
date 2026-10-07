@@ -1,6 +1,7 @@
 // Every string this mod shows, see mod-builder/references/standard.md. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "pill": "Files",
+  "pillShort": "Files",
   "working": "· Working",
   "pillTip": "Files: what Claude read and changed, with a replay of each edit",
   "commandDescription": "Open the files sidebar: a tree of the files Claude touched and a replay of its last edits; `settings` opens its settings panel",
@@ -26,6 +27,25 @@ export default {
   "hintReplay": "Prev and Next step through the edits {sep} a file jumps here",
   "treeEmpty": "No files touched yet. Reads and edits show up here as Claude works.",
   "replayEmpty": "No edits yet. Each edit Claude makes in a turn can be stepped through here.",
+  "filesTabTip": "shows the touched files",
+  "settingsTabTip": "opens this mod's settings",
+  "tabTreeTip": "shows the files as a tree",
+  "tabReplayTip": "steps through the edits of a turn",
+  "scopeTurnTip": "files from the latest turn only",
+  "scopeRecentTip": "files from the last few turns",
+  "scopeSessionTip": "files from the whole session",
+  "prevTip": "goes to the previous edit",
+  "nextTip": "goes to the next edit",
+  "sessionFolderTip": "opens the session folder",
+  "folderRowLabel": "Fold",
+  "folderRowTip": "folds or unfolds this folder",
+  "fileRowLabel": "Replay",
+  "fileRowTip": "replays the edits on this file",
+  "readRowLabel": "Read only",
+  "readRowTip": "only read, nothing to replay",
+  "openLabel": "Open",
+  "openFileTip": "opens this file in VS Code",
+  "openFolderTip": "opens it in the file manager",
   "tabTree": "Tree",
   "tabReplay": "Replay",
   "scopeTurn": "This turn",
@@ -59,5 +79,6 @@ export default {
     "deleted": "deleted",
     "shell": "shell",
     "shellNoDiff": "shell, no diff kept"
-  }
+  },
+  "tipToast": {"label":"Dismiss","text":"hides this message"}
 }

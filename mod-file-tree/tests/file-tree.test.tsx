@@ -197,6 +197,27 @@ test("a file row ends in the open mark; a click on it opens the file instead of 
   await ui.unmount()
 })
 
+test('a hovered row, end mark, bar option or tab puts its tip in the pane footer, and leaving clears it', async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/a.ts', old_string: 'x', new_string: 'y' } as never)
+  const ui = await $.ui.mount(PANE)
+  const footer = (tip: string) => ui.find({ type: 'Text', text: ` · ${tip}` })
+  await ui.pointer({ in: 'list-0', type: 'move', x: 4, y: 0 })
+  expect(await footer('replays the edits on this file')).toBeDefined()
+  await ui.pointer({ in: 'list-0', type: 'move', x: 65, y: 0 })
+  expect(await footer('opens this file in VS Code')).toBeDefined()
+  await ui.pointer({ in: 'list-0', type: 'move', x: 4, y: 1 })
+  expect(await footer('only read, nothing to replay')).toBeDefined()
+  await ui.pointer({ in: 'list-0', type: 'leave', x: 0, y: 0 })
+  expect(await footer('only read, nothing to replay')).toBeUndefined()
+  await ui.pointer({ in: 'scope-session', type: 'move', x: 1, y: 0 })
+  expect(await footer('files from the whole session')).toBeDefined()
+  await ui.pointer({ in: 'filetree-settings', type: 'move', x: 1, y: 0 })
+  expect(await footer('opens this mod\x27s settings')).toBeDefined()
+  await ui.unmount()
+})
+
 test('a folder row and the footer open their folder in the file manager; a failed start says why', async ($, on) => {
   stubs(on)
   const ran = launches(on)
@@ -330,7 +351,7 @@ test('the Files pill opens the pane from the band', async ($, on) => {
     component: 'AbovePrompt',
     props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} },
   } as never)
-  expect(JSON.stringify(await band.drawn({ in: 'menu-entry-filetree' }))).toContain(' Files ')
+  expect(JSON.stringify(await band.drawn({ in: 'menu-entry-filetree' }))).toContain('Files')
   await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-filetree' } as never)
   expect(opened).toContain('filetree')
   await band.unmount()
