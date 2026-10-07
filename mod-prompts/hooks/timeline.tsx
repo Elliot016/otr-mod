@@ -1,12 +1,13 @@
 import type { ClientModule } from 'claude-code'
 
+import { postTip } from './entry'
 import { THEME } from './theme'
 
-// time is the clock time the prompt was sent, empty when the transcript has none; index is its place in the whole list.
-export type Stop = { index: number; time: string; text: string }
+// time is the clock time the prompt was sent, empty when the transcript has none; index is its place in the whole list; label and tip fill the pane footer.
+export type Stop = { index: number; time: string; text: string; label: string; tip: string }
 
 // railFirst: the stops follow the open prompt's details, so a rail line comes before each one instead of after.
-export type TimelineProps = { stops: Stop[]; selected: number; railFirst: boolean; dot: string; openDot: string; rail: string }
+export type TimelineProps = { stops: Stop[]; selected: number; railFirst: boolean; glyph: string; dot: string; openDot: string; rail: string }
 
 export type TimelineMessage = { type: 'select'; index: number }
 
@@ -19,7 +20,7 @@ export const timelineRows = (count: number, railFirst: boolean) => (railFirst ? 
 // Prompts as stops on a rail: time, a dot, the text. A click opens one; the stop under the pointer lights up.
 const Timeline: ClientModule<TimelineProps, number> = (props, surface) => {
   const { Box, Text } = surface.elements
-  const { stops, selected, railFirst, dot, openDot, rail } = props
+  const { stops, selected, railFirst, glyph, dot, openDot, rail } = props
   const hovered = surface.state ?? -1
   // Stops sit on even rows (odd when the rail comes first); the rest are rail lines.
   const at = (y: number) => (railFirst ? (y % 2 === 1 ? stops[(y - 1) / 2] : undefined) : y % 2 === 0 ? stops[y / 2] : undefined)
@@ -27,8 +28,12 @@ const Timeline: ClientModule<TimelineProps, number> = (props, surface) => {
   surface.onPointer(event => {
     const stop = event.type === 'leave' ? undefined : at(event.y)
     const index = stop?.index ?? -1
-    if (index !== hovered) surface.setState(index)
-    if (event.type === 'down' && event.button === 'left' && index >= 0) surface.post({ type: 'select', index } satisfies TimelineMessage)
+    const isClick = event.type === 'down' && event.button === 'left' && index >= 0
+    if (index !== hovered) {
+      surface.setState(index)
+      if (!isClick) postTip(surface, 'stop', stop ? { glyph, label: stop.label, text: stop.tip } : null)
+    }
+    if (isClick) surface.post({ type: 'select', index } satisfies TimelineMessage)
   })
 
   const railLine = (key: string) => (

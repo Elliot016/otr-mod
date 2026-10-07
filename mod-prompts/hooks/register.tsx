@@ -1,8 +1,8 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { cardSpace, stickyCard } from './card'
-import type { EntryMessage, EntryProps } from './entry'
-import { isNerdFace, lookFor, section, subpill, terminalSettings, withMark, type IconMode } from './look'
+import { isTipMessage, type EntryMessage, type EntryProps, type Tip } from './entry'
+import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, section, subpill, terminalSettings, withMark, type IconMode } from './look'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -142,8 +142,8 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
 
 // The panel's title line: the list and its settings as tabs, the shown one open.
 const tabs = (isSettings: boolean) => [
-  { id: 'prompts-tab', label: text.paneTitle, icon: look.glyph.icon.prompt ?? look.glyph.title, isOpen: !isSettings, count: prompts.length },
-  { id: 'prompts-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: isSettings },
+  { id: 'prompts-tab', label: text.paneTitle, icon: look.glyph.icon.prompt ?? look.glyph.title, isOpen: !isSettings, count: prompts.length, tip: { glyph: look.glyph.icon.prompt ?? look.glyph.title, label: text.paneTitle, text: text.promptsTabTip } },
+  { id: 'prompts-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: isSettings, tip: { glyph: look.glyph.gear, label: text.settingsTab, text: text.settingsTabTip } },
 ]
 
 // When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
@@ -211,6 +211,10 @@ const clock = (at?: string) => {
 
 // True while the pointer is on this mod's pill entry, which then shows its tip above the row.
 let tipShown = false
+// The control under the pointer in the pane, which the footer describes.
+let hoveredTip: Tip | null = null
+// The toast × under the pointer, shown in the band's tip row.
+let toastTip = ''
 
 const toasts = new ToastList('prompts')
 // The animations setting, fixed per activation: off, every entry draws still.
@@ -339,7 +343,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-prompts" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
+      return <Box key="toasts-prompts" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
     }
     const nerd = look.nerd
 
@@ -349,9 +353,9 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'prompts', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'prompts', { label: text.pillLabel, icon: look.glyph.icon.prompt ?? text.pillShort, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still }, e.props.bodyColumns)
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look), ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
+    return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.tip) : tip, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -359,6 +363,14 @@ export const register: Register = (on, options) => {
     const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
     if (dismissed !== undefined) {
       toasts.drop(dismissed)
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
+    if (isTipMessage(e.data)) {
+      const { id, glyph, label, text: tipText } = e.data
+      const isToast = Boolean(id?.startsWith('toast-prompts-'))
+      toastTip = isToast ? `${label}: ${tipText}` : ''
+      hoveredTip = !isToast && id && glyph !== undefined && label && tipText ? { glyph, label, text: tipText } : null
       $.ui.invalidate('ui.render')
       return next(e)
     }
@@ -407,6 +419,8 @@ export const register: Register = (on, options) => {
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
     }
@@ -417,7 +431,7 @@ export const register: Register = (on, options) => {
     // Pane padding, the section's border and padding, the gutter and the dot.
     const width = Math.max(10, e.props.bodyColumns - 2 - 4 - GUTTER - 2)
     const current = prompts[selected]
-    const stops = prompts.map((prompt, index) => ({ index, time: clock(prompt.at), text: oneLine(prompt.text, width) }))
+    const stops = prompts.map((prompt, index) => ({ index, time: clock(prompt.at), text: oneLine(prompt.text, width), label: fill(text.stopLabel, { n: index + 1 }), tip: text.stopTip }))
     const marks = { dot: MARK.stop, openDot: MARK.stopOpen, rail: MARK.rail }
     pageCount = Math.max(1, Math.ceil(stops.length / PAGE_SIZE))
     const shownPage = Math.min(pageCount - 1, page < 0 ? Math.floor(Math.max(0, selected) / PAGE_SIZE) : page)
@@ -426,15 +440,15 @@ export const register: Register = (on, options) => {
     const hasOpen = selected >= first && selected < first + PAGE_SIZE
     const before = hasOpen ? onPage.filter(stop => stop.index <= selected) : onPage
     const after = hasOpen ? onPage.filter(stop => stop.index > selected) : []
-    const pager = (id: string, label: string) => (
-      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: false, bg: THEME.surface3, idle: THEME.secondary, still } satisfies EntryProps} />
+    const pager = (id: string, label: string, tip: string) => (
+      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: false, bg: THEME.surface3, idle: THEME.secondary, still, tip: { glyph: look.glyph.icon.prompt ?? look.glyph.title, label, text: tip } } satisfies EntryProps} />
     )
     // The engine caps how large one Client's tree may serialize, so a long session's stops spread over several Clients.
     const timeline = (key: string, list: typeof stops, railFirst: boolean) =>
       Array.from({ length: Math.ceil(list.length / STOPS_PER_CLIENT) }, (_, n) => {
         const chunk = list.slice(n * STOPS_PER_CLIENT, (n + 1) * STOPS_PER_CLIENT)
         const first = railFirst || n > 0
-        return <Client key={n === 0 ? key : `${key}-${n}`} module="./timeline.tsx" height={timelineRows(chunk.length, first)} props={{ stops: chunk, selected, railFirst: first, ...marks } satisfies TimelineProps} />
+        return <Client key={n === 0 ? key : `${key}-${n}`} module="./timeline.tsx" height={timelineRows(chunk.length, first)} props={{ stops: chunk, selected, railFirst: first, glyph: look.glyph.icon.prompt ?? look.glyph.title, ...marks } satisfies TimelineProps} />
       })
     const stat = (key: string, body: unknown) => pill({ Box, Text }, look.nerd, THEME.surface3, body, key, THEME.surface1)
     const stats = current
@@ -495,13 +509,15 @@ export const register: Register = (on, options) => {
               // The pager rides in the pinned card, so it stays in view however far the timeline scrolls.
               pageCount > 1 ? (
                 <Box key="pager" flexDirection="row" columnGap={1} flexShrink={0}>
-                  {shownPage > 0 ? pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-prev', text.pagePrev), 'pager-prev', THEME.surface1) : null}
+                  {shownPage > 0 ? pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-prev', text.pagePrev, text.pagePrevTip), 'pager-prev', THEME.surface1) : null}
                   <Text color={THEME.muted}>{fill(text.page, { page: shownPage + 1, pages: pageCount, from: first + 1, to: first + onPage.length, sep: MARK.sep })}</Text>
-                  {shownPage < pageCount - 1 ? pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-next', text.pageNext), 'pager-next', THEME.surface1) : null}
+                  {shownPage < pageCount - 1 ? pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-next', text.pageNext, text.pageNextTip), 'pager-next', THEME.surface1) : null}
                 </Box>
               ) : null,
             ])
           : null}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
   })

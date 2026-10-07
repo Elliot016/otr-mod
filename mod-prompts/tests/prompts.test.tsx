@@ -87,6 +87,15 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   const hhmm = `${String(sent.getHours()).padStart(2, '0')}:${String(sent.getMinutes()).padStart(2, '0')}`
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' })).split(`${hhmm} `).length - 1).toBe(2)
 
+  // A hovered stop or tab puts its tip in the pane footer; leaving clears it.
+  await ui.pointer({ in: 'timeline-before', type: 'move', x: 8, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · shows this prompt in full' })).toBeDefined()
+  await ui.pointer({ in: 'timeline-before', type: 'leave', x: 0, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · shows this prompt in full' })).toBeUndefined()
+  await ui.pointer({ in: 'prompts-settings', type: 'move', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · opens this mod\'s settings' })).toBeDefined()
+  await ui.pointer({ in: 'prompts-settings', type: 'leave', x: 0, y: 0 })
+
   // A click on a stop opens it, and the stops after it move under its details; the jump Button scrolls.
   await ui.pointer({ in: 'timeline-before', type: 'down', button: 'left', x: 8, y: 0 })
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' }))).toContain(' first prompt')
@@ -181,7 +190,7 @@ test('the title tabs swap the sidebar and its settings', async ($, on) => {
     opened.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('config.list', () => ({ value: [{ key: 'mod-prompts.animations', label: 'Animations', kind: 'boolean', value: true, description: 'd' }] }) as never)
+  on('config.list', () => ({ value: [{ key: 'mod-prompts.animations', label: 'Animations', kind: 'boolean', value: true, description: 'Entries shimmer while they wait. Off, everything draws still' }] }) as never)
   on('fs.list', () => ({ value: [] }))
   mock.env(on, {})
   mock.clock(on)
@@ -195,6 +204,9 @@ test('the title tabs swap the sidebar and its settings', async ($, on) => {
 
   const settings = await $.ui.mount(pane('prompts-settings'))
   expect(await settings.find({ type: 'Text', text: 'Animations' })).toBeDefined()
+  // A settings control's tip is its description's first sentence, led by a lowercase letter.
+  await settings.pointer({ in: 'setting-0-flip', type: 'move', x: 1, y: 0 })
+  expect(await settings.find({ type: 'Text', text: ' · entries shimmer while they wait' })).toBeDefined()
   await settings.pointer({ in: 'prompts-tab', type: 'down', button: 'left', x: 1, y: 0 })
   expect(opened).toEqual(['prompts-settings', 'prompts'])
   await settings.unmount()

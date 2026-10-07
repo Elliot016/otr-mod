@@ -1,6 +1,7 @@
 // Every string this mod shows, see mod-builder/references/standard.md. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "pillLabel": "Prompts",
+  "pillShort": "Prompts",
   "paneTitle": "Prompts",
   "settingsPaneTitle": "mod-prompts",
   "panelWaiting": "Prompts panel waiting: {reason}",
@@ -10,6 +11,12 @@ export default {
   "settingsHint": "Click a setting to change it {sep} The mod reloads",
   "hint": "Click a prompt to open it {sep} ↗ scrolls to it",
   "settingsTab": "Settings",
+  "promptsTabTip": "lists every prompt of this session",
+  "settingsTabTip": "opens this mod's settings",
+  "stopLabel": "Prompt #{n}",
+  "stopTip": "shows this prompt in full",
+  "pagePrevTip": "shows the previous page of prompts",
+  "pageNextTip": "shows the next page of prompts",
   "tools": "{count} tools",
   "empty": "No prompts yet.",
   "cardNumber": "#{n}",
@@ -17,5 +24,6 @@ export default {
   "pagePrev": "‹ Prev",
   "pageNext": "Next ›",
   "tip": "Prompts: every prompt this session, click one to jump to it",
-  "commandDescription": "Open the prompts sidebar: every prompt of this session, click one to jump to it; `settings` opens its settings panel"
+  "commandDescription": "Open the prompts sidebar: every prompt of this session, click one to jump to it; `settings` opens its settings panel",
+  "tipToast": {"label":"Dismiss","text":"hides this message"}
 }
