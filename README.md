@@ -6,7 +6,7 @@
 
 Add-ons for Claude Code that add panels, buttons and safety checks around the prompt. They need Claude Code 2.1.287 or newer.
 
-| All twelve terminal mods in 74 seconds: click to play |
+| Every terminal mod in 79 seconds: click to play |
 | --- |
 | [![][img-reel]][video-reel] |
 
