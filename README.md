@@ -1,6 +1,14 @@
-# My mods
+<div align="center">
+  <img src="showcase/logo.png" alt="" width="640">
+</div>
+
+# moonlight-claude-mods
 
 Add-ons for Claude Code that add panels, buttons and safety checks around the prompt. They need Claude Code 2.1.287 or newer.
+
+| All twelve terminal mods in one minute: click to play |
+| --- |
+| [![][img-reel]][video-reel] |
 
 ## What each mod does
 
@@ -85,10 +93,6 @@ block-beta
 ```
 
 ## See them
-
-[![The claude-mods reel: twelve mods in one Claude Code session](showcase/claude-mods.png)](showcase/claude-mods.mp4)
-
-All twelve in one minute: click the image to play the reel.
 
 <!-- showcase:start -->
 
@@ -200,6 +204,7 @@ Pick what carries over, then hand off or compact. Played at double speed.
 
 | Goal | How |
 | --- | --- |
+| Install from GitHub | `claude plugin marketplace add v-amorim/moonlight-claude-mods`, then `claude plugin install <name>@claude-mods` |
 | Try one mod in one session | `claude --plugin-dir ~/.claude/mods/<name>` |
 | Load them every session | Add each folder to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `;` on Windows and `:` elsewhere |
 | Apply changes in an open session | `/reload-plugins` |
@@ -213,7 +218,7 @@ Pick what carries over, then hand off or compact. Played at double speed.
 <details>
 <summary>Make a new mod</summary>
 
-1. Ask the `mod-builder` agent, or copy `~/.claude/skills/mod-builder/templates/cli-mod` to `~/.claude/mods/<name>` and rename it in `plugin.json` and its test.
+1. Copy an existing mod's folder to `~/.claude/mods/<name>` and rename it in `plugin.json` and its test.
 2. Check it with `claude plugin validate ~/.claude/mods/<name>`.
 3. Test it with `claude plugin test ~/.claude/mods/<name>`.
 4. Try it with `--plugin-dir`, then add it to `CLAUDE_CODE_PLUGIN_DIRS`.
@@ -229,14 +234,12 @@ Each mod's folder:
   showcase.json                  optional: tagline, features, actions, example cards
 ```
 
-The guides live in `~/.claude/skills/mod-builder/`.
-
 </details>
 
 <details>
 <summary>The shared standard</summary>
 
-Every mod follows `~/.claude/skills/mod-builder/references/standard.md`:
+Every mod follows the same rules:
 
 | Rule | In short |
 | --- | --- |
@@ -252,6 +255,8 @@ One panel shows at a time, and no mod needs to know the others:
 ---
 config:
   theme: base
+  sequence:
+    mirrorActors: false
   themeVariables:
     darkMode: true
     background: "#0D0E17"
@@ -347,3 +352,6 @@ sequenceDiagram
 [video-transcript-unfold]: showcase/transcript-unfold.mp4
 [video-wrap-up-full]: showcase/wrap-up-full.mp4
 <!-- showcase-links:end -->
+
+[img-reel]: showcase/claude-mods.png
+[video-reel]: showcase/claude-mods.mp4
