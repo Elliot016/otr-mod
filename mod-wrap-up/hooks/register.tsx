@@ -1,10 +1,10 @@
 import type { ConfigValue, EngineInterface, ModelForkResult, Register, RenderElement } from 'claude-code'
 
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
-import { heading, isNerdFace, lookFor, terminalSettings, type IconMode, withMark } from './look'
-import type { EntryMessage, EntryProps } from './entry'
+import { FOOTER_ROWS, heading, isNerdFace, lookFor, paneFooter, terminalSettings, type IconMode, withMark } from './look'
+import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import type { ChoiceProps } from './choice'
-import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { fitFor, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import style from './style'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -154,6 +154,7 @@ function openCard($: EngineInterface, mode: Mode) {
 
 function closeCard($: EngineInterface) {
   card = null
+  bandTip = null
   cardToken += 1
   $.ui.invalidate('ui.render')
 }
@@ -259,12 +260,12 @@ const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // The band card: each thread and each "also keep" item a line that keeps or drops itself on a click, then what the go does.
 function cardBox({ Box, Client, Text }: Elements, picked: Card) {
-  const line = (id: string, label: string, isKept: boolean) => (
-    <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isKept, idle: THEME.muted, bg: THEME.surface1, lead: isKept ? MARK.stopOpen : MARK.stop, leadColor: isKept ? THEME.accent : style.colors.pills.separator, still }} />
+  const line = (id: string, label: string, isKept: boolean, tip: string) => (
+    <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isKept, tip: { glyph: isKept ? MARK.stopOpen : MARK.stop, label, text: tip }, idle: THEME.muted, bg: THEME.surface1, lead: isKept ? MARK.stopOpen : MARK.stop, leadColor: isKept ? THEME.accent : style.colors.pills.separator, still }} />
   )
   // An action pill on surface3; the go leads with its glyph as a subpill.
-  const action = (id: string, label: string, lead: Pick<EntryProps, 'subLead'>) => (
-    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, ...lead } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+  const action = (id: string, label: string, lead: Pick<EntryProps, 'subLead'>, tip: string) => (
+    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph: lead.subLead ?? bare(look.glyph.close), label, text: tip }, ...lead } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
   )
   // Threads and Also keep each sit in a round-bordered box inside the card, its heading a pill on the first row.
   const block = (key: string, icon: string, title: string, body: unknown) => (
@@ -279,7 +280,7 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
       ? <Text key="wrap-up-none" color={THEME.muted}>{text.card.noThreads}</Text>
       : picked.threads.map((thread, at) => (
           <Box key={`wrap-up-thread-row-${at}`} flexDirection="row">
-            <Box key={`wrap-up-thread-pad-${at}`} flexShrink={0}>{line(`wrap-up-thread-${at}`, thread.label, picked.kept[at] === true)}</Box>
+            <Box key={`wrap-up-thread-pad-${at}`} flexShrink={0}>{line(`wrap-up-thread-${at}`, thread.label, picked.kept[at] === true, text.tips.thread)}</Box>
             <Text key={`wrap-up-thread-detail-${at}`} color={THEME.muted} wrap="truncate-end">{`${MARK.sep} ${thread.detail}`}</Text>
           </Box>
         ))
@@ -301,21 +302,24 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
       {pickThreads ? block('wrap-up-threads', 'prompt', text.card.threads, threads) : null}
       {block('wrap-up-also', 'features', text.card.also, (
         <Box key="wrap-up-also-row" flexDirection="row" flexWrap="wrap">
-          {ALSO_KEEP.map(item => line(`wrap-up-also-${item.id}`, text.alsoKeep[item.id], picked.also[item.id]))}
+          {ALSO_KEEP.map(item => line(`wrap-up-also-${item.id}`, text.alsoKeep[item.id], picked.also[item.id], text.tips.also))}
         </Box>
       ))}
       <Box key="wrap-up-gap" height={1} />
       {foot}
       <Box key="wrap-up-actions" flexDirection="row" justifyContent="flex-end" columnGap={1}>
-        {action('wrap-up-go', text.card.go[picked.mode], { subLead: bare(look.glyph.go) })}
-        {action('wrap-up-cancel', text.card.cancel, {})}
+        {action('wrap-up-go', text.card.go[picked.mode], { subLead: bare(look.glyph.go) }, text.tips.go[picked.mode])}
+        {action('wrap-up-cancel', text.card.cancel, {}, text.tips.cancel)}
       </Box>
     </Box>
   )
 }
 
-// True while the pointer is on this mod's pill entry, which then shows its tip under the row.
-let tipShown = false
+// The pill part or card control under the pointer, shown in the tip row above the pill row.
+let bandTip: TipMessage | null = null
+
+// The settings pane's control under the pointer, shown in its footer.
+let paneTip: Tip | null = null
 
 const toasts = new ToastList('wrap-up')
 // The animations setting, fixed per activation: off, every entry draws still.
@@ -415,7 +419,7 @@ export const register: Register = (on, options) => {
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
       const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-wrap-up" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look)}{await next(e)}</Box>
+      return <Box key="toasts-wrap-up" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
     }
 
     const { Box, Client, Text } = $.ui.resolve(e)
@@ -434,15 +438,23 @@ export const register: Register = (on, options) => {
     ) : (
       // Like the effort pill, the pointer opens the options and lifts the one under it, all inside the Client, so nothing waits on a redraw.
       <Box key="wrap-up-choice-pad">
-        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle } satisfies ChoiceProps} />
+        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: fitFor(e.props.bodyColumns).icons ? (look.glyph.icon.actions ?? text.label) : text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }] } satisfies ChoiceProps} />
       </Box>
     )
     const cards = card ? [cardBox({ Box, Client, Text }, card)] : []
 
-    return pillRow({ Box, Text }, look.nerd, group, [...row, isRunning ? pill({ Box, Text }, look.nerd, PILL.secondary, body, 'wrap-up-pill') : <Box key="wrap-up-pill" flexDirection="row">{body}</Box>], [...toastCards({ Box, Client, Text }, toasts, look), ...cards, ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
+    return pillRow({ Box, Client, Text }, look.nerd, group, [...row, isRunning ? pill({ Box, Text }, look.nerd, PILL.secondary, body, 'wrap-up-pill') : <Box key="wrap-up-pill" flexDirection="row">{body}</Box>], [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...cards, ...rest], bandTip?.id ? tipLine({ Box, Text }, tipText(bandTip)) : tip, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
+    if (isTipMessage(e.data)) {
+      const tip = e.data
+      const own = Boolean(tip.id?.startsWith('wrap-up-') || tip.id?.startsWith('toast-wrap-up-'))
+      bandTip = own ? tip : null
+      paneTip = tip.id && !own ? { glyph: tip.glyph ?? '', label: tip.label ?? '', text: tip.text ?? '' } : null
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const change = settingChoice(e.data)
     if (change) await saveSetting($, change.key, change.value)
     const clicked = e.data as EntryMessage
@@ -451,11 +463,6 @@ export const register: Register = (on, options) => {
       toasts.drop(dismissed)
       $.ui.invalidate('ui.render')
       return next(e)
-    }
-    const hover = e.data as { type?: string; id?: string; isOver?: boolean }
-    if (hover?.type === 'menu-hover' && hover.id === 'wrap-up-entry') {
-      tipShown = hover.isOver === true
-      $.ui.invalidate('ui.render')
     }
     const message = e.data as EntryMessage
     if (message?.type !== 'menu-entry') return next(e)
@@ -480,9 +487,11 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-wrap-up-settings-tab', label: `${text.label} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true }], still)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-wrap-up-settings-tab', label: `${text.label} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSettings, text: text.tips.tab } }], still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still })}
+        <Box key="footer-space" height={FOOTER_ROWS} />
+        {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
   })

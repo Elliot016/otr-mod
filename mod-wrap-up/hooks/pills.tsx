@@ -1,7 +1,7 @@
 // Shared pill row, see mod-builder/references/standard.md. Copy unchanged into every mod that draws in the row.
 import type { RenderElement } from 'claude-code'
 
-import { mix, type EntryProps } from './entry'
+import { mix, type EntryProps, type Tip } from './entry'
 import style from './style'
 import { CAPS, THEME, WASH } from './theme'
 
@@ -9,8 +9,12 @@ import { CAPS, THEME, WASH } from './theme'
 export const PILL = { primary: style.colors.pills.primary, secondary: style.colors.pills.secondary }
 
 // Menu entries left to right, by the id in their `menu-pad-<id>` Box key; an unknown id goes last.
-const ENTRY_ORDER = ['manager', 'skills', 'prompts', 'filetree']
+const ENTRY_ORDER = ['manager', 'skills', 'prompts', 'filetree', 'progress', 'headsup']
 
+// The row draws the same at every width; a narrow window is the person's to resize.
+export function fitFor(_columns?: number) {
+  return { dividers: true, effortOnly: false, icons: false, wrapUp: true }
+}
 
 type Node = { props?: Record<string, unknown>; children?: unknown[] } | null | undefined
 type Elements = { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }
@@ -61,7 +65,8 @@ export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: u
 }
 
 // A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open panel's entry is a pill of its own inside the group.
-export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, props: Omit<EntryProps, 'id' | 'bg'>) {
+// icon and columns are accepted and ignored: the row draws the same at every width.
+export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, { icon: _icon, ...props }: Omit<EntryProps, 'id' | 'bg' | 'tight'> & { icon?: string }, _columns?: number) {
   const bg = props.isOpen ? THEME.lifted : PILL.primary
   const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props } satisfies EntryProps} />
   return (
@@ -72,15 +77,19 @@ export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: an
 }
 
 // The band above the prompt: what else it holds (Claude Code's own effort line), then the pill row, so the pills sit on the input.
-export function pillRow(elements: Elements, nerd: boolean, group: unknown[], row: unknown[], rest: unknown[], tip: unknown = null) {
-  const { Box, Text } = elements
+export function pillRow(elements: Elements & { Client?: (props: any) => RenderElement }, nerd: boolean, group: unknown[], row: unknown[], rest: unknown[], tip: unknown = null, _columns?: number) {
+  const { Box, Client, Text } = elements
   // Mods draw in load order, which an install or a toggle changes, so entries sort by a fixed rank instead.
   const rank = (entry: unknown) => {
     const at = ENTRY_ORDER.indexOf(String(keyOf(entry) ?? '').replace(/^menu-pad-/, ''))
     return at < 0 ? ENTRY_ORDER.length : at
   }
-  // Like a choice bar: the entries side by side on one pill, the open panel's lifted into its own.
-  const entries = [...group].sort((a, b) => rank(a) - rank(b))
+  // Like a choice bar: the entries side by side on one pill, the open panel's lifted into its own, a divider Client between neighbours.
+  const sorted = [...group].sort((a, b) => rank(a) - rank(b))
+  const entries = Client
+    ? sorted.flatMap((entry, at) => (at === 0 ? [entry] : [<Client key={`menu-group-sep-${at}`} module="./entry.tsx" height={1} props={{ id: `sep-${at}`, label: '', isOpen: false, bg: PILL.primary, rail: true } satisfies EntryProps} />, entry]))
+    : sorted
+  const kept = row
   return (
     <Box key="menu-rows" flexDirection="column">
       {rest}
@@ -88,14 +97,14 @@ export function pillRow(elements: Elements, nerd: boolean, group: unknown[], row
       {tip ?? tipLine(elements, ' ')}
       <Box key="menu-row" flexDirection="row" columnGap={1}>
         {group.length > 0 ? pill(elements, nerd, PILL.primary, entries, 'menu-group') : null}
-        {row}
+        {kept}
       </Box>
     </Box>
   )
 }
 
-// One chip per view of a panel (its list, its settings), standing in for the title: id, label, icon glyph and an optional count.
-export type Tab = { id: string; label: string; icon: string; isOpen: boolean; count?: number }
+// One chip per view of a panel (its list, its settings), standing in for the title: id, label, icon glyph, an optional count and an optional hover tip.
+export type Tab = { id: string; label: string; icon: string; isOpen: boolean; count?: number; tip?: Tip }
 
 // A panel's title line: the open view on surface3 and bold, the others on surface2 and muted, each icon and count a subpill; a click swaps the view.
 export function tabRow({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, tabs: Tab[], still: boolean) {
@@ -103,10 +112,11 @@ export function tabRow({ Box, Client, Text }: Elements & { Client: (props: any) 
     <Box key="tab-row" flexDirection="row" columnGap={1}>
       {tabs.map(tab => {
         const bg = tab.isOpen ? THEME.surface3 : THEME.surface2
-        // Client props refuse an undefined value, so a tab without a count leaves the key out.
+        // Client props refuse an undefined value, so a tab without a count or tip leaves the key out.
         const badge = tab.count === undefined ? {} : { badge: { text: String(tab.count), color: THEME.accent, bg: mix(THEME.accent, bg, WASH) } }
+        const tip = tab.tip ? { tip: tab.tip } : {}
         const entry = (
-          <Client key={tab.id} module="./entry.tsx" height={1} props={{ id: tab.id, label: tab.label, isOpen: tab.isOpen, bg, idle: THEME.muted, still, subLead: tab.icon, subLeadColor: THEME.accent, nerd, ...badge } satisfies EntryProps} />
+          <Client key={tab.id} module="./entry.tsx" height={1} props={{ id: tab.id, label: tab.label, isOpen: tab.isOpen, bg, idle: THEME.muted, still, subLead: tab.icon, subLeadColor: THEME.accent, nerd, ...badge, ...tip } satisfies EntryProps} />
         )
         return pill({ Box, Text }, nerd, bg, entry, `${tab.id}-pill`)
       })}

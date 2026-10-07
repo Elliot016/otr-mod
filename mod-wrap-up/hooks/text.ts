@@ -8,7 +8,19 @@ export default {
   "statusHint": "Click a setting to change it",
   "statusHintSaved": "The mod reloads",
   "settingSaved": "{label} saved",
-  "tip": "Wrap up: hand off to a fresh session, or compact this one",
+  "tips": {
+    "head": "offers to hand off to a fresh session, or compact this one",
+    "handoff": "opens the pick card to write a handoff",
+    "compact": "opens the pick card to fill a /compact",
+    "thread": "keeps or drops this thread",
+    "also": "keeps or drops this item",
+    "go": {
+      "handoff": "writes the handoff and starts a fresh session",
+      "compact": "fills /compact into your prompt"
+    },
+    "cancel": "closes this card, changes nothing",
+    "tab": "shows this mod's settings"
+  },
   "writingStage": "Writing handoff…",
   "choice": {
     "handoff": "Handoff",
@@ -49,5 +61,6 @@ export default {
     "apiError": "The summary request failed",
     "emptyReply": "The model returned no handoff",
     "aborted": "The summary was interrupted"
-  }
+  },
+  "tipToast": {"label":"Dismiss","text":"hides this message"}
 }

@@ -384,3 +384,34 @@ test('the settings pane draws its title, status line and settings', { options: {
   expect(await pane.find({ type: 'Text', text: 'Handoff length' })).toBeDefined()
   await pane.unmount()
 })
+
+test('a hovered pill part and card control show their tip in the tip row, and clear on leave', { options: { icons: 'safe' } }, async ($, on) => {
+  world(on, answered)
+  const band = await $.ui.mount(BAND())
+  // The idle head does nothing when clicked, so its tip says what the pill offers.
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-entry' } as never)
+  expect(await band.find({ type: 'Text', text: ' offers to hand off to a fresh session, or compact this one' })).toBeDefined()
+  await band.pointer({ type: 'move', x: OPTION_X.safe.compact, y: 0, in: 'wrap-up-entry' } as never)
+  expect(await band.find({ type: 'Text', text: ' opens the pick card to fill a /compact' })).toBeDefined()
+  await band.pointer({ type: 'leave', x: 0, y: 0, in: 'wrap-up-entry' } as never)
+  expect(await band.find({ type: 'Text', text: ' opens the pick card to fill a /compact' })).toBeUndefined()
+  // A control of the card names itself the same way.
+  await click(band, 'wrap-up-entry')
+  await choose(band, 'handoff')
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-go' } as never)
+  expect(await band.find({ type: 'Text', text: ' writes the handoff and starts a fresh session' })).toBeDefined()
+  await band.pointer({ type: 'leave', x: 0, y: 0, in: 'wrap-up-go' } as never)
+  expect(await band.find({ type: 'Text', text: ' writes the handoff and starts a fresh session' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('the settings pane footer shows the tip of the hovered tab', { options: { icons: 'safe' } }, async ($, on) => {
+  world(on, answered)
+  on('config.list', () => ({ value: [] }))
+  const pane = await $.ui.mount({ plugin: 'mod-wrap-up', surface: 'terminal', component: 'Pane', requestId: 'wrap-up', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
+  await pane.pointer({ in: 'mod-wrap-up-settings-tab', type: 'move', x: 1, y: 0 })
+  expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeDefined()
+  await pane.pointer({ in: 'mod-wrap-up-settings-tab', type: 'leave', x: 0, y: 0 })
+  expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeUndefined()
+  await pane.unmount()
+})
