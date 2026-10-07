@@ -5,8 +5,15 @@ export default {
   "switchFailed": "mod-model-effort: {mark} Could not switch to {model}: {error}",
   "pickerFailed": "mod-model-effort: {mark} Could not open /model: {error}",
   "allModels": "All models…",
-  "hintBase": "Effort: {model}. Click the name to change the model, a level to set it",
-  "hintAtLevel": "Effort: {model} at {level}. Click the name to change the model, a level to set it",
+  "labelModel": "Model",
+  "labelClose": "Close",
+  "tipModel": "switches the model",
+  "tipRest": "shows the effort levels",
+  "tipLevel": "sets effort to {level}",
+  "tipModelEntry": "switches to this model",
+  "tipModelClose": "closes the model menu",
+  "tipAll": "opens the full model picker",
+  "tipTab": "shows this mod's settings",
   "paneName": "Effort",
   "paneSettings": "Settings",
   "commandDescription": "Open the effort meter's settings panel with `settings`",
@@ -21,5 +28,6 @@ export default {
     "high": "high",
     "xhigh": "xhigh",
     "max": "max"
-  }
+  },
+  "tipToast": {"label":"Dismiss","text":"hides this message"}
 }

@@ -1,12 +1,12 @@
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
-import { displayName, LEVEL_LOOK, withEffort, withModel } from './levels'
-import type { EntryMessage, EntryProps } from './entry'
-import { isNerdFace, lookFor, paneTitle, terminalSettings, type IconMode, withMark } from './look'
+import { displayName, LEVEL_LOOK, LEVELS, withEffort, withModel } from './levels'
+import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
+import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, paneTitle, terminalSettings, type IconMode, withMark } from './look'
 import type { MeterMessage } from './meter'
 import { settingChoice, settingsBody } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
-import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { fitFor, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import text from './text'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
@@ -114,11 +114,14 @@ async function setEffort($: EngineInterface, effort: string) {
 }
 
 
-// True while the pointer is on the effort pill, which then shows its tip above the row.
-let tipShown = false
+// The pill part or model menu entry under the pointer, shown in the tip row above the pill row.
+let bandTip: TipMessage | null = null
+
+// The settings pane's control under the pointer, shown in its footer.
+let paneTip: Tip | null = null
 
 // The level under the pointer, named beside the pill like a clicked level is.
-let hoveredLevel: string | null = null
+const hoveredLevel = () => (bandTip?.id?.startsWith('effort-level-') ? bandTip.id.slice('effort-level-'.length) : null)
 
 // The model menu above the pill, opened by a click on the model name.
 let isModelMenuOpen = false
@@ -129,6 +132,7 @@ let menuModels: string[] = []
 // Switches through Claude Code's own `/model`, then shows the pick at once instead of after the next request.
 async function switchModel($: EngineInterface, id: string) {
   isModelMenuOpen = false
+  bandTip = null
   try {
     await $.command.run({ command: 'model', args: id })
   } catch (error) {
@@ -145,6 +149,7 @@ async function switchModel($: EngineInterface, id: string) {
 // Claude Code's own picker has every model, new ones included.
 async function openPicker($: EngineInterface) {
   isModelMenuOpen = false
+  bandTip = null
   $.ui.invalidate('ui.render')
   await $.command.run({ command: 'model', args: '' }).catch(error => $.ui.toast(fill(text.pickerFailed, { mark: MARK.warn, error: String(error) })))
 }
@@ -166,11 +171,11 @@ function modelMenu(elements: Elements, currentId: string) {
   const blank = ' '.repeat([...ok].length + 2)
   const entries = menuModels.map((id, index) =>
     id === currentId
-      ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: true, idle: THEME.muted, subLead: ok, subLeadColor: THEME.good })
-      : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: true }),
+      ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: true, idle: THEME.muted, subLead: ok, subLeadColor: THEME.good, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } })
+      : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: true, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }),
   )
   // The × closes the menu without a pick, as on a toast card; it shares the first entry's row.
-  const close = menuEntry(elements, 'effort-model-close', THEME.surface3, { label: bare(look.glyph.close), isOpen: false })
+  const close = menuEntry(elements, 'effort-model-close', THEME.surface3, { label: bare(look.glyph.close), isOpen: false, tip: { glyph: bare(look.glyph.close), label: text.labelClose, text: text.tipModelClose } })
   return (
     <Box key="effort-models-row" flexDirection="row" justifyContent="flex-end">
       <Box key="effort-models" flexDirection="column" alignItems="flex-start" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
@@ -179,7 +184,7 @@ function modelMenu(elements: Elements, currentId: string) {
           {close}
         </Box>
         {entries.slice(1)}
-        {menuEntry(elements, 'effort-model-all', THEME.surface2, { label: text.allModels, isOpen: false, subLead: bare(look.glyph.go) })}
+        {menuEntry(elements, 'effort-model-all', THEME.surface2, { label: text.allModels, isOpen: false, subLead: bare(look.glyph.go), tip: { glyph: bare(look.glyph.go), label: text.allModels, text: text.tipAll } })}
       </Box>
     </Box>
   )
@@ -276,6 +281,14 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.message', async ($, e, next) => {
+    if (isTipMessage(e.data)) {
+      const tip = e.data
+      const own = Boolean(tip.id?.startsWith('effort-') || tip.id?.startsWith('toast-effort-'))
+      bandTip = own ? tip : null
+      paneTip = tip.id && !own ? { glyph: tip.glyph ?? '', label: tip.label ?? '', text: tip.text ?? '' } : null
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const change = settingChoice(e.data)
     if (change) await saveSetting($, change.key, change.value)
     const clicked = e.data as EntryMessage
@@ -287,6 +300,7 @@ export const register: Register = (on, options) => {
     }
     if (clicked?.type === 'menu-entry' && clicked.id === 'effort-model-close') {
       isModelMenuOpen = false
+      bandTip = null
       $.ui.invalidate('ui.render')
       return next(e)
     }
@@ -302,16 +316,12 @@ export const register: Register = (on, options) => {
     const message = e.data as MeterMessage
     if (message?.type === 'model-menu') {
       isModelMenuOpen = !isModelMenuOpen
+      bandTip = null
       const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
       menuModels = withModel(await $.store.get('models'), current?.model ?? (await $.session.model()))
       $.ui.invalidate('ui.render')
     }
     if (message?.type === 'set') await setEffort($, message.effort)
-    if (message?.type === 'menu-hover') {
-      tipShown = message.isOver
-      hoveredLevel = message.level ?? null
-      $.ui.invalidate('ui.render')
-    }
 
     return next(e)
   })
@@ -325,15 +335,13 @@ export const register: Register = (on, options) => {
     const modelId = current.value?.model ?? (await $.session.model())
     const model = displayName(modelId)
     const { group, row, rest, tip } = splitRow(await next(e))
-    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd }} />
+    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd, compact: fitFor(e.props.bodyColumns).effortOnly, tipModel: { glyph: look.glyph.title, label: text.labelModel, text: text.tipModel }, tipRest: { glyph: look.glyph.title, label: text.paneName, text: text.tipRest }, tipLevels: LEVELS.map(level => ({ glyph: LEVEL_LOOK[level]!.glyph, label: text.paneName, text: fill(text.tipLevel, { level: (text.levelNames as Record<string, string>)[level]! }) })) }} />
     // The level word follows the pill, so it never moves the glyphs under the pointer.
-    const shownWord = hoveredLevel ?? flash
+    const shownWord = hoveredLevel() ?? flash
     const word = shownWord ? <Text key="menu-flash" color={LEVEL_LOOK[shownWord]?.color}>{(text.levelNames as Record<string, string>)[shownWord] ?? shownWord}</Text> : null
 
-    const level = current.value?.effort ?? null
-    const hint = level ? fill(text.hintAtLevel, { model, level }) : fill(text.hintBase, { model })
     const menu = isModelMenuOpen ? [modelMenu({ Box, Client, Text }, modelId)] : []
-    return pillRow({ Box, Text }, look.nerd, group, [...row, <Box key="menu-pill" flexDirection="row">{meter}</Box>, word], [...toastCards({ Box, Client, Text }, toasts, look), ...rest, ...menu], tipShown ? tipLine({ Box, Text }, hint) : tip)
+    return pillRow({ Box, Client, Text }, look.nerd, group, [...row, <Box key="menu-pill" flexDirection="row">{meter}</Box>, word], [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest, ...menu], bandTip?.id ? tipLine({ Box, Text }, tipText(bandTip)) : tip, e.props.bodyColumns)
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
@@ -345,9 +353,11 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-model-effort-settings-tab', label: `${text.paneName} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true }], still)}
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-model-effort-settings-tab', label: `${text.paneName} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSettings, text: text.tipTab } }], still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, previews: undefined, still: still })}
+        <Box key="footer-space" height={FOOTER_ROWS} />
+        {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
   })

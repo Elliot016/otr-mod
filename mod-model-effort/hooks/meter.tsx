@@ -1,15 +1,16 @@
 import type { ClientModule } from 'claude-code'
 
-import { HOVER_STEPS, hoverMix, stepToward, TICK_MS } from './entry'
+import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, postTip, stepToward, type Tip } from './entry'
 import { LEVEL_LOOK, LEVELS } from './levels'
 import style from './style'
 import { CAPS, THEME } from './theme'
 
 // still: the animations setting is off, so the level icons switch at once. nerd: the meter draws the pill's caps itself,
-// so the pointer on a cap is still on the meter and the levels stay open.
-export type MeterProps = { effort: string | null; model: string; bg: string; still?: boolean; nerd?: boolean }
+// so the pointer on a cap is still on the meter and the levels stay open. compact: no model name, the effort glyph alone.
+// tipModel: the model name (the leading cells when compact); tipRest: the folded pill; tipLevels: one per level, in LEVELS order.
+export type MeterProps = { effort: string | null; model: string; bg: string; still?: boolean; nerd?: boolean; compact?: boolean; tipModel: Tip; tipRest: Tip; tipLevels: Tip[] }
 
-export type MeterMessage = { type: 'set'; effort: string } | { type: 'menu-hover'; id: string; isOver: boolean; level?: string } | { type: 'model-menu' }
+export type MeterMessage = { type: 'set'; effort: string } | { type: 'model-menu' }
 
 // The inside of the Moonlight-claude oh-my-posh model pill.
 const PILL_FG = style.colors.pills.readout
@@ -18,7 +19,8 @@ const PILL_FG = style.colors.pills.readout
 const HOVER_QUIET_MS = 5000
 
 // lights: each glyph's fade from dark (0) to its level color (HOVER_STEPS).
-type Hover = { level: number; at: number; lights?: number[] }
+// tipId: the part of the pill whose tip was posted last, null once the pointer left.
+type Hover = { level: number; at: number; lights?: number[]; tipId?: string | null }
 
 const litOf = (props: MeterProps, level: number) => (level >= 0 ? level : props.effort ? LEVELS.indexOf(props.effort as (typeof LEVELS)[number]) : -1)
 
@@ -31,7 +33,7 @@ const latest = new WeakMap<object, MeterProps>()
 const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
   const reached = props.effort ? LEVELS.indexOf(props.effort as (typeof LEVELS)[number]) : -1
-  const head = ` ${props.model} `
+  const head = props.compact ? ' ' : ` ${props.model} `
   const start = (props.nerd ? 1 : 0) + head.length
 
   // The level under the pointer previews what a click would set: -1 on the model name, -2 off the pill.
@@ -40,7 +42,7 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   if (!surface.state) {
     surface.setState({ level: -2, at: 0, lights: targets(reached) })
     // Redraws only while a glyph fades or a stale hover needs ending.
-    surface.every(TICK_MS, () => {
+    surface.every(HOVER_TICK_MS, () => {
       const state = surface.state
       const now = latest.get(surface)
       if (!state || !now) return
@@ -51,8 +53,8 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
         return
       }
       if (state.level === -2 || Date.now() - state.at < HOVER_QUIET_MS) return
-      surface.setState({ ...state, level: -2, at: Date.now() })
-      surface.post({ type: 'menu-hover', id: 'effort', isOver: false } satisfies MeterMessage)
+      surface.setState({ ...state, level: -2, at: Date.now(), tipId: null })
+      postTip(surface, 'effort-meter', null)
     })
   }
   // At rest the pill shows only the current level; the pointer on it opens every level.
@@ -61,15 +63,19 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
     const slot = event.x - start
     // While folded the slots are not where they will be, so the first event only opens the meter.
     const level = event.type === 'leave' ? -2 : isExpanded && slot >= 0 && slot < LEVELS.length * 2 ? Math.floor(slot / 2) : -1
-    // The tip above the row shows while the pointer is on the pill; the level under it names itself beside the pill.
-    if (level !== hovered) surface.post({ type: 'menu-hover', id: 'effort', isOver: level !== -2, level: LEVELS[level] } satisfies MeterMessage)
+    const isClick = event.type === 'down' && event.button === 'left'
+    const isModel = slot < 0
+    const tipId = level === -2 ? null : level >= 0 ? `effort-level-${LEVELS[level]}` : isModel ? 'effort-model' : 'effort-rest'
+    // One post lands per event, so a click posts its own message and the next move posts the tip.
+    if (tipId !== (surface.state?.tipId ?? null) && !isClick) postTip(surface, tipId ?? 'effort-meter', tipId === null ? null : level >= 0 ? props.tipLevels[level]! : isModel ? props.tipModel : props.tipRest)
     const lights = surface.state?.lights ?? targets(reached)
     // The first fade step lands with the pointer, so the meter answers at once.
     const stepped = targets(litOf(props, level)).map((goal, index) => stepToward(lights[index] ?? 0, goal > 0))
-    surface.setState({ ...surface.state, level, at: Date.now(), lights: props.still ? targets(litOf(props, level)) : level !== hovered ? stepped : lights })
-    if (event.type === 'down' && event.button === 'left' && level >= 0) surface.post({ type: 'set', effort: LEVELS[level]! } satisfies MeterMessage)
+    surface.setState({ ...surface.state, level, at: Date.now(), tipId: isClick ? (surface.state?.tipId ?? null) : tipId, lights: props.still ? targets(litOf(props, level)) : level !== hovered ? stepped : lights })
+    if (isClick && level >= 0) surface.post({ type: 'set', effort: LEVELS[level]! } satisfies MeterMessage)
     // The model name opens the model menu.
-    if (event.type === 'down' && event.button === 'left' && slot < 0) surface.post({ type: 'model-menu' } satisfies MeterMessage)
+    // A compact pill has no name, so its leading cells, or a press on it while folded, stand in for it.
+    if (isClick && level < 0 && (isModel || (props.compact && !isExpanded))) surface.post({ type: 'model-menu' } satisfies MeterMessage)
   })
   const lights = surface.state?.lights ?? targets(litOf(props, hovered))
 

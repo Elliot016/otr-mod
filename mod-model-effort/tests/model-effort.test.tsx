@@ -41,7 +41,7 @@ test('the footer meter follows each request and a click saves that level', async
   const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'medium', messageCount: 1 } as never)
   while ((await stream.next()).done !== true);
 
-  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
   expect(await ui.find({ type: 'Text', text: 'auto mode' })).toBeDefined()
   const drawn = JSON.stringify(await ui.drawn({ in: 'meter' }))
   expect(drawn).toContain('◐ ')
@@ -60,7 +60,7 @@ test('the footer meter follows each request and a click saves that level', async
   // The hovered level names itself beside the pill, as a click does.
   expect(await ui.find({ type: 'Text', text: 'xhigh' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Effort:', bold: true })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^ Opus 5\.5 at medium\./ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' sets effort to xhigh' })).toBeDefined()
   await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'Effort:' })).toBeUndefined()
   expect((await ui.drawn({ in: 'meter' })).children.filter(Boolean)).toHaveLength(2)
@@ -97,7 +97,7 @@ test('a click on the model name lists the models used before, and a pick switche
     const { Text } = $$.ui.resolve(e)
     return <Text>base</Text>
   })
-  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 100, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never)
   expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
 
   // The × closes the menu without switching.
@@ -171,7 +171,7 @@ test('a clicked level rides on each request until Alt+P saves another', async ($
   }
 
   await step(0)
-  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
   await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
   await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
   await step(1)
@@ -185,7 +185,7 @@ test('a clicked level rides on each request until Alt+P saves another', async ($
   await ui.unmount()
 })
 
-const BAND = { plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never
+const BAND = { plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never
 const CAP = String.fromCodePoint(0xe0b6)
 
 function band(on: (name: string, handler: (...args: any[]) => unknown) => void) {
@@ -233,5 +233,31 @@ test('/mod-model-effort settings opens the pane and the pane draws a setting row
   const pane = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'Pane', requestId: 'model-effort-settings', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
   expect(JSON.stringify(await pane.drawn({ in: 'mod-model-effort-settings-tab' }))).toContain('Effort · Settings')
   expect(await pane.find({ type: 'Text', text: 'Animations' })).toBeDefined()
+  await pane.unmount()
+})
+
+const NARROW = { plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never
+
+test('a hovered control names itself in the tip row, a model menu entry and the model pill alike', { options: { icons: 'safe' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', () => ({ value: undefined }))
+  const ui = await $.ui.mount(NARROW)
+  await ui.pointer({ in: 'meter', type: 'move', x: 0, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' switches the model' })).toBeDefined()
+  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 0, y: 0 })
+  await ui.pointer({ in: 'effort-model-all', type: 'move', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' opens the full model picker' })).toBeDefined()
+  await ui.pointer({ in: 'effort-model-all', type: 'leave', x: 0, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' opens the full model picker' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the settings pane footer shows the tip of the hovered tab', { options: { icons: 'safe' } }, async ($, on) => {
+  on('config.list', () => ({ value: [] }))
+  const pane = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'Pane', requestId: 'model-effort-settings', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
+  await pane.pointer({ in: 'mod-model-effort-settings-tab', type: 'move', x: 1, y: 0 })
+  expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeDefined()
+  await pane.pointer({ in: 'mod-model-effort-settings-tab', type: 'leave', x: 0, y: 0 })
+  expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeUndefined()
   await pane.unmount()
 })
