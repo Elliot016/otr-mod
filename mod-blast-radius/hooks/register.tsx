@@ -1,7 +1,7 @@
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
-import { isNerdFace, lookFor, section, terminalSettings, type IconMode, type Look } from './look'
-import type { EntryMessage } from './entry'
+import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, section, terminalSettings, type IconMode, type Look } from './look'
+import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
 import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { ACTION_EXTRA, ACTION_GAP, actionLabels, cardRows, HOTKEY, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
@@ -37,6 +37,10 @@ let look: Look = lookFor(false)
 let held: Held | null = null
 let note = ''
 let working = false
+// The control under the pointer, from its tip post: the card's tip row and the Details footer show it.
+let hovered: TipMessage | null = null
+
+const hoveredTip = (): Tip | null => (hovered?.id && hovered.label ? { glyph: hovered.glyph ?? '', label: hovered.label, text: hovered.text ?? '' } : null)
 let actions: Action[] = []
 let previews: Previews | undefined
 
@@ -226,8 +230,8 @@ async function pause($: EngineInterface) {
 
 // Both panes' title line: Details and Settings as tabs, the shown one open.
 const tabs = (isSettings: boolean) => [
-  { id: DETAILS_TAB, label: text.card.details, icon: look.glyph.mark.shell, isOpen: !isSettings },
-  { id: SETTINGS_TAB, label: text.ui.settings, icon: look.glyph.gear, isOpen: isSettings },
+  { id: DETAILS_TAB, label: text.card.details, icon: look.glyph.mark.shell, isOpen: !isSettings, tip: { glyph: look.glyph.mark.shell, label: text.card.details, text: text.tipTabDetails } },
+  { id: SETTINGS_TAB, label: text.ui.settings, icon: look.glyph.gear, isOpen: isSettings, tip: { glyph: look.glyph.gear, label: text.ui.settings, text: text.tipTabSettings } },
 ]
 
 const isSettingsOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === SETTINGS_PANE && pane.isPlaced)
@@ -330,9 +334,9 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
   })
   // The entry draws the action; a Button nobody sees carries its digit, since only a Button takes a hotkey and a visible one inverts under the pointer.
   // Each action is a numbered pill: its digit in a subpill before the label.
-  const entry = (id: string, label: string, hotkey: string, color?: string) => (
+  const entry = (id: string, label: string, hotkey: string, tipLabel: string, tipBody: string, tipGlyph: string, color?: string) => (
     <Box key={`${id}-pad`} flexDirection="row">
-      {pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, subLead: hotkey, nerd: look.nerd, ...(color ? { color } : {}), still }} />, `${id}-pill`, THEME.surface1)}
+      {pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, subLead: hotkey, nerd: look.nerd, tip: { glyph: tipGlyph, label: tipLabel, text: tipBody }, ...(color ? { color } : {}), still }} />, `${id}-pill`, THEME.surface1)}
       <Box key={`${id}-key`} width={0} height={0} overflow="hidden">
         <Button key={`${id}-hotkey`} label={label} hotkey={hotkey} plain onPress={() => onKey(id)} />
       </Box>
@@ -343,9 +347,9 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
     <Box key="blast-card" flexDirection="column" borderStyle="round" borderColor={THEME.alert} backgroundColor={THEME.surface1} paddingX={1}>
       {body}
       <Box key="hold-actions" flexDirection="row" columnGap={ACTION_GAP}>
-        {entry('blast-cancel', labels.cancel, HOTKEY.cancel)}
-        {entry('blast-details', labels.details, HOTKEY.details)}
-        {entry('blast-run', labels.run, HOTKEY.run, THEME.alert)}
+        {entry('blast-cancel', labels.cancel, HOTKEY.cancel, labels.cancel, text.tips.cancel, look.glyph.close)}
+        {entry('blast-details', labels.details, HOTKEY.details, labels.details, text.tips.details, look.glyph.mark.shell)}
+        {entry('blast-run', labels.run, HOTKEY.run, labels.run, text.tips.run, look.glyph.go, THEME.alert)}
         {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
         {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 3 * ACTION_EXTRA + 3 * ACTION_GAP + text.card.explaining.length + 2 <= width ? (
           <Box key="hold-explaining-row" flexGrow={1} justifyContent="flex-end">
@@ -451,6 +455,7 @@ export const register: Register = (on, options) => {
       mine.decision = 'error'
     } finally {
       if (held === mine) held = null
+      hovered = null
       await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, false).catch(() => undefined)
       // The list pane belongs to the hold: when the hold ends it goes too.
       if (await isPaneOpen($, LIST_PANE).catch(() => false)) {
@@ -600,6 +605,8 @@ export const register: Register = (on, options) => {
           {section({ Box, Text }, look, 'undo', 'actions', text.ui.sectionUndo, [plainText('undo-text', plain.undo, THEME.onSurface)])}
           {section({ Box, Text }, look, 'full', 'prompt', text.ui.sectionFull, fullRows)}
           <Box key="legend-row" flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>{legend}</Box>
+          <Box key="footer-space" height={FOOTER_ROWS} />
+          {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
     }
@@ -630,7 +637,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
         <Text wrap="truncate-end" color={statusColor(note || bad)}>{note || bad || `${text.ui.statusHint} ${MARK.sep} ${text.ui.statusHintSaved}`}</Text>
-        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still })}
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still, tips: text.settingTips })}
         {section({ Box, Text }, look, 'rules', 'Bash', text.ui.sectionRules, ruleLines)}
         {section({ Box, Text }, look, 'built-in', 'Bash', text.ui.sectionBuiltIn, patterns)}
       </Box>
@@ -639,6 +646,11 @@ export const register: Register = (on, options) => {
 
   // Cancel, Details and Run are entry Clients in the card; a click posts the entry's id.
   on('ui.message', async ($, e, next) => {
+    if (isTipMessage(e.data)) {
+      hovered = e.data
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     const change = settingChoice(e.data)
     if (change) await saveSetting($, change.key, change.value)
     const clicked = e.data as EntryMessage
@@ -665,8 +677,8 @@ export const register: Register = (on, options) => {
       if (toasts.items.length === 0) return next(e)
       const others = await next(e)
       const { group, row, rest, tip } = splitRow(others)
-      const cards = toastCards({ Box, Client, Text }, toasts, look)
-      if (group.length > 0 || row.length > 0) return pillRow({ Box, Text }, look.nerd, group, row, [...cards, ...rest], tip)
+      const cards = toastCards({ Box, Client, Text }, toasts, look, text.tipToast)
+      if (group.length > 0 || row.length > 0) return pillRow({ Box, Client, Text }, look.nerd, group, row, [...cards, ...rest], tip, e.props.bodyColumns)
       return (
         <Box key="toasts-blast" flexDirection="column">
           {cards}
@@ -674,9 +686,10 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    const { group, row, tip } = splitRow(await next(e))
+    const { group, row, tip: menuTip } = splitRow(await next(e))
+    const tip = hovered?.id ? tipLine({ Box, Text }, tipText(hovered)) : menuTip
 
     // While a call is held only the card and the pill row draw, so other rows cannot fill the band and cut the card off.
-    return pillRow({ Box, Text }, look.nerd, group, row, [holdCard({ Box, Button, Client, Text }, held, e.props.bodyColumns, e.props.maxRows, id => choose($, id))], tip)
+    return pillRow({ Box, Client, Text }, look.nerd, group, row, [holdCard({ Box, Button, Client, Text }, held, e.props.bodyColumns, e.props.maxRows, id => choose($, id))], tip, e.props.bodyColumns)
   })
 }

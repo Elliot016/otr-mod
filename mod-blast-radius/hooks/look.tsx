@@ -2,7 +2,8 @@
 import type { RenderElement } from 'claude-code'
 
 import style from './style'
-import { CAPS, decodeAll, mix, THEME, WASH } from './theme'
+import type { Tip } from './entry'
+import { CAPS, decodeAll, MARK, mix, THEME, WASH } from './theme'
 
 type Glyphs = Omit<typeof style.glyphs.nerd, 'icon' | 'mark'> & { icon: Record<string, string>; mark: Record<string, string> }
 
@@ -43,6 +44,27 @@ type Elements = { Box: (props: any) => RenderElement; Text: (props: any) => Rend
 export const paneTitle = ({ Text }: Elements, look: Look, icon: string, text: string) => (
   <Text key="pane-title" color={THEME.accent} bold>{`${look.glyph.icon[icon] ?? look.glyph.title} ${text}`}</Text>
 )
+
+// The footer rows every pane reserves at its bottom: a rule, then the hovered control's glyph, label and what it does.
+export const FOOTER_ROWS = 2
+
+// Pinned at the pane bottom (scroll offset plus body rows); the row under the rule stays blank with no tip, so nothing jumps.
+export function paneFooter({ Box, Text }: Elements, tip: Tip | null, columns: number, scroll: { offset: number; bodyRows: number }) {
+  return (
+    <Box key="pane-footer" position="absolute" top={Math.max(0, scroll.offset + scroll.bodyRows - FOOTER_ROWS)} left={0} width={columns} height={FOOTER_ROWS} flexDirection="column">
+      <Text key="footer-rule" color={THEME.border}>{MARK.rule.repeat(Math.max(1, columns))}</Text>
+      {tip ? (
+        <Box key="footer-tip" flexDirection="row" paddingX={1}>
+          <Text color={THEME.accent}>{tip.glyph}</Text>
+          <Text color={THEME.onSurface} wrap="truncate-end">{` ${tip.label}`}</Text>
+          <Text color={THEME.muted} wrap="truncate-end">{` ${MARK.sep} ${tip.text}`}</Text>
+        </Box>
+      ) : (
+        <Text key="footer-tip"> </Text>
+      )}
+    </Box>
+  )
+}
 
 // A pill's leading icon, mark or digit, or its count: a rounded subpill washed from `hue` into the `fill` it sits on.
 export function subpill({ Box, Text }: Elements, nerd: boolean, fill: string, text: string, key: string, hue: string = THEME.accent) {

@@ -18,6 +18,11 @@ export default {
     "line": { "one": "{n} line", "many": "{n} lines" },
     "rule": { "one": "{n} rule", "many": "{n} rules" }
   },
+  "tips": {
+    "cancel": "stops the command from running",
+    "details": "opens the full breakdown of this command",
+    "run": "runs the command as it is"
+  },
   "atLeast": "at least ",
   "orMore": " or more",
   "noUndoRm": "No. Deleted files skip the Recycle Bin.",
@@ -288,5 +293,9 @@ export default {
     "moreProblems": " (+{n} more)",
     "rulesLoaded": "{rules} loaded",
     "rulesNote": "JS regexes on the whole command, read again when the file changes"
-  }
+  },
+  "tipTabDetails": "shows the command held right now",
+  "tipTabSettings": "shows this mod's settings",
+  "tipToast": {"label":"Dismiss","text":"hides this message"},
+  "settingTips": {"enabled":"holds risky Bash commands until you run or cancel them"}
 }

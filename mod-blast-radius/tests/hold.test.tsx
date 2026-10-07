@@ -921,3 +921,22 @@ test('the full command wraps between words, never inside one', async ($, on) => 
   await call
   await band.unmount()
 })
+
+test('hovering a card button shows its tip in the band tip row, and the Details footer reads the same post', async ($, on) => {
+  const { seen } = world(on)
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  expect(await textOf(band, /stops the command/)).toBeUndefined()
+  await band.pointer({ type: 'enter', x: 1, y: 0, in: 'blast-cancel' })
+  expect(await textOf(band, /stops the command from running/)).toBe(' stops the command from running')
+  await band.pointer({ type: 'leave', x: 1, y: 0, in: 'blast-cancel' })
+  expect(await textOf(band, /stops the command/)).toBeUndefined()
+  await band.pointer({ type: 'enter', x: 1, y: 0, in: 'blast-details' })
+  const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
+  expect(await textOf(pane, /full breakdown/)).toContain('opens the full breakdown of this command')
+  await pane.unmount()
+  await click(band, 'blast-cancel')
+  await call
+  await band.unmount()
+})
