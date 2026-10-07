@@ -1,8 +1,8 @@
 import type { ConfigValue, EngineInterface, Register, SessionMessage } from 'claude-code'
 
 import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt, type Direction } from './ask'
-import type { EntryMessage, EntryProps } from './entry'
-import { isNerdFace, lookFor, section, subpill, terminalSettings, withMark, type IconMode } from './look'
+import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip } from './entry'
+import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, section, subpill, terminalSettings, withMark, type IconMode } from './look'
 import { byTurn, canFork, CLEAR_AFTER_PROMPTS, emptySaved, KNOWN_KEPT, pack, remember, sameText, savedOf, SEEN_KEPT, shouldCheck, stringsOf, unreadCount, type Note, type Saved } from './notes'
 import { menuEntry, pill, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -82,8 +82,16 @@ let isChecking = false
 let mainSteps = 0
 // `<direction>-<note id>` while a rewrite runs.
 let rewriting = ''
-// The note opened in the panel.
-let expanded = ''
+// The notes opened in the panel, kept in $.state so they survive redraws.
+const OPEN_KEY = { plugin: 'mod-heads-up', key: 'open' }
+const openIds = async ($: EngineInterface) => stringsOf((await $.state.get(OPEN_KEY)).value)
+
+async function setOpen($: EngineInterface, id: string, isOpen: boolean) {
+  const ids = (await openIds($)).filter(each => each !== id)
+  await $.state.set(OPEN_KEY, isOpen ? [...ids, id] : ids)
+}
+// The note whose rewording choices are shown.
+let wording = ''
 let note = ''
 let actions: Action[] = []
 let previews: Previews | undefined
@@ -264,7 +272,8 @@ async function openingPane($: EngineInterface, open: () => Promise<void>) {
 
 // The card's Learn more: the panel opens on that note, already expanded and read.
 async function learnMore($: EngineInterface, id: string) {
-  expanded = id
+  await setOpen($, id, true)
+  bandTip = ''
   if (saved.card === id) saved = { ...saved, card: null, since: 0 }
   await update($, id, { isRead: true })
   await openingPane($, () => showPane($))
@@ -320,18 +329,19 @@ const clock = (at: number) => {
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 const tabs = (isSettings: boolean) => [
-  { id: 'headsup-tab', label: text.paneTitle, icon: look.glyph.warn, isOpen: !isSettings, count: saved.notes.length },
-  { id: 'headsup-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: isSettings },
+  { id: 'headsup-tab', label: text.paneTitle, icon: look.glyph.warn, isOpen: !isSettings, count: saved.notes.length, tip: { glyph: bare(look.glyph.warn), label: text.paneTitle, text: text.tipTabNotes } },
+  { id: 'headsup-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: isSettings, tip: { glyph: bare(look.glyph.gear), label: text.settingsTab, text: text.tipTabSettings } },
 ]
 
-// True while the pointer is on this mod's pill entry, which then shows its tip above the row.
-let tipShown = false
+// The hovered control's tip: the band's tip row text, and the pane footer's glyph, label and text.
+let bandTip = ''
+let paneTip: Tip | null = null
 
 const toasts = new ToastList('headsup')
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 
-const DIRECTIONS: [Direction, string][] = [['simpler', text.simpler], ['less', text.lessDetail], ['more', text.moreDetail]]
+const DIRECTIONS: [Direction, string, string][] = [['simpler', text.simpler, text.tipSimpler], ['less', text.lessDetail, text.tipLess], ['more', text.moreDetail, text.tipMore]]
 
 export const register: Register = (on, options) => {
   still = options.animations === false
@@ -401,6 +411,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', async ($, e, next) => {
+    if (e.id === PANE || e.id === SETTINGS) paneTip = null
     if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
 
     return next(e)
@@ -423,10 +434,16 @@ export const register: Register = (on, options) => {
   on('ui.message', async ($, e, next) => {
     const change = settingChoice(e.data)
     if (change) await saveSetting($, change.key, change.value)
-    const hover = e.data as { type?: string; id?: string; isOver?: boolean }
-    if (hover?.type === 'menu-hover' && hover.id === 'headsup') {
-      tipShown = hover.isOver === true
+    if (isTipMessage(e.data)) {
+      const tip = e.data
+      const isBand = tip.id === 'headsup' || Boolean(tip.id?.startsWith('headsup-card')) || Boolean(tip.id?.startsWith('toast-headsup-'))
+      if (!tip.id) {
+        bandTip = ''
+        paneTip = null
+      } else if (isBand) bandTip = tipText(tip)
+      else paneTip = { glyph: tip.glyph ?? '', label: tip.label ?? '', text: tip.text ?? '' }
       $.ui.invalidate('ui.render')
+      return next(e)
     }
     const clicked = e.data as EntryMessage
     if (clicked?.type !== 'menu-entry') return next(e)
@@ -441,23 +458,30 @@ export const register: Register = (on, options) => {
     if (id === 'headsup') await openingPane($, () => togglePane($))
     else if (id === 'headsup-tab' && !(await isOpen($))) await showPane($)
     else if (id === 'headsup-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
-    else if (id === 'headsup-card-learn' && card) await learnMore($, card)
-    else if (id === 'headsup-card-know' && card) await knowIt($, card)
+    else if (id === 'headsup-card-open' && card) await learnMore($, card)
     else if (id === 'headsup-card-dismiss' && card) {
+      bandTip = ''
       await closeCard($)
       await update($, card, { isRead: true })
     } else if (id.startsWith('headsup-note-')) {
       const noteId = id.slice('headsup-note-'.length)
-      expanded = expanded === noteId ? '' : noteId
+      await setOpen($, noteId, !(await openIds($)).includes(noteId))
+      wording = ''
       await update($, noteId, { isRead: true })
     } else if (id.startsWith('headsup-understood-')) {
       const noteId = id.slice('headsup-understood-'.length)
-      expanded = ''
-      await update($, noteId, { isRead: true })
+      await setOpen($, noteId, false)
+      wording = ''
+      paneTip = null
+      await knowIt($, noteId)
     } else if (id.startsWith('headsup-chat-')) await chat($, id.slice('headsup-chat-'.length))
-    else if (id.startsWith('headsup-know-')) await knowIt($, id.slice('headsup-know-'.length))
-    else if (id.startsWith('headsup-redo-')) {
+    else if (id.startsWith('headsup-reword-')) {
+      const noteId = id.slice('headsup-reword-'.length)
+      wording = wording === noteId ? '' : noteId
+      $.ui.invalidate('ui.render')
+    } else if (id.startsWith('headsup-redo-')) {
       const [direction, ...rest] = id.slice('headsup-redo-'.length).split('-')
+      wording = ''
       await redo($, rest.join('-'), direction as Direction)
     }
 
@@ -474,8 +498,8 @@ export const register: Register = (on, options) => {
     // A command waiting on the person outranks a heads-up: the band has few rows, and a hidden hold looks like a hang.
     const isHolding = (await $.state.get({ plugin: 'mod-blast-radius', key: 'holding' })).value === true
     const shown = saved.card && !isHolding ? noteOf(saved.card) : undefined
-    const key = (id: string, label: string, subLead: string) =>
-      pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, subLead, nerd, still } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+    const keyed = (id: string, label: string, subLead: string | undefined, tipLabel: string, tipBody: string) =>
+      pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip: { glyph: subLead ?? bare(look.glyph.close), label: tipLabel, text: tipBody }, ...(subLead ? { subLead } : {}) } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
     const card = shown ? (
       <Box key="headsup-card" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
         <Box key="headsup-card-line" flexDirection="row" columnGap={1}>
@@ -485,13 +509,12 @@ export const register: Register = (on, options) => {
           </Box>
         </Box>
         <Box key="headsup-card-keys" flexDirection="row" columnGap={1}>
-          {key('headsup-card-learn', text.learnMore, bare(look.glyph.go))}
-          {key('headsup-card-know', text.knowThis, bare(look.glyph.ok))}
-          {pill({ Box, Text }, nerd, THEME.surface3, <Client key="headsup-card-dismiss" module="./entry.tsx" height={1} props={{ id: 'headsup-card-dismiss', label: bare(look.glyph.close), isOpen: false, bg: THEME.surface3, nerd, still } satisfies EntryProps} />, 'headsup-card-dismiss-pill', THEME.surface1)}
+          {keyed('headsup-card-open', text.open, bare(look.glyph.go), text.open, text.tipOpen)}
+          {keyed('headsup-card-dismiss', bare(look.glyph.close), undefined, text.dismiss, text.tipDismiss)}
         </Box>
       </Box>
     ) : null
-    const items = [...toastCards({ Box, Client, Text }, toasts, look), card].filter(Boolean)
+    const items = [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), card].filter(Boolean)
 
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (hidden.value === true) {
@@ -505,9 +528,9 @@ export const register: Register = (on, options) => {
     const unread = unreadCount(saved.notes)
     const badge = unread > 0 ? { badge: { text: String(unread), color: THEME.accent, bg: mix(THEME.accent, isShown ? THEME.lifted : PILL.primary, WASH) } } : {}
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'headsup', { label: text.pillLabel, isOpen: isShown, idle: THEME.pill, isBusy: isOpening || isChecking || rewriting !== '', still, nerd, ...badge })
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'headsup', { label: text.pillLabel, icon: nerd ? look.glyph.warn : text.pillShort, isOpen: isShown, idle: THEME.pill, isBusy: isOpening || isChecking || rewriting !== '', still, nerd, tip: { glyph: nerd ? bare(look.glyph.warn) : MARK.bullet, label: text.pillLabel, text: text.tipPill }, ...badge }, e.props.bodyColumns)
 
-    return pillRow({ Box, Text }, nerd, [entry, ...group], row, [...items, ...rest], tipShown ? tipLine({ Box, Text }, text.tip) : tip)
+    return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...items, ...rest], bandTip ? tipLine({ Box, Text }, bandTip) : tip, e.props.bodyColumns)
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
@@ -530,74 +553,89 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, nerd, tabs(true), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
-          {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, still })}
+          {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, tips: text.settingTips, still })}
+          <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+          {paneFooter(elements, paneTip, e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
     }
 
     // Pane padding, the section's border and padding, then the row's lead glyph and gaps.
     const inner = Math.max(20, e.props.bodyColumns - 2 - 4)
-    const entryPill = (id: string, label: string, subLead: string | undefined, bg: string, under: string, isBusy = false) =>
-      pill({ Box, Text }, nerd, bg, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg, nerd, still, isBusy, ...(subLead ? { subLead } : {}) } satisfies EntryProps} />, `${id}-pill`, under)
+    const entryPill = (id: string, label: string, subLead: string | undefined, tip: Tip, extra: Partial<EntryProps> = {}) =>
+      pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip, ...(subLead ? { subLead } : {}), ...extra } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
 
-    const opened = (found: Note) => [
-      found.learn.length > inner - found.tag.length - 8 ? <Text key={`full-${found.id}`} color={THEME.onSurface}>{found.learn}</Text> : null,
-      found.title ? (
-        <Box key={`title-${found.id}`} marginTop={1}>
-          <Text color={THEME.onSurface} bold>{found.title}</Text>
-        </Box>
-      ) : null,
-      ...found.body.map((line, at) => <Text key={`body-${found.id}-${at}`} color={THEME.onSurface}>{`${MARK.bullet} ${line}`}</Text>),
-      <Box key={`actions-${found.id}`} flexDirection="row" columnGap={1} marginTop={1} flexWrap="wrap">
-        {entryPill(`headsup-understood-${found.id}`, text.understood, bare(look.glyph.ok), THEME.surface3, THEME.surface1)}
-        {entryPill(`headsup-chat-${found.id}`, text.chat, bare(look.glyph.go), THEME.surface3, THEME.surface1)}
-        {entryPill(`headsup-know-${found.id}`, text.knowThisShort, undefined, THEME.surface3, THEME.surface1)}
-      </Box>,
-      // A choice bar: the three rewrites side by side on one surface2 pill.
-      pill({ Box, Text }, nerd, THEME.surface2, (
-        <Box key={`redo-body-${found.id}`} flexDirection="row">
-          {DIRECTIONS.map(([direction, label]) => {
-            const id = `headsup-redo-${direction}-${found.id}`
-            return <Client key={id} module="./entry.tsx" height={1} props={{ id, label: ` ${label} `, isOpen: false, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting === `${direction}-${found.id}` } satisfies EntryProps} />
-          })}
-        </Box>
-      ), `redo-${found.id}`, THEME.surface1),
-    ]
+    // One round section per note. The header is always shown and every part of it toggles the note; ↗ stays a Button, since a transcript scroll needs the person's press.
+    const noteSection = (found: Note, isOpened: boolean) => {
+      const isRewording = wording === found.id
+      const turn = fill(text.turnNumber, { n: found.turn })
+      const time = clock(found.at)
+      const toggleId = `headsup-note-${found.id}`
+      const tip = { glyph: bare(isOpened ? look.glyph.expanded : look.glyph.collapsed), label: text.noteLabel, text: text.tipNote }
+      const part = (key: string, label: string, extra: Partial<EntryProps>) => (
+        <Client key={key} module="./entry.tsx" height={1} props={{ id: toggleId, label, isOpen: !found.isRead, bg: THEME.surface1, idle: THEME.muted, nerd, still, tip, ...extra } satisfies EntryProps} />
+      )
+      // Pane padding, section border and padding, the glyph, three subpills, and the ↗ pill.
+      const room = Math.max(8, inner - turn.length - found.tag.length - time.length - 24)
+      return section(elements, look, `note-${found.id}`, '', '', [
+        <Box key={`note-head-${found.id}`} flexDirection="row">
+          {part(toggleId, '', { lead: isOpened ? look.glyph.expanded : look.glyph.collapsed, leadColor: THEME.accent, subLead: turn, subLeadColor: THEME.muted })}
+          {part(`note-tag-${found.id}`, '', { subLead: found.tag, subLeadColor: THEME.accent })}
+          {part(`note-time-${found.id}`, time, { isOpen: false })}
+          {isOpened ? null : <Box key={`note-summary-${found.id}`} flexShrink={1}>{part(`note-summary-text-${found.id}`, fit(found.learn, room), {})}</Box>}
+          <Box key={`note-gap-${found.id}`} flexGrow={1} />
+          <Box key={`note-jump-pill-${found.id}`} flexShrink={0}>
+            {pill({ Box, Text }, nerd, THEME.surface3, (
+              <Button key={`note-jump-${found.id}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `note-jump-box-${found.id}`, color: THEME.accent }} onPress={() => jump($, found.turn, found.prompt)} />
+            ), `note-jump-box-${found.id}`, THEME.surface1)}
+          </Box>
+        </Box>,
+        ...(isOpened ? noteBody(found, isRewording) : []),
+      ])
+    }
 
-    const groups = byTurn(saved.notes)
+    const noteBody = (found: Note, isRewording: boolean) => {
+      return [
+        <Box key={`summary-${found.id}`} marginTop={1}>
+          <Text color={THEME.onSurface} bold>{found.learn}</Text>
+        </Box>,
+        found.title ? (
+          <Box key={`title-${found.id}`} marginTop={1}>
+            <Text color={THEME.onSurface} bold>{found.title}</Text>
+          </Box>
+        ) : null,
+        ...found.body.map((line, at) => <Text key={`body-${found.id}-${at}`} color={THEME.onSurface}>{`${MARK.bullet} ${line}`}</Text>),
+        <Box key={`actions-${found.id}`} flexDirection="row" columnGap={1} marginTop={1} flexWrap="wrap">
+          {entryPill(`headsup-understood-${found.id}`, text.gotIt, bare(look.glyph.ok), { glyph: bare(look.glyph.ok), label: text.gotIt, text: text.tipGotIt })}
+          {entryPill(`headsup-chat-${found.id}`, text.askClaude, bare(look.glyph.go), { glyph: bare(look.glyph.go), label: text.askClaude, text: text.tipAsk })}
+          {pill({ Box, Text }, nerd, THEME.surface2, <Client key={`headsup-reword-${found.id}`} module="./entry.tsx" height={1} props={{ id: `headsup-reword-${found.id}`, label: text.reword, isOpen: isRewording, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting.endsWith(`-${found.id}`), subLead: bare(look.glyph.cycle), tip: { glyph: bare(look.glyph.cycle), label: text.reword, text: text.tipReword } } satisfies EntryProps} />, `headsup-reword-${found.id}-pill`, THEME.surface1)}
+        </Box>,
+        // The three rewrites, shown once Reword is pressed: a choice bar on one surface2 pill.
+        isRewording ? (
+          <Box key={`redo-row-${found.id}`} flexDirection="row" marginTop={1}>
+            {pill({ Box, Text }, nerd, THEME.surface2, (
+              <Box key={`redo-body-${found.id}`} flexDirection="row">
+                {DIRECTIONS.map(([direction, label, tipBody]) => {
+                  const id = `headsup-redo-${direction}-${found.id}`
+                  return <Client key={id} module="./entry.tsx" height={1} props={{ id, label: ` ${label} `, isOpen: false, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting === `${direction}-${found.id}`, tip: { glyph: bare(look.glyph.cycle), label, text: tipBody } } satisfies EntryProps} />
+                })}
+              </Box>
+            ), `redo-${found.id}`, THEME.surface1)}
+          </Box>
+        ) : null,
+      ]
+    }
+
+    const opened = await openIds($)
+    const ordered = byTurn(saved.notes).flatMap(group => group.notes)
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.hint, { sep: MARK.sep })}</Text>
-        {groups.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
-        {groups.map(group =>
-          section(elements, look, `turn-${group.turn}`, '', '', [
-            <Box key={`turn-head-${group.turn}`} flexDirection="row" columnGap={1}>
-              {subpill({ Box, Text }, nerd, THEME.surface1, fill(text.turnNumber, { n: group.turn }), `turn-number-${group.turn}`)}
-              {/* Only the prompt gives way: a wrapped time made the row two lines and stretched the ↗ pill with it. */}
-              <Box key={`turn-time-${group.turn}`} flexShrink={0}>
-                <Text color={THEME.muted}>{clock(group.at)}</Text>
-              </Box>
-              <Box key={`turn-prompt-${group.turn}`} flexGrow={1} flexShrink={1}>
-                <Text color={THEME.onSurface} wrap="truncate-end">{group.prompt}</Text>
-              </Box>
-              {/* A Button, not an entry: a transcript scroll needs the person's press. */}
-              <Box key={`turn-jump-pill-${group.turn}`} flexShrink={0}>
-                {pill({ Box, Text }, nerd, THEME.surface3, (
-                  <Button key={`turn-jump-${group.turn}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `turn-jump-box-${group.turn}`, color: THEME.accent }} onPress={() => jump($, group.turn, group.prompt)} />
-                ), `turn-jump-box-${group.turn}`, THEME.surface1)}
-              </Box>
-            </Box>,
-            ...group.notes.flatMap(found => {
-              const isExpanded = expanded === found.id
-              const id = `headsup-note-${found.id}`
-              const row = (
-                <Client key={id} module="./entry.tsx" height={1} props={{ id, label: fit(found.learn, Math.max(10, inner - found.tag.length - 8)), isOpen: !found.isRead, bg: THEME.surface1, idle: THEME.muted, lead: isExpanded ? look.glyph.expanded : look.glyph.collapsed, leadColor: THEME.accent, subLead: found.tag, subLeadColor: THEME.accent, nerd, still } satisfies EntryProps} />
-              )
-              return isExpanded ? [row, <Box key={`open-${found.id}`} flexDirection="column" paddingLeft={2}>{opened(found)}</Box>] : [row]
-            }),
-          ]),
-        )}
+        {ordered.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
+        {ordered.map(found => noteSection(found, opened.includes(found.id)))}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter(elements, paneTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
   })

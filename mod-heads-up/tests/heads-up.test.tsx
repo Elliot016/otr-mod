@@ -18,10 +18,10 @@ const FULL = [
 
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
 
-type Setup = { reply?: () => unknown; below?: (elements: any) => unknown }
+type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean }
 
 // Stubs everything the mod touches. `forks` and `completes` record what the model was asked, `store` what the mod saved.
-function setup(on: any, { reply = () => answered(FULL), below }: Setup = {}) {
+function setup(on: any, { reply = () => answered(FULL), below, isUnplaced }: Setup = {}) {
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 5, 16, 52) })
   const store = new Map<string, unknown>()
   const forks: string[] = []
@@ -54,6 +54,7 @@ function setup(on: any, { reply = () => answered(FULL), below }: Setup = {}) {
   on('prompt.submit', (_$: unknown, e: { text: string }) => ({ text: e.text }))
   on('ui.panes', () => ({ value: panes }))
   on('ui.open', (_$: unknown, e: { id: string }) => {
+    if (isUnplaced) return { value: { isPlaced: false, reason: 'too narrow' } }
     panes = [...panes.filter(pane => pane.id !== e.id), { id: e.id, isPlaced: true }]
     return { value: { isPlaced: true } }
   })
@@ -61,6 +62,7 @@ function setup(on: any, { reply = () => answered(FULL), below }: Setup = {}) {
     panes = panes.filter(pane => pane.id !== e.id)
     return { value: undefined }
   })
+  on('state.get', (_$: unknown, e: { plugin: string; key: string }) => ({ value: { value: states.get(`${e.plugin}.${e.key}`) } }))
   on('state.set', (_$: unknown, e: { plugin: string; key: string; value: unknown }) => {
     states.set(`${e.plugin}.${e.key}`, e.value)
     return { value: undefined }
@@ -143,8 +145,7 @@ test('the entry shimmers while the check runs, then the card shows the note abov
   const entry = JSON.stringify(await ui.find({ key: 'menu-entry-headsup' }))
   expect(entry).toContain('"isBusy":false')
   expect(entry).toContain('"text":"1"')
-  expect(await drawn(ui, 'headsup-card-learn')).toContain('Learn more')
-  expect(await drawn(ui, 'headsup-card-know')).toContain('Know this already')
+  expect(await drawn(ui, 'headsup-card-open')).toContain('Open')
   await ui.unmount()
 })
 
@@ -196,22 +197,136 @@ test('with nothing to fork yet the check falls back to the uncached route', asyn
   await ui.unmount()
 })
 
-test('Know this already stores the topic, closes the card, and the next check is told to skip it', async ($, on) => {
+test('Got it in the panel stores the topic, closes the card and reads the note, and the next check is told to skip it', async ($, on) => {
   const { clock, store, forks } = setup(on)
   await finding($, clock)
   const ui = await band($)
-  await click(ui, 'headsup-card-know')
+  await click(ui, 'headsup-card-open')
+  await clock.settle()
+  await ui.unmount()
+  const panel = await pane($)
+  const id = String(JSON.stringify(await panel.drawn()).match(/"id":"headsup-understood-([^"]+)"/)?.[1])
+  await click(panel, `headsup-understood-${id}`)
   await clock.settle()
   expect(store.get('known')).toEqual(['One-off /ask questions cost more'])
-  expect(await ui.find({ key: 'headsup-card' })).toBeUndefined()
-  await ui.unmount()
+  expect(JSON.stringify(await panel.drawn())).not.toContain('headsup-understood-')
+  await panel.unmount()
   await step($, 6, { turnId: 't2' })
   await clock.settle()
   expect(forks[1]).toContain('- One-off /ask questions cost more')
-  // The same learn line, offered again, never shows twice.
   const again = await band($)
   expect(await again.find({ key: 'headsup-card' })).toBeUndefined()
   await again.unmount()
+})
+
+test('the card has two actions, Open and ×, and no Know this already', async ($, on) => {
+  const { clock } = setup(on)
+  await finding($, clock)
+  const ui = await band($)
+  const tree = JSON.stringify(await ui.drawn())
+  const ids = [...tree.matchAll(/"id":"(headsup-card-[a-z]+)"/g)].map(each => each[1])
+  expect([...new Set(ids.filter(id => id !== 'headsup-card-tag'))].sort()).toEqual(['headsup-card-dismiss', 'headsup-card-open'])
+  expect(tree).not.toContain('Know this')
+  await ui.unmount()
+})
+
+test('an open note has Got it, Ask Claude and Reword, the summary once, and the three rewordings only after Reword', async ($, on) => {
+  const { clock } = setup(on)
+  await finding($, clock)
+  const ui = await band($)
+  await click(ui, 'headsup-card-open')
+  await clock.settle()
+  await ui.unmount()
+  const panel = await pane($)
+  const tree = JSON.stringify(await panel.drawn())
+  const ids = [...tree.matchAll(/"id":"(headsup-(?:understood|chat|reword|redo-[a-z]+)-[^"]+)"/g)].map(each => each[1]!.replace(/-n1-.*$/, ''))
+  expect([...new Set(ids)].sort()).toEqual(['headsup-chat', 'headsup-reword', 'headsup-understood'])
+  expect(tree.split('The main agent cached /ask').length - 1).toBe(1)
+  const id = String(tree.match(/"id":"headsup-reword-([^"]+)"/)?.[1])
+  await click(panel, `headsup-reword-${id}`)
+  await clock.settle()
+  const after = JSON.stringify(await panel.drawn())
+  for (const direction of ['simpler', 'less', 'more']) expect(after).toContain(`headsup-redo-${direction}-${id}`)
+  await panel.unmount()
+})
+
+test('a note is one header row, a click opens it and a second click folds it, and Got it folds it and reads it', async ($, on) => {
+  const { clock, states } = setup(on)
+  await finding($, clock)
+  const panel = await pane($)
+  const folded = JSON.stringify(await panel.drawn())
+  const id = String(folded.match(/"id":"headsup-note-([^"]+)"/)?.[1])
+  // Header only: the turn number once, no per-turn prompt row, no body, no actions.
+  expect(folded.split('"key":"note-head-').length - 1).toBe(1)
+  expect(folded).not.toContain('turn-head')
+  expect(folded).toContain('#1')
+  expect(folded).not.toContain('Add follow-ups to /ask')
+  expect(folded).not.toContain('headsup-understood-')
+  expect(folded).not.toContain('Watch how often')
+  expect(folded).toContain('Heads up')
+  await click(panel, `headsup-note-${id}`)
+  await clock.settle()
+  const open = JSON.stringify(await panel.drawn())
+  expect(open).toContain('Watch how often people ask follow-ups.')
+  expect(open.split('The main agent cached /ask').length - 1).toBe(1)
+  for (const action of ['understood', 'chat', 'reword']) expect(open).toContain(`headsup-${action}-${id}`)
+  expect(states.get('mod-heads-up.open')).toEqual([id])
+  await click(panel, `headsup-note-${id}`)
+  await clock.settle()
+  const closed = JSON.stringify(await panel.drawn())
+  expect(closed).not.toContain('Watch how often')
+  expect(closed).not.toContain('headsup-understood-')
+  await click(panel, `headsup-note-${id}`)
+  await clock.settle()
+  await click(panel, `headsup-understood-${id}`)
+  await clock.settle()
+  const after = JSON.stringify(await panel.drawn())
+  expect(after).not.toContain('Watch how often')
+  expect(states.get('mod-heads-up.open')).toEqual([])
+  const ui = await band($)
+  expect(JSON.stringify(await ui.find({ key: 'menu-entry-headsup' }))).not.toContain('"badge"')
+  await ui.unmount()
+  await panel.unmount()
+})
+
+test('hovering a note header posts its tip into the footer', async ($, on) => {
+  const { clock } = setup(on)
+  await finding($, clock)
+  const panel = await pane($)
+  const id = String(JSON.stringify(await panel.drawn()).match(/"id":"headsup-note-([^"]+)"/)?.[1])
+  await panel.pointer({ in: `headsup-note-${id}`, type: 'move', x: 1, y: 0 })
+  await clock.settle()
+  const footer = JSON.stringify(await panel.find({ key: 'pane-footer' }))
+  expect(footer).toContain('Open note')
+  expect(footer).toContain('opens or folds this note')
+  await panel.unmount()
+})
+
+test('a hovered pane control posts its tip into the footer, and the card and the pill show theirs in the band tip row', async ($, on) => {
+  const { clock } = setup(on)
+  await finding($, clock)
+  const ui = await band($)
+  await ui.pointer({ in: 'headsup-card-dismiss', type: 'move', x: 1, y: 0 })
+  await clock.settle()
+  expect(JSON.stringify(await ui.drawn())).toContain('Dismiss:')
+  await ui.pointer({ in: 'menu-entry-headsup', type: 'move', x: 1, y: 0 })
+  await clock.settle()
+  expect(JSON.stringify(await ui.drawn())).toContain('notes on things you should know')
+  await click(ui, 'headsup-card-open')
+  await clock.settle()
+  await ui.unmount()
+  const panel = await pane($)
+  expect(JSON.stringify(await panel.find({ key: 'pane-footer' }))).not.toContain('Ask Claude')
+  const id = String(JSON.stringify(await panel.drawn()).match(/"id":"headsup-chat-([^"]+)"/)?.[1])
+  await panel.pointer({ in: `headsup-chat-${id}`, type: 'move', x: 1, y: 0 })
+  await clock.settle()
+  const hovered = JSON.stringify(await panel.find({ key: 'pane-footer' }))
+  expect(hovered).toContain('Ask Claude')
+  expect(hovered).toContain('drafts a follow-up in your prompt')
+  await panel.pointer({ in: 'headsup-settings', type: 'move', x: 1, y: 0 })
+  await clock.settle()
+  expect(JSON.stringify(await panel.find({ key: 'pane-footer' }))).toContain('opens this mod')
+  await panel.unmount()
 })
 
 test('the card clears after two prompts, or at once on ×, and stays in the panel', async ($, on) => {
@@ -241,13 +356,13 @@ test('the card clears after two prompts, or at once on ×, and stays in the pane
   await panel.unmount()
 })
 
-test('Learn more opens the panel on that note: its turn, the explanation, Chat fills the prompt, Simpler words rewrites it, ↗ scrolls', async ($, on) => {
+test('Open opens the panel on that note: its turn, the explanation, Chat fills the prompt, Simpler words rewrites it, ↗ scrolls', async ($, on) => {
   let rewritten = false
   const { clock, panes, fills, forks, states } = setup(on, { reply: () => answered(rewritten ? 'title: Plainer\nexplain:\n- in short words' : FULL) })
   await $.ui.mount({ plugin: 'mod-heads-up', surface: 'terminal', component: 'UserMessage', requestId: 'row-1', props: { text: 'Add follow-ups to /ask', origin: { kind: 'composer' } } } as never)
   await finding($, clock)
   const ui = await band($)
-  await click(ui, 'headsup-card-learn')
+  await click(ui, 'headsup-card-open')
   await clock.settle()
   expect(panes().map(each => each.id)).toEqual(['headsup'])
   expect(states.get('mod-heads-up.pane')).toBe(true)
@@ -259,7 +374,6 @@ test('Learn more opens the panel on that note: its turn, the explanation, Chat f
   const panel = await pane($)
   const tree = JSON.stringify(await panel.drawn())
   expect(tree).toContain('#1')
-  expect(tree).toContain('Add follow-ups to /ask')
   expect(tree).toContain('One-off /ask questions cost more')
   expect(tree).toContain('Watch how often people ask follow-ups.')
 
@@ -268,6 +382,8 @@ test('Learn more opens the panel on that note: its turn, the explanation, Chat f
   expect(fills).toEqual([{ text: 'Tell me more about this: The main agent cached /ask, so one-off questions now cost more.', mode: 'replace' }])
 
   rewritten = true
+  await click(panel, `headsup-reword-${id}`)
+  await clock.settle()
   await click(panel, `headsup-redo-simpler-${id}`)
   await clock.settle()
   expect(forks.at(-1)).toContain('more plainly')
@@ -276,7 +392,7 @@ test('Learn more opens the panel on that note: its turn, the explanation, Chat f
   expect(after).toContain('in short words')
 
   // The kit answers no ui.scroll, so a found row shows the kit's refusal; a row never drawn would say it is not on screen.
-  await panel.press({ key: 'turn-jump-1' })
+  await panel.press({ key: `note-jump-${id}` })
   await clock.settle()
   expect(await panel.find({ type: 'Text', text: /ui\.scroll/ })).toBeDefined()
   expect(await panel.find({ type: 'Text', text: /not on screen/ })).toBeUndefined()
@@ -313,8 +429,8 @@ test('icons=safe draws the plain close mark and bracket-free subpills', { option
   await finding($, clock)
   const ui = await band($)
   expect(await drawn(ui, 'headsup-card-dismiss')).toContain('×')
-  expect(await drawn(ui, 'headsup-card-learn')).toContain('↵')
-  expect(await drawn(ui, 'headsup-card-learn')).not.toContain('[↵]')
+  expect(await drawn(ui, 'headsup-card-open')).toContain('↵')
+  expect(await drawn(ui, 'headsup-card-open')).not.toContain('[↵]')
   await ui.unmount()
 })
 
@@ -325,5 +441,14 @@ test('icons=nerd draws the Nerd close glyph', { options: { icons: 'nerd' } }, as
   const close = await drawn(ui, 'headsup-card-dismiss')
   expect(close).toContain(String.fromCodePoint(0xf00d))
   expect(close).not.toContain('×')
+  await ui.unmount()
+})
+
+test('hovering a toast × shows its tip in the band tip row', async ($, on) => {
+  setup(on, { isUnplaced: true })
+  const ui = await band($)
+  await click(ui, 'menu-entry-headsup')
+  await ui.pointer({ in: 'toast-headsup-1', type: 'move', x: 0, y: 0 })
+  expect(JSON.stringify(await ui.drawn())).toContain('Dismiss:')
   await ui.unmount()
 })

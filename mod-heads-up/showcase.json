@@ -2,8 +2,8 @@
   "tagline": "One thing worth knowing, only when it matters",
   "features": [
     { "title": "A side check", "detail": "Every sixth step of a long turn, at most once per turn, a check reads the session and flags one thing you should understand and probably missed. Most checks show nothing." },
-    { "title": "A card above the prompt", "detail": "The note shows with its tag, You should know or Heads up, and says who decided. Learn more opens it in the panel; Know this already keeps it from coming back." },
-    { "title": "The Heads up panel", "detail": "Every note of the session under its turn, opened in place, with Chat in main session and rewrites in simpler words, with less detail or with more detail." }
+    { "title": "A card above the prompt", "detail": "The note shows with its tag, You should know or Heads up, and says who decided. Open shows it in the panel, × dismisses it." },
+    { "title": "The Heads up panel", "detail": "Every note of the session under its turn, opened in place, with Got it, Ask Claude and Reword (simpler words, less detail or more detail). Hover any control for what it does." }
   ],
   "actions": [
     { "label": "Close the heads-up card", "command": "mod-heads-up", "args": "clear" },
@@ -13,7 +13,7 @@
     "enabled": {
       "true": [
         { "spans": [{ "text": "The main agent cached /ask, so one-off questions cost more.", "pill": true, "bg": "surface1", "sub": "Heads up" }] },
-        { "spans": [{ "text": "Learn more", "pill": true, "sub": "↵" }, { "text": " " }, { "text": "Know this already", "pill": true, "sub": "✓" }, { "text": "  " }, { "text": "×", "color": "muted", "pill": true }] }
+        { "spans": [{ "text": "Open", "pill": true, "sub": "↵" }, { "text": "  " }, { "text": "×", "color": "muted", "pill": true }] }
       ],
       "false": [
         { "spans": [{ "text": "No checks, no extra requests", "color": "muted" }] }
