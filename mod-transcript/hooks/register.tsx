@@ -668,12 +668,14 @@ export const register: Register = (on, options) => {
 
   // The chat rows' controls have no tip row of their own, so their tip shows in the band's, on the shared pill row another mod drew.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.surface !== 'terminal' || e.props.hasSurvey || !hovered?.id) return next(e)
+    // Read once: a leave posted while next(e) runs clears `hovered`.
+    const tip = tipText(hovered)
+    if (e.surface !== 'terminal' || e.props.hasSurvey || !tip) return next(e)
     const { Box, Client, Text } = $.ui.resolve(e)
     const others = await next(e)
     const { group, row, rest } = splitRow(others)
     if (group.length === 0 && row.length === 0) return others
-    return pillRow({ Box, Client, Text }, look.nerd, group, row, rest, tipLine({ Box, Text }, tipText(hovered)), e.props.bodyColumns)
+    return pillRow({ Box, Client, Text }, look.nerd, group, row, rest, tipLine({ Box, Text }, tip), e.props.bodyColumns)
   })
 
   // Only the settings hook event names the transcript; kept per session so a reload finds it again.

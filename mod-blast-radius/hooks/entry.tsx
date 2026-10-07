@@ -38,7 +38,7 @@ export type TipMessage = { type: 'tip'; id: string | null; glyph?: string; label
 export const isTipMessage = (data: unknown): data is TipMessage => (data as TipMessage | undefined)?.type === 'tip'
 
 // The band's tip row text for a tip message: "Label: what it does", or '' once the pointer left.
-export const tipText = (message: TipMessage) => (message.id && message.label ? `${message.label}: ${message.text ?? ''}` : '')
+export const tipText = (message: TipMessage | null | undefined) => (message?.id && message.label ? `${message.label}: ${message.text ?? ''}` : '')
 
 // A control calls this from onPointer, with its tip on enter and null on leave; never also `menu-hover`, one post per frame lands.
 export const postTip = (surface: { post: (data: any) => void }, id: string, tip: Tip | null) => {
