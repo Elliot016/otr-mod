@@ -415,11 +415,15 @@ type TaskProps = { text: string; origin: { kind: string }; from?: { name: string
 // A subagent's or teammate's report: a head line with its sender, status, time and first line, then a card of its fields and first lines.
 function reportRow(parts: Controls & Rows, props: TaskProps, report: Report, width: number, fold?: { id: string; isOpen: boolean; onPress: () => unknown }) {
   const { Box, Text } = parts
-  const lines = props.text.replace(/\s+$/, '').split('\n')
-  const summary = lines.find(line => line.trim())?.trim() ?? ''
+  const all = props.text.replace(/\s+$/, '').split('\n')
+  const first = all.findIndex(line => line.trim())
+  const summary = first < 0 ? '' : all[first]!.trim()
   const time = report.durationMs !== undefined ? elapsed(report.durationMs) : ''
   const head = [report.name || text.reportFallback, report.status, time, summary].filter(Boolean).join(` ${MARK.sep} `)
   const label = `${look.glyph.mark.agent} ${head}`
+  const headRoom = fold ? width - 4 : width
+  // A summary the head shows whole is not repeated in the card; a cut one stays there in full.
+  const lines = cut(label, headRoom) === label ? all.slice(first + 1) : all
   const fields = [
     props.task?.id ? fill(text.reportTask, { id: props.task.id }) : '',
     props.task?.type ? fill(text.reportType, { type: props.task.type }) : '',
@@ -431,9 +435,9 @@ function reportRow(parts: Controls & Rows, props: TaskProps, report: Report, wid
   return (
     <Box key="toggle-report" flexDirection="column">
       {fold ? (
-        toggleLine(parts, 'toggle-report-fold', THEME.accent, fold.isOpen, cut(label, width - 4), { kind: 'turns', id: fold.id }, fold.onPress)
+        toggleLine(parts, 'toggle-report-fold', THEME.accent, fold.isOpen, cut(label, headRoom), { kind: 'turns', id: fold.id }, fold.onPress)
       ) : (
-        <Text key="toggle-report-head" color={THEME.onSurface} wrap="truncate-end">{cut(label, width)}</Text>
+        <Text key="toggle-report-head" color={THEME.onSurface} wrap="truncate-end">{cut(label, headRoom)}</Text>
       )}
       {isOpen ? (
         <Box key="toggle-report-card" flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>

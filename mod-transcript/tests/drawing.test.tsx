@@ -153,10 +153,10 @@ test('an API error that needs the person is one red line that says so', async ($
   expect((await reply.find({ type: 'Text', text: /billing problem/ }))?.props.color).toBe(THEME.alert)
 })
 
-test('a subagent report draws a head line with its fields, and a card whose body stops at six lines', async ($, on) => {
+test('a subagent report draws a head line with its fields, and a card whose body stops at six lines after the head\'s summary', async ($, on) => {
   const mount = await open($, on)
   const report = await mount('UserMessage', ID(20), {
-    text: 'Found it\nl2\nl3\nl4\nl5\nl6\nl7\nl8',
+    text: 'Found it\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9',
     origin: { kind: 'task-notification' },
     isExpanded: false,
     task: { id: 'a1', status: 'completed', type: 'local_agent', durationMs: 122000, toolUseId: 'toolu_agent' },
@@ -164,9 +164,18 @@ test('a subagent report draws a head line with its fields, and a card whose body
   })
   expect(await report.find({ type: 'Text', text: /researcher · completed · 2m 2s · Found it/ })).toBeDefined()
   expect(await report.find({ type: 'Text', text: 'task a1' })).toBeDefined()
-  expect(await report.find({ type: 'Text', text: 'l6' })).toBeDefined()
-  expect(await report.find({ type: 'Text', text: 'l7' })).toBeUndefined()
+  expect(await report.find({ type: 'Text', text: /^Found it$/ })).toBeUndefined()
+  expect(await report.find({ type: 'Text', text: 'l7' })).toBeDefined()
+  expect(await report.find({ type: 'Text', text: 'l8' })).toBeUndefined()
   expect(await report.find({ type: 'Text', text: '+ 2 more lines' })).toBeDefined()
+})
+
+test('a summary too long for the head stays in the card', async ($, on) => {
+  const mount = await open($, on)
+  const long = `Background shell command ${'x'.repeat(200)}`
+  const report = await mount('UserMessage', ID(21), { text: long, origin: { kind: 'task-notification' }, isExpanded: false, task: { id: 'b1', status: 'stopped' } })
+  expect(await report.find({ type: 'Text', text: /^Background shell command x/ })).toBeDefined()
+  expect(await report.find({ type: 'Text', text: /stopped · Background shell command/ })).toBeDefined()
 })
 
 // A subagent's hand-back, sent from task a2, and the notice that task a2 finished in 15m 52s.
