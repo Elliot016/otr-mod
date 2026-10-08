@@ -3,13 +3,14 @@ import type { ConfigValue, EngineInterface, Register, SessionMessage } from 'cla
 import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt, type Direction } from './ask'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
-import { byTurn, canFork, CLEAR_AFTER_PROMPTS, emptySaved, KNOWN_KEPT, pack, remember, sameText, savedOf, SEEN_KEPT, shouldCheck, stringsOf, unreadCount, type Note, type Saved } from './notes'
+import { byTurn, canFork, CLEAR_AFTER_PROMPTS, emptySaved, KNOWN_KEPT, pack, recentSessions, remember, restates, sameText, savedOf, SEEN_KEPT, shouldCheck, stringsOf, unreadCount, type Note, type Saved } from './notes'
 import { isPrompt, PLACEHOLDER, PromptNumbers } from './prompts'
 import { menuEntry, pill, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
 import { fill, MARK, mix, statusColor, THEME, WASH } from './theme'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
+import { bytesOf, CHUNK_BYTES, chunkArgv, feedLines } from './transcript'
 
 // The settings (userConfig), fixed per activation: a change reloads the mod.
 let iconMode: IconMode = 'auto'
@@ -67,10 +68,17 @@ const SETTINGS = 'headsup-settings'
 // The session's notes, the shown card and the prompt count live in the store, so a reload or a resume keeps them.
 let saved: Saved = emptySaved()
 let loadedSession = ''
+// The load of the session's store. Hooks that ask at once share it, so none reads the notes before they load.
+let loading: { session: string; done: Promise<void> } | null = null
+// The seen topics live per session; the known topics stay global.
 let seen: string[] = []
 let known: string[] = []
 // The prompts drawn in the composer this session, by requestId: the transcript may not hold them yet.
 const drawnPrompts = new Map<string, string>()
+// How far the transcript was read, so a check reads only what was written since. A cache: a reload starts it over.
+let transcript: { path: string; read: number; numbers: PromptNumbers } | null = null
+// A headless run (claude -p, the SDK) has no one at the prompt to read a note, so it never checks. Set at session.start.
+let isInteractive = true
 
 // The last main request's model and effort, which pick the check's route.
 let lastModel = ''
@@ -95,17 +103,31 @@ let wording = ''
 let note = ''
 let actions: Action[] = []
 let previews: Previews | undefined
-// Prompt text -> the requestId Claude Code drew its row under, which ↗ scrolls to.
-const drawn = new Map<string, string>()
 
 async function ensureLoaded($: EngineInterface) {
   const session = await $.session.id()
-  if (session === loadedSession) return
-  loadedSession = session
+  if (loading?.session !== session) loading = { session, done: loadSession($, session) }
+  await loading.done
+}
+
+async function loadSession($: EngineInterface, session: string) {
   drawnPrompts.clear()
-  saved = savedOf(await $.store.get(`notes:${session}`).catch(() => undefined))
-  seen = stringsOf(await $.store.get('seen').catch(() => undefined))
-  known = stringsOf(await $.store.get('known').catch(() => undefined))
+  const [nextSaved, nextSeen, nextKnown, sessions] = await Promise.all([
+    $.store.get(`notes:${session}`).catch(() => undefined),
+    $.store.get(`seen:${session}`).catch(() => undefined),
+    $.store.get('known').catch(() => undefined),
+    $.store.get('sessions').catch(() => undefined),
+  ])
+  // A load for another session started meanwhile: that one owns the state now.
+  if (loading?.session !== session) return
+  loadedSession = session
+  saved = savedOf(nextSaved)
+  seen = stringsOf(nextSeen)
+  known = stringsOf(nextKnown)
+  // Only the most recent sessions keep their notes and seen topics in the store.
+  const recent = recentSessions(stringsOf(sessions), session)
+  await $.store.set('sessions', recent.kept).catch(() => {})
+  for (const old of recent.dropped) await Promise.all([$.store.delete(`notes:${old}`), $.store.delete(`seen:${old}`)]).catch(() => {})
 }
 
 async function save($: EngineInterface) {
@@ -132,28 +154,34 @@ async function findTranscript($: EngineInterface) {
   return ''
 }
 
-// $.fs.read rejects past 4 MiB, so a longer transcript streams through cat or type, as mod-transcript reads it.
-async function transcriptText($: EngineInterface, path: string) {
-  const size = path ? ((await $.fs.stat(path).catch(() => null))?.size ?? 0) : 0
-  if (size === 0) return ''
-  const text = String(await $.fs.read(path).catch(() => ''))
-  if (text) return text
-  const isWindows = /^[A-Za-z]:|\\/.test(path)
-  // cmd's type rejects forward slashes.
-  const argv = isWindows ? ['cmd', '/c', 'type', path.replace(/\//g, '\\')] : ['cat', path]
-  let streamed = ''
-  for await (const chunk of $.process.spawn({ argv })) {
-    if (chunk.stream === 'stdout') streamed += chunk.text
+// $.fs.read takes a whole file up to 4 MiB and cannot seek, so past that, and for any read from an offset, a process prints the bytes.
+async function readBytes($: EngineInterface, path: string, from: number, length: number) {
+  if (from === 0) {
+    const whole = await $.fs.read(path, { as: 'bytes' }).catch(() => null)
+    if (whole) return bytesOf(whole.base64)
   }
-  return streamed
+  const { stdout } = await $.process.run(chunkArgv(path, from, length)).catch(() => ({ stdout: '' }))
+  return bytesOf(stdout)
 }
 
-// The prompts numbered as the transcript numbers them. Read at each check: /rewind and a late load change the live branch.
+// The prompts numbered as the transcript numbers them. Each check reads only the bytes written since the last one, so /rewind and a late load still change the live branch as the file grows.
 async function numberPrompts($: EngineInterface) {
-  const numbers = new PromptNumbers()
-  for (const line of (await transcriptText($, await transcriptOf($))).split('\n')) if (line.trim()) numbers.feed(line)
-  drawnPrompts.forEach((text, id) => numbers.claim(id, text))
-  return numbers
+  const path = await transcriptOf($)
+  const size = path ? ((await $.fs.stat(path).catch(() => null))?.size ?? 0) : 0
+  // A file that shrank, or another transcript, starts over.
+  if (transcript?.path !== path || size < transcript.read) transcript = { path, read: 0, numbers: new PromptNumbers() }
+  const cache = transcript
+  let carry = new Uint8Array(0)
+  let at = cache.read
+  while (at < size) {
+    const chunk = await readBytes($, path, at, Math.min(CHUNK_BYTES, size - at))
+    if (chunk.length === 0) break
+    at += chunk.length
+    carry = feedLines(cache.numbers, carry, chunk)
+  }
+  cache.read = at - carry.length
+  cache.numbers.drawn([...drawnPrompts].map(([id, text]) => ({ id, text })))
+  return cache.numbers
 }
 
 const noteOf = (id: string) => saved.notes.find(each => each.id === id)
@@ -184,24 +212,35 @@ async function check($: EngineInterface) {
     const reply = await ask($, checkPrompt(seen, known))
     const found = reply ? parseCheck(reply) : null
     // A /clear while the check ran makes it another session's.
-    if (!found || seen.includes(found.learn) || session !== (await $.session.id())) return
+    if (reply === null || session !== (await $.session.id())) return
+    const turn = running?.number ?? 0
+    // A topic offered or known before, in other words or the same, is not offered again.
+    if (!found || [...seen, ...known].some(each => restates(each, found.learn))) return await recordCheck($, turn, false)
     // The main agent often catches the same thing within a step or two, so a finding that a newer step may have overtaken is asked about once more.
     if (mainSteps !== startStep) {
       const verdict = await ask($, recheckPrompt(found))
-      if (!verdict || !parseRecheck(verdict) || session !== (await $.session.id())) return
+      if (verdict === null || session !== (await $.session.id())) return
+      if (!parseRecheck(verdict)) return await recordCheck($, turn, false)
     }
     const at = await $.clock.now()
-    const added: Note = { ...found, id: `n${saved.notes.length + 1}-${at}`, turn: running?.number ?? 0, prompt: running?.text ?? '', at, isRead: false }
-    saved = { ...saved, notes: [...saved.notes, added], card: added.id, since: 0 }
+    const added: Note = { ...found, id: `n${saved.notes.length + 1}-${at}`, turn, prompt: running?.text ?? '', promptId: running?.id, at, isRead: false }
+    saved = { ...saved, notes: [...saved.notes, added], card: added.id, since: 0, checked: { turn, at, found: true } }
     seen = remember(seen, found.learn, SEEN_KEPT)
     await save($)
-    await $.store.set('seen', seen).catch(() => {})
+    await $.store.set(`seen:${session}`, seen).catch(() => {})
   } catch {
     // A heads-up is a courtesy: any failure shows nothing.
   } finally {
     isChecking = false
     $.ui.invalidate('ui.render')
   }
+}
+
+// The last check's result for the pane's last-check line. A check that got no answer records nothing.
+async function recordCheck($: EngineInterface, turn: number, found: boolean) {
+  saved = { ...saved, checked: { turn, at: await $.clock.now(), found } }
+  await save($)
+  $.ui.invalidate('ui.render')
 }
 
 async function update($: EngineInterface, id: string, change: Partial<Note>) {
@@ -341,9 +380,8 @@ async function answer($: EngineInterface, args: string) {
   return ''
 }
 
-// Scrolls the transcript to the turn's prompt row; Claude Code allows it only with the person's press behind it.
-async function jump($: EngineInterface, turn: number, prompt: string) {
-  const requestId = drawn.get(sameText(prompt))
+// Scrolls the transcript to the turn's prompt row by its id, so a prompt sent twice reaches its own turn. Claude Code allows the scroll only with the person's press behind it.
+async function jump($: EngineInterface, turn: number, requestId: string) {
   if (!requestId) {
     note = `${MARK.warn} ${fill(text.notDrawn, { n: turn })}`
   } else {
@@ -372,6 +410,15 @@ const clock = (at: number) => {
 
 // A control glyph without the brackets and padding it carries as a Button label, for drawing inside a pill.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
+
+// The row under the hint: when the last check ran, the turn it read and whether it showed a note.
+async function lastCheckLine($: EngineInterface) {
+  const checked = saved.checked
+  if (!checked) return text.noCheck
+  const minutes = Math.max(0, Math.floor(((await $.clock.now()) - checked.at) / 60_000))
+  const ago = minutes < 1 ? text.agoUnder : fill(text.agoMinutes, { min: minutes })
+  return fill(checked.found ? text.checkedNote : text.checkedNone, { n: checked.turn, ago })
+}
 
 const tabs = (isSettings: boolean) => [
   { id: 'headsup-tab', label: text.paneTitle, icon: look.glyph.warn, isOpen: !isSettings, count: saved.notes.length, tip: { glyph: bare(look.glyph.warn), label: text.paneTitle, text: text.tipTabNotes } },
@@ -408,6 +455,7 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
+    isInteractive = e.isInteractive
     await loadLook($)
     await $.command.register({ name: 'mod-heads-up', description: text.commandDescription, argumentHint: '[settings|clear|forget]' })
     await ensureLoaded($)
@@ -426,7 +474,7 @@ export const register: Register = (on, options) => {
       lastModel = e.model
       lastEffort = e.effort
       mainSteps += 1
-      if (enabled && shouldCheck(e.index, e.turnId, checkedTurn, Boolean(saved.card))) {
+      if (enabled && isInteractive && shouldCheck(e.index, e.turnId, checkedTurn, Boolean(saved.card))) {
         checkedTurn = e.turnId
         $.clock.after(0, () => check($))
       }
@@ -452,7 +500,6 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     if (e.props.origin?.kind === 'composer') {
       const promptText = String(e.props.text ?? '')
-      drawn.set(sameText(promptText), e.requestId)
       await ensureLoaded($)
       if (e.requestId !== PLACEHOLDER && isPrompt(promptText)) drawnPrompts.set(e.requestId, promptText)
     }
@@ -643,7 +690,7 @@ export const register: Register = (on, options) => {
           <Box key={`note-gap-${found.id}`} flexGrow={1} />
           <Box key={`note-jump-pill-${found.id}`} flexShrink={0}>
             {pill({ Box, Text }, nerd, THEME.surface3, (
-              <Button key={`note-jump-${found.id}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `note-jump-box-${found.id}`, color: THEME.accent }} onPress={() => jump($, found.turn, found.prompt)} />
+              <Button key={`note-jump-${found.id}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `note-jump-box-${found.id}`, color: THEME.accent }} onPress={() => jump($, found.turn, found.promptId ?? '')} />
             ), `note-jump-box-${found.id}`, THEME.surface1)}
           </Box>
         </Box>,
@@ -685,10 +732,12 @@ export const register: Register = (on, options) => {
 
     const opened = await openIds($)
     const ordered = byTurn(saved.notes).flatMap(group => group.notes)
+    const checkedLine = await lastCheckLine($)
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.hint, { sep: MARK.sep })}</Text>
+        <Text wrap="truncate-end" color={THEME.muted}>{checkedLine}</Text>
         {ordered.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
         {ordered.map(found => noteSection(found, opened.includes(found.id)))}
         <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />

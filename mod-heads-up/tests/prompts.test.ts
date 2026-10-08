@@ -13,6 +13,7 @@ const feed = (lines: string[]) => {
   return numbers
 }
 const shown = (numbers: PromptNumbers) => numbers.numbered().map(prompt => [prompt.number, prompt.text])
+const draws = (...pairs: [string, string][]) => pairs.map(([id, text]) => ({ id, text }))
 
 test('a prompt the transcript holds is numbered from the file, though the mod never saw it sent', () => {
   const numbers = feed([user(1, null, 'first'), said(2, 1), user(3, 2, 'second'), said(4, 3)])
@@ -30,20 +31,25 @@ test('a prompt the transcript does not hold, such as one cancelled before it was
   expect(numbers.latest()).toMatchObject({ number: 1, text: 'first' })
 })
 
+test('a prompt drawn but never written takes no number once a prompt drawn after it is in the file', () => {
+  const numbers = feed([user(1, null, 'first'), said(2, 1), user(3, 2, 'second')])
+  numbers.drawn(draws([ID(9), 'cancelled'], [ID(3), 'second']))
+  expect(shown(numbers)).toEqual([[1, 'first'], [2, 'second']])
+})
+
 test('in a fresh session the first prompt is #1, though Claude Code draws it under a placeholder id first', () => {
   const numbers = new PromptNumbers()
-  numbers.claim('placeholder', 'first')
-  numbers.claim(ID(1), 'first')
-  numbers.claim('placeholder', 'second')
+  numbers.drawn(draws(['placeholder', 'first'], [ID(1), 'first'], ['placeholder', 'second']))
   expect(shown(numbers)).toEqual([[1, 'first']])
-  numbers.claim(ID(3), 'second')
+  numbers.drawn(draws([ID(1), 'first'], [ID(3), 'second']))
   expect(shown(numbers)).toEqual([[1, 'first'], [2, 'second']])
 })
 
 test('a prompt drawn before the file holds it counts as live, once', () => {
   const numbers = feed([user(1, null, 'first'), said(2, 1)])
-  numbers.claim(ID(1), 'first')
-  numbers.claim(ID(9), 'second')
+  numbers.drawn(draws([ID(1), 'first'], [ID(9), 'second']))
+  expect(shown(numbers)).toEqual([[1, 'first'], [2, 'second']])
+  numbers.drawn(draws([ID(1), 'first'], [ID(9), 'second']))
   expect(shown(numbers)).toEqual([[1, 'first'], [2, 'second']])
 })
 

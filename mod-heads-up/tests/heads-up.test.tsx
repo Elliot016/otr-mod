@@ -7,26 +7,36 @@ const BAND = {
 
 const PANE_PROPS = { title: 'Heads up', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }
 
+const FULL_LEARN = 'The main agent cached /ask, so one-off questions now cost more.'
 const FULL = [
-  'learn: The main agent cached /ask, so one-off questions now cost more.',
+  `learn: ${FULL_LEARN}`,
   'tag: Heads up',
   'title: One-off /ask questions cost more',
   'explain:',
   '- /ask takes a quick side question.',
   '- Watch how often people ask follow-ups.',
 ].join('\n')
+// The same finding in other words: its topic words all appear in FULL_LEARN's.
+const REWORDED = 'One-off /ask questions cost more because the main agent cached them.'
+const OTHER_TOPIC = 'Each upload retries five times at once, so a slow server gets hammered.'
+const about = (learn: string) => FULL.replace(FULL_LEARN, learn)
 
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
 
 const TRANSCRIPT = '/t/s1.jsonl'
+// The engine answers a path in its own form (C:\t\s1.jsonl on Windows), so the file is matched by its name.
+const isTranscript = (path: string) => path.endsWith('s1.jsonl')
 // One user row per prompt, each the child of the row before, as Claude Code writes them.
 const transcriptFor = (prompts: string[]) =>
   prompts.map((text, index) => JSON.stringify({ type: 'user', uuid: `p${index}`, parentUuid: index ? `p${index - 1}` : null, message: { role: 'user', content: text } })).join('\n') + '\n'
+// The file and process reads answer bytes as base64, which the test runtime encodes with btoa.
+const encoder = new TextEncoder()
+const base64Of = (bytes: Uint8Array) => btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''))
 
-type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean }
+type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean; gate?: Promise<unknown>; oversize?: boolean }
 
-// Stubs everything the mod touches. `forks` and `completes` record what the model was asked, `store` what the mod saved, and the transcript holds each prompt the test sent.
-function setup(on: any, { reply = () => answered(FULL), below, isUnplaced }: Setup = {}) {
+// Stubs everything the mod touches. `forks` and `completes` record what the model was asked, `store` what the mod saved, `reads` and `runs` the file and process calls, and the transcript holds each prompt the test sent. `gate` holds every read of a session's notes until it resolves; `oversize` makes the file read past 4 MiB, as the engine refuses it.
+function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate, oversize = false }: Setup = {}) {
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 5, 16, 52) })
   const store = new Map<string, unknown>([['transcript:s1', TRANSCRIPT]])
   const sent: string[] = []
@@ -34,14 +44,25 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced }: Set
   const completes: { model: string; effort?: string; prompt: string }[] = []
   const fills: { text: string; mode?: string }[] = []
   const states = new Map<string, unknown>()
+  const reads: { path: string; as?: string }[] = []
+  const runs: string[][] = []
   let panes: { id: string; isPlaced: boolean }[] = []
   let draft = ''
-  on('store.get', (_$: unknown, e: { key: string }) => ({ value: store.get(e.key) }))
+  const transcript = () => transcriptFor(sent)
+  on('store.get', async (_$: unknown, e: { key: string }) => {
+    if (gate && e.key.startsWith('notes:')) await gate
+    return { value: store.get(e.key) }
+  })
   on('store.set', (_$: unknown, e: { key: string; value: unknown }) => {
     store.set(e.key, JSON.parse(JSON.stringify(e.value)))
     return { value: undefined }
   })
+  on('store.delete', (_$: unknown, e: { key: string }) => {
+    store.delete(e.key)
+    return { value: undefined }
+  })
   on('session.id', () => ({ value: 's1' }))
+  on('session.start', () => ({ cwd: '/w' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.messages', () => ({ value: [{ role: 'user', text: 'Add follow-ups to /ask', toolUses: [] }] }))
   on('model.fork', async (_$: unknown, e: { prompt: string }) => {
@@ -78,8 +99,21 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced }: Set
   })
   on('command.register', () => ({ value: undefined }))
   on('config.list', () => ({ value: [] }))
-  on('fs.stat', (_$: unknown, e: { path: string }) => (e.path === TRANSCRIPT ? { value: { kind: 'file', size: transcriptFor(sent).length, mtimeMs: 0, isLink: false } } : { deny: 'no file' }))
-  on('fs.read', (_$: unknown, e: { path: string }) => (e.path === TRANSCRIPT ? { value: transcriptFor(sent) } : { deny: 'no file' }))
+  on('fs.stat', (_$: unknown, e: { path: string }) => (isTranscript(e.path) ? { value: { kind: 'file', size: encoder.encode(transcript()).length, mtimeMs: 0, isLink: false } } : { deny: 'no file' }))
+  on('fs.read', (_$: unknown, e: { path: string; as?: string }) => {
+    reads.push({ path: e.path, as: e.as })
+    if (!isTranscript(e.path)) return { deny: 'no file' }
+    if (e.as !== 'bytes') return { value: transcript() }
+    if (oversize) return { deny: 'the file is over 4 MiB' }
+    return { value: { base64: base64Of(encoder.encode(transcript())) } }
+  })
+  // The POSIX form of a read from an offset: sh -c script sh path, from plus one, length.
+  on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    runs.push(e.argv)
+    const from = Number(e.argv[5]) - 1
+    const slice = encoder.encode(transcript()).subarray(from, from + Number(e.argv[6]))
+    return { value: { exitCode: 0, stdout: base64Of(slice), stderr: '' } }
+  })
   on('turn.step', async function* (_$: unknown, e: { turnId: string; index: number }) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage: null }
   })
@@ -87,7 +121,7 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced }: Set
     const elements = $.ui.resolve(e)
     return below ? below(elements) : <elements.Text key="base">base</elements.Text>
   })
-  return { clock, store, forks, completes, fills, states, panes: () => panes, setDraft: (text: string) => (draft = text) }
+  return { clock, store, forks, completes, fills, states, reads, runs, panes: () => panes, setDraft: (text: string) => (draft = text) }
 }
 
 async function step($: any, index: number, extra: object = {}) {
@@ -128,6 +162,17 @@ test('a check runs on the sixth main step only, once per turn, and never for a s
   const ui = await band($)
   expect(await ui.find({ key: 'headsup-card' })).toBeUndefined()
   await ui.unmount()
+})
+
+test('a headless session never checks: no fork, no completion, until a session that is interactive', async ($, on) => {
+  const { clock, forks, completes } = setup(on)
+  await $.session.start({ cwd: '/w', surface: null, isInteractive: false } as never)
+  await finding($, clock)
+  expect(forks.length + completes.length).toBe(0)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  expect(forks.length).toBe(1)
 })
 
 test('the entry shimmers while the check runs, then the card shows the note above next steps with an unread count', async ($, on) => {
@@ -227,6 +272,83 @@ test('Got it in the panel stores the topic, closes the card and reads the note, 
   const again = await band($)
   expect(await again.find({ key: 'headsup-card' })).toBeUndefined()
   await again.unmount()
+})
+
+test('a reworded repeat of a note already shown is not shown again', async ($, on) => {
+  let learn = FULL_LEARN
+  const { clock, forks } = setup(on, { reply: () => answered(about(learn)) })
+  await finding($, clock)
+  await $.prompt.submit({ text: 'next' })
+  await $.prompt.submit({ text: 'and next' })
+  learn = REWORDED
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  expect(forks.length).toBe(2)
+  const ui = await band($)
+  expect(await ui.find({ key: 'headsup-card' })).toBeUndefined()
+  await ui.unmount()
+  const panel = await pane($)
+  expect(JSON.stringify(await panel.drawn()).match(/"key":"headsup-note-/g)?.length).toBe(1)
+  await panel.unmount()
+})
+
+test('seen topics are stored under their session; the known topics stay global', async ($, on) => {
+  const { clock, store } = setup(on)
+  await finding($, clock)
+  expect(store.get('seen:s1')).toEqual([FULL_LEARN])
+  expect(store.has('seen')).toBe(false)
+})
+
+test('the store keeps the notes and seen topics of the 40 most recent sessions, and deletes the rest', async ($, on) => {
+  const { store } = setup(on)
+  const older = Array.from({ length: 40 }, (_, index) => `old-${index}`)
+  store.set('sessions', older)
+  for (const session of older) {
+    store.set(`notes:${session}`, { notes: [], card: null, since: 0, checked: null })
+    store.set(`seen:${session}`, [])
+  }
+  const ui = await band($)
+  await ui.unmount()
+  expect(store.get('sessions')).toEqual([...older.slice(1), 's1'])
+  expect(store.has('notes:old-0')).toBe(false)
+  expect(store.has('seen:old-0')).toBe(false)
+  expect(store.has('notes:old-1')).toBe(true)
+})
+
+test('the pane says when the last check ran: no check yet, then the turn it read and whether it flagged a note', async ($, on) => {
+  let answer = 'learn: none'
+  const { clock } = setup(on, { reply: () => answered(answer) })
+  const panel = await pane($)
+  expect(JSON.stringify(await panel.drawn())).toContain('No check yet')
+  await finding($, clock)
+  expect(JSON.stringify(await panel.drawn())).toContain('Last check: turn 1, under a minute ago. Nothing to flag.')
+  answer = FULL
+  await $.prompt.submit({ text: 'and next' })
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  expect(JSON.stringify(await panel.drawn())).toContain('Last check: turn 2, under a minute ago. Flagged a note.')
+  await panel.unmount()
+})
+
+test('two hooks that ask at once share one load, so the second reads the notes the first loads', async ($, on) => {
+  let open = (_: unknown) => {}
+  const gate = new Promise(resolve => (open = resolve))
+  const { store } = setup(on, { gate })
+  store.set('notes:s1', {
+    notes: [{ id: 'n1-1', turn: 1, prompt: 'Add follow-ups to /ask', at: 1, isRead: false, learn: FULL_LEARN, tag: 'Heads up', title: 'One-off /ask questions cost more', body: ['/ask takes a quick side question.'] }],
+    card: null,
+    since: 0,
+    checked: null,
+  })
+  const bandMounting = band($)
+  const paneMounting = pane($)
+  await new Promise(resolve => setTimeout(resolve, 50))
+  open(undefined)
+  const ui = await bandMounting
+  const panel = await paneMounting
+  expect(JSON.stringify(await panel.drawn())).toContain('The main agent cached /a')
+  await ui.unmount()
+  await panel.unmount()
 })
 
 test('the card has two actions, Open and ×, and no Know this already', async ($, on) => {
@@ -340,8 +462,9 @@ test('a hovered pane control posts its tip into the footer, and the card and the
 })
 
 test('the card clears after two prompts, or at once on ×, and stays in the panel', async ($, on) => {
+  const topics = [FULL_LEARN, OTHER_TOPIC]
   let n = 0
-  const { clock } = setup(on, { reply: () => answered(FULL.replace('one-off questions', `one-off questions (${++n})`)) })
+  const { clock } = setup(on, { reply: () => answered(about(topics[n++] ?? FULL_LEARN)) })
   await finding($, clock)
   await $.prompt.submit({ text: 'next' })
   let ui = await band($)
@@ -409,6 +532,32 @@ test('Open opens the panel on that note: its turn, the explanation, Chat fills t
   await panel.unmount()
 })
 
+test('a note keeps the row of its own prompt, so its jump does not reach a later copy of the same text', async ($, on) => {
+  const topics = [FULL_LEARN, OTHER_TOPIC]
+  let n = 0
+  const { clock, store } = setup(on, { reply: () => answered(about(topics[n++] ?? FULL_LEARN)) })
+  const row = (requestId: string) => $.ui.mount({ plugin: 'mod-heads-up', surface: 'terminal', component: 'UserMessage', requestId, props: { text: 'Add follow-ups to /ask', origin: { kind: 'composer' } } } as never)
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+  await row('p0')
+  await step($, 6, { turnId: 't1' })
+  await clock.settle()
+  await $.prompt.submit({ text: 'next' })
+  await $.prompt.submit({ text: 'and next' })
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+  await row('p3')
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  const stored = (store.get('notes:s1') as { notes: { turn: number; promptId?: string }[] }).notes
+  expect(stored.map(note => [note.turn, note.promptId])).toEqual([[1, 'p0'], [4, 'p3']])
+  const panel = await pane($)
+  const first = JSON.stringify(await panel.drawn()).match(/note-jump-(n1-\d+)/)?.[1]
+  expect(first).toBeDefined()
+  await panel.press({ key: `note-jump-${first}` })
+  await clock.settle()
+  expect(await panel.find({ type: 'Text', text: /ui.scroll/ })).toBeDefined()
+  await panel.unmount()
+})
+
 test('the panel contract: the command toggles the panel and the settings, and the pane state follows', async ($, on) => {
   const { panes, states } = setup(on)
   await $.command.run({ command: 'mod-heads-up', args: '' } as never)
@@ -432,6 +581,30 @@ test('enabled off makes no model call; forget empties the known topics', { optio
   expect(forks.length + completes.length).toBe(0)
   await $.command.run({ command: 'mod-heads-up', args: 'forget' } as never)
   expect(store.get('known')).toEqual([])
+})
+
+test('a check reads only the bytes the transcript gained since the last check', async ($, on) => {
+  const { clock, reads, runs } = setup(on, { reply: () => answered('learn: none') })
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+  const gainedFrom = encoder.encode(transcriptFor(['Add follow-ups to /ask'])).length
+  await step($, 6)
+  await clock.settle()
+  expect(reads.filter(each => each.as === 'bytes').length).toBe(1)
+  await $.prompt.submit({ text: 'and next' })
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  expect(reads.filter(each => each.as === 'bytes').length).toBe(1)
+  expect(runs.length).toBe(1)
+  expect(runs[0]![5]).toBe(String(gainedFrom + 1))
+})
+
+test('a transcript over 4 MiB is still numbered, its bytes read through a process', async ($, on) => {
+  const { clock, runs } = setup(on, { oversize: true })
+  await finding($, clock)
+  const panel = await pane($)
+  expect(JSON.stringify(await panel.drawn())).toContain('#1')
+  expect(runs.length).toBeGreaterThan(0)
+  await panel.unmount()
 })
 
 test('icons=safe draws the plain close mark and bracket-free subpills', { options: { icons: 'safe' } }, async ($, on) => {

@@ -19,11 +19,13 @@ const userText = (content: unknown) =>
       : ''
 
 export type NumberedPrompt = { id: string; text: string; number: number }
+export type DrawnPrompt = { id: string; text: string }
 
 export class PromptNumbers {
   private parents = new Map<string, string | undefined>()
-  private prompts: { id: string; text: string }[] = []
+  private prompts: DrawnPrompt[] = []
   private last: string | undefined
+  private drawnPrompts: DrawnPrompt[] = []
 
   // Reads the transcript a line at a time, in file order.
   feed(line: string) {
@@ -45,17 +47,18 @@ export class PromptNumbers {
     }
   }
 
-  // A prompt drawn after the file was read: a prompt the file does not hold yet counts as live.
-  claim(id: string, text: string) {
-    if (id === PLACEHOLDER || this.parents.has(id) || this.prompts.some(prompt => prompt.id === id)) return
-    this.add(id, text)
+  // The prompts drawn in the composer, oldest first. Set at each read, since the drawn list changes while the file grows.
+  drawn(prompts: DrawnPrompt[]) {
+    this.drawnPrompts = prompts.filter(prompt => prompt.id !== PLACEHOLDER && isPrompt(prompt.text)).map(prompt => ({ id: prompt.id, text: prompt.text.trim() }))
   }
 
-  // The prompts on the live branch: the parent chain from the last row, so a /rewind's abandoned prompts drop out.
+  // The prompts on the live branch, then the drawn prompts the file does not hold yet. The parent chain from the last row drops a /rewind's abandoned prompts. A drawn prompt with a later drawn prompt already in the file was cancelled, so it takes no number.
   numbered(): NumberedPrompt[] {
     const live = new Set<string>()
     for (let id = this.last; id !== undefined && !live.has(id); id = this.parents.get(id)) live.add(id)
-    return this.prompts.filter(prompt => !this.parents.has(prompt.id) || live.has(prompt.id)).map((prompt, index) => ({ ...prompt, number: index + 1 }))
+    const lastWritten = this.drawnPrompts.map(prompt => this.parents.has(prompt.id)).lastIndexOf(true)
+    const inFlight = this.drawnPrompts.filter((prompt, index) => !this.parents.has(prompt.id) && index > lastWritten)
+    return [...this.prompts.filter(prompt => live.has(prompt.id)), ...inFlight].map((prompt, index) => ({ ...prompt, number: index + 1 }))
   }
 
   latest(): NumberedPrompt | undefined {

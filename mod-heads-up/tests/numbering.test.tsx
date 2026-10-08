@@ -50,8 +50,8 @@ function setup(on: any) {
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/home/u' : undefined }))
   on('fs.list', () => ({ value: [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
   on('fs.exists', () => ({ value: true }))
-  on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT_TEXT.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: TRANSCRIPT_TEXT }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: new TextEncoder().encode(TRANSCRIPT_TEXT).length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', (_$: unknown, e: { as?: string }) => ({ value: e.as === 'bytes' ? { base64: btoa(TRANSCRIPT_TEXT) } : TRANSCRIPT_TEXT }))
   on('classic.SessionStart', () => ({}))
   on('turn.step', async function* (_$: unknown, e: { turnId: string; index: number }) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage: null }
