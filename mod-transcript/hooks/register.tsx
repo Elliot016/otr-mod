@@ -16,6 +16,7 @@ import { settingChoice, settingsBody, type Action, type Previews } from './setti
 import style from './style'
 import text from './text'
 import { tokenizeLine, type Role } from './shell'
+import { detectWedge, FILLED, OUTLINE, type Wedge } from './wedge'
 import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 import { copyChoices, copyText, type CopyChoice } from './clip'
 import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
@@ -54,6 +55,7 @@ let showCopy = true
 let showNumbers = true
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
+let wedge: Wedge = FILLED
 type Kind = 'turns' | 'tools'
 // Spike only: each drawn row's component and id, and whether the transcript parse placed it in a turn.
 const seen = new Map<string, boolean>()
@@ -226,7 +228,7 @@ function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean
   const parts = { Box, Client }
   return (
     <Box key={key} flexDirection="column" flexGrow={1}>
-      {isTop ? edge(parts, `${key}-top`, { kind: 'top', color: THEME.accent, wedge: true }) : null}
+      {isTop ? edge(parts, `${key}-top`, { kind: 'top', color: THEME.accent, wedge: wedge.left }) : null}
       <Box key={`${key}-sides`} flexDirection="row">
         {edge(parts, `${key}-left`, { kind: 'side', color: THEME.accent })}
         <Box key={`${key}-body`} flexDirection="column" flexGrow={1} paddingX={isTight ? 0 : 1}>{body}</Box>
@@ -264,7 +266,7 @@ function copyPill({ Box, Client }: Bars, turn: Turn) {
 }
 
 // Claude's bubble opens under the prompt: as the head of a finished turn with tools, else as a bare top edge.
-const opening = (parts: Bars) => edge(parts, 'toggle-bubble-open', { kind: 'top', color: THEME.accent, wedge: true })
+const opening = (parts: Bars) => edge(parts, 'toggle-bubble-open', { kind: 'top', color: THEME.accent, wedge: wedge.left })
 
 // The bubble's bottom edge, under the newest output, carries the copy pill near its corner once the turn has ended.
 function closing(parts: Bars, key: string, turn: Turn | undefined) {
@@ -676,11 +678,37 @@ async function saveLook($: EngineInterface) {
   }
 }
 
+// The last answer draws until the check returns, so the first frame already has the right wedge.
+async function loadWedge($: EngineInterface) {
+  try {
+    const isOutline = await $.store.get('wedge-outline')
+    if (typeof isOutline === 'boolean') wedge = isOutline ? OUTLINE : FILLED
+  } catch {
+    // Without a store the wedge starts filled until the check returns.
+  }
+  const found = await detectWedge(await $.env.get('TERM_PROGRAM'), async argv => {
+    const result = await $.process.run(argv, { timeoutMs: 5000 })
+    if (result.exitCode !== 0) throw new Error(result.stderr)
+    return result.stdout
+  })
+  const isChanged = found.right !== wedge.right
+  wedge = found
+  try {
+    await $.store.set('wedge-outline', found === OUTLINE)
+  } catch {
+    // Without a store the check just runs again next time.
+  }
+  if (isChanged) $.ui.invalidate('ui.render')
+}
+
 // Hooks of one event run in turn, so the slow font check runs beside them instead of holding up every mod after this one.
 let lookLoad: Promise<void> | null = null
 
 function loadLook($: EngineInterface) {
   lookLoad ??= (async () => {
+    void loadWedge($).catch(() => {
+      // A failed check keeps the wedge drawn now.
+    })
     look = await savedLook($)
     void detectLook($).then(async found => {
       const isChanged = found.nerd !== look.nerd
@@ -926,7 +954,7 @@ export const register: Register = (on, options) => {
             <Box key="toggle-prompt-lift" flexDirection="column" flexShrink={1} marginTop={-1}>{prompt}</Box>
           </Box>
           <Box key="toggle-prompt-wedge" position="absolute" top={0} right={0}>
-            <Text color={THEME.secondary}>◥</Text>
+            <Text color={THEME.secondary}>{wedge.right}</Text>
           </Box>
         </Box>
       </Box>
