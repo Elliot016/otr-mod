@@ -5,8 +5,8 @@ import type { Finding } from './ask'
 
 export type Note = Finding & { id: string; turn: number; prompt: string; at: number; isRead: boolean }
 
-// What this mod keeps per session in its store: the notes, the prompts sent, and the note on the band card with the prompts sent since it showed.
-export type Saved = { notes: Note[]; prompts: number; lastPrompt: string; card: string | null; since: number }
+// What this mod keeps per session in its store: the notes, and the note on the band card with the prompts sent since it showed.
+export type Saved = { notes: Note[]; card: string | null; since: number }
 
 export const CHECK_EVERY = 6
 // A shown card clears once this many prompts were sent after it.
@@ -16,15 +16,13 @@ export const KNOWN_KEPT = 50
 // How much of the conversation the uncached route sends, newest first.
 export const PACK_CHARS = 60_000
 
-export const emptySaved = (): Saved => ({ notes: [], prompts: 0, lastPrompt: '', card: null, since: 0 })
+export const emptySaved = (): Saved => ({ notes: [], card: null, since: 0 })
 
 export function savedOf(value: unknown): Saved {
   const raw = value as Partial<Saved> | undefined
   const notes = Array.isArray(raw?.notes) ? raw.notes.filter(note => typeof note?.id === 'string' && typeof note?.learn === 'string') : []
   return {
     notes,
-    prompts: typeof raw?.prompts === 'number' ? raw.prompts : 0,
-    lastPrompt: typeof raw?.lastPrompt === 'string' ? raw.lastPrompt : '',
     card: typeof raw?.card === 'string' && notes.some(note => note.id === raw.card) ? raw.card : null,
     since: typeof raw?.since === 'number' ? raw.since : 0,
   }

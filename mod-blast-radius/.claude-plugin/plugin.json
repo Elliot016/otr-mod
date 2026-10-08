@@ -10,19 +10,19 @@
     "animations": {
       "type": "boolean",
       "title": "Animations",
-      "description": "Entries shimmer while they wait and hover colors fade. Off, everything draws still",
+      "description": "Entries shimmer while they wait. Hover colors also fade. Off, everything draws still",
       "default": true
     },
     "enabled": {
       "type": "boolean",
       "title": "Hold risky commands",
-      "description": "On, a risky Bash command waits for your Run or Cancel. Off, every command runs as usual",
+      "description": "Risky Bash waits for your choice. You pick Run or Cancel. Off, every command runs as usual",
       "default": true
     },
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": [
         "auto",
         "nerd",

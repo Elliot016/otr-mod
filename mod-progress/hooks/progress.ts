@@ -5,7 +5,7 @@ import style from './style'
 export type GateState = 'met' | 'open' | 'abandoned'
 export type Gate = { id: string; text: string; state: GateState }
 export type Task = { id: string; subject: string; status: string }
-export type Loop = { model?: string; effort?: string; tokens: number; context: number; spawnedAt?: number; endedAt?: number }
+export type Loop = { model?: string; effort?: string; tokens: number; context: number; spawnedAt?: number; endedAt?: number; gatesStem?: string }
 export type Usage = { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }
 
 // Kept in $.store under the session id, so a reload keeps it and another session starts clean.
@@ -62,9 +62,12 @@ export const isGatesPath = (path: string) => /(^|\/)(GATES\.md|gates\/[^/]+\.md)
 
 export const stemOf = (file: string) => file.replace(/\.md$/i, '')
 
-// An agent's gates file: gates/<name>.md, or, where the Agent tool offers no name, the description's first word ("leaf-1.1.1: ...").
-export const gatesOf = (snap: { gates: Record<string, Gate[]> }, info: { name?: string; description: string }) =>
-  (info.name ? snap.gates[info.name] : undefined) ?? snap.gates[info.description.trim().split(/\s+/)[0]?.replace(/:$/, '') ?? '']
+// The first gates file a brief names: execute's leaf briefs point at gates/<stem>.md.
+export const gatesStemIn = (prompt: string) => prompt.replace(/\\/g, '/').match(/gates\/([^/\s`'")]+)\.md/i)?.[1]
+
+// An agent's gates file: the one its brief names, else gates/<name>.md, else the description's first word ("leaf-1.1.1: ...").
+export const gatesOf = (snap: { gates: Record<string, Gate[]> }, info: { name?: string; description: string }, stem?: string) =>
+  (stem ? snap.gates[stem] : undefined) ?? (info.name ? snap.gates[info.name] : undefined) ?? snap.gates[info.description.trim().split(/\s+/)[0]?.replace(/:$/, '') ?? '']
 
 export function applyStep(snap: Snap, agentId: string | undefined, model: string, effort: unknown, usage: Usage | null | undefined) {
   const loop = agentId ? (snap.agents[agentId] ??= { tokens: 0, context: 0 }) : snap.main
@@ -105,9 +108,9 @@ export function modelInfo(model: string | undefined) {
 
 // A request never exceeds its window, so context past the default proves the 1M window; a 1M main session gives its agents 1M too.
 export function windowFor(model: string | undefined, mainModel: string | undefined, mainWindow: number | undefined, context = 0) {
+  if (model?.includes('[1m]') || context > marks.windows.default) return marks.windows.oneMillion
   if (mainWindow && model === mainModel) return mainWindow
-  const isLong = model?.includes('[1m]') || context > marks.windows.default || (mainWindow ?? 0) >= marks.windows.oneMillion
-  return isLong ? marks.windows.oneMillion : marks.windows.default
+  return (mainWindow ?? 0) >= marks.windows.oneMillion ? marks.windows.oneMillion : marks.windows.default
 }
 
 export const gaugeColor = (percent: number) => {
@@ -193,7 +196,7 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
   }]
   for (const info of list) {
     const loop = snap.agents[info.id] ?? { tokens: 0, context: 0 }
-    const own = gatesOf(snap, info)
+    const own = gatesOf(snap, info, loop.gatesStem)
     rows.push({
       id: info.id,
       isMain: false,

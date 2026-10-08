@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gaugeColor, windowFor, isGatesPath, modelInfo, parseGates, settle, type Snap } from '../hooks/progress'
+import { applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gatesStemIn, gaugeColor, windowFor, isGatesPath, modelInfo, parseGates, settle, type Snap } from '../hooks/progress'
 
 const GATES = [
   '# Gates: leaf',
@@ -87,6 +87,10 @@ test('an agent pairs with its gates file by name, or by the first word of its de
   expect(gatesOf(snap, { description: 'leaf-1.1.1: check the cart totals' })).toBe(one)
   expect(gatesOf(snap, { description: 'leaf-1.1.1 check the cart totals' })).toBe(one)
   expect(gatesOf(snap, { description: 'Check the cart totals' })).toBeUndefined()
+  const stem = gatesStemIn('Build the cart.\nGates: C:\\w\\gates\\leaf-1.1.1.md, tick each box.')
+  expect(stem).toBe('leaf-1.1.1')
+  expect(gatesOf(snap, { description: 'Implement config.js constant changes' }, stem)).toBe(one)
+  expect(gatesStemIn('No gates here')).toBeUndefined()
 })
 
 test('a subagent window: the main one for the same model, 1M once its context passes 200k or the main session runs 1M', () => {
@@ -95,6 +99,8 @@ test('a subagent window: the main one for the same model, 1M once its context pa
   expect(windowFor('sonnet', 'opus', 200000, 250000)).toBe(1000000)
   expect(windowFor('sonnet', 'opus', 1000000, 50000)).toBe(1000000)
   expect(windowFor('sonnet[1m]', 'opus', 200000)).toBe(1000000)
+  expect(windowFor('opus', 'opus', 200000, 250000)).toBe(1000000)
+  expect(windowFor('opus[1m]', 'opus', 200000)).toBe(1000000)
 })
 
 test('figures: model names, context colors, tokens and time', () => {
@@ -173,6 +179,18 @@ test('the pane draws a card per loop and a click opens its gates', async ($, on)
   expect(open).toContain('abandoned')
   await ui.pointer({ in: 'loops', type: 'down', x: 3, y: 0, button: 'left' })
   expect(JSON.stringify(await ui.drawn({ in: 'loops' }))).not.toContain('G1')
+  await ui.unmount()
+})
+
+test('the card of the agent whose transcript is in view carries the cursor', async ($, on) => {
+  stubEngine(on)
+  await $.session.start({ cwd: '/w' } as never)
+  const main = await $.ui.mount(PANE)
+  expect(JSON.stringify(await main.drawn({ in: 'loops' }))).not.toContain('❯')
+  await main.unmount()
+  const viewed = PANE as unknown as { props: object }
+  const ui = await $.ui.mount({ ...viewed, props: { ...viewed.props, view: { agentId: 'a1' } } } as never)
+  expect(JSON.stringify(await ui.drawn({ in: 'loops' }))).toContain('❯')
   await ui.unmount()
 })
 

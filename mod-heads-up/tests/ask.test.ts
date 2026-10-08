@@ -90,7 +90,7 @@ test('the packed conversation keeps the newest messages within its budget, oldes
 test('notes group by turn, newest first; stored values are checked on load', () => {
   const note = (id: string, turn: number): Note => ({ id, turn, prompt: `p${turn}`, at: turn, isRead: false, learn: id, tag: 'Heads up', title: '', body: [] })
   expect(byTurn([note('a', 1), note('b', 3), note('c', 1)]).map(group => [group.turn, group.notes.map(each => each.id)])).toEqual([[3, ['b']], [1, ['a', 'c']]])
-  expect(savedOf(undefined)).toEqual({ notes: [], prompts: 0, lastPrompt: '', card: null, since: 0 })
-  expect(savedOf({ notes: [note('a', 1)], card: 'gone', prompts: 2 }).card).toBe(null)
+  expect(savedOf(undefined)).toEqual({ notes: [], card: null, since: 0 })
+  expect(savedOf({ notes: [note('a', 1)], card: 'gone' }).card).toBe(null)
   expect(remember(['a', 'b', 'c'], 'a', 2)).toEqual(['c', 'a'])
 })

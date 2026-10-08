@@ -2,11 +2,11 @@ import type { ConfigValue, EngineInterface, Register, RenderElement } from 'clau
 
 import { displayName, LEVEL_LOOK, LEVELS, withEffort, withModel } from './levels'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
-import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, paneTitle, terminalSettings, type IconMode, withMark } from './look'
+import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'
 import type { MeterMessage } from './meter'
 import { settingChoice, settingsBody } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
-import { fitFor, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import text from './text'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
@@ -25,12 +25,9 @@ let override: { effort: string; before: string } | null = null
 // Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
-  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const env = { WT_SESSION: await $.env.get('WT_SESSION'), TERM_PROGRAM: await $.env.get('TERM_PROGRAM') }
   const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
-  for (const path of terminalSettings(local)) {
-    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
-  }
-  return lookFor(false)
+  return lookFor(await detectNerd(env, local, path => $.fs.read(path).then(String)))
 }
 
 // Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
@@ -335,7 +332,7 @@ export const register: Register = (on, options) => {
     const modelId = current.value?.model ?? (await $.session.model())
     const model = displayName(modelId)
     const { group, row, rest, tip } = splitRow(await next(e))
-    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd, compact: fitFor(e.props.bodyColumns).effortOnly, tipModel: { glyph: look.glyph.title, label: text.labelModel, text: text.tipModel }, tipRest: { glyph: look.glyph.title, label: text.paneName, text: text.tipRest }, tipLevels: LEVELS.map(level => ({ glyph: LEVEL_LOOK[level]!.glyph, label: text.paneName, text: fill(text.tipLevel, { level: (text.levelNames as Record<string, string>)[level]! }) })) }} />
+    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd, tipModel: { glyph: look.glyph.title, label: text.labelModel, text: text.tipModel }, tipRest: { glyph: look.glyph.title, label: text.paneName, text: text.tipRest }, tipLevels: LEVELS.map(level => ({ glyph: LEVEL_LOOK[level]!.glyph, label: text.paneName, text: fill(text.tipLevel, { level: (text.levelNames as Record<string, string>)[level]! }) })) }} />
     // The level word follows the pill, so it never moves the glyphs under the pointer.
     const shownWord = hoveredLevel() ?? flash
     const word = shownWord ? <Text key="menu-flash" color={LEVEL_LOOK[shownWord]?.color}>{(text.levelNames as Record<string, string>)[shownWord] ?? shownWord}</Text> : null

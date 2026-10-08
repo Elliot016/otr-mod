@@ -21,9 +21,9 @@ Change them with `/mod-collision-guard settings` or the gear pill.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Guard edits | on | Ask before an edit lands on a file another open session edited recently. Off, edits are still recorded for other sessions but never paused |
-| Window (minutes) | `30` | How long another session's edit counts as recent |
-| Icons | `auto` | auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Guard edits | on | Asks when another session edited it. Only edits inside the window count. Off, edits are still recorded for other sessions but never paused |
+| Window (minutes) | `30` | How long an edit counts as recent. Only other sessions' edits count |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## Install
 

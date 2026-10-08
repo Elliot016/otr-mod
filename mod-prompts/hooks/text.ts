@@ -1,7 +1,6 @@
 // Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "pillLabel": "Prompts",
-  "pillShort": "Prompts",
   "paneTitle": "Prompts",
   "settingsPaneTitle": "mod-prompts",
   "panelWaiting": "Prompts panel waiting: {reason}",

@@ -1,10 +1,10 @@
 import type { ConfigValue, EngineInterface, ModelForkResult, Register, RenderElement } from 'claude-code'
 
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
-import { FOOTER_ROWS, heading, isNerdFace, lookFor, paneFooter, terminalSettings, type IconMode, withMark } from './look'
+import { detectNerd, FOOTER_ROWS, heading, lookFor, paneFooter, type IconMode, withMark } from './look'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import type { ChoiceProps } from './choice'
-import { fitFor, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import style from './style'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -34,12 +34,9 @@ let previews: Previews | undefined
 
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
-  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const env = { WT_SESSION: await $.env.get('WT_SESSION'), TERM_PROGRAM: await $.env.get('TERM_PROGRAM') }
   const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
-  for (const path of terminalSettings(local)) {
-    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
-  }
-  return lookFor(false)
+  return lookFor(await detectNerd(env, local, path => $.fs.read(path).then(String)))
 }
 
 // Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
@@ -438,7 +435,7 @@ export const register: Register = (on, options) => {
     ) : (
       // Like the effort pill, the pointer opens the options and lifts the one under it, all inside the Client, so nothing waits on a redraw.
       <Box key="wrap-up-choice-pad">
-        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: fitFor(e.props.bodyColumns).icons ? (look.glyph.icon.actions ?? text.label) : text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }] } satisfies ChoiceProps} />
+        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }] } satisfies ChoiceProps} />
       </Box>
     )
     const cards = card ? [cardBox({ Box, Client, Text }, card)] : []

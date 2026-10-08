@@ -1,7 +1,6 @@
 // Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "pillLabel": "Skills",
-  "pillShort": "Skills",
   "pillTip": "Skills: browse your skills and add one to the prompt",
   "paneTitle": "Skills",
   "settingsPaneTitle": "mod-skill-panel",

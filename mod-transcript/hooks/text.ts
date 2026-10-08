@@ -64,5 +64,5 @@ export default {
   "tipPromptLabel": "Prompt #{n}",
   "tipPrompt": "this is prompt {n} of the session",
   "tipTabSettings": "shows this mod's settings",
-  "settingTips": {"expand_live":"the latest turn stays open until your next prompt","prompt_numbers":"the #N before each of your messages, the same number the Prompts and Heads up panels show","copy_pill":"a copy button on each finished reply's bottom edge"}
+  "settingTips": {"expand_live":"stays open until your next prompt","prompt_numbers":"#N before each of your prompts","copy_pill":"on each finished reply's edge"}
 }

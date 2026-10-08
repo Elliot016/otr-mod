@@ -15,8 +15,8 @@ Change them with `/mod-model-effort settings` or the gear pill.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Icons | `auto` | auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
-| Animations | on | Entries shimmer while they wait and hover colors fade. Off, everything draws still |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 
 ## Install
 

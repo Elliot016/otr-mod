@@ -1,7 +1,7 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { NAME_COLOR, OPEN_CELLS, type ListMessage, type Row as ListRow } from './list'
-import { FOOTER_ROWS, heading, isNerdFace, lookFor, section, paneFooter, terminalSettings, withIcon, type IconMode, type Look, withMark } from './look'
+import { detectNerd, FOOTER_ROWS, heading, lookFor, section, paneFooter, withIcon, type IconMode, type Look, withMark } from './look'
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -92,12 +92,9 @@ function viewOf(current: Log): Log {
 // Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
-  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const env = { WT_SESSION: await $.env.get('WT_SESSION'), TERM_PROGRAM: await $.env.get('TERM_PROGRAM') }
   const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
-  for (const path of terminalSettings(local)) {
-    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
-  }
-  return lookFor(false)
+  return lookFor(await detectNerd(env, local, path => $.fs.read(path).then(String)))
 }
 
 // Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
@@ -562,7 +559,7 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($, PANE)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'filetree', { label: text.pill, icon: look.glyph.icon.files ?? text.pillShort, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still }, e.props.bodyColumns)
+    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'filetree', { label: text.pill, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
     return pillRow({ Box, Client, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip, e.props.bodyColumns)
   })

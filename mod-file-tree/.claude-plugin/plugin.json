@@ -8,13 +8,13 @@
     "animations": {
       "type": "boolean",
       "title": "Animations",
-      "description": "Entries shimmer while they wait and hover colors fade. Off, everything draws still",
+      "description": "Entries shimmer while they wait. Hover colors also fade. Off, everything draws still",
       "default": true
     },
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": [
         "auto",
         "nerd",
@@ -25,19 +25,19 @@
     "show_reads": {
       "type": "boolean",
       "title": "Show files Claude only read",
-      "description": "The tree lists files Claude read as well as the ones it changed. Off, it lists only changed files",
+      "description": "Read files join the changed ones. Off, it lists only changed files",
       "default": true
     },
     "wrap_diff": {
       "type": "boolean",
       "title": "Wrap long diff lines",
-      "description": "Long lines in the replay wrap onto the next row. Off, they are cut at the pane edge",
+      "description": "Replay lines wrap onto the next row. Off, they are cut at the pane edge",
       "default": true
     },
     "recent_turns": {
       "type": "number",
       "title": "Turns in the recent view",
-      "description": "How many of the latest turns the middle view of the tree covers, from 2 to 20",
+      "description": "How many latest turns to cover. The middle view of the tree shows them, from 2 to 20",
       "default": 5
     }
   }

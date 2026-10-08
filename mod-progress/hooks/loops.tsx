@@ -9,7 +9,7 @@ import style from './style'
 import text from './text'
 import { CAPS, decodeAll, fill, MARK, THEME } from './theme'
 
-export type LoopsProps = { rows: Row[]; width: number; expanded: string; nerd: boolean }
+export type LoopsProps = { rows: Row[]; width: number; expanded: string; nerd: boolean; viewing: string }
 export type LoopsMessage = { type: 'toggle'; id: string }
 
 type Line = { kind: 'head' | 'pills' | 'gate' | 'empty' | 'gap'; loop: number; gate?: number }
@@ -32,7 +32,7 @@ const LEVELS = style.levels as Record<string, { glyph: string; color: string }>
 
 const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
   const { Box, Text } = surface.elements
-  const { rows, width, expanded, nerd } = props
+  const { rows, width, expanded, nerd, viewing } = props
   const look = lookFor(nerd)
   const own = decodeAll(marks.glyphs)[nerd ? 'nerd' : 'safe']
   const lines = layoutLoops(rows, expanded)
@@ -64,10 +64,11 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
     const isHover = hovered === line.loop
     const on = isHover ? THEME.lifted : THEME.surface2
     const strip = <Text key={`${key}-strip`} color={row.hue}>{own.strip}</Text>
+    const isViewed = line.kind === 'head' && row.id === viewing
     const frame = (inner: unknown) => (
       <Box key={key} height={1} width={width} flexDirection="row" backgroundColor={on}>
         {strip}
-        <Text key={`${key}-pad`}>{' '}</Text>
+        <Text key={`${key}-pad`} color={THEME.accent} bold>{isViewed ? MARK.cursor : ' '}</Text>
         {inner}
       </Box>
     )
@@ -80,7 +81,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
           <Text key={`${key}-mark`} color={mark.color}>{mark.glyph}</Text>
           <Box key={`${key}-name`} flexGrow={1} flexShrink={1}>
             <Text wrap="truncate-end">
-              <Text color={isHover ? THEME.accent : THEME.onSurface} bold>{row.name}</Text>
+              <Text color={isHover || isViewed ? THEME.accent : THEME.onSurface} bold>{row.name}</Text>
               <Text color={THEME.muted}>{row.description ? ` ${row.description}` : ''}</Text>
             </Text>
           </Box>

@@ -18,12 +18,18 @@ const FULL = [
 
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
 
+const TRANSCRIPT = '/t/s1.jsonl'
+// One user row per prompt, each the child of the row before, as Claude Code writes them.
+const transcriptFor = (prompts: string[]) =>
+  prompts.map((text, index) => JSON.stringify({ type: 'user', uuid: `p${index}`, parentUuid: index ? `p${index - 1}` : null, message: { role: 'user', content: text } })).join('\n') + '\n'
+
 type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean }
 
-// Stubs everything the mod touches. `forks` and `completes` record what the model was asked, `store` what the mod saved.
+// Stubs everything the mod touches. `forks` and `completes` record what the model was asked, `store` what the mod saved, and the transcript holds each prompt the test sent.
 function setup(on: any, { reply = () => answered(FULL), below, isUnplaced }: Setup = {}) {
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 5, 16, 52) })
-  const store = new Map<string, unknown>()
+  const store = new Map<string, unknown>([['transcript:s1', TRANSCRIPT]])
+  const sent: string[] = []
   const forks: string[] = []
   const completes: { model: string; effort?: string; prompt: string }[] = []
   const fills: { text: string; mode?: string }[] = []
@@ -51,7 +57,10 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced }: Set
     fills.push({ text: e.text, mode: e.mode })
     return { isFilled: true }
   })
-  on('prompt.submit', (_$: unknown, e: { text: string }) => ({ text: e.text }))
+  on('prompt.submit', (_$: unknown, e: { text: string }) => {
+    sent.push(e.text)
+    return { text: e.text }
+  })
   on('ui.panes', () => ({ value: panes }))
   on('ui.open', (_$: unknown, e: { id: string }) => {
     if (isUnplaced) return { value: { isPlaced: false, reason: 'too narrow' } }
@@ -69,7 +78,8 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced }: Set
   })
   on('command.register', () => ({ value: undefined }))
   on('config.list', () => ({ value: [] }))
-  on('fs.read', () => ({ deny: 'no file' }))
+  on('fs.stat', (_$: unknown, e: { path: string }) => (e.path === TRANSCRIPT ? { value: { kind: 'file', size: transcriptFor(sent).length, mtimeMs: 0, isLink: false } } : { deny: 'no file' }))
+  on('fs.read', (_$: unknown, e: { path: string }) => (e.path === TRANSCRIPT ? { value: transcriptFor(sent) } : { deny: 'no file' }))
   on('turn.step', async function* (_$: unknown, e: { turnId: string; index: number }) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage: null }
   })

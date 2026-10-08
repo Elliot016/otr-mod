@@ -2,7 +2,7 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, pathOf, recordEdit, type Io } from './guard'
 import { isTipMessage, type Tip, type TipMessage } from './entry'
-import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, paneTitle, terminalSettings, type IconMode, withMark } from './look'
+import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'
 import { tabRow } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
@@ -39,12 +39,9 @@ async function logDir($: EngineInterface) {
 // Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
-  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const env = { WT_SESSION: await $.env.get('WT_SESSION'), TERM_PROGRAM: await $.env.get('TERM_PROGRAM') }
   const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
-  for (const path of terminalSettings(local)) {
-    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
-  }
-  return lookFor(false)
+  return lookFor(await detectNerd(env, local, path => $.fs.read(path).then(String)))
 }
 
 // Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.

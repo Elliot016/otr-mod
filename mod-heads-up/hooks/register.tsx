@@ -2,8 +2,9 @@ import type { ConfigValue, EngineInterface, Register, SessionMessage } from 'cla
 
 import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt, type Direction } from './ask'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip } from './entry'
-import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, section, subpill, terminalSettings, withMark, type IconMode } from './look'
+import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
 import { byTurn, canFork, CLEAR_AFTER_PROMPTS, emptySaved, KNOWN_KEPT, pack, remember, sameText, savedOf, SEEN_KEPT, shouldCheck, stringsOf, unreadCount, type Note, type Saved } from './notes'
+import { isPrompt, PLACEHOLDER, PromptNumbers } from './prompts'
 import { menuEntry, pill, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
@@ -18,12 +19,9 @@ let look = lookFor(false)
 // Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
-  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const env = { WT_SESSION: await $.env.get('WT_SESSION'), TERM_PROGRAM: await $.env.get('TERM_PROGRAM') }
   const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
-  for (const path of terminalSettings(local)) {
-    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
-  }
-  return lookFor(false)
+  return lookFor(await detectNerd(env, local, path => $.fs.read(path).then(String)))
 }
 
 // Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
@@ -71,6 +69,8 @@ let saved: Saved = emptySaved()
 let loadedSession = ''
 let seen: string[] = []
 let known: string[] = []
+// The prompts drawn in the composer this session, by requestId: the transcript may not hold them yet.
+const drawnPrompts = new Map<string, string>()
 
 // The last main request's model and effort, which pick the check's route.
 let lastModel = ''
@@ -102,6 +102,7 @@ async function ensureLoaded($: EngineInterface) {
   const session = await $.session.id()
   if (session === loadedSession) return
   loadedSession = session
+  drawnPrompts.clear()
   saved = savedOf(await $.store.get(`notes:${session}`).catch(() => undefined))
   seen = stringsOf(await $.store.get('seen').catch(() => undefined))
   known = stringsOf(await $.store.get('known').catch(() => undefined))
@@ -111,6 +112,48 @@ async function save($: EngineInterface) {
   await $.store.set(`notes:${loadedSession}`, saved).catch(() => {
     // Without a store the notes still show until the next reload.
   })
+}
+
+// The transcript the session's SessionStart named; a session that began before this mod loaded is found by its file name.
+async function transcriptOf($: EngineInterface) {
+  const named = await $.store.get(`transcript:${await $.session.id()}`).catch(() => undefined)
+  return typeof named === 'string' && named ? named : findTranscript($)
+}
+
+// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
+async function findTranscript($: EngineInterface) {
+  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+  const projects = `${home}/.claude/projects`
+  const file = `${await $.session.id()}.jsonl`
+  for (const entry of await $.fs.list(projects).catch(() => [])) {
+    const path = `${projects}/${entry.name}/${file}`
+    if (entry.kind === 'dir' && (await $.fs.exists(path).catch(() => false))) return path
+  }
+  return ''
+}
+
+// $.fs.read rejects past 4 MiB, so a longer transcript streams through cat or type, as mod-transcript reads it.
+async function transcriptText($: EngineInterface, path: string) {
+  const size = path ? ((await $.fs.stat(path).catch(() => null))?.size ?? 0) : 0
+  if (size === 0) return ''
+  const text = String(await $.fs.read(path).catch(() => ''))
+  if (text) return text
+  const isWindows = /^[A-Za-z]:|\\/.test(path)
+  // cmd's type rejects forward slashes.
+  const argv = isWindows ? ['cmd', '/c', 'type', path.replace(/\//g, '\\')] : ['cat', path]
+  let streamed = ''
+  for await (const chunk of $.process.spawn({ argv })) {
+    if (chunk.stream === 'stdout') streamed += chunk.text
+  }
+  return streamed
+}
+
+// The prompts numbered as the transcript numbers them. Read at each check: /rewind and a late load change the live branch.
+async function numberPrompts($: EngineInterface) {
+  const numbers = new PromptNumbers()
+  for (const line of (await transcriptText($, await transcriptOf($))).split('\n')) if (line.trim()) numbers.feed(line)
+  drawnPrompts.forEach((text, id) => numbers.claim(id, text))
+  return numbers
 }
 
 const noteOf = (id: string) => saved.notes.find(each => each.id === id)
@@ -136,6 +179,8 @@ async function check($: EngineInterface) {
     await ensureLoaded($)
     const session = loadedSession
     const startStep = mainSteps
+    // The prompt the running turn answers, numbered before the check's model call takes a while.
+    const running = (await numberPrompts($)).latest()
     const reply = await ask($, checkPrompt(seen, known))
     const found = reply ? parseCheck(reply) : null
     // A /clear while the check ran makes it another session's.
@@ -146,7 +191,7 @@ async function check($: EngineInterface) {
       if (!verdict || !parseRecheck(verdict) || session !== (await $.session.id())) return
     }
     const at = await $.clock.now()
-    const added: Note = { ...found, id: `n${saved.notes.length + 1}-${at}`, turn: saved.prompts, prompt: saved.lastPrompt, at, isRead: false }
+    const added: Note = { ...found, id: `n${saved.notes.length + 1}-${at}`, turn: running?.number ?? 0, prompt: running?.text ?? '', at, isRead: false }
     saved = { ...saved, notes: [...saved.notes, added], card: added.id, since: 0 }
     seen = remember(seen, found.learn, SEEN_KEPT)
     await save($)
@@ -395,7 +440,7 @@ export const register: Register = (on, options) => {
     if (sent && !sent.startsWith('/')) {
       await ensureLoaded($)
       const since = saved.card ? saved.since + 1 : 0
-      saved = { ...saved, prompts: saved.prompts + 1, lastPrompt: sent, since, card: since >= CLEAR_AFTER_PROMPTS ? null : saved.card }
+      saved = { ...saved, since, card: since >= CLEAR_AFTER_PROMPTS ? null : saved.card }
       await save($)
       $.ui.invalidate('ui.render')
     }
@@ -403,9 +448,21 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Each prompt row as Claude Code draws it, so ↗ scrolls to the id the row really has.
+  // Each prompt row as Claude Code draws it, so ↗ scrolls to the id the row really has, and a prompt the transcript may not hold yet is numbered.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
-    if (e.props.origin?.kind === 'composer') drawn.set(sameText(String(e.props.text ?? '')), e.requestId)
+    if (e.props.origin?.kind === 'composer') {
+      const promptText = String(e.props.text ?? '')
+      drawn.set(sameText(promptText), e.requestId)
+      await ensureLoaded($)
+      if (e.requestId !== PLACEHOLDER && isPrompt(promptText)) drawnPrompts.set(e.requestId, promptText)
+    }
+
+    return next(e)
+  })
+
+  // Only SessionStart names the transcript file; the store keeps it per session, as mod-transcript does.
+  on('classic.SessionStart', async ($, e, next) => {
+    await $.store.set(`transcript:${e.session_id}`, e.transcript_path).catch(() => {})
 
     return next(e)
   })
@@ -528,7 +585,7 @@ export const register: Register = (on, options) => {
     const unread = unreadCount(saved.notes)
     const badge = unread > 0 ? { badge: { text: String(unread), color: THEME.accent, bg: mix(THEME.accent, isShown ? THEME.lifted : PILL.primary, WASH) } } : {}
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'headsup', { label: text.pillLabel, icon: nerd ? look.glyph.warn : text.pillShort, isOpen: isShown, idle: THEME.pill, isBusy: isOpening || isChecking || rewriting !== '', still, nerd, tip: { glyph: nerd ? bare(look.glyph.warn) : MARK.bullet, label: text.pillLabel, text: text.tipPill }, ...badge }, e.props.bodyColumns)
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'headsup', { label: text.pillLabel, isOpen: isShown, idle: THEME.pill, isBusy: isOpening || isChecking || rewriting !== '', still, nerd, tip: { glyph: nerd ? bare(look.glyph.warn) : MARK.bullet, label: text.pillLabel, text: text.tipPill }, ...badge })
 
     return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...items, ...rest], bandTip ? tipLine({ Box, Text }, bandTip) : tip, e.props.bodyColumns)
   })

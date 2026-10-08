@@ -10,43 +10,43 @@
     "fold_turns": {
       "type": "boolean",
       "title": "Fold finished turns",
-      "description": "Each finished turn starts folded to one summary line under its prompt. Off, turns start open and the line folds them",
+      "description": "Turns start folded to one line. The line sits under its prompt. Off, they start open and the line folds them",
       "default": true
     },
     "fold_tools": {
       "type": "boolean",
       "title": "Fold tool rows",
-      "description": "Each finished tool row is one line with its own toggle. Off, tool rows draw as Claude Code draws them",
+      "description": "Each tool row folds to one line. Finished rows have their own toggle. Off, tool rows draw as Claude Code draws them",
       "default": true
     },
     "timestamps": {
       "type": "boolean",
       "title": "Show times",
-      "description": "Each prompt shows when you sent it, and each tool line when it started and how long it took. Off, rows show no times",
+      "description": "Prompt send time, tool duration. Each prompt shows when you sent it, and each tool line when it started and how long it took. Off, rows show no times",
       "default": true
     },
     "expand_live": {
       "type": "boolean",
       "title": "Show the latest turn in full",
-      "description": "The latest turn shows every tool row and result as Claude Code draws them, and folds when your next prompt starts. Off, finished tool calls fold right away",
+      "description": "Stays open until your next prompt. The latest turn shows every tool row and result as Claude Code draws them. Off, finished tool calls fold right away",
       "default": true
     },
     "copy_pill": {
       "type": "boolean",
       "title": "Copy button",
-      "description": "Each finished reply's bottom edge carries a copy button: point at it to pick reply, code, text, table or links, then click one. Off, the edge stays plain",
+      "description": "On each finished reply's edge. A copy button sits there: point at it to pick reply, code, text, table or links, then click one. Off, the edge stays plain",
       "default": true
     },
     "prompt_numbers": {
       "type": "boolean",
       "title": "Prompt numbers",
-      "description": "Shows each prompt's number (#N) beside your message, matching the Prompts and Heads up panels",
+      "description": "#N before each of your prompts. It matches the number the Prompts and Heads up panels show",
       "default": true
     },
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": [
         "auto",
         "nerd",

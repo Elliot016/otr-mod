@@ -28,6 +28,22 @@ export const terminalSettings = (localAppData: string) => [
 
 export const isNerdFace = (settingsText: string) => /"face"\s*:\s*"[^"]*(nerd|\bNFM?\b)/i.test(settingsText)
 
+// The two variables that name the terminal: WT_SESSION from Windows Terminal, TERM_PROGRAM from programs such as mintty.
+export type TerminalEnv = { WT_SESSION?: string | undefined; TERM_PROGRAM?: string | undefined }
+
+// mintty inherits WT_SESSION from a Windows Terminal tab, so only an unset or Windows Terminal TERM_PROGRAM counts.
+export const isWindowsTerminal = ({ WT_SESSION, TERM_PROGRAM }: TerminalEnv) =>
+  Boolean(WT_SESSION) && (!TERM_PROGRAM || /windows\s*terminal/i.test(TERM_PROGRAM))
+
+// Nerd glyphs only when this window is Windows Terminal and its settings name a Nerd font; every other window stays safe.
+export async function detectNerd(env: TerminalEnv, localAppData: string, readFile: (path: string) => Promise<string>) {
+  if (!isWindowsTerminal(env)) return false
+  for (const path of terminalSettings(localAppData)) {
+    if (isNerdFace(await readFile(path).catch(() => ''))) return true
+  }
+  return false
+}
+
 // `text` led by its icon in Nerd mode; the text alone in safe mode or when the name has no icon.
 export const withIcon = (look: Look, name: string, text: string) => (look.glyph.icon[name] ? `${look.glyph.icon[name]} ${text}` : text)
 

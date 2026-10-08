@@ -1,7 +1,6 @@
 // Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "pillLabel": "Heads up",
-  "pillShort": "Heads",
   "paneTitle": "Heads up",
   "settingsTab": "Settings",
   "settingsPaneTitle": "mod-heads-up",
@@ -42,5 +41,5 @@ export default {
   "tipMore": "rewrites this note with more detail",
   "commandDescription": "Open the Heads up panel: every note of this session by turn; `settings` opens its settings, `clear` closes the card, `forget` forgets the topics you marked as known",
   "tipToast": {"label":"Dismiss","text":"hides this message"},
-  "settingTips": {"enabled":"a side check flags one thing worth knowing, at most once per turn"}
+  "settingTips": {"enabled":"the side check flags one thing"}
 }

@@ -1,7 +1,6 @@
 // Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "pillLabel": "Progress",
-  "pillShort": "Prog",
   "tipPill": "every agent with its context, tokens and gates",
   "tipPillGates": "{count} running, gates {done}/{total}",
   "tipLoop": "shows or hides this agent's gates",

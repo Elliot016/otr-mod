@@ -297,5 +297,5 @@ export default {
   "tipTabDetails": "shows the command held right now",
   "tipTabSettings": "shows this mod's settings",
   "tipToast": {"label":"Dismiss","text":"hides this message"},
-  "settingTips": {"enabled":"holds risky Bash commands until you run or cancel them"}
+  "settingTips": {"enabled":"risky Bash waits for your choice"}
 }

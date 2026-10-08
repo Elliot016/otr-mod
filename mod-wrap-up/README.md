@@ -21,10 +21,10 @@ Change them with `/mod-wrap-up settings` or the gear pill.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Animations | on | Entries shimmer while they wait and hover colors fade. Off, everything draws still |
-| Handoff length | `400` | Hard cap, in words, for the handoff message the model writes |
-| Read the threads | on | When the card opens, Haiku splits the session into up to four threads you can keep or drop. Off, the card shows only the fixed items and the whole session counts |
-| Icons | `auto` | auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
+| Handoff length | `400` | Most words the handoff may use. A hard cap on the message the model writes |
+| Read the threads | on | Haiku finds up to four threads. You keep or drop each one when the card opens. Off, the card shows only the fixed items and the whole session counts |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## Install
 

@@ -21,11 +21,11 @@ Change them with `/mod-file-tree settings` or the gear pill.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Animations | on | Entries shimmer while they wait and hover colors fade. Off, everything draws still |
-| Icons | `auto` | auto uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
-| Show files Claude only read | on | The tree lists files Claude read as well as the ones it changed. Off, it lists only changed files |
-| Wrap long diff lines | on | Long lines in the replay wrap onto the next row. Off, they are cut at the pane edge |
-| Turns in the recent view | `5` | How many of the latest turns the middle view of the tree covers, from 2 to 20 |
+| Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Show files Claude only read | on | Read files join the changed ones. Off, it lists only changed files |
+| Wrap long diff lines | on | Replay lines wrap onto the next row. Off, they are cut at the pane edge |
+| Turns in the recent view | `5` | How many latest turns to cover. The middle view of the tree shows them, from 2 to 20 |
 
 ## Install
 

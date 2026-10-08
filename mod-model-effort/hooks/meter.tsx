@@ -5,10 +5,8 @@ import { LEVEL_LOOK, LEVELS } from './levels'
 import style from './style'
 import { CAPS, THEME } from './theme'
 
-// still: the animations setting is off, so the level icons switch at once. nerd: the meter draws the pill's caps itself,
-// so the pointer on a cap is still on the meter and the levels stay open. compact: no model name, the effort glyph alone.
-// tipModel: the model name (the leading cells when compact); tipRest: the folded pill; tipLevels: one per level, in LEVELS order.
-export type MeterProps = { effort: string | null; model: string; bg: string; still?: boolean; nerd?: boolean; compact?: boolean; tipModel: Tip; tipRest: Tip; tipLevels: Tip[] }
+// still: the animations are off, so the levels switch at once. nerd: the meter draws its caps, so a pointer on one keeps the levels open.
+export type MeterProps = { effort: string | null; model: string; bg: string; still?: boolean; nerd?: boolean; tipModel: Tip; tipRest: Tip; tipLevels: Tip[] }
 
 export type MeterMessage = { type: 'set'; effort: string } | { type: 'model-menu' }
 
@@ -33,7 +31,7 @@ const latest = new WeakMap<object, MeterProps>()
 const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
   const reached = props.effort ? LEVELS.indexOf(props.effort as (typeof LEVELS)[number]) : -1
-  const head = props.compact ? ' ' : ` ${props.model} `
+  const head = ` ${props.model} `
   const start = (props.nerd ? 1 : 0) + head.length
 
   // The level under the pointer previews what a click would set: -1 on the model name, -2 off the pill.
@@ -74,8 +72,7 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
     surface.setState({ ...surface.state, level, at: Date.now(), tipId: isClick ? (surface.state?.tipId ?? null) : tipId, lights: props.still ? targets(litOf(props, level)) : level !== hovered ? stepped : lights })
     if (isClick && level >= 0) surface.post({ type: 'set', effort: LEVELS[level]! } satisfies MeterMessage)
     // The model name opens the model menu.
-    // A compact pill has no name, so its leading cells, or a press on it while folded, stand in for it.
-    if (isClick && level < 0 && (isModel || (props.compact && !isExpanded))) surface.post({ type: 'model-menu' } satisfies MeterMessage)
+    if (isClick && level < 0 && isModel) surface.post({ type: 'model-menu' } satisfies MeterMessage)
   })
   const lights = surface.state?.lights ?? targets(litOf(props, hovered))
 

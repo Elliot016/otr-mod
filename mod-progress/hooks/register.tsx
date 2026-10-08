@@ -1,10 +1,10 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
-import { FOOTER_ROWS, isNerdFace, lookFor, paneFooter, section, terminalSettings, withMark, type IconMode } from './look'
+import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
 import { layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
 import { menuEntry, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
-import { applyStep, applyTask, bandSummary, buildRows, emptySnap, isGatesPath, MAIN_GATES, parseGates, settle, stemOf, type AgentLite, type Gate, type Snap, type Usage, type UsageLite } from './progress'
+import { applyStep, applyTask, bandSummary, buildRows, emptySnap, gatesStemIn, isGatesPath, MAIN_GATES, parseGates, settle, stemOf, type AgentLite, type Gate, type Snap, type Usage, type UsageLite } from './progress'
 import { settingChoice, settingsBody } from './settings'
 import text from './text'
 import { fill, MARK, mix, statusColor, THEME, WASH } from './theme'
@@ -17,12 +17,9 @@ let look = lookFor(false)
 // Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
-  if (!(await $.env.get('WT_SESSION'))) return lookFor(false)
+  const env = { WT_SESSION: await $.env.get('WT_SESSION'), TERM_PROGRAM: await $.env.get('TERM_PROGRAM') }
   const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
-  for (const path of terminalSettings(local)) {
-    if (isNerdFace(String(await $.fs.read(path).catch(() => '')))) return lookFor(true)
-  }
-  return lookFor(false)
+  return lookFor(await detectNerd(env, local, path => $.fs.read(path).then(String)))
 }
 
 // Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
@@ -243,7 +240,7 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if ('agentId' in result) {
       const current = await loadSnap($)
-      current.agents[result.agentId] = { model: result.model, tokens: 0, context: 0, spawnedAt: await $.clock.now() }
+      current.agents[result.agentId] = { model: result.model, tokens: 0, context: 0, spawnedAt: await $.clock.now(), gatesStem: gatesStemIn(e.prompt) }
       await saveSnap($)
       $.ui.invalidate('ui.render')
     }
@@ -320,7 +317,7 @@ export const register: Register = (on, options) => {
     const summary = bandSummary(rows)
     const { group, row, rest, tip } = splitRow(await next(e))
     const badge = summary.count > 0 ? { badge: { text: String(summary.count), color: THEME.accent, bg: mix(THEME.accent, shown ? THEME.lifted : PILL.primary, WASH) } } : {}
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'progress', { label: text.pillLabel, icon: look.glyph.icon.Agent ?? text.pillShort, isOpen: shown, idle: THEME.pill, still, nerd, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.pillLabel, text: summary.total > 0 ? fill(text.tipPillGates, summary) : text.tipPill }, ...badge }, e.props.bodyColumns)
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'progress', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, still, nerd, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.pillLabel, text: summary.total > 0 ? fill(text.tipPillGates, summary) : text.tipPill }, ...badge })
 
     return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], hovered?.id ? tipLine({ Box, Text }, tipText(hovered)) : tip, e.props.bodyColumns)
   })
@@ -384,7 +381,7 @@ export const register: Register = (on, options) => {
     const { current, rows } = await currentRows($)
     // Pane padding, then the section's border and padding.
     const width = e.props.bodyColumns - 2 - 4
-    const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd })) as LoopsProps
+    const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd, viewing: e.props.view.agentId ?? '' })) as LoopsProps
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>

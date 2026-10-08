@@ -11,11 +11,6 @@ export const PILL = { primary: style.colors.pills.primary, secondary: style.colo
 // Menu entries left to right, by the id in their `menu-pad-<id>` Box key; an unknown id goes last.
 const ENTRY_ORDER = ['manager', 'skills', 'prompts', 'filetree', 'progress', 'headsup']
 
-// The row draws the same at every width; a narrow window is the person's to resize.
-export function fitFor(_columns?: number) {
-  return { dividers: true, effortOnly: false, icons: false, wrapUp: true }
-}
-
 type Node = { props?: Record<string, unknown>; children?: unknown[] } | null | undefined
 type Elements = { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
@@ -65,8 +60,7 @@ export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: u
 }
 
 // A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open panel's entry is a pill of its own inside the group.
-// icon and columns are accepted and ignored: the row draws the same at every width.
-export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, { icon: _icon, ...props }: Omit<EntryProps, 'id' | 'bg' | 'tight'> & { icon?: string }, _columns?: number) {
+export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, props: Omit<EntryProps, 'id' | 'bg' | 'tight'>) {
   const bg = props.isOpen ? THEME.lifted : PILL.primary
   const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props } satisfies EntryProps} />
   return (
@@ -89,7 +83,6 @@ export function pillRow(elements: Elements & { Client?: (props: any) => RenderEl
   const entries = Client
     ? sorted.flatMap((entry, at) => (at === 0 ? [entry] : [<Client key={`menu-group-sep-${at}`} module="./entry.tsx" height={1} props={{ id: `sep-${at}`, label: '', isOpen: false, bg: PILL.primary, rail: true } satisfies EntryProps} />, entry]))
     : sorted
-  const kept = row
   return (
     <Box key="menu-rows" flexDirection="column">
       {rest}
@@ -97,7 +90,7 @@ export function pillRow(elements: Elements & { Client?: (props: any) => RenderEl
       {tip ?? tipLine(elements, ' ')}
       <Box key="menu-row" flexDirection="row" columnGap={1}>
         {group.length > 0 ? pill(elements, nerd, PILL.primary, entries, 'menu-group') : null}
-        {kept}
+        {row}
       </Box>
     </Box>
   )

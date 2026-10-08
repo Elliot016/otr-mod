@@ -219,6 +219,7 @@ Pick what carries over, then hand off or compact. Played at double speed.
 | Load them every session | Add each folder to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `;` on Windows and `:` elsewhere |
 | Apply changes in an open session | `/reload-plugins` |
 | Turn one off, or change its settings | The gear pill, or `/mod-<name> settings` |
+| Pass a slash command from Git Bash | `MSYS_NO_PATHCONV=1 claude "/mod-<name> settings"`, since Git Bash rewrites `/x` into a Windows path |
 
 > [!WARNING]
 > Mods are not sandboxed: they run with your permissions.

@@ -15,5 +15,5 @@ export default {
   "tipDismiss": "clears the suggestions",
   "tipTabSettings": "shows this mod's settings",
   "tipToast": {"label":"Dismiss","text":"hides this message"},
-  "settingTips": {"enabled":"suggests next prompts after each finished turn"}
+  "settingTips": {"enabled":"lists next prompts after a turn"}
 }
