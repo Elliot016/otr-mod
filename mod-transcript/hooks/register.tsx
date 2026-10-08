@@ -36,6 +36,8 @@ const guess = ($: EngineInterface) =>
     // Without the messages, rows draw as before: unfolded until the transcript is read.
   }))
 let working = false
+// The engine's expanded view (ctrl+o, --verbose) draws every row in full, so the rows pass through there.
+let isFullView = false
 // Calls a hook or the person refused (PermissionDenied): an error the person chose, drawn neutral.
 const declined = new Set<string>()
 type ApiFailure = { error: ModelApiError; details: string; text: string }
@@ -812,8 +814,10 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
+    isFullView = e.props.isExpanded
     // A subagent's report opens a turn of its own, as in the transcript.
     if (isLoaded && (e.props.origin.kind === 'peer' || (e.props.origin.kind === 'composer' && isPrompt(e.props.text)))) log.claim(e.requestId, 'prompt', Date.now(), e.props.origin.kind === 'peer')
+    if (isFullView) return next(e)
     if (e.props.origin.kind === 'peer' || e.props.origin.kind === 'task-notification') {
       const { Box, Text } = $.ui.resolve(e)
       return reportRow({ Box, Text }, e.props, widthOf(e))
@@ -883,6 +887,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'reply')
+    if (isFullView) return next(e)
     else {
       await guess($)
       log.adopt(e.requestId, 'text', e.props.text)
@@ -911,6 +916,7 @@ export const register: Register = (on, options) => {
     }
     const turn = log.turnOf(e.requestId)
     seen.set(`ToolUse ${e.requestId}`, Boolean(turn))
+    if (isFullView) return next(e)
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const place = await placeOf($, turn, e.requestId)
     // In an open turn the head's kind rows list every call, so the row itself draws nothing.
@@ -930,7 +936,7 @@ export const register: Register = (on, options) => {
     const isOpen = (await opened($, 'tools')).includes(e.props.tool_use_id)
     const when = showTimes ? callTime(log.callOf(e.props.tool_use_id)) : ''
     // The status words take their room first, so the name is cut to leave it.
-    const suffix = statusesOf({ isInterrupted: e.props.isInterrupted, isDeclined, output: e.props.output }).map(status => ` ${MARK.sep} ${text.status[status]}`).join('')
+    const suffix = statusesOf({ isInterrupted: e.props.isInterrupted, isDeclined, output: e.props.output, input: e.props.input }).map(status => ` ${MARK.sep} ${text.status[status]}`).join('')
     const room = widthOf(e) - 16 - (when ? WHEN_WIDTH : 0) - cells(suffix)
     const stats = [
       added ? <Box key="toggle-tool-added"><Text color={THEME.good}>{`+${added}`}</Text></Box> : null,
@@ -962,6 +968,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'row')
+    if (isFullView) return next(e)
     else {
       await guess($)
       log.follow(e.requestId)
@@ -984,6 +991,7 @@ export const register: Register = (on, options) => {
     if (isLoaded) for (const call of e.props.calls) if (call.tool_use_id) log.claimCall(call.tool_use_id, call.tool, call.input, call.isRunning, call.output, call.isErrored || call.isInterrupted)
     // A group of thinking alone has no calls; it joins the turn by its own message id.
     if (isLoaded && e.props.calls.length === 0) log.claim(e.requestId.replace(/^collapsed-/, ''), 'row')
+    if (isFullView) return next(e)
     const id = e.props.calls.find(call => call.tool_use_id)?.tool_use_id ?? e.requestId
     if (!isLoaded) {
       await guess($)
@@ -1008,6 +1016,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.surface !== 'terminal') return next(e)
     if (isLoaded) log.claim(e.requestId, 'row')
+    if (isFullView) return next(e)
     else {
       await guess($)
       log.adoptNear(e.requestId)

@@ -159,7 +159,7 @@ async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsT
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   return {
-    prompt: await mount('UserMessage', ID(1), { text: 'run the tests', origin: { kind: 'composer' }, isExpanded: true }),
+    prompt: await mount('UserMessage', ID(1), { text: 'run the tests', origin: { kind: 'composer' }, isExpanded: false }),
     tool: await mount('ToolUse', 'toolu_bash', { tool_use_id: 'toolu_bash', tool: 'Bash', input: { command: 'claude plugin test .' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }),
   }
 }
@@ -313,7 +313,7 @@ test('a block holding a markdown table drops the bubble padding, since Claude Co
   })
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
-  await mount('UserMessage', ID(1), { text: 'compare them', origin: { kind: 'composer' }, isExpanded: true })
+  await mount('UserMessage', ID(1), { text: 'compare them', origin: { kind: 'composer' }, isExpanded: false })
   const withTable = await mount('AssistantMessage', ID(2), { text: table })
   const plain = await mount('AssistantMessage', ID(3), { text: 'Plain text.' })
   expect((await withTable.find({ key: 'toggle-bubble-body' }))?.props.paddingX).toBe(0)
@@ -331,11 +331,11 @@ test('rows drawn before the transcript is read already fold, so none changes hei
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
 
-  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: false })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.' })
   const edit = await mount('ToolUse', 'toolu_edit', { tool_use_id: 'toolu_edit', tool: 'Edit', input: { file_path: 'C:\\repo\\hooks\\a.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} })
   const reply = await mount('AssistantMessage', ID(7), { text: 'Fixed.' })
-  await mount('UserMessage', ID(10), { text: 'now the docs', origin: { kind: 'composer' }, isExpanded: true })
+  await mount('UserMessage', ID(10), { text: 'now the docs', origin: { kind: 'composer' }, isExpanded: false })
 
   // The messages already hold the next prompt, so even the first draw folds the finished turn and keeps its reply.
   expect(await prompt.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
@@ -373,7 +373,7 @@ test('the transcript is read once, and once more for its unfinished last line; r
 
   // The transcript never sees this turn; its rows are claimed as they draw, and the latest turn stays open.
   await $.turn.start({ turnId: 't2' } as never)
-  const fresh = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true })
+  const fresh = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: false })
   const tool = await mount('ToolUse', 'toolu_new', toolProps)
   await $.turn.complete({ turnId: 't2', reason: 'answer', answer: 'ok', isAborted: false } as never)
   expect(await tool.find({ key: 'bash-row' })).toBeDefined()
@@ -387,10 +387,10 @@ test('the transcript is read once, and once more for its unfinished last line; r
   await took.unmount()
 
   // The next prompt folds it: its row draws nothing, and its prompt carries the fold line.
-  await mount('UserMessage', ID(21), { text: 'and the docs', origin: { kind: 'composer' }, isExpanded: true })
+  await mount('UserMessage', ID(21), { text: 'and the docs', origin: { kind: 'composer' }, isExpanded: false })
   const folded = await mount('ToolUse', 'toolu_new', toolProps)
   expect(await folded.find({ type: 'Text' })).toBeUndefined()
-  const head = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true })
+  const head = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: false })
   expect(await head.find({ type: 'Button', text: /^1 tool$/ })).toBeDefined()
   // The torn last line of the file is read again at the turn's end, then dropped as it is not JSON.
   expect(reads).toBe(2)
@@ -416,15 +416,15 @@ test('a new session, whose transcript is not written yet, folds its turns; a gro
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const shell = (id: string) => ({ tool_use_id: id, tool: 'Bash', input: { command: 'ls' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} })
   const live = [
-    await mount('UserMessage', ID(30), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true }),
+    await mount('UserMessage', ID(30), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: false }),
     await mount('ToolGroup', 'collapsed-toolu_a', { calls: [shell('toolu_a'), shell('toolu_b')], isActive: false, isExpanded: false }),
     await mount('ToolGroup', `collapsed-${ID(32)}`, { calls: [], isActive: false, isExpanded: false }),
     await mount('TurnDuration', ID(33), { word: 'Cooked', durationMs: 12000 }),
   ]
   for (const ui of live) await ui.unmount()
 
-  await mount('UserMessage', ID(31), { text: 'and the docs', origin: { kind: 'composer' }, isExpanded: true })
-  const head = await mount('UserMessage', ID(30), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true })
+  await mount('UserMessage', ID(31), { text: 'and the docs', origin: { kind: 'composer' }, isExpanded: false })
+  const head = await mount('UserMessage', ID(30), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: false })
   const group = await mount('ToolGroup', 'collapsed-toolu_a', { calls: [shell('toolu_a'), shell('toolu_b')], isActive: false, isExpanded: false })
   expect(await head.find({ type: 'Button', text: /^2 tools$/ })).toBeDefined()
   // The live turn's duration comes from its own duration line, since the transcript was never read for it.
@@ -456,7 +456,7 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
 
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
-  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: false })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
   const reply = await mount('AssistantMessage', ID(7), { text: 'Fixed.', isFirstOfReply: false })
   const edit = await mount('ToolUse', 'toolu_edit', { tool_use_id: 'toolu_edit', tool: 'Edit', input: { file_path: '/repo/hooks/a.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: { structuredPatch: PATCH } })
@@ -520,7 +520,7 @@ test('an open turn shows a chip per kind in order of first use, Thought first, o
 
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
-  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: false })
   const calls = [
     { tool_use_id: 'toolu_edit', tool: 'Edit', input: { file_path: '/repo/hooks/a.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: { structuredPatch: PATCH } },
     { tool_use_id: 'toolu_read', tool: 'Read', input: { file_path: '/repo/hooks/b.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} },
@@ -564,7 +564,7 @@ test('with fold_turns off, finished turns start open and the line folds them', {
 
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
-  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: true })
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug', origin: { kind: 'composer' }, isExpanded: false })
   const step = await mount('AssistantMessage', ID(2), { text: 'Looking.', isFirstOfReply: true })
 
   expect(await isChipOpen(prompt)).toBe(true)
@@ -712,9 +712,9 @@ async function mountCopying($: any, on: any, copied: string[]) {
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   return {
-    prompt: await mount('UserMessage', ID(1), { text: 'fix the bug\nplease', origin: { kind: 'composer' }, isExpanded: true }),
+    prompt: await mount('UserMessage', ID(1), { text: 'fix the bug\nplease', origin: { kind: 'composer' }, isExpanded: false }),
     reply: await mount('AssistantMessage', ID(4), { text: 'Fixed:\n\n```js\nconst a = 1\n```', isFirstOfReply: true }),
-    thanks: await mount('UserMessage', ID(6), { text: 'thanks', origin: { kind: 'composer' }, isExpanded: true }),
+    thanks: await mount('UserMessage', ID(6), { text: 'thanks', origin: { kind: 'composer' }, isExpanded: false }),
     welcome: await mount('AssistantMessage', ID(7), { text: 'You are welcome.', isFirstOfReply: true }),
     took: await mount('TurnDuration', ID(8), { durationMs: 1000 }),
   }
@@ -784,7 +784,7 @@ test('hovering a copy choice or the fold chip shows its tip in the band tip row,
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const band = await $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
-  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug\nplease', origin: { kind: 'composer' }, isExpanded: true })
+  const prompt = await mount('UserMessage', ID(1), { text: 'fix the bug\nplease', origin: { kind: 'composer' }, isExpanded: false })
   const reply = await mount('AssistantMessage', ID(4), { text: 'Fixed:\n\n```js\nconst a = 1\n```', isFirstOfReply: true })
   const tip = async () => (await band.find({ type: 'Text', text: /copies|folds or unfolds/ }))?.text
   expect(await tip()).toBeUndefined()
@@ -839,7 +839,7 @@ const mountNumbered = async ($: any, on: any, requestId: string, text: string) =
     return <Text>{`base ${e.component}`}</Text>
   })
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
-  return $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'UserMessage', requestId, viewport: { columns: 120, rows: 40 }, props: { text, origin: { kind: 'composer' }, isExpanded: true } } as never)
+  return $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'UserMessage', requestId, viewport: { columns: 120, rows: 40 }, props: { text, origin: { kind: 'composer' }, isExpanded: false } } as never)
 }
 
 test('icons=nerd draws #N in a rounded pill beside the Nth prompt', { options: { icons: 'nerd' } }, async ($, on) => {

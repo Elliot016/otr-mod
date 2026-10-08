@@ -9,7 +9,8 @@ import { settingChoice, settingsBody, type Action, type Previews } from './setti
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 import { shellPlans, TranscriptFiles } from './transcript'
-import { commit, diffLines, emptyLog, fit, iconOf, latestStepOf, liveFolds, relPath, rootOf, recentView, rowsOf, stepsOfTurn, touch, turnView, type Entry, type Kind, type Line, type Log } from './tree'
+import { cells, cut } from './cells'
+import { commit, diffLines, emptyLog, iconOf, latestStepOf, liveFolds, relPath, rootOf, recentView, rowsOf, stepsOfTurn, touch, turnView, type Entry, type Kind, type Line, type Log } from './tree'
 
 const PANE = 'filetree'
 const SETTINGS = 'filetree-settings'
@@ -317,6 +318,7 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
   const icon = (name: string) => glyphs.glyph.icon[name] ?? ''
   return rows.map(row => {
     const guides = '│ '.repeat(row.depth)
+    // Widths below are terminal cells: a CJK character takes two, so counting characters would overflow the row.
     const entry: Entry | undefined = row.entry
     const done = entry ? landed.get(entry.path) : undefined
     // Once the edit lands the row stops being live and glows instead, until Claude touches another file.
@@ -334,10 +336,10 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
     const del = entry?.del ?? inside.reduce((sum, file) => sum + file.del, 0)
     const counts = [add > 0 ? `+${add}` : '', del > 0 ? `−${del}` : ''].filter(Boolean).join(' ')
     // The counts' pill adds a cap on each side where the font has them.
-    const stats = counts.length + (counts && glyphs.nerd ? 2 : 0) + (status && counts ? 1 : 0)
+    const stats = cells(counts) + (counts && glyphs.nerd ? 2 : 0) + (status && counts ? 1 : 0)
     // The live word sits in a pill, one cell wider on each side.
-    const used = guides.length + (mark ? [...mark].length + 1 : 0) + stats + status.length + (isLive ? 2 : 0) + OPEN_CELLS
-    const shown = fit(name, Math.max(6, width - used - 1))
+    const used = cells(guides) + (mark ? cells(mark) + 1 : 0) + stats + cells(status) + (isLive ? 2 : 0) + OPEN_CELLS
+    const shown = cut(name, Math.max(6, width - used - 1))
     return {
       guides,
       mark,
@@ -346,7 +348,7 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
       add,
       del,
       status,
-      pad: width - used - shown.length,
+      pad: width - used - cells(shown),
       endMark: row.isDir ? glyphs.glyph.reveal : MARK.open,
       endColor: row.isDir ? THEME.folder : THEME.accent,
       tip: row.isDir ? text.folderRowTip : entry?.kind === 'read' ? text.readRowTip : text.fileRowTip,

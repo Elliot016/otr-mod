@@ -55,6 +55,13 @@ async function open($: any, on: any, text = '', reads: () => string = () => text
 
 const prompt = (text: string, isExpanded = false) => ({ text, origin: { kind: 'composer' }, isExpanded })
 
+test('the ctrl+o view draws every row as the engine does, so the mod steps aside', { options: { expand_live: false } }, async ($, on) => {
+  const mount = await open($, on, EDIT_TURN)
+  const head = await mount('UserMessage', ID(1), prompt('edit it', true))
+  expect(await head.find({ type: 'Text', text: 'base UserMessage' })).toBeDefined()
+  expect(await head.find({ type: 'Button', text: /tool/ })).toBeUndefined()
+})
+
 test('the normal view still folds the finished turn under its prompt', async ($, on) => {
   const mount = await open($, on, EDIT_TURN)
   const head = await mount('UserMessage', ID(1), prompt('edit it'))

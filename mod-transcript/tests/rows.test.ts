@@ -6,6 +6,7 @@ test('a status word comes from a typed result field, never from the words in the
   expect(statusesOf({ isInterrupted: false, isDeclined: false, output: { timedOutAfterMs: 120000 } })).toEqual(['timedOut'])
   expect(statusesOf({ isInterrupted: true, isDeclined: false, output: { interrupted: true } })).toEqual(['interrupted'])
   expect(statusesOf({ isInterrupted: false, isDeclined: false, output: { backgroundTaskId: 'b1' } })).toEqual(['background'])
+  expect(statusesOf({ isInterrupted: false, isDeclined: false, output: 'started', input: { command: 'ping', run_in_background: true } })).toEqual(['background'])
   expect(statusesOf({ isInterrupted: false, isDeclined: true, output: 'refused' })).toEqual(['declined'])
   expect(statusesOf({ isInterrupted: false, isDeclined: false, output: 'command timed out and was interrupted' })).toEqual([])
 })

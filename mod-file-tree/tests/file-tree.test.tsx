@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { cells, cut } from '../hooks/cells'
 import { THEME } from '../hooks/theme'
 import { TranscriptFiles } from '../hooks/transcript'
 import { diffLines, emptyLog, commit, iconOf, relPath, rootOf, rowsOf, touch, turnView } from '../hooks/tree'
@@ -74,6 +75,35 @@ test('the tree lists folders first, folds one, and hides reads when asked', () =
   expect(rowsOf(log, ['src'], true).map(row => row.name)).toEqual(['src', 'top.md'])
   expect(rowsOf(log, [], false).map(row => row.name)).toEqual(['src', 'a.ts', 'top.md'])
   expect(log.files.find(file => file.path === 'src/a.ts')).toMatchObject({ add: 2, del: 1, kind: 'edit' })
+})
+
+test('cut counts wide characters as two cells and never splits one', () => {
+  expect(cells('設定メモ.md')).toBe(11)
+  expect(cut('設定メモ.md', 11)).toBe('設定メモ.md')
+  expect(cut('設定メモ.md', 7)).toBe('設定メ…')
+  expect(cut('設定メモ.md', 6)).toBe('設定…')
+})
+
+test('a wide file name keeps its whole name when the row has the cells for it', async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Read', file_path: '/w/設定メモ.md' } as never)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('"設定メモ.md"')
+  await ui.unmount()
+})
+
+test('a wide file name too long for its cells is cut on a cell boundary', async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Read', file_path: '/w/設定メモ設定メモ.md' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/w/設定メモ.md' } as never)
+  // Narrow pane: the rows get 20 cells, the open mark takes 4 of them, so a name gets 15.
+  const narrow = { ...(PANE as object), props: { ...(PANE as { props: object }).props, bodyColumns: 24 } } as never
+  const ui = await $.ui.mount(narrow)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).toContain('"設定メモ設定メ…"')
+  expect(drawn).not.toContain('設定メモ設定メモ')
+  expect(drawn).toContain('"設定メモ.md"')
+  await ui.unmount()
 })
 
 test('the tree starts at the shared folder and merges single-folder chains, like VS Code', () => {

@@ -5,12 +5,14 @@ export type Status = 'timedOut' | 'interrupted' | 'background' | 'declined'
 
 type Outcome = { timedOutAfterMs?: unknown; interrupted?: unknown; backgroundTaskId?: unknown; backgroundedByUser?: unknown }
 
-export function statusesOf(call: { isInterrupted: boolean; isDeclined: boolean; output: unknown }): Status[] {
+export function statusesOf(call: { isInterrupted: boolean; isDeclined: boolean; output: unknown; input?: unknown }): Status[] {
   const output = (call.output ?? {}) as Outcome
+  // The row's output may not carry the task id, so the call's own run_in_background counts too.
+  const asked = (call.input as { run_in_background?: unknown } | undefined)?.run_in_background === true
   return [
     ...(typeof output.timedOutAfterMs === 'number' ? ['timedOut' as const] : []),
     ...(call.isInterrupted || output.interrupted === true ? ['interrupted' as const] : []),
-    ...(typeof output.backgroundTaskId === 'string' || output.backgroundedByUser === true ? ['background' as const] : []),
+    ...(asked || typeof output.backgroundTaskId === 'string' || output.backgroundedByUser === true ? ['background' as const] : []),
     ...(call.isDeclined ? ['declined' as const] : []),
   ]
 }

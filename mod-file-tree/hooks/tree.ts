@@ -205,5 +205,3 @@ const EXT_ICON: Record<string, string> = {
 
 // The look.tsx icon name for a file, by extension; `file` when there is no better one.
 export const iconOf = (name: string) => EXT_ICON[name.split('.').pop()!.toLowerCase()] ?? 'file'
-
-export const fit = (text: string, width: number) => (text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text)
