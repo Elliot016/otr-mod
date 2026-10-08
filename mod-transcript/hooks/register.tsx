@@ -20,7 +20,7 @@ import { detectWedge, FILLED, OUTLINE, type Wedge } from './wedge'
 import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 import { copyChoices, copyText, type CopyChoice } from './clip'
 import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
-import { apiErrorAction, completeLines, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice, type Notice, type Report } from './rows'
+import { apiErrorAction, completeLines, hexColors, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice, type Notice, type Report } from './rows'
 
 let transcript = ''
 let log = new TurnLog()
@@ -998,7 +998,25 @@ export const register: Register = (on, options) => {
     const place = await placeOf($, turn, e.requestId)
     const { Box, Client, Text } = $.ui.resolve(e)
     const failure = apiFailure?.text && e.props.text.trim() === apiFailure.text ? apiFailure : null
-    const drawn = () => (failure ? apiErrorRow({ Box, Text }, failure, widthOf(e)) : next(e))
+    const colors = failure ? [] : hexColors(e.props.text)
+    const reply = async () => (failure ? apiErrorRow({ Box, Text }, failure, widthOf(e)) : next(e))
+    // Claude Code draws the reply's markdown, which cannot color a character, so the colors it names show in a strip under it.
+    const drawn = async () =>
+      colors.length === 0 ? reply() : (
+        <Box key="toggle-colored" flexDirection="column">
+          {await reply()}
+          <Box key="toggle-colors" marginTop={1}>
+            <Text wrap="wrap">
+              {colors.map((color, n) => (
+                <Text key={`toggle-color-${n}`}>
+                  <Text color={color.rgb}>■</Text>
+                  <Text color={THEME.muted}>{` ${color.code}${n < colors.length - 1 ? '  ' : ''}`}</Text>
+                </Text>
+              ))}
+            </Text>
+          </Box>
+        </Box>
+      )
     if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await drawn(), hasTable(e.props.text)) : drawn()
 
     return place === 'hidden' ? <Box key="toggle-hidden" /> : cardRow({ Box, Client }, await drawn(), { kind: 'turns', id: turn!.prompt })

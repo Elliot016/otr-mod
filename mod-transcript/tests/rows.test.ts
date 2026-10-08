@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { apiErrorAction, completeLines, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice } from '../hooks/rows'
+import { apiErrorAction, completeLines, hexColors, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice } from '../hooks/rows'
 
 test('a status word comes from a typed result field, never from the words in the output', () => {
   expect(statusesOf({ isInterrupted: false, isDeclined: false, output: { timedOutAfterMs: 120000 } })).toEqual(['timedOut'])
@@ -59,4 +59,18 @@ test('a notice gives its report the status and time it reports, and a report wit
   const report = reportOf({ name: 'general-purpose' }, undefined)
   expect(withNotice(report, undefined)).toEqual(report)
   expect(withNotice(report, { status: 'completed', durationMs: 952121 })).toEqual({ name: 'general-purpose', status: 'completed', durationMs: 952121 })
+})
+
+test('hex colors come back once each, in order, with short and alpha codes widened to six digits', () => {
+  expect(hexColors('low `#ACB9E6`, high #ea98ee, again #ACB9E6, short #fff and #0f08, alpha #FF6F7A80')).toEqual([
+    { code: '#ACB9E6', rgb: '#ACB9E6' },
+    { code: '#ea98ee', rgb: '#EA98EE' },
+    { code: '#fff', rgb: '#FFFFFF' },
+    { code: '#0f08', rgb: '#00FF00' },
+    { code: '#FF6F7A80', rgb: '#FF6F7A' },
+  ])
+})
+
+test('prompt numbers, issue refs, anchors and longer words are not colors', () => {
+  expect(hexColors('prompt #229, issue #1234, entity &#123; url /page#section, word #deadbeefcafe, id #abcdefg')).toEqual([])
 })

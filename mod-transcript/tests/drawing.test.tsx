@@ -145,6 +145,17 @@ test('an API error the engine retries ends the reply as one warning line', async
   expect((await reply.find({ type: 'Text', text: /rate limit reached/ }))?.props.color).toBe(THEME.warn)
 })
 
+test('a reply naming hex colors gets a strip of colored squares under it, and one naming none stays as drawn', async ($, on) => {
+  const mount = await open($, on)
+  const reply = await mount('AssistantMessage', ID(7), { text: 'Low is `#ACB9E6` and max is #FF6F7A.', isFirstOfReply: true })
+  expect(await reply.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
+  const squares = await reply.findAll({ type: 'Text', text: '■' })
+  expect(squares.map((square: any) => square.props.color).filter(Boolean)).toEqual(['#ACB9E6', '#FF6F7A'])
+  expect(await reply.find({ type: 'Text', text: ' #FF6F7A' })).toBeDefined()
+  const plain = await mount('AssistantMessage', ID(8), { text: 'See prompt #229.', isFirstOfReply: true })
+  expect(await plain.find({ type: 'Text', text: '■' })).toBeUndefined()
+})
+
 test('an API error that needs the person is one red line that says so', async ($, on) => {
   const mount = await open($, on)
   await $.classic.StopFailure({ error: 'billing_error', last_assistant_message: 'API Error: Billing' } as never)
