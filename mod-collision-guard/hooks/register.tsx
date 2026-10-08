@@ -36,12 +36,29 @@ async function logDir($: EngineInterface) {
   return `${home}/.claude/mods-data/mod-collision-guard/sessions`
 }
 
-// Nerd glyphs when the setting asks for them, or on auto when Windows Terminal's font is a Nerd Font.
+// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
-  const env = { WT_SESSION: await $.env.get('WT_SESSION'), TERM_PROGRAM: await $.env.get('TERM_PROGRAM') }
-  const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
-  return lookFor(await detectNerd(env, local, path => $.fs.read(path).then(String)))
+  const env = {
+    WT_SESSION: await $.env.get('WT_SESSION'),
+    TERM_PROGRAM: await $.env.get('TERM_PROGRAM'),
+    ITERM_PROFILE: await $.env.get('ITERM_PROFILE'),
+    KITTY_WINDOW_ID: await $.env.get('KITTY_WINDOW_ID'),
+    ALACRITTY_WINDOW_ID: await $.env.get('ALACRITTY_WINDOW_ID'),
+    GNOME_TERMINAL_SCREEN: await $.env.get('GNOME_TERMINAL_SCREEN'),
+    KONSOLE_VERSION: await $.env.get('KONSOLE_VERSION'),
+  }
+  const host = {
+    localAppData: ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/'),
+    home: ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/'),
+    read: (path: string) => $.fs.read(path).then(String),
+    run: async (argv: string[]) => {
+      const result = await $.process.run(argv, { timeoutMs: 5000 })
+      if (result.exitCode !== 0) throw new Error(result.stderr)
+      return result.stdout
+    },
+  }
+  return lookFor(await detectNerd(env, host))
 }
 
 // Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.

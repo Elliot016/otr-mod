@@ -23,7 +23,7 @@ Change them with `/mod-collision-guard settings` or the gear pill.
 | --- | --- | --- |
 | Guard edits | on | Asks when another session edited it. Only edits inside the window count. Off, edits are still recorded for other sessions but never paused |
 | Window (minutes) | `30` | How long an edit counts as recent. Only other sessions' edits count |
-| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when Windows Terminal runs a Nerd Font, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## Install
 
