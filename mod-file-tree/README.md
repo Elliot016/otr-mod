@@ -5,9 +5,13 @@ The files Claude read and changed, with a replay of each edit.
 
 **How to open:** Files pill
 
-| Live while Claude works | The Files panel |
-| --- | --- |
-| [![][gif-file-tree-live]][video-file-tree-live] | ![][img-file-tree-panel] |
+| The Files panel |
+| --- |
+| ![][img-file-tree-panel] |
+
+**Live while Claude works**
+
+https://github.com/user-attachments/assets/8652a526-e409-4fac-a0fc-bf8da47239d9
 
 ## Features
 
@@ -33,8 +37,4 @@ Change them with `/mod-file-tree settings` or the gear pill.
 claude plugin install mod-file-tree@claude-mods --scope user
 ```
 
-[gif-file-tree-live]: ../showcase/gif/file-tree-live.gif
-
 [img-file-tree-panel]: ../showcase/file-tree-panel.png
-
-[video-file-tree-live]: ../showcase/file-tree-live.mp4

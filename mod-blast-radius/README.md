@@ -5,9 +5,13 @@ Holds a risky shell command until you choose Cancel or Run.
 
 **How to open:** Automatic
 
-| A risky command held | The hold card | The Details pane |
-| --- | --- | --- |
-| [![][gif-blast-radius-hold]][video-blast-radius-hold] | ![][img-blast-radius-card] | ![][img-blast-radius-details] |
+| The hold card | The Details pane |
+| --- | --- |
+| ![][img-blast-radius-card] | ![][img-blast-radius-details] |
+
+**A risky command held**
+
+https://github.com/user-attachments/assets/a3484d78-eacf-4901-a981-e91bf8e6c5a8
 
 ## Features
 
@@ -34,9 +38,5 @@ Change them with `/mod-blast-radius settings` or the gear pill.
 claude plugin install mod-blast-radius@claude-mods --scope user
 ```
 
-[gif-blast-radius-hold]: ../showcase/gif/blast-radius-hold.gif
-
 [img-blast-radius-card]: ../showcase/blast-radius-card.png
 [img-blast-radius-details]: ../showcase/blast-radius-details.png
-
-[video-blast-radius-hold]: ../showcase/blast-radius-hold.mp4

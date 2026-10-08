@@ -5,9 +5,13 @@ The main session and every subagent: model, effort, context fill, tokens, time a
 
 **How to open:** Progress pill
 
-| Two agents running, opened from the pill | The pill | The panel |
-| --- | --- | --- |
-| [![][gif-progress-pane]][video-progress-pane] | ![][img-progress-pill] | ![][img-progress-panel] |
+| The pill | The panel |
+| --- | --- |
+| ![][img-progress-pill] | ![][img-progress-panel] |
+
+**Two agents running, opened from the pill**
+
+https://github.com/user-attachments/assets/473e8e21-cd0c-4971-8cef-448d2b092cf0
 
 ## Settings
 
@@ -24,9 +28,5 @@ Change them with `/mod-progress settings` or the gear pill.
 claude plugin install mod-progress@claude-mods --scope user
 ```
 
-[gif-progress-pane]: ../showcase/gif/progress-pane.gif
-
 [img-progress-panel]: ../showcase/progress-panel.png
 [img-progress-pill]: ../showcase/progress-pill.png
-
-[video-progress-pane]: ../showcase/progress-pane.mp4

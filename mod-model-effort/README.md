@@ -5,9 +5,13 @@ Shows the model and effort level; a click changes either.
 
 **How to open:** The model pill
 
-| Effort on hover, models on click | The model panel |
-| --- | --- |
-| [![][gif-model-effort-pick]][video-model-effort-pick] | ![][img-model-effort-panel] |
+| The model panel |
+| --- |
+| ![][img-model-effort-panel] |
+
+**Effort on hover, models on click**
+
+https://github.com/user-attachments/assets/6677931a-ca6a-4334-aa5f-b839f8a803d7
 
 ## Settings
 
@@ -24,8 +28,4 @@ Change them with `/mod-model-effort settings` or the gear pill.
 claude plugin install mod-model-effort@claude-mods --scope user
 ```
 
-[gif-model-effort-pick]: ../showcase/gif/model-effort-pick.gif
-
 [img-model-effort-panel]: ../showcase/model-effort-panel.png
-
-[video-model-effort-pick]: ../showcase/model-effort-pick.mp4

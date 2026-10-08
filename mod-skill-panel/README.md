@@ -5,9 +5,13 @@ Lists your skills and agents; a click adds one to the prompt.
 
 **How to open:** Skills pill
 
-| Skills, then the settings | Panel | Settings |
-| --- | --- | --- |
-| [![][gif-skill-panel-and-settings]][video-skill-panel-and-settings] | ![][img-skill-panel] | ![][img-skill-panel-settings] |
+| Panel | Settings |
+| --- | --- |
+| ![][img-skill-panel] | ![][img-skill-panel-settings] |
+
+**Skills, then the settings**
+
+https://github.com/user-attachments/assets/90eb8704-5dc3-4695-8a08-96a7bebbc9d0
 
 ## Settings
 
@@ -24,9 +28,5 @@ Change them with `/mod-skill-panel settings` or the gear pill.
 claude plugin install mod-skill-panel@claude-mods --scope user
 ```
 
-[gif-skill-panel-and-settings]: ../showcase/gif/skill-panel-and-settings.gif
-
 [img-skill-panel-settings]: ../showcase/skill-panel-settings.png
 [img-skill-panel]: ../showcase/skill-panel.png
-
-[video-skill-panel-and-settings]: ../showcase/skill-panel-and-settings.mp4

@@ -5,13 +5,13 @@ Chat bubbles for you and Claude, each finished turn folded to one line you can o
 
 **How to open:** Automatic
 
-| Unfolding a turn | Folded | Open |
+| Folded | Open | Copy a reply |
 | --- | --- | --- |
-| [![][gif-transcript-unfold]][video-transcript-unfold] | ![][img-transcript-folded] | ![][img-transcript-open] |
+| ![][img-transcript-folded] | ![][img-transcript-open] | ![][img-transcript-copy] |
 
-| Copy a reply |
-| --- |
-| ![][img-transcript-copy] |
+**Unfolding a turn**
+
+https://github.com/user-attachments/assets/63e0a726-851b-453b-9895-e6f6f2d42c0d
 
 ## Features
 
@@ -40,10 +40,6 @@ Change them with `/mod-transcript settings` or the gear pill.
 claude plugin install mod-transcript@claude-mods --scope user
 ```
 
-[gif-transcript-unfold]: ../showcase/gif/transcript-unfold.gif
-
 [img-transcript-copy]: ../showcase/transcript-copy.png
 [img-transcript-folded]: ../showcase/transcript-folded.png
 [img-transcript-open]: ../showcase/transcript-open.png
-
-[video-transcript-unfold]: ../showcase/transcript-unfold.mp4

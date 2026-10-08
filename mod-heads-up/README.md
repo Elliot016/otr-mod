@@ -5,9 +5,13 @@ Now and then flags one thing you should know but might miss, kept by turn in a p
 
 **How to open:** Automatic, or the Heads up pill
 
-| The panel and a note opened | Card | Note |
-| --- | --- | --- |
-| [![][gif-heads-up-panel]][video-heads-up-panel] | ![][img-heads-up-card] | ![][img-heads-up-note] |
+| Card | Note |
+| --- | --- |
+| ![][img-heads-up-card] | ![][img-heads-up-note] |
+
+**The panel and a note opened**
+
+https://github.com/user-attachments/assets/a79162ea-11b7-438f-8909-014bd804070f
 
 ## Features
 
@@ -31,9 +35,5 @@ Change them with `/mod-heads-up settings` or the gear pill.
 claude plugin install mod-heads-up@claude-mods --scope user
 ```
 
-[gif-heads-up-panel]: ../showcase/gif/heads-up-panel.gif
-
 [img-heads-up-card]: ../showcase/heads-up-card.png
 [img-heads-up-note]: ../showcase/heads-up-note.png
-
-[video-heads-up-panel]: ../showcase/heads-up-panel.mp4

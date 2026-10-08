@@ -5,9 +5,13 @@ Hands off to a fresh session, or fills `/compact` with what to keep.
 
 **How to open:** Wrap up pill
 
-| Compact, start to end | Pick what stays | The filled /compact |
-| --- | --- | --- |
-| [![][gif-wrap-up-full]][video-wrap-up-full] | ![][img-wrap-up-card] | ![][img-wrap-up-compact] |
+| Pick what stays | The filled /compact |
+| --- | --- |
+| ![][img-wrap-up-card] | ![][img-wrap-up-compact] |
+
+**Compact, start to end**
+
+https://github.com/user-attachments/assets/d998cb3a-d2cc-4e6e-ae70-30c4f8dfcd60
 
 ## Features
 
@@ -32,9 +36,5 @@ Change them with `/mod-wrap-up settings` or the gear pill.
 claude plugin install mod-wrap-up@claude-mods --scope user
 ```
 
-[gif-wrap-up-full]: ../showcase/gif/wrap-up-full.gif
-
 [img-wrap-up-card]: ../showcase/wrap-up-card.png
 [img-wrap-up-compact]: ../showcase/wrap-up-compact.png
-
-[video-wrap-up-full]: ../showcase/wrap-up-full.mp4

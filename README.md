@@ -6,9 +6,9 @@
 
 Add-ons for Claude Code that add panels, buttons and safety checks around the prompt. They need Claude Code 2.1.287 or newer.
 
-| Every terminal mod in 79 seconds: click to play |
-| --- |
-| [![][img-reel]][video-reel] |
+**Every terminal mod in 79 seconds**
+
+https://github.com/user-attachments/assets/b0697288-a592-4995-b676-9b6eb7d267a1
 
 ## What each mod does
 
@@ -98,99 +98,133 @@ block-beta
 
 <!-- showcase:start -->
 
-Click a GIF to open its full video.
-
 ### mod-menu
 
 One row of pills opens every panel. Hover one to see what it does.
 
-| The pill row | Hovering an entry shows its tip |
-| --- | --- |
-| ![][img-menu-band] | [![][gif-menu-hover]][video-menu-hover] |
+| The pill row |
+| --- |
+| ![][img-menu-band] |
+
+**Hovering an entry shows its tip**
+
+https://github.com/user-attachments/assets/fc5ca63c-9206-4c17-acab-cd92b64e3ce3
 
 ### mod-manager
 
 Hover a mod to read about it, and switch every mod's icons at once.
 
-| Hover a mod, switch the icons | Auto (Nerd Font) | Plain |
-| --- | --- | --- |
-| [![][gif-manager-hover-and-icons]][video-manager-hover-and-icons] | ![][img-manager-icons-auto] | ![][img-manager-icons-plain] |
+| Auto (Nerd Font) | Plain |
+| --- | --- |
+| ![][img-manager-icons-auto] | ![][img-manager-icons-plain] |
+
+**Hover a mod, switch the icons**
+
+https://github.com/user-attachments/assets/d93b77a8-7a43-4b82-ac00-1ffc6e6b8da3
 
 ### mod-file-tree
 
 The files Claude touches, colored by what happened to them.
 
-| Live while Claude works | The Files panel |
-| --- | --- |
-| [![][gif-file-tree-live]][video-file-tree-live] | ![][img-file-tree-panel] |
+| The Files panel |
+| --- |
+| ![][img-file-tree-panel] |
+
+**Live while Claude works**
+
+https://github.com/user-attachments/assets/8652a526-e409-4fac-a0fc-bf8da47239d9
 
 ### mod-next-steps
 
 Up to three next prompts. Click one, or type its number, to fill the prompt.
 
-| Three suggestions | Picking one by its digit |
-| --- | --- |
-| ![][img-next-steps] | [![][gif-next-steps-keys]][video-next-steps-keys] |
+| Three suggestions |
+| --- |
+| ![][img-next-steps] |
+
+**Picking one by its digit**
+
+https://github.com/user-attachments/assets/be54d640-f179-4e19-8cad-1ecef74d8feb
 
 ### mod-prompts
 
 Every prompt of the session; pick one to read it again.
 
-| Pick a prompt to read it |
-| --- |
-| [![][gif-prompts-pick]][video-prompts-pick] |
+**Pick a prompt to read it**
+
+https://github.com/user-attachments/assets/b1ba4293-9ecc-484b-9e0a-d0d5607bd37b
 
 ### mod-skill-panel
 
 Your skills grouped by color, and the panel's settings.
 
-| Skills, then the settings | Panel | Settings |
-| --- | --- | --- |
-| [![][gif-skill-panel-and-settings]][video-skill-panel-and-settings] | ![][img-skill-panel] | ![][img-skill-panel-settings] |
+| Panel | Settings |
+| --- | --- |
+| ![][img-skill-panel] | ![][img-skill-panel-settings] |
+
+**Skills, then the settings**
+
+https://github.com/user-attachments/assets/90eb8704-5dc3-4695-8a08-96a7bebbc9d0
 
 ### mod-transcript
 
 Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge.
 
-| Unfolding a turn | Folded | Open |
+| Folded | Open | Copy a reply |
 | --- | --- | --- |
-| [![][gif-transcript-unfold]][video-transcript-unfold] | ![][img-transcript-folded] | ![][img-transcript-open] |
+| ![][img-transcript-folded] | ![][img-transcript-open] | ![][img-transcript-copy] |
 
-| Copy a reply |
-| --- |
-| ![][img-transcript-copy] |
+**Unfolding a turn**
+
+https://github.com/user-attachments/assets/63e0a726-851b-453b-9895-e6f6f2d42c0d
 
 ### mod-model-effort
 
 The model and its effort level, one click to change.
 
-| Effort on hover, models on click | The model panel |
-| --- | --- |
-| [![][gif-model-effort-pick]][video-model-effort-pick] | ![][img-model-effort-panel] |
+| The model panel |
+| --- |
+| ![][img-model-effort-panel] |
+
+**Effort on hover, models on click**
+
+https://github.com/user-attachments/assets/6677931a-ca6a-4334-aa5f-b839f8a803d7
 
 ### mod-heads-up
 
 Now and then, one thing you should know; every note stays in its panel.
 
-| The panel and a note opened | Card | Note |
-| --- | --- | --- |
-| [![][gif-heads-up-panel]][video-heads-up-panel] | ![][img-heads-up-card] | ![][img-heads-up-note] |
+| Card | Note |
+| --- | --- |
+| ![][img-heads-up-card] | ![][img-heads-up-note] |
+
+**The panel and a note opened**
+
+https://github.com/user-attachments/assets/a79162ea-11b7-438f-8909-014bd804070f
 
 ### mod-progress
 
 Every agent at a glance: model, effort, context, tokens, time and gates.
 
-| Two agents running, opened from the pill | The pill | The panel |
-| --- | --- | --- |
-| [![][gif-progress-pane]][video-progress-pane] | ![][img-progress-pill] | ![][img-progress-panel] |
+| The pill | The panel |
+| --- | --- |
+| ![][img-progress-pill] | ![][img-progress-panel] |
+
+**Two agents running, opened from the pill**
+
+https://github.com/user-attachments/assets/473e8e21-cd0c-4971-8cef-448d2b092cf0
 
 ### mod-blast-radius
 
 A risky command waits for your answer. Type 1, 2 or 3 into the empty prompt, or click.
 
-| A risky command held | The hold card | The Details pane |
-| --- | --- | --- |
-| [![][gif-blast-radius-hold]][video-blast-radius-hold] | ![][img-blast-radius-card] | ![][img-blast-radius-details] |
+| The hold card | The Details pane |
+| --- | --- |
+| ![][img-blast-radius-card] | ![][img-blast-radius-details] |
+
+**A risky command held**
+
+https://github.com/user-attachments/assets/a3484d78-eacf-4901-a981-e91bf8e6c5a8
 
 ### mod-collision-guard
 
@@ -204,9 +238,13 @@ Another session just edited this file, so Claude asks first.
 
 Pick what carries over, then hand off or compact. Played at double speed.
 
-| Compact, start to end | Pick what stays | The filled /compact |
-| --- | --- | --- |
-| [![][gif-wrap-up-full]][video-wrap-up-full] | ![][img-wrap-up-card] | ![][img-wrap-up-compact] |
+| Pick what stays | The filled /compact |
+| --- | --- |
+| ![][img-wrap-up-card] | ![][img-wrap-up-compact] |
+
+**Compact, start to end**
+
+https://github.com/user-attachments/assets/d998cb3a-d2cc-4e6e-ae70-30c4f8dfcd60
 
 <!-- showcase:end -->
 
@@ -320,19 +358,6 @@ sequenceDiagram
 </details>
 
 <!-- showcase-links:start -->
-[gif-blast-radius-hold]: showcase/gif/blast-radius-hold.gif
-[gif-file-tree-live]: showcase/gif/file-tree-live.gif
-[gif-heads-up-panel]: showcase/gif/heads-up-panel.gif
-[gif-manager-hover-and-icons]: showcase/gif/manager-hover-and-icons.gif
-[gif-menu-hover]: showcase/gif/menu-hover.gif
-[gif-model-effort-pick]: showcase/gif/model-effort-pick.gif
-[gif-next-steps-keys]: showcase/gif/next-steps-keys.gif
-[gif-progress-pane]: showcase/gif/progress-pane.gif
-[gif-prompts-pick]: showcase/gif/prompts-pick.gif
-[gif-skill-panel-and-settings]: showcase/gif/skill-panel-and-settings.gif
-[gif-transcript-unfold]: showcase/gif/transcript-unfold.gif
-[gif-wrap-up-full]: showcase/gif/wrap-up-full.gif
-
 [img-blast-radius-card]: showcase/blast-radius-card.png
 [img-blast-radius-details]: showcase/blast-radius-details.png
 [img-collision-guard]: showcase/collision-guard.png
@@ -353,20 +378,5 @@ sequenceDiagram
 [img-transcript-open]: showcase/transcript-open.png
 [img-wrap-up-card]: showcase/wrap-up-card.png
 [img-wrap-up-compact]: showcase/wrap-up-compact.png
-
-[video-blast-radius-hold]: showcase/blast-radius-hold.mp4
-[video-file-tree-live]: showcase/file-tree-live.mp4
-[video-heads-up-panel]: showcase/heads-up-panel.mp4
-[video-manager-hover-and-icons]: showcase/manager-hover-and-icons.mp4
-[video-menu-hover]: showcase/menu-hover.mp4
-[video-model-effort-pick]: showcase/model-effort-pick.mp4
-[video-next-steps-keys]: showcase/next-steps-keys.mp4
-[video-progress-pane]: showcase/progress-pane.mp4
-[video-prompts-pick]: showcase/prompts-pick.mp4
-[video-skill-panel-and-settings]: showcase/skill-panel-and-settings.mp4
-[video-transcript-unfold]: showcase/transcript-unfold.mp4
-[video-wrap-up-full]: showcase/wrap-up-full.mp4
 <!-- showcase-links:end -->
 
-[img-reel]: showcase/claude-mods.png
-[video-reel]: showcase/claude-mods.mp4

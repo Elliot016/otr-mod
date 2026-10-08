@@ -5,9 +5,13 @@ One row of pills above the prompt that opens every panel.
 
 **How to open:** Always shown
 
-| The pill row | Hovering an entry shows its tip |
-| --- | --- |
-| ![][img-menu-band] | [![][gif-menu-hover]][video-menu-hover] |
+| The pill row |
+| --- |
+| ![][img-menu-band] |
+
+**Hovering an entry shows its tip**
+
+https://github.com/user-attachments/assets/fc5ca63c-9206-4c17-acab-cd92b64e3ce3
 
 ## Install
 
@@ -15,8 +19,4 @@ One row of pills above the prompt that opens every panel.
 claude plugin install mod-menu@claude-mods --scope user
 ```
 
-[gif-menu-hover]: ../showcase/gif/menu-hover.gif
-
 [img-menu-band]: ../showcase/menu-band.png
-
-[video-menu-hover]: ../showcase/menu-hover.mp4

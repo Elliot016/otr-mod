@@ -5,9 +5,13 @@ Suggests up to three next prompts after each turn.
 
 **How to open:** Automatic
 
-| Three suggestions | Picking one by its digit |
-| --- | --- |
-| ![][img-next-steps] | [![][gif-next-steps-keys]][video-next-steps-keys] |
+| Three suggestions |
+| --- |
+| ![][img-next-steps] |
+
+**Picking one by its digit**
+
+https://github.com/user-attachments/assets/be54d640-f179-4e19-8cad-1ecef74d8feb
 
 ## Features
 
@@ -32,8 +36,4 @@ Change them with `/mod-next-steps settings` or the gear pill.
 claude plugin install mod-next-steps@claude-mods --scope user
 ```
 
-[gif-next-steps-keys]: ../showcase/gif/next-steps-keys.gif
-
 [img-next-steps]: ../showcase/next-steps.png
-
-[video-next-steps-keys]: ../showcase/next-steps-keys.mp4

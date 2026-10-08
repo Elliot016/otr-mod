@@ -5,9 +5,9 @@ Every prompt of the session; jump back to any of them.
 
 **How to open:** Prompts pill
 
-| Pick a prompt to read it |
-| --- |
-| [![][gif-prompts-pick]][video-prompts-pick] |
+**Pick a prompt to read it**
+
+https://github.com/user-attachments/assets/b1ba4293-9ecc-484b-9e0a-d0d5607bd37b
 
 ## Settings
 
@@ -23,7 +23,3 @@ Change them with `/mod-prompts settings` or the gear pill.
 ```sh
 claude plugin install mod-prompts@claude-mods --scope user
 ```
-
-[gif-prompts-pick]: ../showcase/gif/prompts-pick.gif
-
-[video-prompts-pick]: ../showcase/prompts-pick.mp4
