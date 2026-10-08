@@ -144,6 +144,17 @@ async function setCurrent($: EngineInterface, model: string, effort: string) {
   $.ui.invalidate('ui.render')
 }
 
+// The session's model as the last render saw it.
+let lastLive: string | undefined
+
+// The pill moves to a model the session switched to, at the level saved for it.
+async function followModel($: EngineInterface, to: string) {
+  const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
+  // A clicked level was set on the old model; the new model's saved level applies.
+  if (to !== current?.model) override = null
+  await setCurrent($, to, (await savedEffort($, to)) ?? current?.effort ?? 'medium')
+}
+
 // Alt+P and /effort save the level to the settings, so a settings change shows it on the pill at once.
 async function followSavedLevel($: EngineInterface) {
   const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
@@ -155,6 +166,19 @@ async function followSavedLevel($: EngineInterface) {
   if (effort === current.effort) return
   await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model: current.model, effort })
   $.ui.invalidate('ui.render')
+}
+
+// The level last seen in the settings for the pill's model, and whether a check of it is already waiting.
+let lastSaved: { model: string; effort: string | null } | undefined
+let isCheckingLevel = false
+
+// Where ConfigChange never reaches a plugin, a render looks for a changed saved level instead. Only a change counts, so a level a request downgraded stays as it went out.
+async function followSavedChange($: EngineInterface) {
+  const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
+  if (!current) return
+  const seen = lastSaved
+  lastSaved = { model: current.model, effort: await savedEffort($, current.model) }
+  if (seen?.model === current.model && seen.effort !== lastSaved.effort) await followSavedLevel($)
 }
 
 // The pill part or model menu entry under the pointer, shown in the tip row above the pill row.
@@ -301,10 +325,7 @@ export const register: Register = (on, options) => {
   // Claude Code's own /model and Alt+P picker switch without a request, so the pill follows at once. A failed read keeps the last pill and never blocks the switch.
   on('classic.PostModelSwitch', async ($, e, next) => {
     try {
-      const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
-      // A clicked level was set on the old model; the new model's saved level applies.
-      if (e.to_model !== current?.model) override = null
-      await setCurrent($, e.to_model, (await savedEffort($, e.to_model)) ?? current?.effort ?? 'medium')
+      await followModel($, e.to_model)
     } catch {
       // The next request shows the model and level.
     }
@@ -395,10 +416,27 @@ export const register: Register = (on, options) => {
 
     const { Box, Client, Text } = $.ui.resolve(e)
     const current = await $.state.get({ plugin: 'mod-model-effort', key: 'current' })
-    const modelId = current.value?.model ?? (await $.session.model())
+    let shown = current.value
+    // Where an organization keeps classic hooks from plugins, PostModelSwitch never arrives, so the session's own model is the signal.
+    const live = await $.session.model().catch(() => undefined)
+    if (typeof live === 'string' && displayName(live) !== live) {
+      // Only a change of the session's model counts: a request on the fallback model leaves it as it was, and the pill shows what went out.
+      const isSwitched = lastLive !== undefined && live !== lastLive
+      lastLive = live
+      if (shown && isSwitched && live !== shown.model) {
+        shown = { model: live, effort: (await savedEffort($, live).catch(() => null)) ?? shown.effort }
+        // A render only reads, so the state follows right after it.
+        $.clock.after(0, () => followModel($, live).catch(() => {}))
+      }
+    }
+    if (!isCheckingLevel) {
+      isCheckingLevel = true
+      $.clock.after(250, () => followSavedChange($).catch(() => {}).finally(() => { isCheckingLevel = false }))
+    }
+    const modelId = shown?.model ?? (await $.session.model())
     const model = displayName(modelId)
     const { group, row, rest, tip } = splitRow(await next(e))
-    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: current.value?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd, tipModel: { glyph: look.glyph.title, label: text.labelModel, text: text.tipModel }, tipRest: { glyph: look.glyph.title, label: text.paneName, text: text.tipRest }, tipLevels: LEVELS.map(level => ({ glyph: LEVEL_LOOK[level]!.glyph, label: text.paneName, text: fill(text.tipLevel, { level: (text.levelNames as Record<string, string>)[level]! }) })) }} />
+    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: shown?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd, tipModel: { glyph: look.glyph.title, label: text.labelModel, text: text.tipModel }, tipRest: { glyph: look.glyph.title, label: text.paneName, text: text.tipRest }, tipLevels: LEVELS.map(level => ({ glyph: LEVEL_LOOK[level]!.glyph, label: text.paneName, text: fill(text.tipLevel, { level: (text.levelNames as Record<string, string>)[level]! }) })) }} />
     // The level word follows the pill, so it never moves the glyphs under the pointer.
     const shownWord = hoveredLevel() ?? flash
     const word = shownWord ? <Text key="menu-flash" color={LEVEL_LOOK[shownWord]?.color}>{(text.levelNames as Record<string, string>)[shownWord] ?? shownWord}</Text> : null

@@ -188,9 +188,9 @@ test('a clicked level rides on each request until Alt+P saves another', async ($
 const BAND = { plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never
 const CAP = String.fromCodePoint(0xe0b6)
 
-function band(on: (name: string, handler: (...args: any[]) => unknown) => void) {
+function band(on: (name: string, handler: (...args: any[]) => unknown) => void, model: () => string = () => 'claude-opus-5-5') {
   on('env.get', () => ({ value: undefined }))
-  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('session.model', () => ({ value: model() }))
   on('ui.render', ($$: any, e: any) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>base</Text>
@@ -296,6 +296,60 @@ test('a model switch through /model or the picker shows on the pill at once, at 
   expect(drawn).toContain('○ ')
   expect(drawn).not.toContain('◐ ')
   expect(store.model).toBe('claude-sonnet-5-5')
+  await ui.unmount()
+})
+
+test("without PostModelSwitch, a redraw follows the session's model at the level saved for it, and ignores a name it cannot display", { options: { icons: 'safe' } }, async ($, on) => {
+  const store: Record<string, unknown> = {}
+  let live = 'claude-opus-5-5'
+  const clock = mock.clock(on)
+  band(on as never, () => live)
+  on('settings.read', () => ({ value: { modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' }, 'claude-sonnet-5-5': { effortLevel: 'low' } } } }))
+  on('store.get', (_$, e) => ({ value: store[e.key] }))
+  on('store.set', (_$, e) => {
+    store[e.key] = e.value
+    return { value: undefined }
+  })
+  await firstRequest($, on, 'claude-opus-5-5', 'medium')
+  const ui = await $.ui.mount(BAND)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(' Opus 5.5 ')
+
+  live = 'sonnet'
+  await ui.redraw()
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(' Opus 5.5 ')
+
+  live = 'claude-sonnet-5-5'
+  await ui.redraw()
+  const drawn = JSON.stringify(await ui.drawn({ in: 'meter' }))
+  expect(drawn).toContain(' Sonnet 5.5 ')
+  expect(drawn).toContain('○ ')
+
+  await clock.advance(1)
+  expect(store.model).toBe('claude-sonnet-5-5')
+  await ui.unmount()
+})
+
+test('without ConfigChange, a redraw picks up a level changed in the settings, and leaves a level a request downgraded alone', { options: { icons: 'safe' } }, async ($, on) => {
+  const settings = { modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' } } }
+  const clock = mock.clock(on)
+  band(on as never)
+  on('settings.read', () => ({ value: settings }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  await firstRequest($, on, 'claude-opus-5-5', 'low')
+  const ui = await $.ui.mount(BAND)
+  await clock.advance(250)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('○ ')
+
+  await ui.redraw()
+  await clock.advance(250)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('○ ')
+
+  settings.modelSettings['claude-opus-5-5'].effortLevel = 'high'
+  await ui.redraw()
+  await clock.advance(250)
+  await ui.redraw()
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('● ')
   await ui.unmount()
 })
 
