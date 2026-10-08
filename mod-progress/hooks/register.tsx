@@ -4,7 +4,8 @@ import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } f
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
 import { layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
 import { menuEntry, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
-import { applyStep, applyTask, bandSummary, buildRows, emptySnap, gatesStemIn, isGatesPath, MAIN_GATES, parseGates, settle, stemOf, type AgentLite, type Gate, type Snap, type Usage, type UsageLite } from './progress'
+import { applyCall, applyStep, applyTask, bandSummary, buildRows, emptySnap, gatesStemIn, isGatesPath, MAIN_GATES, parseGates, settle, stemOf, type AgentLite, type Gate, type Snap, type Usage, type UsageLite } from './progress'
+import { stopLine, stopOf } from './stop'
 import { settingChoice, settingsBody } from './settings'
 import text from './text'
 import { fill, MARK, mix, statusColor, THEME, WASH } from './theme'
@@ -125,7 +126,15 @@ async function currentRows($: EngineInterface) {
   const figures: UsageLite | undefined = usage ? { window: usage.context.window, startedAt: usage.startedAt, ...(usage.context.percent === undefined ? {} : { percent: usage.context.percent }) } : undefined
   if (settle(current, list, now)) await saveSnap($)
   const model = await $.session.model().catch(() => undefined)
-  return { current, rows: buildRows(current, list, figures, now, text.mainName, text.mainTask, model) }
+  return { current, rows: buildRows(current, list, figures, now, text.mainName, text.mainTask, model), now }
+}
+
+// The stop's "ago" would freeze between redraws, so while a stop shows a timer redraws it every minute.
+const AGE_MS = 60000
+let ageTimer: { cancel: () => void } | null = null
+function ageStop($: EngineInterface, current: Snap) {
+  ageTimer?.cancel()
+  ageTimer = current.stop ? $.clock.every(AGE_MS, () => $.ui.invalidate('ui.render')) : null
 }
 
 const isOpen = async ($: EngineInterface, id = PANE) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
@@ -198,6 +207,7 @@ export const register: Register = (on, options) => {
     const usage = await $.session.usage().catch(() => undefined)
     if (current.startedAt === undefined) current.startedAt = usage?.startedAt ?? (await $.clock.now())
     await readGates($, current)
+    ageStop($, current)
     await saveSnap($)
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
     await $.state.set({ plugin: 'mod-progress', key: 'pane' }, await isOpen($))
@@ -251,6 +261,8 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       const current = await loadSnap($)
       current.busy = true
+      delete current.stop
+      ageStop($, current)
       await saveSnap($)
       $.ui.invalidate('ui.render')
     }
@@ -268,7 +280,10 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     const current = await loadSnap($)
-    if (!e.agentId) current.busy = false
+    if (!e.agentId) {
+      current.busy = false
+      delete current.main.step
+    }
     settle(current, (await $.agent.list()) as AgentLite[], await $.clock.now())
     await readGates($, current)
     await saveSnap($)
@@ -276,16 +291,39 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Tasks come from the main session's own TaskCreate and TaskUpdate; gates files change through Write, Edit or the gate checker run by Bash.
+  // The main turn ended on an API error. A subagent's failure is its own turn, so it leaves the main line alone.
+  on('classic.StopFailure', async ($, e, next) => {
+    if (!e.agent_id) {
+      const current = await loadSnap($)
+      const usage = await $.session.usage().catch(() => undefined)
+      current.stop = stopOf(e.error, await $.clock.now(), usage?.rateLimits ?? [])
+      ageStop($, current)
+      await saveSnap($)
+      $.ui.invalidate('ui.render')
+    }
+    return next(e)
+  })
+
+  // Tasks come from each loop's own TaskCreate and TaskUpdate; gates files change through Write, Edit or the gate checker run by Bash.
   on('tool.call', async ($, e, next) => {
+    // The step is set before the call runs, so the head row shows what the tool is doing while it works.
+    try {
+      const current = await loadSnap($)
+      applyCall(current, e.agentId, String(e.tool), e as unknown as Record<string, unknown>)
+      await saveSnap($)
+      $.ui.invalidate('ui.render')
+    } catch {
+      // The figures stay as they were.
+    }
     const result = await next(e)
     // The observers never fail the call they watch.
     try {
       const input = e as unknown as Record<string, unknown>
       const tool = String(e.tool)
       const current = await loadSnap($)
-      if (!e.agentId && (tool === 'TaskCreate' || tool === 'TaskUpdate')) {
-        applyTask(current, tool, input, (result as { result?: { task?: { id?: string } } }).result?.task?.id)
+      const owner = e.agentId ? current.agents[e.agentId] : current
+      if (owner && (tool === 'TaskCreate' || tool === 'TaskUpdate')) {
+        applyTask(owner, tool, input, (result as { result?: { task?: { id?: string } } }).result?.task?.id)
         await saveSnap($)
         $.ui.invalidate('ui.render')
       }
@@ -313,13 +351,17 @@ export const register: Register = (on, options) => {
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-progress', key: 'pane' })
     const shown = await isOpen($)
-    const { rows } = await currentRows($)
+    const { current, rows, now } = await currentRows($)
     const summary = bandSummary(rows)
+    const stop = stopLine(current.stop, now)
     const { group, row, rest, tip } = splitRow(await next(e))
     const badge = summary.count > 0 ? { badge: { text: String(summary.count), color: THEME.accent, bg: mix(THEME.accent, shown ? THEME.lifted : PILL.primary, WASH) } } : {}
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'progress', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, still, nerd, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.pillLabel, text: summary.total > 0 ? fill(text.tipPillGates, summary) : text.tipPill }, ...badge })
+    const pillTip = stop?.line ?? (summary.total > 0 ? fill(text.tipPillGates, summary) : text.tipPill)
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'progress', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, still, nerd, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.pillLabel, text: pillTip }, ...badge })
+    // A pill tip is posted once on enter, so its text is redrawn from the figures here, the minute the stop's age ticks.
+    const shownTip = hovered?.id === 'progress' ? { ...hovered, text: pillTip } : hovered
 
-    return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], hovered?.id ? tipLine({ Box, Text }, tipText(hovered)) : tip, e.props.bodyColumns)
+    return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], shownTip?.id ? tipLine({ Box, Text }, tipText(shownTip)) : tip, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -378,7 +420,8 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const { current, rows } = await currentRows($)
+    const { current, rows, now } = await currentRows($)
+    const stop = stopLine(current.stop, now)
     // Pane padding, then the section's border and padding.
     const width = e.props.bodyColumns - 2 - 4
     const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd, viewing: e.props.view.agentId ?? '' })) as LoopsProps
@@ -387,6 +430,8 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs('list', rows.length - 1), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || text.hint}</Text>
+        {/* A blank row of the same height while no stop shows, so the list below does not move when one appears. */}
+        <Text key="stop-line" wrap="truncate-end" color={stop?.tone === 'alert' ? THEME.alert : THEME.warn}>{stop ? withMark(look, `${MARK.warn} ${stop.line}`) : ' '}</Text>
         {section({ Box, Text }, look, 'loops', '', '', (
           <Client key="loops" module="./loops.tsx" height={layoutLoops(rows, current.expanded).length} props={props} />
         ))}

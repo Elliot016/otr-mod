@@ -1,6 +1,8 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
-import { applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gatesStemIn, gaugeColor, windowFor, isGatesPath, modelInfo, parseGates, settle, type Snap } from '../hooks/progress'
+import { applyCall, applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gatesStemIn, gaugeColor, windowFor, isGatesPath, modelInfo, parseGates, settle, stepOf, type Snap } from '../hooks/progress'
+import { resumeAt, stopLine, stopOf } from '../hooks/stop'
+import { THEME } from '../hooks/theme'
 
 const GATES = [
   '# Gates: leaf',
@@ -35,15 +37,20 @@ const seeded = (): Snap => {
   return snap
 }
 
-// Everything the mod reads from the engine, with the store backed by a map.
-function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = []) {
+type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[] }
+
+// Everything the mod reads from the engine, with the store backed by a map and the clock moved only by the test.
+function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], world: Partial<World> = {}) {
   const store = new Map<string, unknown>([['snap', seeded()]])
+  const clock = mock.clock(on, { now: world.now ?? 14 * 60 * 1000 })
+  const windows = world.windows ?? []
   on('session.id', () => ({ value: 'sid-1' }))
   on('session.cwd', () => ({ value: '/w' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 46, tokens: 92000 }, rateLimits: [] } }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 46, tokens: 92000 }, rateLimits: windows } }))
   on('agent.list', () => ({ value: agents }) as never)
-  on('clock.now', () => ({ value: 14 * 60 * 1000 }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('classic.StopFailure', () => ({}) as never)
   on('store.get', (_$, e) => ({ value: store.get(e.key) }))
   on('store.set', (_$, e) => {
     store.set(e.key, e.value)
@@ -65,7 +72,7 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = []) 
     return { value: { isPlaced: true } }
   })
   on('state.set', () => ({ value: undefined }))
-  return store
+  return { store, clock }
 }
 
 const PANE = { plugin: 'mod-progress', surface: 'terminal', component: 'Pane', requestId: 'progress', props: { title: 'Progress', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never
@@ -219,7 +226,7 @@ test('icons=safe draws only plain glyphs', { options: { icons: 'safe' } }, async
 })
 
 test('a spawn, a step and a task call update the figures the pane reads', async ($, on) => {
-  const store = stubEngine(on, [{ ...AGENT, id: 'zz' }])
+  const { store } = stubEngine(on, [{ ...AGENT, id: 'zz' }])
   store.set('snap', emptySnap('sid-1'))
   on('agent.spawn', () => ({ model: 'claude-haiku-4-5', agentId: 'zz' }) as never)
   on('tool.call', () => ({ result: { task: { id: '1', subject: 's' } } }) as never)
@@ -253,5 +260,243 @@ test('hovering the band pill shows its tip in the tip row, and a card shows its 
   expect((await pane.find({ type: 'Text', text: /shows or hides this agent/ }))?.text).toContain("shows or hides this agent's gates")
   await pane.pointer({ in: 'loops', type: 'leave', x: 3, y: 0, button: 'left' })
   expect(await pane.find({ type: 'Text', text: /shows or hides this agent/ })).toBeUndefined()
+  await pane.unmount()
+})
+
+// Every StopFailure error kind, its words in the stop line and its tone (alert: the person must act; warn: it may clear).
+const STOPS = [
+  ['authentication_failed', 'sign-in needed', 'alert'],
+  ['oauth_org_not_allowed', 'sign-in needed', 'alert'],
+  ['cloud_credential_error', 'sign-in needed', 'alert'],
+  ['account_on_hold', 'account on hold or needs verification', 'alert'],
+  ['verification_required', 'account on hold or needs verification', 'alert'],
+  ['billing_error', 'billing problem', 'alert'],
+  ['invalid_request', 'request rejected', 'alert'],
+  ['model_not_found', 'request rejected', 'alert'],
+  ['rate_limit', 'usage limit reached', 'warn'],
+  ['overloaded', 'server overloaded', 'warn'],
+  ['server_error', 'other error', 'warn'],
+  ['max_output_tokens', 'other error', 'warn'],
+  ['unknown', 'other error', 'warn'],
+] as const
+
+test('each StopFailure kind reads as its line and tone, and a kind not named reads as other', () => {
+  for (const [error, reason, tone] of STOPS) expect(stopLine({ error, at: 0 }, 0)).toEqual({ line: `Stopped 0s ago: ${reason}.`, tone })
+  expect(stopLine({ error: 'a_new_kind', at: 0 }, 0)).toEqual({ line: 'Stopped 0s ago: other error.', tone: 'warn' })
+  expect(stopLine(undefined, 0)).toBeNull()
+})
+
+test('a usage limit names the reset of the full window that clears last, in local time; other kinds keep no reset', () => {
+  const now = new Date(2026, 9, 8, 19, 20).getTime()
+  const at = (hour: number, minute: number) => new Date(2026, 9, 8, hour, minute).toISOString()
+  const windows = [
+    { percentUsed: 100, resetsAt: at(19, 33) },
+    { percentUsed: 100, resetsAt: at(21, 5) },
+    { percentUsed: 60, resetsAt: at(23, 0) },
+    { percentUsed: 100, resetsAt: 'not a time' },
+  ]
+  const stop = stopOf('rate_limit', now - 120000, windows)
+  expect(stop).toEqual({ error: 'rate_limit', at: now - 120000, resetsAt: at(21, 5) })
+  expect(stopLine(stop, now)).toEqual({ line: 'Stopped 2m ago: usage limit reached. Resume after 9:05pm.', tone: 'warn' })
+  expect(stopOf('overloaded', now, windows)).toEqual({ error: 'overloaded', at: now })
+  expect(resumeAt(at(0, 15), now)).toBe('12:15am')
+  expect(resumeAt(new Date(2026, 9, 9, 7, 33).toISOString(), now)).toMatch(/, 7:33am$/)
+})
+
+test('each StopFailure kind shows its line under the hint in its tone, and the next turn clears it', async ($, on) => {
+  stubEngine(on)
+  await $.session.start({ cwd: '/w' } as never)
+  const pane = await $.ui.mount(PANE)
+  for (const [error, reason, tone] of STOPS) {
+    await $.classic.StopFailure({ error, error_details: 'details' } as never)
+    await pane.redraw()
+    const line = await pane.find({ type: 'Text', text: /Stopped 0s ago/ })
+    expect(line?.text).toBe(`! Stopped 0s ago: ${reason}.`)
+    expect(line?.props.color).toBe(tone === 'alert' ? THEME.alert : THEME.warn)
+    await $.turn.start({ text: '', turnId: `turn-${error}` } as never)
+    await pane.redraw()
+    expect(await pane.find({ type: 'Text', text: /Stopped/ })).toBeUndefined()
+  }
+  await pane.unmount()
+})
+
+test('a usage limit shows the reset of the full window, ages with the clock, and a subagent failure leaves the line alone', async ($, on) => {
+  const windows = [
+    { kind: 'five_hour', percentUsed: 100, resetsAt: new Date(2026, 9, 8, 19, 33).toISOString() },
+    { kind: 'seven_day', percentUsed: 40, resetsAt: new Date(2026, 9, 12, 9, 0).toISOString() },
+  ]
+  const { clock } = stubEngine(on, [AGENT], [], { now: new Date(2026, 9, 8, 19, 20).getTime(), windows })
+  await $.session.start({ cwd: '/w' } as never)
+  const pane = await $.ui.mount(PANE)
+  await $.classic.StopFailure({ error: 'rate_limit', agent_id: 'a1' } as never)
+  await pane.redraw()
+  expect(await pane.find({ type: 'Text', text: /Stopped/ })).toBeUndefined()
+
+  await $.classic.StopFailure({ error: 'rate_limit' } as never)
+  await pane.redraw()
+  expect((await pane.find({ type: 'Text', text: /Stopped/ }))?.text).toBe('! Stopped 0s ago: usage limit reached. Resume after 7:33pm.')
+
+  await clock.advance(2 * 60000)
+  await pane.redraw()
+  expect((await pane.find({ type: 'Text', text: /Stopped/ }))?.text).toBe('! Stopped 2m ago: usage limit reached. Resume after 7:33pm.')
+  await pane.unmount()
+})
+
+test('the band pill tip carries the stop line while the turn is stopped, and its age keeps up while hovered', async ($, on) => {
+  const { clock } = stubEngine(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>other mod</Text>
+  })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.classic.StopFailure({ error: 'billing_error' } as never)
+  const band = await $.ui.mount(BAND)
+  await band.pointer({ in: 'menu-entry-progress', type: 'enter', x: 1, y: 0, button: 'left' })
+  expect((await band.find({ type: 'Text', text: /Stopped 0s ago/ }))?.text).toBe(' Stopped 0s ago: billing problem.')
+  await clock.advance(2 * 60000)
+  await band.redraw()
+  expect((await band.find({ type: 'Text', text: /Stopped 2m ago/ }))?.text).toBe(' Stopped 2m ago: billing problem.')
+  await band.unmount()
+})
+
+test('icons=nerd leads the stop line with the Nerd warning glyph', { options: { icons: 'nerd' } }, async ($, on) => {
+  stubEngine(on)
+  await $.session.start({ cwd: '/w' } as never)
+  await $.classic.StopFailure({ error: 'overloaded' } as never)
+  const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ type: 'Text', text: /Stopped/ }))?.text).toBe(`${String.fromCodePoint(0xea6c)} Stopped 0s ago: server overloaded.`)
+  await pane.unmount()
+})
+
+test('icons=safe leads the stop line with a plain bang', { options: { icons: 'safe' } }, async ($, on) => {
+  stubEngine(on)
+  await $.session.start({ cwd: '/w' } as never)
+  await $.classic.StopFailure({ error: 'overloaded' } as never)
+  const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ type: 'Text', text: /Stopped/ }))?.text).toBe('! Stopped 0s ago: server overloaded.')
+  await pane.unmount()
+})
+
+test('a call reads as a step: the base name of its file, its search, its command, its host, or the tool name', () => {
+  expect(stepOf('Read', { file_path: 'C:\\w\\src\\register.tsx' })).toBe('Reading register.tsx')
+  expect(stepOf('Edit', { file_path: '/w/src/turns.ts', old_string: 'a', new_string: 'b' })).toBe('Editing turns.ts')
+  expect(stepOf('MultiEdit', { file_path: '/w/src/turns.ts' })).toBe('Editing turns.ts')
+  expect(stepOf('Write', { file_path: '/w/notes.md', content: '' })).toBe('Writing notes.md')
+  expect(stepOf('Grep', { pattern: 'fitFor' })).toBe('Searching for fitFor')
+  expect(stepOf('Glob', { pattern: '**/*.tsx' })).toBe('Searching for **/*.tsx')
+  expect(stepOf('Bash', { command: 'npm test', description: 'Run the tests' })).toBe('Run the tests')
+  expect(stepOf('Bash', { command: 'npm   test\n--silent' })).toBe('Running npm')
+  expect(stepOf('WebFetch', { url: 'https://github.com/anthropics/claude-code', prompt: 'p' })).toBe('Fetching github.com')
+  expect(stepOf('Agent', { description: 'scan', prompt: 'p' })).toBe('Asking a subagent')
+  expect(stepOf('WebSearch', { query: 'q' })).toBe('WebSearch')
+  expect(stepOf('Read', {})).toBe('Read')
+})
+
+test('a call sets the step of the loop it runs in, and a finished agent drops its step', () => {
+  const snap = emptySnap('s')
+  snap.busy = true
+  snap.agents.a1 = { tokens: 0, context: 0 }
+  applyCall(snap, undefined, 'Read', { file_path: '/w/a.ts' })
+  applyCall(snap, 'a1', 'Grep', { pattern: 'fitFor' })
+  applyCall(snap, 'ghost', 'Read', { file_path: '/w/b.ts' })
+  expect(snap.main.step).toBe('Reading a.ts')
+  expect(snap.agents.a1!.step).toBe('Searching for fitFor')
+  expect(snap.agents.ghost).toBeUndefined()
+
+  const list = [{ id: 'a1', description: 'Find fitFor', type: 'Explore', status: 'running' }]
+  expect(buildRows(snap, list, undefined, 0, 'main', 'this session', undefined).map(row => row.description)).toEqual(['Reading a.ts', 'Searching for fitFor'])
+  snap.busy = false
+  expect(buildRows(snap, list, undefined, 0, 'main', 'this session', undefined).map(row => row.description)).toEqual(['this session', 'Searching for fitFor'])
+
+  list[0]!.status = 'completed'
+  expect(settle(snap, list, 5)).toBe(true)
+  expect(snap.agents.a1!.step).toBeUndefined()
+  expect(buildRows(snap, list, undefined, 0, 'main', 'this session', undefined)[1]!.description).toBe('Find fitFor')
+})
+
+test('task lists belong to their owner, and an agent with no gates file shows its own tasks as gates', () => {
+  const snap = emptySnap('s')
+  snap.agents.b2 = { tokens: 0, context: 0 }
+  applyTask(snap, 'TaskCreate', { subject: 'main step' }, '1')
+  applyTask(snap.agents.b2!, 'TaskCreate', { subject: 'scan files' }, '1')
+  applyTask(snap.agents.b2!, 'TaskCreate', { subject: 'write summary' }, '2')
+  applyTask(snap.agents.b2!, 'TaskUpdate', { taskId: '1', status: 'completed' })
+  expect(snap.tasks).toEqual([{ id: '1', subject: 'main step', status: 'pending' }])
+  expect(snap.agents.b2!.tasks).toEqual([
+    { id: '1', subject: 'scan files', status: 'completed' },
+    { id: '2', subject: 'write summary', status: 'pending' },
+  ])
+
+  const scout = [{ id: 'b2', name: 'scout', description: 'Explore the repo', type: 'Explore', status: 'running' }]
+  const rows = buildRows(snap, scout, undefined, 0, 'main', 'x', undefined)
+  expect(rows[0]!.gates).toEqual([{ id: '#1', text: 'main step', state: 'open' }])
+  expect(rows[1]!.gates).toEqual([{ id: '#1', text: 'scan files', state: 'met' }, { id: '#2', text: 'write summary', state: 'open' }])
+  expect(rows[1]!.hasGates).toBe(true)
+  expect(bandSummary(rows)).toEqual({ count: 1, done: 1, total: 3 })
+
+  snap.gates.scout = parseGates('- [ ] G1: from the file\n  EVIDENCE: pending\n')
+  expect(buildRows(snap, scout, undefined, 0, 'main', 'x', undefined)[1]!.gates.map(gate => gate.id)).toEqual(['G1'])
+})
+
+test('a running card shows its latest call in place of its description, and the call clears when its loop ends', async ($, on) => {
+  const list = [{ ...AGENT }]
+  stubEngine(on, list)
+  on('tool.call', () => ({ result: {} }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  await $.session.start({ cwd: '/w' } as never)
+  const pane = await $.ui.mount(PANE)
+  await $.tool.call({ tool: 'Read', file_path: '/w/src/register.tsx' } as never)
+  await $.tool.call({ tool: 'Grep', pattern: 'fitFor', agentId: 'a1' } as never)
+  await pane.redraw()
+  const running = JSON.stringify(await pane.drawn({ in: 'loops' }))
+  expect(running).toContain('Reading register.tsx')
+  expect(running).toContain('Searching for fitFor')
+  expect(running).not.toContain('Build the leaf')
+
+  await $.turn.complete({ text: '' } as never)
+  await pane.redraw()
+  const mainEnded = JSON.stringify(await pane.drawn({ in: 'loops' }))
+  expect(mainEnded).not.toContain('Reading register.tsx')
+  expect(mainEnded).toContain('Searching for fitFor')
+
+  await $.turn.start({ text: '', turnId: 'turn-2' } as never)
+  await pane.redraw()
+  const nextTurn = JSON.stringify(await pane.drawn({ in: 'loops' }))
+  expect(nextTurn).not.toContain('Reading register.tsx')
+  expect(nextTurn).toContain('this session')
+
+  list[0]!.status = 'completed'
+  await pane.redraw()
+  const agentEnded = JSON.stringify(await pane.drawn({ in: 'loops' }))
+  expect(agentEnded).not.toContain('Searching for fitFor')
+  expect(agentEnded).toContain('Build the leaf')
+  expect(agentEnded).toContain('this session')
+  await pane.unmount()
+})
+
+test('a subagent with no gates file shows its own task list as gates, and the main list stays its own', async ($, on) => {
+  const scout = { id: 'b2', name: 'scout', description: 'Explore the repo', type: 'Explore', status: 'running' }
+  const { store } = stubEngine(on, [scout])
+  store.set('snap', { ...emptySnap('sid-1'), agents: { b2: { tokens: 0, context: 0 } } })
+  let created = 0
+  on('tool.call', (_$, e) => ({ result: { task: { id: e.tool === 'TaskCreate' ? String(++created) : undefined } } }) as never)
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call({ tool: 'TaskCreate', subject: 'scan files', description: 'x', agentId: 'b2' } as never)
+  await $.tool.call({ tool: 'TaskCreate', subject: 'write summary', description: 'x', agentId: 'b2' } as never)
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed', agentId: 'b2' } as never)
+  await $.tool.call({ tool: 'TaskCreate', subject: 'main step', description: 'x' } as never)
+
+  const saved = store.get('snap') as Snap
+  expect(saved.tasks.map(task => task.subject)).toEqual(['main step'])
+  expect(saved.agents.b2?.tasks?.map(task => task.status)).toEqual(['completed', 'pending'])
+  expect(saved.agents.b2?.step).toBeUndefined()
+
+  const pane = await $.ui.mount(PANE)
+  expect(JSON.stringify(await pane.drawn({ in: 'loops' }))).toContain('1/2')
+  await pane.pointer({ in: 'loops', type: 'down', x: 3, y: 3, button: 'left' })
+  const open = JSON.stringify(await pane.drawn({ in: 'loops' }))
+  expect(open).toContain('#1 scan files')
+  expect(open).toContain('#2 write summary')
+  expect(open).not.toContain('No gates for this agent yet')
   await pane.unmount()
 })

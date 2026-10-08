@@ -1,12 +1,17 @@
 // The data side of the mod: gates files, loop figures, rows. No `$` in here, so tests call it directly.
 import marks from './marks'
 import style from './style'
+import text from './text'
+import { fill } from './theme'
 
 export type GateState = 'met' | 'open' | 'abandoned'
 export type Gate = { id: string; text: string; state: GateState }
 export type Task = { id: string; subject: string; status: string }
-export type Loop = { model?: string; effort?: string; tokens: number; context: number; spawnedAt?: number; endedAt?: number; gatesStem?: string }
+export type Loop = { model?: string; effort?: string; tokens: number; context: number; spawnedAt?: number; endedAt?: number; gatesStem?: string; tasks?: Task[]; step?: string }
 export type Usage = { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }
+
+// The main turn's last stop on an API error (StopFailure): its error kind, when it happened, and the reset of a full usage window.
+export type Stop = { error: string; at: number; resetsAt?: string }
 
 // Kept in $.store under the session id, so a reload keeps it and another session starts clean.
 export type Snap = {
@@ -18,6 +23,7 @@ export type Snap = {
   tasks: Task[]
   gates: Record<string, Gate[]>
   expanded: string
+  stop?: Stop
 }
 
 export const MAIN_GATES = 'GATES'
@@ -80,17 +86,55 @@ export function applyStep(snap: Snap, agentId: string | undefined, model: string
   }
 }
 
-// The main session's own task list: TaskCreate adds a pending task under the id its result names, TaskUpdate moves or drops it.
-export function applyTask(snap: Snap, tool: string, input: Record<string, unknown>, createdId?: string) {
-  if (tool === 'TaskCreate' && createdId) snap.tasks.push({ id: createdId, subject: String(input.subject ?? ''), status: 'pending' })
+// The main session's tasks sit on the snap, an agent's on its loop; one function serves both.
+export function applyTask(owner: { tasks?: Task[] }, tool: string, input: Record<string, unknown>, createdId?: string) {
+  const tasks = (owner.tasks ??= [])
+  if (tool === 'TaskCreate' && createdId) tasks.push({ id: createdId, subject: String(input.subject ?? ''), status: 'pending' })
   if (tool !== 'TaskUpdate') return
-  const task = snap.tasks.find(each => each.id === String(input.taskId))
+  const task = tasks.find(each => each.id === String(input.taskId))
   if (!task) return
-  if (input.status === 'deleted') snap.tasks = snap.tasks.filter(each => each !== task)
+  if (input.status === 'deleted') owner.tasks = tasks.filter(each => each !== task)
   else {
     if (typeof input.status === 'string') task.status = input.status
     if (typeof input.subject === 'string') task.subject = input.subject
   }
+}
+
+const baseName = (path: string) => path.replace(/\\/g, '/').split('/').pop() ?? ''
+const hostOf = (url: string) => /^https?:\/\/([^/?#]+)/i.exec(url)?.[1] ?? url
+
+// A call with no file, pattern or command to name shows the tool's own name.
+export function stepOf(tool: string, input: Record<string, unknown>) {
+  const slot = (key: string) => (typeof input[key] === 'string' ? (input[key] as string).replace(/\s+/g, ' ').trim() : '')
+  const named = (template: string, value: string) => (value ? fill(template, { what: value }) : tool)
+  switch (tool) {
+    case 'Read':
+      return named(text.stepRead, baseName(slot('file_path')))
+    case 'Edit':
+    case 'MultiEdit':
+      return named(text.stepEdit, baseName(slot('file_path')))
+    case 'Write':
+      return named(text.stepWrite, baseName(slot('file_path')))
+    case 'Grep':
+    case 'Glob':
+      return named(text.stepSearch, slot('pattern'))
+    case 'Bash':
+      return slot('description') || named(text.stepRun, slot('command').split(' ')[0] ?? '')
+    case 'WebFetch':
+      return named(text.stepFetch, hostOf(slot('url')))
+    case 'Agent':
+      return text.stepAgent
+    default:
+      return tool
+  }
+}
+
+const BOOKKEEPING = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'TodoWrite'])
+
+export function applyCall(snap: Snap, agentId: string | undefined, tool: string, input: Record<string, unknown>) {
+  const loop = agentId ? snap.agents[agentId] : snap.main
+  // Task bookkeeping says nothing about the work, so the step before it stays.
+  if (loop && !BOOKKEEPING.has(tool)) loop.step = stepOf(tool, input)
 }
 
 const FAMILIES = ['opus', 'sonnet', 'haiku']
@@ -161,6 +205,7 @@ export function settle(snap: Snap, list: AgentLite[], now: number) {
     const loop = (snap.agents[info.id] ??= { tokens: 0, context: 0 })
     if (statusOf(info.status) !== 'running' && loop.endedAt === undefined) {
       loop.endedAt = now
+      delete loop.step
       changed = true
     }
   }
@@ -169,48 +214,55 @@ export function settle(snap: Snap, list: AgentLite[], now: number) {
 
 const taskGate = (task: Task): Gate => ({ id: `#${task.id}`, text: task.subject, state: task.status === 'completed' ? 'met' : 'open' })
 
-// The main session first, then each agent in spawn order; the main session's gates fall back to its task list.
+// One rule for main and every agent: a gates file with entries wins over the task list.
+const gatesFor = (file: Gate[] | undefined, tasks: Task[] = []) => (file && file.length > 0 ? file : tasks.map(taskGate))
+
+// The call's phrase shows only while the loop runs, so a finished card keeps its description.
+const shownDescription = (loop: Loop, status: Status, description: string) => (status === 'running' && loop.step ? loop.step : description)
+
+// The main session first, then each agent in spawn order.
 export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | undefined, now: number, mainName: string, mainTask: string, mainModel: string | undefined): Row[] {
   const main = snap.main
   const model = main.model ?? mainModel
-  const mainGates = snap.gates[MAIN_GATES]
-  const hasMainGates = mainGates !== undefined && mainGates.length > 0
+  const mainGates = gatesFor(snap.gates[MAIN_GATES], snap.tasks)
   const window = windowFor(model, model, usage?.window)
   const started = usage?.startedAt ?? snap.startedAt
   const percent = (loop: Loop, size: number) => (loop.context > 0 ? Math.min(100, Math.round((loop.context / size) * 100)) : undefined)
   const doing = snap.tasks.find(task => task.status === 'in_progress') ?? snap.tasks.find(task => task.status !== 'completed')
+  const mainStatus: Status = snap.busy ? 'running' : 'done'
   const rows: Row[] = [{
     id: 'main',
     isMain: true,
     name: mainName,
-    description: doing?.subject ?? mainTask,
-    status: snap.busy ? 'running' : 'done',
+    description: shownDescription(main, mainStatus, doing?.subject ?? mainTask),
+    status: mainStatus,
     model: model ?? '',
     hue: modelInfo(model).hue,
     effort: main.effort,
     percent: usage?.percent ?? percent(main, window),
     tokens: main.tokens,
     elapsed: started === undefined ? '' : formatElapsed(now - started),
-    gates: hasMainGates ? mainGates : snap.tasks.map(taskGate),
-    hasGates: hasMainGates || snap.tasks.length > 0,
+    gates: mainGates,
+    hasGates: mainGates.length > 0,
   }]
   for (const info of list) {
     const loop = snap.agents[info.id] ?? { tokens: 0, context: 0 }
-    const own = gatesOf(snap, info, loop.gatesStem)
+    const status = statusOf(info.status)
+    const gates = gatesFor(gatesOf(snap, info, loop.gatesStem), loop.tasks)
     rows.push({
       id: info.id,
       isMain: false,
       name: info.name ?? info.type,
-      description: info.description,
-      status: statusOf(info.status),
+      description: shownDescription(loop, status, info.description),
+      status,
       model: loop.model ?? '',
       hue: modelInfo(loop.model).hue,
       effort: loop.effort,
       percent: percent(loop, windowFor(loop.model, model, usage?.window, loop.context)),
       tokens: loop.tokens,
       elapsed: loop.spawnedAt === undefined ? '' : formatElapsed((loop.endedAt ?? now) - loop.spawnedAt),
-      gates: own ?? [],
-      hasGates: own !== undefined && own.length > 0,
+      gates,
+      hasGates: gates.length > 0,
     })
   }
   return rows
