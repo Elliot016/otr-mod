@@ -96,6 +96,27 @@ test('a mod folder installed from the local marketplace shows once, as the insta
   expect(found[0]).toMatchObject({ source: 'installed', id: 'beta@claude-mods', isOwn: true })
 })
 
+test('a listed mod folder also installed, switched off, from the local marketplace shows once, as the folder that loads', async () => {
+  const { io } = disk({
+    'C:/H/.claude/settings.json': JSON.stringify({ ...SETTINGS, env: { CLAUDE_CODE_PLUGIN_DIRS: '~/.claude/mods/beta' }, enabledPlugins: { 'beta@claude-mods': false } }),
+    'C:/H/.claude/plugins/installed_plugins.json': JSON.stringify({
+      plugins: { 'beta@claude-mods': [{ scope: 'user', installPath: 'C:\\H\\.claude\\plugins\\cache\\claude-mods\\beta\\0.1.0' }] },
+    }),
+    'C:/H/.claude/plugins/known_marketplaces.json': JSON.stringify({ 'claude-mods': { source: { source: 'directory', path: 'C:\\H\\.claude\\mods' } } }),
+    'C:/H/.claude/mods/beta/.claude-plugin/plugin.json': manifest('beta'),
+    'C:/H/.claude/mods/beta/hooks/hooks.json': hooks,
+    'C:/H/.claude/mods/beta/hooks/register.tsx': source,
+  })
+  io.home = async () => 'C:/H'
+  io.list = async path => {
+    if (path !== 'C:/H/.claude/mods') throw new Error('ENOENT')
+    return [{ name: 'beta', kind: 'dir' }]
+  }
+  const found = (await discover(io)).filter(mod => mod.name === 'beta')
+  expect(found.length).toBe(1)
+  expect(found[0]).toMatchObject({ source: 'dir', enabled: true, isOwn: true })
+})
+
 test('skips plugins without a hooks module', async () => {
   const { io } = disk()
 

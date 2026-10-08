@@ -148,6 +148,8 @@ export async function discover(io: Io): Promise<ModInfo[]> {
   for (const { id, entry } of entries) {
     if (!entry?.installPath) continue
     const folder = folderOf(id)
+    // A switched-off install of a folder that already loads as a listed dir would only repeat that row.
+    if (folder && settings.enabledPlugins?.[id] !== true && active.some(root => same(root, folder))) continue
     const mod = await inspect(io, folder ?? slashes(entry.installPath), 'installed', id, settings.enabledPlugins?.[id] === true)
     if (mod) mods.push({ ...mod, isOwn: folder !== null || isOwnPath(entry.installPath) })
   }
