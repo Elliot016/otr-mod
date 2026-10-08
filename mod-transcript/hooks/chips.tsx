@@ -1,5 +1,6 @@
 import type { ClientModule } from 'claude-code'
 
+import { cells } from './cells'
 import { postTip } from './entry'
 import style from './style'
 import text from './text'
@@ -14,7 +15,7 @@ export type ChipsMessage = { type: 'chip'; id: string; kind: Chip['kind'] }
 const stat = (chip: Chip) => [chip.added ? `+${chip.added}` : '', chip.removed ? `−${chip.removed}` : ''].filter(Boolean).join(' ')
 
 // Cells a chip takes: its two ends, mark, label, the count badge with its two ends, and the counts after it.
-const widthOf = (chip: Chip) => 1 + [...chip.mark].length + 1 + chip.label.length + 1 + (2 + String(chip.count).length) + (stat(chip) ? 1 + stat(chip).length : 0) + 1
+const widthOf = (chip: Chip) => 1 + cells(chip.mark) + 1 + cells(chip.label) + 1 + (2 + String(chip.count).length) + (stat(chip) ? 1 + cells(stat(chip)) : 0) + 1
 
 // The chip under the pointer, per instance, so a tip posts only when it changes.
 const under = new WeakMap<object, string | null>()

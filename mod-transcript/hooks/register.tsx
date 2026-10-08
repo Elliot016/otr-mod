@@ -1,5 +1,6 @@
-import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
+import type { ConfigValue, EngineInterface, ModelApiError, Register, RenderElement } from 'claude-code'
 
+import { cells, cut, fit, wrapWords } from './cells'
 import type { BarMessage, BarProps } from './bar'
 import type { Chip, ChipsMessage, ChipsProps } from './chips'
 import { copyWidth, type CopyMessage, type CopyProps } from './copy'
@@ -18,10 +19,14 @@ import { tokenizeLine, type Role } from './shell'
 import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 import { copyChoices, copyText, type CopyChoice } from './clip'
 import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
+import { apiErrorAction, completeLines, questionsOf, reportOf, statusesOf } from './rows'
 
 let transcript = ''
 let log = new TurnLog()
 let isLoaded = false
+// How much of the transcript text is fed, and whether its last line was still unfinished at the last read.
+let fedChars = 0
+let isPartial = false
 // Until the transcript is read, turns come from the in-memory messages: a row that folds later off screen keeps its height and eats the scroll.
 let guessing: Promise<void> | null = null
 const guess = ($: EngineInterface) =>
@@ -31,6 +36,11 @@ const guess = ($: EngineInterface) =>
     // Without the messages, rows draw as before: unfolded until the transcript is read.
   }))
 let working = false
+// Calls a hook or the person refused (PermissionDenied): an error the person chose, drawn neutral.
+const declined = new Set<string>()
+type ApiFailure = { error: ModelApiError; details: string; text: string }
+// The API error that ended the last turn (StopFailure); the reply row with its text draws as one line.
+let apiFailure: ApiFailure | null = null
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let foldTurns = true
 let foldTools = true
@@ -71,25 +81,37 @@ async function toggleSettings($: EngineInterface) {
   await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, result.isPlaced)
 }
 
-// Read once, since a long session's file is large (past $.fs.read's cap it streams through the file printer); later rows are claimed as they render.
-async function load($: EngineInterface) {
-  if (isLoaded) return
-  if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
-  if (!transcript) transcript = await findTranscript($)
-  // A new session's transcript is empty or not written yet: nothing to read, its rows join the empty log as they draw.
+// The transcript's text: '' when there is none yet, null when the file is there but could not be read.
+async function readTranscript($: EngineInterface) {
   const size = transcript ? ((await $.fs.stat(transcript).catch(() => null))?.size ?? 0) : 0
-  let text = size ? String(await $.fs.read(transcript).catch(() => '')) : ''
-  if (size && !text) {
+  if (!size) return ''
+  let text = String(await $.fs.read(transcript).catch(() => ''))
+  if (!text) {
     const isWindows = /^[A-Za-z]:|\\/.test(transcript)
     // cmd's type rejects forward slashes ("The syntax of the command is incorrect").
     const argv = isWindows ? ['cmd', '/c', 'type', transcript.replace(/\//g, '\\')] : ['cat', transcript]
     for await (const chunk of $.process.spawn({ argv })) {
       if (chunk.stream === 'stdout') text += chunk.text
     }
-    if (!text) return
   }
-  log = new TurnLog()
-  for (const line of text.split('\n')) if (line.trim()) log.feed(line)
+  return text || null
+}
+
+// Later reads feed only the text after what was fed; a failed read leaves the log unloaded for the next turn.
+async function load($: EngineInterface) {
+  if (isLoaded && !isPartial) return
+  if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
+  if (!transcript) transcript = await findTranscript($)
+  const read = await readTranscript($).catch(() => null)
+  if (read === null) return
+  const fresh = read.slice(fedChars)
+  const { lines, rest } = completeLines(fresh)
+  // A line unfinished through two reads is taken as it stands: feed drops it when it is not JSON.
+  const isStale = isPartial && rest.length > 0
+  if (!isLoaded) log = new TurnLog()
+  for (const line of isStale ? [...lines, rest] : lines) log.feed(line)
+  fedChars += isStale ? fresh.length : fresh.length - rest.length
+  isPartial = rest.length > 0 && !isPartial
   isLoaded = true
   $.ui.invalidate('ui.render')
 }
@@ -130,29 +152,22 @@ async function opened($: EngineInterface, kind: Kind) {
   return Array.isArray(value) ? value : []
 }
 
-async function flip($: EngineInterface, kind: Kind, id: string) {
-  const list = await opened($, kind)
-  const value = list.includes(id) ? list.filter(open => open !== id) : [...list, id]
-  if (kind === 'turns') await $.state.set({ plugin: 'mod-transcript', key: 'turns' }, value)
-  else await $.state.set({ plugin: 'mod-transcript', key: 'tools' }, value)
-}
-
-const fit = (text: string, width: number) => {
-  const flat = text.replace(/\s+/g, ' ')
-  return flat.length > width ? `${flat.slice(0, Math.max(0, width - 1))}…` : flat
-}
-
-// A Text inside the card overflows instead of wrapping, so long lines break at word boundaries here.
-const wrapWords = (line: string, width: number) => {
-  const rows: string[] = []
-  let row = ''
-  for (const word of line.split(' ')) {
-    if (row && row.length + 1 + word.length > width) {
-      rows.push(row)
-      row = word
-    } else row = row ? `${row} ${word}` : word
+// Writes a list computed from its latest value, only while no other write landed since the read; a lost race reads again.
+async function changeList($: EngineInterface, kind: Kind, change: (list: string[]) => string[]) {
+  const listOf = (value: unknown) => (Array.isArray(value) ? value : [])
+  for (let tries = 0; tries < 5; tries++) {
+    if (kind === 'turns') {
+      const { value, version } = await $.state.get({ plugin: 'mod-transcript', key: 'turns' })
+      if ((await $.state.set({ plugin: 'mod-transcript', key: 'turns' }, change(listOf(value)), { ifVersion: version })).isSet) return
+    } else {
+      const { value, version } = await $.state.get({ plugin: 'mod-transcript', key: 'tools' })
+      if ((await $.state.set({ plugin: 'mod-transcript', key: 'tools' }, change(listOf(value)), { ifVersion: version })).isSet) return
+    }
   }
-  return [...rows, row]
+}
+
+async function flip($: EngineInterface, kind: Kind, id: string) {
+  await changeList($, kind, list => (list.includes(id) ? list.filter(open => open !== id) : [...list, id]))
 }
 
 // `11:32 · 6m 12s` with its two caps and a space: the widest start-and-duration a tool line shows.
@@ -299,7 +314,7 @@ const ROLE_LOOK: Partial<Record<Role, Omit<LabelPart, 'text'>>> = {
 
 const commandParts = (command: string): LabelPart[] => tokenizeLine(command).map(span => ({ text: span.text, ...ROLE_LOOK[span.role] }))
 
-const partsWidth = (parts: LabelPart[]) => parts.reduce((sum, part) => sum + [...part.text].length, 0)
+const partsWidth = (parts: LabelPart[]) => parts.reduce((sum, part) => sum + cells(part.text), 0)
 
 // A tool's one-line label, cut to `width`; a Bash call's command keeps its shell colors.
 function labelParts(name: string, input: any, width: number): LabelPart[] {
@@ -373,12 +388,71 @@ function countsPill({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, key: string, adde
   )
 }
 
+// An AskUserQuestion call folds to one line per question: its answer, or the question with no answer yet.
+function questionRows({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, input: unknown, output: unknown, width: number) {
+  return (
+    <Box key="toggle-questions" flexDirection="column">
+      {questionsOf(input, output).map((each, n) => (
+        <Text key={`toggle-question-${n}`} color={each.answer ? THEME.onSurface : THEME.muted} wrap="truncate-end">
+          {cut(each.answer ? `${look.glyph.mark.search} ${each.question} ${MARK.stage} ${each.answer}` : `${MARK.stop} ${fill(text.askedYou, { question: each.question })}`, width)}
+        </Text>
+      ))}
+    </Box>
+  )
+}
+
+const REPORT_LINES = 6
+
+// A subagent's or teammate's report: a head line with its sender, status, time and first line, then a card of its fields and first lines.
+function reportRow({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, props: { text: string; from?: { name: string }; task?: { id?: string; status?: string; type?: string; durationMs?: number; toolUseId?: string } }, width: number) {
+  const report = reportOf(props.from, props.task)
+  const lines = props.text.replace(/\s+$/, '').split('\n')
+  const summary = lines.find(line => line.trim())?.trim() ?? ''
+  const time = report.durationMs !== undefined ? elapsed(report.durationMs) : ''
+  const head = [report.name || text.reportFallback, report.status, time, summary].filter(Boolean).join(` ${MARK.sep} `)
+  const fields = [
+    props.task?.id ? fill(text.reportTask, { id: props.task.id }) : '',
+    props.task?.type ? fill(text.reportType, { type: props.task.type }) : '',
+    props.task?.toolUseId ? fill(text.reportTool, { id: props.task.toolUseId }) : '',
+  ].filter(Boolean)
+  const shown = lines.slice(0, REPORT_LINES)
+  const more = lines.length - shown.length
+  return (
+    <Box key="toggle-report" flexDirection="column">
+      <Text key="toggle-report-head" color={THEME.onSurface} wrap="truncate-end">{cut(`${look.glyph.mark.agent} ${head}`, width)}</Text>
+      <Box key="toggle-report-card" flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>
+        {fields.map((field, n) => (
+          <Text key={`toggle-report-field-${n}`} color={THEME.muted} wrap="truncate-end">{field}</Text>
+        ))}
+        {shown.map((line, n) => (
+          <Text key={`toggle-report-line-${n}`} color={THEME.onSurface} wrap="truncate-end">{cut(line, width - 4) || ' '}</Text>
+        ))}
+        {more > 0 ? <Text key="toggle-report-more" color={THEME.muted}>{fill(text.previewMore, { n: more })}</Text> : null}
+      </Box>
+    </Box>
+  )
+}
+
+// An API error that ended the reply, as one line: red when the person must act, warn when Claude Code retries.
+function apiErrorRow({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, failure: ApiFailure, width: number) {
+  const action = apiErrorAction(failure.error)
+  const detail = failure.details ? ` ${MARK.sep} ${failure.details}` : ''
+  return (
+    <Box key="toggle-api-error" flexDirection="row">
+      <Text color={action === 'act' ? THEME.alert : THEME.warn} bold={action === 'act'} wrap="truncate-end">
+        {fit(`${MARK.warn} ${text.apiWhat[failure.error]} ${MARK.sep} ${text.apiAction[action]}${detail}`, width)}
+      </Text>
+    </Box>
+  )
+}
+
 // One open chip per turn: picking another closes the first, picking the open one closes it.
 async function pickChip($: EngineInterface, turnId: string, kind: string) {
-  const list = await opened($, 'tools')
   const key = `${turnId}:${kind}`
-  const others = list.filter(open => !open.startsWith(`${turnId}:`))
-  await $.state.set({ plugin: 'mod-transcript', key: 'tools' }, list.includes(key) ? others : [...others, key])
+  await changeList($, 'tools', list => {
+    const others = list.filter(open => !open.startsWith(`${turnId}:`))
+    return list.includes(key) ? others : [...others, key]
+  })
 }
 
 // An open turn's work under its head: a line of kind chips (Thought first, then each kind in order of first use) and, under the picked one, its calls or its thinking.
@@ -413,7 +487,7 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
           const background = previewLine.kind === 'add' ? { backgroundColor: THEME.addBg } : previewLine.kind === 'del' ? { backgroundColor: THEME.delBg } : {}
           return (
             <Text key={`line-${at}`} color={previewLine.kind === 'out' ? THEME.muted : THEME.onSurface} wrap="truncate-end" {...background}>
-              {fit(`${mark}${previewLine.text}`, width - 10) || ' '}
+              {cut(`${mark}${previewLine.text}`, width - 10) || ' '}
             </Text>
           )
         })}
@@ -490,12 +564,13 @@ async function answer($: EngineInterface, args: string) {
     await $.fs.write(`${temp}/mod-transcript-ids.txt`, `${log.turns.length} turns\n${rows.join('\n')}\n`)
     return `${rows.length} drawn rows written to ${temp}/mod-transcript-ids.txt`
   }
-  const flippedNow = await opened($, 'turns')
   const done = log.turns.filter(isDone)
-  const isAnyOpen = done.some(turn => isTurnOpen(flippedNow, turn))
+  let isAnyOpen = false
   // Folding all clears the flips when turns fold by default, and flips every turn when they open by default.
-  const flipAll = isAnyOpen !== foldTurns
-  await $.state.set({ plugin: 'mod-transcript', key: 'turns' }, flipAll ? done.map(turn => turn.prompt) : [])
+  await changeList($, 'turns', list => {
+    isAnyOpen = done.some(turn => isTurnOpen(list, turn))
+    return isAnyOpen !== foldTurns ? done.map(turn => turn.prompt) : []
+  })
 
   return isAnyOpen ? text.noteFolded : text.noteUnfolded
 }
@@ -682,12 +757,28 @@ export const register: Register = (on, options) => {
       transcript = e.transcript_path
       log = new TurnLog()
       isLoaded = false
+      fedChars = 0
+      isPartial = false
       guessing = null
       await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
       await load($)
     }
     // SessionStart comes between turns, so whatever the transcript holds has ended.
     markEnded()
+
+    return next(e)
+  })
+
+  on('classic.PermissionDenied', async ($, e, next) => {
+    declined.add(e.tool_use_id)
+    $.ui.invalidate('ui.render')
+
+    return next(e)
+  })
+
+  on('classic.StopFailure', async ($, e, next) => {
+    apiFailure = { error: e.error, details: e.error_details ?? '', text: (e.last_assistant_message ?? '').trim() }
+    $.ui.invalidate('ui.render')
 
     return next(e)
   })
@@ -702,12 +793,17 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       working = false
       markEnded()
+    }
+    // The turn is handed on before the messages are read, so no mod after this one waits for them.
+    const result = await next(e)
+    if (!e.agentId) {
+      await load($)
       const messages = await $.session.messages({ as: 'api' }).catch(() => null)
       if (Array.isArray(messages)) log.learnThoughts(messages)
       $.ui.invalidate('ui.render')
     }
 
-    return next(e)
+    return result
   })
 
   on('command.run', { command: 'mod-transcript' }, async ($, e) => ({ text: await answer($, e.args) }))
@@ -718,6 +814,10 @@ export const register: Register = (on, options) => {
     if (e.surface !== 'terminal') return next(e)
     // A subagent's report opens a turn of its own, as in the transcript.
     if (isLoaded && (e.props.origin.kind === 'peer' || (e.props.origin.kind === 'composer' && isPrompt(e.props.text)))) log.claim(e.requestId, 'prompt', Date.now(), e.props.origin.kind === 'peer')
+    if (e.props.origin.kind === 'peer' || e.props.origin.kind === 'task-notification') {
+      const { Box, Text } = $.ui.resolve(e)
+      return reportRow({ Box, Text }, e.props, widthOf(e))
+    }
     if (e.props.origin.kind !== 'composer') return next(e)
     if (!isLoaded && e.props.origin.kind === 'composer') {
       await guess($)
@@ -726,8 +826,9 @@ export const register: Register = (on, options) => {
     const turn = log.turnAt(e.requestId)
     seen.set(`UserMessage ${e.requestId}`, Boolean(turn))
     const { Box, Button, Client, Text } = $.ui.resolve(e)
-    const prompt = await next(e)
+    // Read before next(e) draws, since a row drawn meanwhile can renumber the prompts.
     const n = showNumbers && turn ? log.numberOf(turn) : undefined
+    const prompt = await next(e)
     // The wedge is an absolute sibling: Claude Code refuses its row under a positioned Box.
     const row = (
       <Box key="toggle-prompt-row" flexDirection="row" flexGrow={1} justifyContent="flex-end" backgroundColor={THEME.bg}>
@@ -791,10 +892,12 @@ export const register: Register = (on, options) => {
     // A reply drawn live is newer than the transcript the log read; the copy pill hands over what it says.
     if (turn && rowKey(e.requestId) === turn.reply && e.props.text.trim()) turn.replyText = e.props.text.trim()
     const place = await placeOf($, turn, e.requestId)
-    const { Box, Client } = $.ui.resolve(e)
-    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await next(e), false, hasTable(e.props.text)) : next(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
+    const failure = apiFailure?.text && e.props.text.trim() === apiFailure.text ? apiFailure : null
+    const drawn = () => (failure ? apiErrorRow({ Box, Text }, failure, widthOf(e)) : next(e))
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await drawn(), false, hasTable(e.props.text)) : drawn()
 
-    return place === 'hidden' ? <Box key="toggle-hidden" /> : cardRow({ Box, Client }, await next(e), { kind: 'turns', id: turn!.prompt })
+    return place === 'hidden' ? <Box key="toggle-hidden" /> : cardRow({ Box, Client }, await drawn(), { kind: 'turns', id: turn!.prompt })
   })
 
   // A finished tool row folds to one line of its own; a click shows Claude Code's full row and result under it.
@@ -814,14 +917,21 @@ export const register: Register = (on, options) => {
     if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
     const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body, true) : body)
     const isFailed = e.props.isErrored || e.props.isInterrupted
+    // A call a hook or the person refused is an error they chose, so it draws neutral.
+    const isDeclined = e.props.isErrored && declined.has(e.props.tool_use_id)
+    const isRed = isFailed && !isDeclined
     if (e.props.isRunning || !foldTools || isLive(turn)) {
-      const row = e.props.tool === 'Bash' ? bashRow({ Box, Client, Text }, e.props.input, e.props.isRunning, isFailed) : await next(e)
+      const row = e.props.tool === 'Bash' ? bashRow({ Box, Client, Text }, e.props.input, e.props.isRunning, isRed) : await next(e)
       return place === 'card' ? cardRow({ Box, Client }, row, { kind: 'turns', id: turn!.prompt }) : inBubble(row)
     }
 
+    if (e.props.tool === 'AskUserQuestion') return inBubble(questionRows({ Box, Text }, e.props.input, e.props.output, widthOf(e)))
     const { added, removed } = diffStat(e.props.tool, e.props.input, e.props.output, isFailed)
     const isOpen = (await opened($, 'tools')).includes(e.props.tool_use_id)
     const when = showTimes ? callTime(log.callOf(e.props.tool_use_id)) : ''
+    // The status words take their room first, so the name is cut to leave it.
+    const suffix = statusesOf({ isInterrupted: e.props.isInterrupted, isDeclined, output: e.props.output }).map(status => ` ${MARK.sep} ${text.status[status]}`).join('')
+    const room = widthOf(e) - 16 - (when ? WHEN_WIDTH : 0) - cells(suffix)
     const stats = [
       added ? <Box key="toggle-tool-added"><Text color={THEME.good}>{`+${added}`}</Text></Box> : null,
       removed ? <Box key="toggle-tool-removed"><Text color={THEME.alert}>{`−${removed}`}</Text></Box> : null,
@@ -829,13 +939,13 @@ export const register: Register = (on, options) => {
     const line = toggleLine(
       { Box, Button, Client },
       'toggle-tool',
-      isFailed ? THEME.alert : THEME.border,
+      isRed ? THEME.alert : THEME.border,
       isOpen,
-      fit(toolLabel(e.props.tool, e.props.input, 0, 0), widthOf(e) - 16 - (when ? WHEN_WIDTH : 0)),
+      fit(toolLabel(e.props.tool, e.props.input, 0, 0), room) + suffix,
       { kind: 'tools', id: e.props.tool_use_id },
       () => flip($, 'tools', e.props.tool_use_id),
       stats,
-      e.props.tool === 'Bash' ? labelParts('Bash', e.props.input, widthOf(e) - 16 - (when ? WHEN_WIDTH : 0)) : undefined,
+      e.props.tool === 'Bash' ? [...labelParts('Bash', e.props.input, room), ...(suffix ? [{ text: suffix }] : [])] : undefined,
     )
     // Start time and duration lead the line, in a fixed-width column so the labels stay aligned.
     const timed = when ? (

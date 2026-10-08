@@ -1,3 +1,5 @@
+import { cells } from './cells'
+
 // What the copy pill takes out of a reply's markdown: the whole of it, its code, plain text, its tables or its links.
 export type CopyChoice = 'reply' | 'code' | 'text' | 'table' | 'links'
 
@@ -75,7 +77,7 @@ function tablesOf(markdown: string) {
   return tables
 }
 
-const widthOf = (text: string) => [...text].length
+const widthOf = (text: string) => cells(text)
 
 // One table rebuilt as clean markdown: every column padded to one width, the rule keeping each column's alignment.
 function formatTable({ aligns, rows }: { aligns: Align[]; rows: string[][] }) {

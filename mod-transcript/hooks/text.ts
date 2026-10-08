@@ -64,5 +64,32 @@ export default {
   "tipPromptLabel": "Prompt #{n}",
   "tipPrompt": "this is prompt {n} of the session",
   "tipTabSettings": "shows this mod's settings",
+  "status": {
+    "timedOut": "timed out",
+    "interrupted": "interrupted",
+    "background": "background",
+    "declined": "declined"
+  },
+  "askedYou": "Asked you: {question}",
+  "apiWhat": {
+    "rate_limit": "rate limit reached",
+    "overloaded": "API overloaded",
+    "server_error": "server error",
+    "authentication_failed": "sign-in failed",
+    "oauth_org_not_allowed": "organization not allowed",
+    "account_on_hold": "account on hold",
+    "verification_required": "verification required",
+    "billing_error": "billing problem",
+    "invalid_request": "request refused",
+    "model_not_found": "model not found",
+    "max_output_tokens": "reply hit the output limit",
+    "cloud_credential_error": "cloud credentials rejected",
+    "unknown": "unknown API error"
+  },
+  "apiAction": { "retry": "Claude Code retries", "act": "you must act" },
+  "reportFallback": "Report",
+  "reportTask": "task {id}",
+  "reportType": "type {type}",
+  "reportTool": "tool {id}",
   "settingTips": {"expand_live":"stays open until your next prompt","prompt_numbers":"#N before each of your prompts","copy_pill":"on each finished reply's edge"}
 }

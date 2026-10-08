@@ -1,5 +1,5 @@
 import text from './text'
-import { fill } from './theme'
+import { fill, MARK } from './theme'
 
 // One prompt and everything Claude drew after it, up to the next prompt.
 export type Turn = {
@@ -356,7 +356,18 @@ export function toolLabel(name: string, input: any, added: number, removed: numb
   if (name === 'Agent' || name === 'Task') return call('Agent', input?.description ?? input?.subagent_type)
   if (name === 'Bash') return call('Bash', String(input?.command ?? '').split('\n')[0])
   if (name === 'Read') return call('Read', tail(input?.file_path))
-  return name
+  if (name === 'Grep' || name === 'Glob') return call(name, [input?.pattern, tail(input?.path)].filter(Boolean).join(` ${MARK.sep} `))
+  return call(name, mainArg(input))
+}
+
+// The argument that says what a call works on: a path, URL, query or pattern first, else the first text argument.
+const MAIN_ARGS = ['file_path', 'path', 'url', 'query', 'pattern', 'command', 'name', 'prompt', 'description', 'text']
+
+function mainArg(input: any): string {
+  if (!input || typeof input !== 'object') return ''
+  const named = MAIN_ARGS.map(key => input[key]).find(value => typeof value === 'string' && value.trim())
+  const value = named ?? Object.values(input).find(each => typeof each === 'string' && each.trim())
+  return typeof value === 'string' ? value.split('\n')[0]!.trim() : ''
 }
 
 const clock = (ms: number) => {

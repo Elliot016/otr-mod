@@ -346,7 +346,7 @@ test('rows drawn before the transcript is read already fold, so none changes hei
   expect(await prompt.find({ key: 'toggle-prompt-time-col' })).toBeDefined()
 })
 
-test('the transcript is read once; rows drawn later join their turn and fold at the next prompt', async ($, on) => {
+test('the transcript is read once, and once more for its unfinished last line; rows drawn later join their turn and fold at the next prompt', async ($, on) => {
   let reads = 0
   on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
@@ -392,7 +392,8 @@ test('the transcript is read once; rows drawn later join their turn and fold at 
   expect(await folded.find({ type: 'Text' })).toBeUndefined()
   const head = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: true })
   expect(await head.find({ type: 'Button', text: /^1 tool$/ })).toBeDefined()
-  expect(reads).toBe(1)
+  // The torn last line of the file is read again at the turn's end, then dropped as it is not JSON.
+  expect(reads).toBe(2)
 })
 
 test('a new session, whose transcript is not written yet, folds its turns; a group claims calls that draw no rows of their own', async ($, on) => {
