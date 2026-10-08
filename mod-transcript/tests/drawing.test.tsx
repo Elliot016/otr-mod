@@ -181,6 +181,14 @@ test('a subagent report draws a head line with its fields, and a card whose body
   expect(await report.find({ type: 'Text', text: '+ 2 more lines' })).toBeDefined()
 })
 
+test('a notice its head line shows whole draws no card, so its task and tool ids alone never repeat it', async ($, on) => {
+  const mount = await open($, on)
+  const notice = await mount('UserMessage', ID(22), { text: 'Background command "Render the reel" completed (exit code 0)', origin: { kind: 'task-notification' }, isExpanded: false, task: { id: 'b5', status: 'completed', toolUseId: 'toolu_render' } })
+  expect(await notice.find({ type: 'Text', text: /b5 · completed · Background command "Render the reel"/ })).toBeDefined()
+  expect(await notice.find({ type: 'Text', text: 'task b5' })).toBeUndefined()
+  expect(await notice.find({ type: 'Text', text: /toolu_render/ })).toBeUndefined()
+})
+
 test('a summary too long for the head stays in the card', async ($, on) => {
   const mount = await open($, on)
   const long = `Background shell command ${'x'.repeat(200)}`

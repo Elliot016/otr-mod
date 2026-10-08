@@ -426,7 +426,8 @@ function reportRow(parts: Controls & Rows, props: TaskProps, report: Report, wid
   ].filter(Boolean)
   const shown = lines.slice(0, REPORT_LINES)
   const more = lines.length - shown.length
-  const isOpen = fold?.isOpen ?? true
+  // With no lines past the head, a card of ids alone would repeat the head, so none draws.
+  const isOpen = (fold?.isOpen ?? true) && shown.some(line => line.trim())
   return (
     <Box key="toggle-report" flexDirection="column">
       {fold ? (
