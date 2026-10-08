@@ -6,7 +6,7 @@ import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMar
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { parseRow, promptsOf, promptText, rowKey, targetOf, type Prompt, type Row } from './prompts'
+import { promptsOf, promptText, rowKey, targetOf, TranscriptRows, type Prompt } from './prompts'
 import { GUTTER, timelineRows, type TimelineMessage, type TimelineProps } from './timeline'
 import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
@@ -63,6 +63,8 @@ function loadLook($: EngineInterface) {
 
 const PANE = 'prompts'
 const SETTINGS = 'prompts-settings'
+// Claude Code draws a prompt under this id as it is sent, then under its uuid; only the uuid draw is listed.
+const PLACEHOLDER = 'placeholder'
 
 // Border, the number line and six lines of the prompt.
 const CARD_ROWS = 9
@@ -72,9 +74,12 @@ const STOPS_PER_CLIENT = 30
 const PAGE_SIZE = 100
 
 let transcript = ''
-// A long session's transcript takes seconds to read, so it is read once; later prompts come from the rows Claude Code draws.
+let transcriptRows = new TranscriptRows()
+// The file's size at the last read, so a turn that added nothing reads nothing.
+let readSize = -1
+// Read in full once, then in part; prompts drawn in between come from the rows Claude Code draws.
 let isLoaded = false
-// A turn ended while the pane was open: read again in the background, so its prompt gets its numbers.
+// A turn ended, so the next read takes what it added.
 let isStale = false
 let prompts: Prompt[] = []
 let selected = -1
@@ -96,6 +101,7 @@ async function load($: EngineInterface) {
   if (!transcript) transcript = await findTranscript($)
   if (!transcript) return
   const { size } = await $.fs.stat(transcript).catch(() => ({ size: -1 }))
+  if (isLoaded && size >= 0 && size === readSize) return
   let text = String(await $.fs.read(transcript).catch(() => ''))
   if (!text && size > 0) {
     const isWindows = /^[A-Za-z]:|\\/.test(transcript)
@@ -107,16 +113,13 @@ async function load($: EngineInterface) {
   }
   // A failed read leaves the transcript unloaded, so the next open tries again.
   if (!text) return
-  const rows: Row[] = []
-  for (const line of text.slice(0, text.lastIndexOf('\n') + 1).split('\n')) {
-    const row = line.trim() ? parseRow(line) : undefined
-    if (row) rows.push(row)
-  }
+  transcriptRows.feed(text)
+  readSize = size
   isLoaded = true
   // Prompts drawn since the read, not yet in the file, stay at the end.
-  const read = promptsOf(rows)
-  // A prompt typed mid-turn is drawn under another id than the file's, so a drawn one also matches by its text.
-  const known = new Set(read.flatMap(prompt => [rowKey(prompt.id), sameText(prompt.text)]))
+  const read = promptsOf(transcriptRows.rows)
+  // A queued prompt is drawn under another id than the file's, so a drawn one also matches it by its text.
+  const known = new Set([...read.map(prompt => rowKey(prompt.id)), ...read.filter(prompt => prompt.isQueued).map(prompt => sameText(prompt.text))])
   prompts = [...read, ...prompts.filter(prompt => !known.has(rowKey(prompt.id)) && !known.has(sameText(prompt.text)))]
   if (selected < 0 || selected >= prompts.length) selected = prompts.length - 1
 }
@@ -201,6 +204,27 @@ const oneLine = (text: string, width: number) => {
   return flat.length > width ? `${flat.slice(0, Math.max(0, width - 1))}…` : flat
 }
 
+// Rows a text takes at this width, wrapped at spaces the way the card breaks it.
+const rowsOf = (value: string, width: number) => value.split('\n').reduce((total, line) => total + wrappedRows(line, width), 0)
+
+const wrappedRows = (line: string, width: number) => {
+  let rows = 1
+  let used = 0
+  for (const word of line.split(' ')) {
+    const size = [...word].length
+    if (used > 0 && used + 1 + size <= width) used += 1 + size
+    else {
+      if (used > 0) rows++
+      used = size
+    }
+    while (used > width) {
+      rows++
+      used -= width
+    }
+  }
+  return rows
+}
+
 const clock = (at?: string) => {
   const date = at ? new Date(at) : undefined
   return date && !Number.isNaN(date.getTime()) ? `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : ''
@@ -271,6 +295,8 @@ export const register: Register = (on, options) => {
     if (e.transcript_path !== transcript) {
       isLoaded = false
       prompts = []
+      transcriptRows = new TranscriptRows()
+      readSize = -1
     }
     transcript = e.transcript_path
     await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
@@ -279,12 +305,15 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId && (await isOpen($))) {
+    if (!e.agentId) {
+      // A closed pane reads the file when it next opens.
       isStale = true
-      $.clock.after(0, async () => {
-        await load($)
-        $.ui.invalidate('ui.render')
-      })
+      if (await isOpen($)) {
+        $.clock.after(0, async () => {
+          await load($)
+          $.ui.invalidate('ui.render')
+        })
+      }
     }
 
     return next(e)
@@ -296,8 +325,8 @@ export const register: Register = (on, options) => {
     drawn.set(rowKey(e.requestId), e.requestId)
     // A prompt sent after the read joins the list as its row draws.
     const text = e.props.origin?.kind === 'composer' ? promptText(String(e.props.text ?? '')) : undefined
-    // Claude Code redraws rows (a reload, a scroll), so a row whose text is already listed is not a new prompt.
-    if (isLoaded && text && !prompts.some(prompt => rowKey(prompt.id) === rowKey(e.requestId) || sameText(prompt.text) === sameText(text))) {
+    // A row redrawn under its id is already listed, and so is a queued prompt drawn again under another id.
+    if (isLoaded && text && e.requestId !== PLACEHOLDER && !prompts.some(prompt => rowKey(prompt.id) === rowKey(e.requestId) || (prompt.isQueued && sameText(prompt.text) === sameText(text)))) {
       prompts = [...prompts, { id: e.requestId, text, at: new Date().toISOString(), tools: 0, added: 0, removed: 0 }]
       $.clock.after(0, () => $.ui.invalidate('ui.render'))
     }
@@ -463,6 +492,12 @@ export const register: Register = (on, options) => {
         ].filter(Boolean)
       : []
 
+    // The card's text is the pane's width less its border and padding; a prompt past its rows gives the last one to the count.
+    const textRows = CARD_ROWS - 3 - (pageCount > 1 ? 1 : 0)
+    const rowsNeeded = current ? rowsOf(current.text, Math.max(10, e.props.bodyColumns - 6)) : 0
+    const isClipped = rowsNeeded > textRows
+    const textShown = isClipped ? textRows - 1 : textRows
+
     // Mouse only: the jump is a Button, since a scroll needs the person's press behind it; a click on a stop opens it.
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
@@ -500,9 +535,10 @@ export const register: Register = (on, options) => {
                 {subpill({ Box, Text }, look.nerd, THEME.surface1, fill(text.cardNumber, { n: selected + 1 }), 'card-number')}
                 {clock(current.at) ? <Text color={THEME.onSurface} bold>{clock(current.at)}</Text> : null}
               </Box>,
-              <Box key="card-text" height={CARD_ROWS - 3 - (pageCount > 1 ? 1 : 0)} overflow="hidden" flexShrink={0}>
+              <Box key="card-text" height={textShown} overflow="hidden" flexShrink={0}>
                 <Text color={THEME.muted}>{current.text}</Text>
               </Box>,
+              isClipped ? <Text key="card-more" color={THEME.muted}>{fill(text.cardMore, { n: rowsNeeded - textShown })}</Text> : null,
               // The pager rides in the pinned card, so it stays in view however far the timeline scrolls.
               pageCount > 1 ? (
                 <Box key="pager" flexDirection="row" columnGap={1} flexShrink={0}>

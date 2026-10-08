@@ -5,6 +5,10 @@ export type Row = {
   isSidechain: boolean
   // The prompt's text when the row is one, else undefined.
   prompt?: string
+  // A prompt typed while a turn ran, which the file keeps as a queued command.
+  isQueued?: boolean
+  // A subagent's report: a row that opens a turn of its own, which is no prompt.
+  isReport?: boolean
   at?: string
   // What the row adds to its turn: tool calls a reply makes, lines a tool result changed, the turn's length.
   tools?: number
@@ -13,7 +17,7 @@ export type Row = {
   durationMs?: number
 }
 
-export type Prompt = { id: string; text: string; at?: string; tools: number; added: number; removed: number; durationMs?: number }
+export type Prompt = { id: string; text: string; at?: string; tools: number; added: number; removed: number; durationMs?: number; isQueued?: boolean }
 
 // Lines a successful edit or new file changed; a failed tool result changed nothing, so it counts nothing.
 function changedLines(row: any) {
@@ -58,11 +62,13 @@ export function parseRow(line: string): Row | undefined {
     isSidechain: row.isSidechain === true,
     at: typeof row.timestamp === 'string' ? row.timestamp : undefined,
   }
-  // A prompt typed while a turn ran is stored as a queued_command attachment, not a user row.
+  // A prompt typed while a turn ran is stored as a queued_command attachment, not a user row; a meta one is a note the harness queued.
   if (row.type === 'attachment' && row.attachment?.type === 'queued_command' && typeof row.attachment.prompt === 'string') {
-    return { ...base, prompt: promptText(row.attachment.prompt) }
+    if (row.attachment.isMeta === true) return base
+    return { ...base, prompt: promptText(row.attachment.prompt), isQueued: true }
   }
   if (row.type === 'system' && row.subtype === 'turn_duration' && typeof row.durationMs === 'number') return { ...base, durationMs: row.durationMs }
+  if (row.type === 'user' && row.isMeta === true && row.origin?.kind === 'peer') return { ...base, isReport: true }
   if (row.type === 'assistant' && Array.isArray(row.message?.content)) {
     const tools = row.message.content.filter((block: any) => block?.type === 'tool_use').length
     return tools ? { ...base, tools } : base
@@ -79,24 +85,29 @@ export function parseRow(line: string): Row | undefined {
   return { ...base, prompt: promptText(text) }
 }
 
-// The prompts on the live branch, oldest first: the parent chain from the last row, so /rewind's abandoned rows drop out.
+// The prompts on the live branch, oldest first; a report or an abandoned prompt opens a turn that lists nothing, as turns.ts does.
 export function promptsOf(rows: Row[]): Prompt[] {
-  const byId = new Map(rows.map(row => [row.uuid, row]))
+  const byId = new Map(rows.filter(row => !row.isSidechain).map(row => [row.uuid, row]))
   const live = new Set<string>()
   let row = [...rows].reverse().find(candidate => !candidate.isSidechain)
   while (row && !live.has(row.uuid)) {
     live.add(row.uuid)
     row = row.parent ? byId.get(row.parent) : undefined
   }
-  // Each main-thread row after a prompt belongs to that prompt's turn, in file order.
   const prompts: Prompt[] = []
+  // The prompt the rows after it belong to, in file order; undefined after a report or an abandoned prompt.
+  let turn: Prompt | undefined
   for (const candidate of rows) {
     if (candidate.isSidechain) continue
-    if (candidate.prompt && live.has(candidate.uuid)) {
-      prompts.push({ id: candidate.uuid, text: candidate.prompt, at: candidate.at, tools: 0, added: 0, removed: 0 })
+    if (candidate.isReport) {
+      turn = undefined
       continue
     }
-    const turn = prompts.at(-1)
+    if (candidate.prompt) {
+      turn = live.has(candidate.uuid) ? { id: candidate.uuid, text: candidate.prompt, at: candidate.at, tools: 0, added: 0, removed: 0, isQueued: candidate.isQueued === true } : undefined
+      if (turn) prompts.push(turn)
+      continue
+    }
     if (!turn) continue
     turn.tools += candidate.tools ?? 0
     turn.added += candidate.added ?? 0
@@ -104,6 +115,27 @@ export function promptsOf(rows: Row[]): Prompt[] {
     if (candidate.durationMs !== undefined) turn.durationMs = (turn.durationMs ?? 0) + candidate.durationMs
   }
   return prompts
+}
+
+// Parses a growing transcript a feed at a time; a torn last line waits for the next feed.
+export class TranscriptRows {
+  rows: Row[] = []
+  private parsed = 0
+
+  feed(text: string) {
+    const end = text.lastIndexOf('\n') + 1
+    if (end < this.parsed) {
+      this.rows = []
+      this.parsed = 0
+    }
+    const lines = text.slice(this.parsed, end).split('\n').filter(line => line.trim())
+    this.parsed = end
+    for (const line of lines) {
+      const row = parseRow(line)
+      if (row) this.rows.push(row)
+    }
+    return lines.length
+  }
 }
 
 // A message drawn as several rows gets ids that keep its uuid's first four groups, so rows match on those.

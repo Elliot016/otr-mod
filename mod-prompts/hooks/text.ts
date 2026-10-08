@@ -19,6 +19,7 @@ export default {
   "tools": "{count} tools",
   "empty": "No prompts yet.",
   "cardNumber": "#{n}",
+  "cardMore": "+{n} more lines",
   "page": "Page {page} of {pages} {sep} {from}–{to}",
   "pagePrev": "‹ Prev",
   "pageNext": "Next ›",

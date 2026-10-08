@@ -238,3 +238,134 @@ test('icons=safe draws the settings pill with the plain gear', { options: { icon
   expect(pill).not.toContain(String.fromCodePoint(0xf013))
   await ui.unmount()
 })
+
+const parseAll = (lines: string[]) => lines.flatMap(line => parseRow(line) ?? [])
+const calls = (n: number, parent: number, count: number) =>
+  JSON.stringify({ type: 'assistant', uuid: ID(n), parentUuid: ID(parent), message: { role: 'assistant', content: Array.from({ length: count }, (_, call) => ({ type: 'tool_use', id: `t${n}-${call}` })) } })
+
+test('a meta queued prompt, a compact summary and an interrupted prompt take no number, so the next prompt is the second', () => {
+  const rows = parseAll([
+    user(1, null, 'first prompt'),
+    JSON.stringify({ type: 'attachment', uuid: ID(2), parentUuid: ID(1), attachment: { type: 'queued_command', prompt: 'a note the hook queued', isMeta: true } }),
+    user(3, 2, 'summary of the earlier turns', { isCompactSummary: true }),
+    user(4, 3, '[Request interrupted by user]'),
+    user(5, 4, 'second prompt'),
+  ])
+  expect(promptsOf(rows).map(prompt => prompt.text)).toEqual(['first prompt', 'second prompt'])
+})
+
+test('a subagent report opens a turn that is no prompt, so the calls after it count to no prompt', () => {
+  const listed = promptsOf(parseAll([
+    user(1, null, 'first prompt'),
+    calls(2, 1, 2),
+    user(3, 2, 'report from the subagent', { isMeta: true, origin: { kind: 'peer' } }),
+    calls(4, 3, 1),
+  ]))
+  expect(listed.map(prompt => prompt.text)).toEqual(['first prompt'])
+  expect(listed[0]).toMatchObject({ tools: 2 })
+})
+
+test('the live branch follows parents through main rows only, as turns.ts does', () => {
+  const subagent = JSON.stringify({ type: 'user', isSidechain: true, uuid: ID(20), parentUuid: ID(1), message: { role: 'user', content: 'subagent text' } })
+  const listed = promptsOf(parseAll([user(1, null, 'first prompt'), subagent, user(21, 20, 'second prompt')]))
+  expect(listed.map(prompt => prompt.text)).toEqual(['second prompt'])
+})
+
+// A session whose transcript is `rows`, one row per line as Claude Code writes it, with the pane closed until the mod opens it.
+function session(on: any, rows: string) {
+  const transcript = `${rows}\n`
+  on('store.get', () => ({ value: '/t/s3.jsonl' }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's3' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: transcript.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: transcript }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  mock.env(on, {})
+  return mock.clock(on)
+}
+
+// A composer prompt drawn under `requestId`, then unmounted as the row scrolls away.
+async function sent($: any, requestId: string, text: string) {
+  const row = await $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'UserMessage', requestId, props: { text, origin: { kind: 'composer' } } } as never)
+  await row.unmount()
+}
+
+const paneOf = ($: any) =>
+  $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'Pane', requestId: 'prompts', props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as never)
+
+test('a prompt sent again with the same text is listed again', async ($, on) => {
+  session(on, [user(1, null, 'continue'), reply(2, 1)].join('\n'))
+  await $.command.run({ command: 'mod-prompts' })
+  await sent($, ID(50), 'continue')
+  await sent($, ID(51), 'continue')
+  await $.command.run({ command: 'mod-prompts' })
+  const ui = await paneOf($)
+  expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' })).split(' continue').length - 1).toBe(3)
+  await ui.unmount()
+})
+
+test('a placeholder draw lists no prompt, and the uuid draw that follows lists it once', async ($, on) => {
+  const clock = session(on, user(1, null, '/mod-menu'))
+  await $.command.run({ command: 'mod-prompts' })
+  await sent($, 'placeholder', 'fresh prompt')
+  const empty = await paneOf($)
+  expect(await empty.find({ type: 'Text', text: 'No prompts yet.' })).toBeDefined()
+  await empty.unmount()
+  await sent($, ID(60), 'fresh prompt')
+  await clock.settle()
+  const ui = await paneOf($)
+  expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' })).split(' fresh prompt').length - 1).toBe(1)
+  await ui.unmount()
+})
+
+test('a card that cuts a long prompt ends with a muted count of the lines it leaves out', async ($, on) => {
+  session(on, user(1, null, 'word '.repeat(120).trim()))
+  await $.command.run({ command: 'mod-prompts' })
+  const ui = await paneOf($)
+  expect(await ui.find({ type: 'Text', text: '+6 more lines' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a card that holds its whole prompt has no count', async ($, on) => {
+  session(on, user(1, null, 'first prompt'))
+  await $.command.run({ command: 'mod-prompts' })
+  const ui = await paneOf($)
+  expect(await ui.find({ type: 'Text', text: /more lines/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a turn that ends while the pane is open reads an unchanged transcript no more', async ($, on) => {
+  const transcript = `${user(1, null, 'first prompt')}\n${reply(2, 1)}\n`
+  let isOpen = false
+  let reads = 0
+  on('store.get', () => ({ value: '/t/s3.jsonl' }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's3' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: transcript.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => {
+    reads += 1
+    return { value: transcript }
+  })
+  on('ui.panes', () => ({ value: isOpen ? [{ id: 'prompts', isPlaced: true }] : [] }))
+  on('ui.open', () => {
+    isOpen = true
+    return { value: { isPlaced: true } }
+  })
+  on('turn.complete', () => ({ text: '' }))
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  mock.env(on, {})
+  const clock = mock.clock(on)
+  await $.command.run({ command: 'mod-prompts' })
+  expect(reads).toBe(1)
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: 'ok', isAborted: false } as never)
+  await clock.settle()
+  expect(reads).toBe(1)
+})
