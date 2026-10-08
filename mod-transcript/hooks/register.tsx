@@ -241,15 +241,8 @@ function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean
 const cardRow = (parts: Bars, body: unknown, fold: BarProps) => frame(parts, 'toggle-frame', slice(parts, 'toggle-card', THEME.accent, body, fold), false, false)
 
 // Rows draw in no fixed order, so the prompt and duration rows carry the edges; a finished turn's reply closes it.
-function bubble(parts: Bars, key: string, turn: Turn, body: unknown, isTool = false, isTight = false) {
-  const { Box } = parts
-  // Claude Code starts each row with a blank line; in a tool row it rides out of the band, where it paints nothing.
-  const inner = isTool ? (
-    <Box key={`${key}-band`} flexDirection="row" flexGrow={1} marginTop={1} backgroundColor={THEME.surface1}>
-      <Box key={`${key}-tool`} flexDirection="column" flexGrow={1} paddingLeft={2} marginTop={-1}>{body}</Box>
-    </Box>
-  ) : body
-  return frame(parts, key, inner, false, isDone(turn), isTight, turn)
+function bubble(parts: Bars, key: string, turn: Turn, body: unknown, isTight = false) {
+  return frame(parts, key, body, false, isDone(turn), isTight, turn)
 }
 
 // Claude Code sizes a markdown table to the whole terminal, so a block holding one drops the bubble's padding to fit it.
@@ -337,7 +330,7 @@ function callParts(call: Turn['tools'][number], isOpen: boolean, width: number):
   return [{ text: isLifted ? `${glyph} ` : ` ${glyph} ` }, ...labelParts(call.name, call.input, width - 28), ...(isLifted ? [] : [{ text: ' ' }])]
 }
 
-// Claude Code's own Bash row, drawn here so the command keeps its colors; the blank first line stands in for the one the tool band lifts away.
+// Claude Code's own Bash row, drawn here so the command keeps its colors; the blank first line matches the one Claude Code starts each row with.
 function bashRow({ Box, Client, Text }: Rows, input: any, isRunning: boolean, isFailed: boolean) {
   const command = String(input?.command ?? '')
   const dot = isRunning
@@ -951,7 +944,7 @@ export const register: Register = (on, options) => {
     const { Box, Client, Text } = $.ui.resolve(e)
     const failure = apiFailure?.text && e.props.text.trim() === apiFailure.text ? apiFailure : null
     const drawn = () => (failure ? apiErrorRow({ Box, Text }, failure, widthOf(e)) : next(e))
-    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await drawn(), false, hasTable(e.props.text)) : drawn()
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, await drawn(), hasTable(e.props.text)) : drawn()
 
     return place === 'hidden' ? <Box key="toggle-hidden" /> : cardRow({ Box, Client }, await drawn(), { kind: 'turns', id: turn!.prompt })
   })
@@ -972,7 +965,7 @@ export const register: Register = (on, options) => {
     const place = await placeOf($, turn, e.requestId)
     // In an open turn the head's kind rows list every call, so the row itself draws nothing.
     if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
-    const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body, true) : body)
+    const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body) : body)
     const isFailed = e.props.isErrored || e.props.isInterrupted
     // A call a hook or the person refused is an error they chose, so it draws neutral.
     const isDeclined = e.props.isErrored && declined.has(e.props.tool_use_id)
@@ -1032,7 +1025,7 @@ export const register: Register = (on, options) => {
 
     const body = nested({ Box, Client }, 'toggle-result', await next(e), { kind: 'tools', id: e.props.tool_use_id })
     if (place === 'card') return cardRow({ Box, Client }, body, { kind: 'turns', id: turn!.prompt })
-    return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body, true) : body
+    return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body) : body
   })
 
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
@@ -1056,7 +1049,7 @@ export const register: Register = (on, options) => {
     // A group shows its running call while it runs; a Bash one is drawn here so its command keeps its colors.
     const running = e.props.calls.find(call => call.isRunning && call.tool === 'Bash')
     const group = running ? bashRow({ Box, Client, Text }, running.input, true, false) : await next(e)
-    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, group, true) : group
+    if (place === 'plain') return turn ? bubble({ Box, Client }, 'toggle-bubble', turn, group) : group
 
     // In an open turn the head's kind rows list every call, so the group draws nothing.
     if (place === 'hidden' || foldTools) return <Box key="toggle-hidden" />
