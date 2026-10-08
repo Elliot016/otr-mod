@@ -1,17 +1,37 @@
 <!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
 # mod-blast-radius
 
+Part of [moonlight-claude-mods][doc-root].
+
 Holds a risky shell command until you choose Cancel or Run.
 
-**How to open:** Automatic
+## Install
+
+Inside Claude Code:
+
+```text
+/plugin marketplace add v-amorim/moonlight-claude-mods
+/plugin install mod-blast-radius@claude-mods
+/reload-plugins
+```
+
+`/plugin install` asks where to install the mod. Keep Install for you (user scope) and press Enter, then press Esc to leave the plugin screen before `/reload-plugins`.
+
+To install every mod at once, see [Install][doc-install]. For sharper icons, see [Icons and Nerd Fonts][doc-icons].
+
+## How to open
+
+Automatic.
+
+## See it
 
 | The hold card | The Details pane |
 | --- | --- |
 | ![][img-blast-radius-card] | ![][img-blast-radius-details] |
 
-**A risky command held**
-
-https://github.com/user-attachments/assets/dede1549-47e9-46ee-8ace-d13dc594e6ff
+| A risky command held |
+| --- |
+| https://github.com/user-attachments/assets/dede1549-47e9-46ee-8ace-d13dc594e6ff |
 
 ## Features
 
@@ -32,11 +52,9 @@ Change them with `/mod-blast-radius settings` or the gear pill.
 | Hold risky commands | on | Risky Bash waits for your choice. You pick Run or Cancel. Off, every command runs as usual |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
-## Install
-
-```sh
-claude plugin install mod-blast-radius@claude-mods --scope user
-```
+[doc-icons]: ../README.md#icons-and-nerd-fonts
+[doc-install]: ../README.md#install
+[doc-root]: ../README.md
 
 [img-blast-radius-card]: ../showcase/blast-radius-card.png
 [img-blast-radius-details]: ../showcase/blast-radius-details.png

@@ -1,17 +1,37 @@
 <!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
 # mod-wrap-up
 
+Part of [moonlight-claude-mods][doc-root].
+
 Hands off to a fresh session, or fills `/compact` with what to keep.
 
-**How to open:** Wrap up pill
+## Install
+
+Inside Claude Code:
+
+```text
+/plugin marketplace add v-amorim/moonlight-claude-mods
+/plugin install mod-wrap-up@claude-mods
+/reload-plugins
+```
+
+`/plugin install` asks where to install the mod. Keep Install for you (user scope) and press Enter, then press Esc to leave the plugin screen before `/reload-plugins`.
+
+To install every mod at once, see [Install][doc-install]. For sharper icons, see [Icons and Nerd Fonts][doc-icons].
+
+## How to open
+
+Wrap up pill.
+
+## See it
 
 | Pick what stays | The filled /compact |
 | --- | --- |
 | ![][img-wrap-up-card] | ![][img-wrap-up-compact] |
 
-**Compact, start to end**
-
-https://github.com/user-attachments/assets/0b9c9abd-03e8-4f36-9069-ae02042a809d
+| Compact, start to end |
+| --- |
+| https://github.com/user-attachments/assets/0b9c9abd-03e8-4f36-9069-ae02042a809d |
 
 ## Features
 
@@ -30,11 +50,9 @@ Change them with `/mod-wrap-up settings` or the gear pill.
 | Read the threads | on | Haiku finds up to four threads. You keep or drop each one when the card opens. Off, the card shows only the fixed items and the whole session counts |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
-## Install
-
-```sh
-claude plugin install mod-wrap-up@claude-mods --scope user
-```
+[doc-icons]: ../README.md#icons-and-nerd-fonts
+[doc-install]: ../README.md#install
+[doc-root]: ../README.md
 
 [img-wrap-up-card]: ../showcase/wrap-up-card.png
 [img-wrap-up-compact]: ../showcase/wrap-up-compact.png

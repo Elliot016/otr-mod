@@ -1,17 +1,37 @@
 <!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
 # mod-file-tree
 
+Part of [moonlight-claude-mods][doc-root].
+
 The files Claude read and changed, with a replay of each edit.
 
-**How to open:** Files pill
+## Install
+
+Inside Claude Code:
+
+```text
+/plugin marketplace add v-amorim/moonlight-claude-mods
+/plugin install mod-file-tree@claude-mods
+/reload-plugins
+```
+
+`/plugin install` asks where to install the mod. Keep Install for you (user scope) and press Enter, then press Esc to leave the plugin screen before `/reload-plugins`.
+
+To install every mod at once, see [Install][doc-install]. For sharper icons, see [Icons and Nerd Fonts][doc-icons].
+
+## How to open
+
+Files pill.
+
+## See it
 
 | The Files panel |
 | --- |
 | ![][img-file-tree-panel] |
 
-**Live while Claude works**
-
-https://github.com/user-attachments/assets/676f590d-6596-469f-9cba-baa8e23745eb
+| Live while Claude works |
+| --- |
+| https://github.com/user-attachments/assets/676f590d-6596-469f-9cba-baa8e23745eb |
 
 ## Features
 
@@ -31,10 +51,8 @@ Change them with `/mod-file-tree settings` or the gear pill.
 | Wrap long diff lines | on | Replay lines wrap onto the next row. Off, they are cut at the pane edge |
 | Turns in the recent view | `5` | How many latest turns to cover. The middle view of the tree shows them, from 2 to 20 |
 
-## Install
-
-```sh
-claude plugin install mod-file-tree@claude-mods --scope user
-```
+[doc-icons]: ../README.md#icons-and-nerd-fonts
+[doc-install]: ../README.md#install
+[doc-root]: ../README.md
 
 [img-file-tree-panel]: ../showcase/file-tree-panel.png

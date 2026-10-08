@@ -4,38 +4,86 @@
 
 # moonlight-claude-mods
 
-Add-ons for Claude Code that add panels, buttons and safety checks around the prompt. They need Claude Code 2.1.287 or newer.
+Add-ons for the Claude Code terminal that add panels, safety checks and pills (small clickable labels in a row above the prompt). One more mod styles the desktop app. They need Claude Code 2.1.287 or newer.
 
-**Every terminal mod in 92 seconds**
+## Install
 
-https://github.com/user-attachments/assets/7e2c3727-83d1-4549-9c13-80e51a8bf929
+> [!WARNING]
+> Mods are not sandboxed: they run with your permissions.
 
-The same session without and with the mods:
+One mod, inside Claude Code, using any name from [the list of mods][doc-mods]:
+
+```text
+/plugin marketplace add v-amorim/moonlight-claude-mods
+/plugin install mod-transcript@claude-mods
+/reload-plugins
+```
+
+`/plugin install` asks where to install the mod. Keep Install for you (user scope) and press Enter, then press Esc to leave the plugin screen before `/reload-plugins`.
+
+<details>
+<summary>All of them at once, from your terminal</summary>
+
+1. Add this repo as a plugin marketplace:
+
+   ```sh
+   claude plugin marketplace add v-amorim/moonlight-claude-mods
+   ```
+
+2. Install every mod. In bash or zsh:
+
+   ```sh
+   for mod in mod-menu mod-manager mod-skill-panel mod-prompts mod-file-tree mod-transcript mod-model-effort mod-heads-up mod-progress mod-next-steps mod-wrap-up mod-blast-radius mod-collision-guard mod-desktop-status-line; do
+     claude plugin install "$mod@claude-mods" --scope user
+   done
+   ```
+
+   In PowerShell:
+
+   ```powershell
+   'mod-menu','mod-manager','mod-skill-panel','mod-prompts','mod-file-tree','mod-transcript','mod-model-effort','mod-heads-up','mod-progress','mod-next-steps','mod-wrap-up','mod-blast-radius','mod-collision-guard','mod-desktop-status-line' | ForEach-Object { claude plugin install "$_@claude-mods" --scope user }
+   ```
+
+   Each install may print how many of the mod's settings are not set yet. You can ignore that: every setting has a default.
+
+3. Run `/reload-plugins` in an open session, or start a new one.
+
+</details>
+
+Each mod works alone. Add `mod-manager` too if you want the gear pill, which turns mods on and off and opens every mod's settings in one place.
+
+## See them in action
+
+| Every terminal mod in 92 seconds |
+| --- |
+| https://github.com/user-attachments/assets/7e2c3727-83d1-4549-9c13-80e51a8bf929 |
 
 | Without mods | With mods |
 | --- | --- |
-| ![](showcase/plain.png) | ![](showcase/transcript-folded.png) |
+| ![][img-plain] | ![][img-with-mods] |
 
 ## What each mod does
 
+Click a name for its screenshots, features and settings.
+
 | Mod | What it does | How to open it |
 | --- | --- | --- |
-| `mod-menu` | One row of pills above the prompt that opens every panel | Always shown |
-| `mod-manager` | Turns mods on and off and edits their settings | The gear pill, or `/mod-manager` |
-| `mod-skill-panel` | Lists your skills and agents; a click adds one to the prompt | Skills pill |
-| `mod-prompts` | Every prompt of the session; jump back to any of them | Prompts pill |
-| `mod-file-tree` | The files Claude read and changed, with a replay of each edit | Files pill |
-| `mod-transcript` | Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors | Automatic |
-| `mod-model-effort` | Shows the model and effort level; a click changes either | The model pill |
-| `mod-heads-up` | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
-| `mod-progress` | The main session and every subagent: model, effort, context fill, tokens, time and gate progress | Progress pill |
-| `mod-next-steps` | Suggests up to three next prompts after each turn | Automatic |
-| `mod-wrap-up` | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
-| `mod-blast-radius` | Holds a risky shell command until you choose Cancel or Run | Automatic |
-| `mod-collision-guard` | Asks before editing a file another session just changed | Automatic |
-| `mod-desktop-status-line` | A status line for the desktop app | Desktop app only |
+| [`mod-menu`][doc-mod-menu] | One row of pills above the prompt that opens every panel | Always shown |
+| [`mod-manager`][doc-mod-manager] | Turns mods on and off and edits their settings | The gear pill, or `/mod-manager` |
+| [`mod-skill-panel`][doc-mod-skill-panel] | Lists your skills and agents; a click adds one to the prompt | Skills pill |
+| [`mod-prompts`][doc-mod-prompts] | Every prompt of the session; jump back to any of them | Prompts pill |
+| [`mod-file-tree`][doc-mod-file-tree] | The files Claude read and changed, with a replay of each edit | Files pill |
+| [`mod-transcript`][doc-mod-transcript] | Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors | Automatic |
+| [`mod-model-effort`][doc-mod-model-effort] | Shows the model and effort level; a click changes either | The model pill |
+| [`mod-heads-up`][doc-mod-heads-up] | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
+| [`mod-progress`][doc-mod-progress] | The main session and every subagent: model, effort, context fill, tokens, time and gate progress | Progress pill |
+| [`mod-next-steps`][doc-mod-next-steps] | Suggests up to three next prompts after each turn | Automatic |
+| [`mod-wrap-up`][doc-mod-wrap-up] | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
+| [`mod-blast-radius`][doc-mod-blast-radius] | Holds a risky shell command until you choose Cancel or Run | Automatic |
+| [`mod-collision-guard`][doc-mod-collision-guard] | Asks before editing a file another session just changed | Automatic |
+| [`mod-desktop-status-line`][doc-mod-desktop-status-line] | A status line for the desktop app | Desktop app only |
 
-Where each one draws on the screen:
+Where each mod draws on the screen:
 
 ```mermaid
 ---
@@ -72,7 +120,8 @@ config:
     fontSize: "14px"
 ---
 block-beta
-  columns 4
+  %% block-beta takes no markdown-string labels, so no label wraps: each one gets a cell wide enough for it.
+  columns 5
   block:main:3
     columns 3
     transcript["Transcript"]:3
@@ -80,10 +129,11 @@ block-beta
     band["Above the prompt"]:3
     headsup["mod-heads-up"]:3
     nextsteps["mod-next-steps"] blast["mod-blast-radius"] wrapup["mod-wrap-up"]
-    menu["mod-menu"] effort["mod-model-effort"] toasts["messages, every mod"]
+    menu["mod-menu"] effort["mod-model-effort"]:2
+    toasts["Messages from every mod"]:3
     prompt["Prompt, Claude Code's own"]:3
   end
-  block:side:1
+  block:side:2
     columns 1
     sidebar["Sidebar"]
     skills["mod-skill-panel"]
@@ -100,181 +150,185 @@ block-beta
   class prompt ghost
 ```
 
-## See them
+## Icons and Nerd Fonts
+
+The mods draw safe Unicode symbols, so they work in any terminal. With a Nerd Font they show sharper icons instead. You don't need one.
+
+| Without a Nerd Font | With a Nerd Font |
+| --- | --- |
+| ![][img-icons-plain] | ![][img-icons-nerd] |
+
+See how cool it looks with the font? Round pills, real icons on every tab, and not a square corner in sight.
+
+A Nerd Font is a programming font with thousands of icons added to it. To use one:
+
+1. Download one from [nerdfonts.com][nerd-fonts], such as JetBrainsMono Nerd Font, and install it.
+2. Set it as your terminal's font. In Windows Terminal, that's Settings, then your profile, Appearance, Font face.
+3. Start a new Claude Code session.
+
+The mods find the font on their own in Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal and Konsole. In any other terminal, set the Icons setting from `auto` to `nerd`: for all mods at once from the gear pill, or per mod with `/mod-<name> settings`.
+
+## Each mod up close
+
+Click a mod to open its screenshots and video. Each block ends with a link to the mod's full page.
 
 <!-- showcase:start -->
 
-### mod-menu
+<details>
+<summary><b>mod-menu</b>: One row of pills opens every panel. Hover one to see what it does.</summary>
 
-One row of pills opens every panel. Hover one to see what it does.
-
-| The pill row |
+| Hovering an entry shows its tip |
 | --- |
-| ![][img-menu-band] |
+| https://github.com/user-attachments/assets/7bb01973-e907-4807-b571-829e65d71659 |
 
-**Hovering an entry shows its tip**
+[Full page][doc-mod-menu]
 
-https://github.com/user-attachments/assets/7bb01973-e907-4807-b571-829e65d71659
+</details>
 
-### mod-manager
+<details>
+<summary><b>mod-manager</b>: Hover a mod to read about it, and switch every mod's icons at once.</summary>
 
-Hover a mod to read about it, and switch every mod's icons at once.
-
-| Auto (Nerd Font) | Plain |
-| --- | --- |
-| ![][img-manager-icons-auto] | ![][img-manager-icons-plain] |
-
-**Hover a mod, switch the icons**
-
-https://github.com/user-attachments/assets/4d2dd504-7a88-4183-818e-0bf9f0cfafa3
-
-### mod-file-tree
-
-The files Claude touches, colored by what happened to them.
-
-| The Files panel |
+| Hover a mod, switch the icons |
 | --- |
-| ![][img-file-tree-panel] |
+| https://github.com/user-attachments/assets/9905f3f6-c708-44c6-a14d-a91845bfc4ca |
 
-**Live while Claude works**
+[Full page][doc-mod-manager]
 
-https://github.com/user-attachments/assets/676f590d-6596-469f-9cba-baa8e23745eb
+</details>
 
-### mod-next-steps
+<details>
+<summary><b>mod-file-tree</b>: The files Claude touches, colored by what happened to them.</summary>
 
-Up to three next prompts. Click one, or type its number, to fill the prompt.
-
-| Three suggestions |
+| Live while Claude works |
 | --- |
-| ![][img-next-steps] |
+| https://github.com/user-attachments/assets/676f590d-6596-469f-9cba-baa8e23745eb |
 
-**Picking one by its digit**
+[Full page][doc-mod-file-tree]
 
-https://github.com/user-attachments/assets/00b218a3-db7b-45b4-a0a9-0b195198a207
+</details>
 
-### mod-prompts
+<details>
+<summary><b>mod-next-steps</b>: Up to three next prompts. Click one, or type its number, to fill the prompt.</summary>
 
-Every prompt of the session; pick one to read it again.
-
-**Pick a prompt to read it**
-
-https://github.com/user-attachments/assets/6fcaf366-bf6a-4a54-8856-6e80b529f11f
-
-### mod-skill-panel
-
-Your skills grouped by color; click one to add it to the prompt.
-
-| Panel | Tags on slash commands | Added to the prompt |
-| --- | --- | --- |
-| ![][img-skill-panel] | ![][img-skill-panel-slash] | ![][img-skill-panel-added] |
-
-| Settings |
+| Picking one by its digit |
 | --- |
-| ![][img-skill-panel-settings] |
+| https://github.com/user-attachments/assets/00b218a3-db7b-45b4-a0a9-0b195198a207 |
 
-**Tags while typing /, add a skill, then the settings**
+[Full page][doc-mod-next-steps]
 
-https://github.com/user-attachments/assets/cd3fef1e-dea9-4a25-b110-e2a87366a7b1
+</details>
 
-### mod-transcript
+<details>
+<summary><b>mod-prompts</b>: Every prompt of the session; pick one to read it again.</summary>
 
-Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge. A reply that names hex colors shows them.
-
-| Folded | Open | Copy a reply |
-| --- | --- | --- |
-| ![][img-transcript-folded] | ![][img-transcript-open] | ![][img-transcript-copy] |
-
-| The colors a reply names |
+| Pick a prompt to read it |
 | --- |
-| ![][img-transcript-colors] |
+| https://github.com/user-attachments/assets/6fcaf366-bf6a-4a54-8856-6e80b529f11f |
 
-**Unfolding a turn**
+[Full page][doc-mod-prompts]
 
-https://github.com/user-attachments/assets/586fba29-205c-4ea5-8ef2-7257bc629a75
+</details>
 
-### mod-model-effort
+<details>
+<summary><b>mod-skill-panel</b>: Your skills grouped by color; click one to add it to the prompt.</summary>
 
-The model and its effort level, one click to change.
-
-| The model panel |
+| Tags while typing /, add a skill, then the settings |
 | --- |
-| ![][img-model-effort-panel] |
+| https://github.com/user-attachments/assets/cd3fef1e-dea9-4a25-b110-e2a87366a7b1 |
 
-**Effort on hover, models on click**
+[Full page][doc-mod-skill-panel]
 
-https://github.com/user-attachments/assets/043dd359-6d8a-44aa-b2d4-76d51d5ec376
+</details>
 
-### mod-heads-up
+<details>
+<summary><b>mod-transcript</b>: Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge. A reply that names hex colors shows them.</summary>
 
-Now and then, one thing you should know; every note stays in its panel.
+| Unfolding a turn |
+| --- |
+| https://github.com/user-attachments/assets/586fba29-205c-4ea5-8ef2-7257bc629a75 |
 
-| Card | Note |
-| --- | --- |
-| ![][img-heads-up-card] | ![][img-heads-up-note] |
+[Full page][doc-mod-transcript]
 
-**The panel and a note opened**
+</details>
 
-https://github.com/user-attachments/assets/4b316cb1-f289-40bc-aee4-95b6f831c437
+<details>
+<summary><b>mod-model-effort</b>: The model and its effort level, one click to change.</summary>
 
-### mod-progress
+| Effort on hover, models on click |
+| --- |
+| https://github.com/user-attachments/assets/043dd359-6d8a-44aa-b2d4-76d51d5ec376 |
 
-Every agent at a glance: its current step, model, effort, context, tokens, time and gates.
+[Full page][doc-mod-model-effort]
 
-| The pill | The panel |
-| --- | --- |
-| ![][img-progress-pill] | ![][img-progress-panel] |
+</details>
 
-**Two agents running, opened from the pill**
+<details>
+<summary><b>mod-heads-up</b>: Now and then, one thing you should know; every note stays in its panel.</summary>
 
-https://github.com/user-attachments/assets/5d0136a3-24d8-48ec-ae47-8a8f87ea86bb
+| The panel and a note opened |
+| --- |
+| https://github.com/user-attachments/assets/4b316cb1-f289-40bc-aee4-95b6f831c437 |
 
-### mod-blast-radius
+[Full page][doc-mod-heads-up]
 
-A risky command waits for your answer. Type 1, 2 or 3 into the empty prompt, or click.
+</details>
 
-| The hold card | The Details pane |
-| --- | --- |
-| ![][img-blast-radius-card] | ![][img-blast-radius-details] |
+<details>
+<summary><b>mod-progress</b>: Every agent at a glance: its current step, model, effort, context, tokens, time and gates.</summary>
 
-**A risky command held**
+| Two agents running, opened from the pill |
+| --- |
+| https://github.com/user-attachments/assets/5d0136a3-24d8-48ec-ae47-8a8f87ea86bb |
 
-https://github.com/user-attachments/assets/dede1549-47e9-46ee-8ace-d13dc594e6ff
+[Full page][doc-mod-progress]
 
-### mod-collision-guard
+</details>
 
-Another session just edited this file, so Claude asks first.
+<details>
+<summary><b>mod-blast-radius</b>: A risky command waits for your answer. Type 1, 2 or 3 into the empty prompt, or click.</summary>
+
+| A risky command held |
+| --- |
+| https://github.com/user-attachments/assets/dede1549-47e9-46ee-8ace-d13dc594e6ff |
+
+[Full page][doc-mod-blast-radius]
+
+</details>
+
+<details>
+<summary><b>mod-collision-guard</b>: Another session just edited this file, so Claude asks first.</summary>
 
 | Asking before an edit |
 | --- |
 | ![][img-collision-guard] |
 
-### mod-wrap-up
+[Full page][doc-mod-collision-guard]
 
-Pick what carries over, then hand off or compact. Played at double speed.
+</details>
 
-| Pick what stays | The filled /compact |
-| --- | --- |
-| ![][img-wrap-up-card] | ![][img-wrap-up-compact] |
+<details>
+<summary><b>mod-wrap-up</b>: Pick what carries over, then hand off or compact. Played at double speed.</summary>
 
-**Compact, start to end**
+| Compact, start to end |
+| --- |
+| https://github.com/user-attachments/assets/0b9c9abd-03e8-4f36-9069-ae02042a809d |
 
-https://github.com/user-attachments/assets/0b9c9abd-03e8-4f36-9069-ae02042a809d
+[Full page][doc-mod-wrap-up]
+
+</details>
 
 <!-- showcase:end -->
 
-## Use them
+## Everyday use
 
 | Goal | How |
 | --- | --- |
-| Install from GitHub | `claude plugin marketplace add v-amorim/moonlight-claude-mods`, then `claude plugin install <name>@claude-mods` |
-| Try one mod in one session | `claude --plugin-dir <clone>/<name>` |
-| Load them every session | Add each folder to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `;` on Windows and `:` elsewhere |
-| Apply changes in an open session | `/reload-plugins` |
 | Turn one off, or change its settings | The gear pill, or `/mod-<name> settings` |
+| Apply changes in an open session | `/reload-plugins` |
+| Update to the latest version | `claude plugin update <name>@claude-mods` |
+| Try one mod without installing it | `git clone https://github.com/v-amorim/moonlight-claude-mods`, then `claude --plugin-dir ./moonlight-claude-mods/mod-transcript` |
+| Load the clone in every session | Add each mod folder of the clone to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `;` on Windows and `:` elsewhere |
 | Pass a slash command from Git Bash | `MSYS_NO_PATHCONV=1 claude "/mod-<name> settings"`, since Git Bash rewrites `/x` into a Windows path |
-
-> [!WARNING]
-> Mods are not sandboxed: they run with your permissions.
 
 ## Build your own
 
@@ -371,29 +425,29 @@ sequenceDiagram
 
 </details>
 
+[doc-mod-blast-radius]: mod-blast-radius/README.md
+[doc-mod-collision-guard]: mod-collision-guard/README.md
+[doc-mod-desktop-status-line]: mod-desktop-status-line/README.md
+[doc-mod-file-tree]: mod-file-tree/README.md
+[doc-mod-heads-up]: mod-heads-up/README.md
+[doc-mod-manager]: mod-manager/README.md
+[doc-mod-menu]: mod-menu/README.md
+[doc-mod-model-effort]: mod-model-effort/README.md
+[doc-mod-next-steps]: mod-next-steps/README.md
+[doc-mod-progress]: mod-progress/README.md
+[doc-mod-prompts]: mod-prompts/README.md
+[doc-mod-skill-panel]: mod-skill-panel/README.md
+[doc-mod-transcript]: mod-transcript/README.md
+[doc-mod-wrap-up]: mod-wrap-up/README.md
+[doc-mods]: #what-each-mod-does
+
+[img-icons-nerd]: showcase/icons-nerd.png
+[img-icons-plain]: showcase/icons-plain.png
+[img-plain]: showcase/plain.png
+[img-with-mods]: showcase/transcript-folded.png
+
 <!-- showcase-links:start -->
-[img-blast-radius-card]: showcase/blast-radius-card.png
-[img-blast-radius-details]: showcase/blast-radius-details.png
 [img-collision-guard]: showcase/collision-guard.png
-[img-file-tree-panel]: showcase/file-tree-panel.png
-[img-heads-up-card]: showcase/heads-up-card.png
-[img-heads-up-note]: showcase/heads-up-note.png
-[img-manager-icons-auto]: showcase/manager-icons-auto.png
-[img-manager-icons-plain]: showcase/manager-icons-plain.png
-[img-menu-band]: showcase/menu-band.png
-[img-model-effort-panel]: showcase/model-effort-panel.png
-[img-next-steps]: showcase/next-steps.png
-[img-progress-panel]: showcase/progress-panel.png
-[img-progress-pill]: showcase/progress-pill.png
-[img-skill-panel-added]: showcase/skill-panel-added.png
-[img-skill-panel-settings]: showcase/skill-panel-settings.png
-[img-skill-panel-slash]: showcase/skill-panel-slash.png
-[img-skill-panel]: showcase/skill-panel.png
-[img-transcript-colors]: showcase/transcript-colors.png
-[img-transcript-copy]: showcase/transcript-copy.png
-[img-transcript-folded]: showcase/transcript-folded.png
-[img-transcript-open]: showcase/transcript-open.png
-[img-wrap-up-card]: showcase/wrap-up-card.png
-[img-wrap-up-compact]: showcase/wrap-up-compact.png
 <!-- showcase-links:end -->
 
+[nerd-fonts]: https://www.nerdfonts.com/font-downloads

@@ -1,9 +1,29 @@
 <!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
 # mod-transcript
 
+Part of [moonlight-claude-mods][doc-root].
+
 Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors.
 
-**How to open:** Automatic
+## Install
+
+Inside Claude Code:
+
+```text
+/plugin marketplace add v-amorim/moonlight-claude-mods
+/plugin install mod-transcript@claude-mods
+/reload-plugins
+```
+
+`/plugin install` asks where to install the mod. Keep Install for you (user scope) and press Enter, then press Esc to leave the plugin screen before `/reload-plugins`.
+
+To install every mod at once, see [Install][doc-install]. For sharper icons, see [Icons and Nerd Fonts][doc-icons].
+
+## How to open
+
+Automatic.
+
+## See it
 
 | Folded | Open | Copy a reply |
 | --- | --- | --- |
@@ -13,9 +33,9 @@ Chat bubbles for you and Claude, each finished turn folded to one line you can o
 | --- |
 | ![][img-transcript-colors] |
 
-**Unfolding a turn**
-
-https://github.com/user-attachments/assets/586fba29-205c-4ea5-8ef2-7257bc629a75
+| Unfolding a turn |
+| --- |
+| https://github.com/user-attachments/assets/586fba29-205c-4ea5-8ef2-7257bc629a75 |
 
 ## Features
 
@@ -38,11 +58,9 @@ Change them with `/mod-transcript settings` or the gear pill.
 | Prompt numbers | on | #N before each of your prompts. It matches the number the Prompts and Heads up panels show |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
-## Install
-
-```sh
-claude plugin install mod-transcript@claude-mods --scope user
-```
+[doc-icons]: ../README.md#icons-and-nerd-fonts
+[doc-install]: ../README.md#install
+[doc-root]: ../README.md
 
 [img-transcript-colors]: ../showcase/transcript-colors.png
 [img-transcript-copy]: ../showcase/transcript-copy.png
