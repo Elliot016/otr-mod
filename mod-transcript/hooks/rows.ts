@@ -45,14 +45,19 @@ export function reportOf(from: { name: string } | undefined, task: { id?: string
 
 export type HexColor = { code: string; rgb: string }
 
-// Each distinct hex color a text names, in order of first use. A short code needs a letter, so a prompt number stays text.
-export function hexColors(text: string): HexColor[] {
+const channels = (six: string) => [0, 2, 4].map(at => parseInt(six.slice(at, at + 2), 16))
+
+// Each distinct hex color in order of first use; terminals draw no alpha, so it blends over `under`.
+export function hexColors(text: string, under: string): HexColor[] {
   const found = new Map<string, HexColor>()
   for (const [code, digits] of text.matchAll(/(?<![\w#&])#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g)) {
     if (digits!.length <= 4 && !/[a-f]/i.test(digits!)) continue
-    const six = digits!.length <= 4 ? [...digits!.slice(0, 3)].map(digit => digit + digit).join('') : digits!.slice(0, 6)
+    const full = digits!.length <= 4 ? [...digits!].map(digit => digit + digit).join('') : digits!
+    const alpha = full.length === 8 ? parseInt(full.slice(6), 16) / 255 : 1
+    const base = channels(under.replace('#', ''))
+    const rgb = channels(full).map((value, at) => Math.round(value * alpha + base[at]! * (1 - alpha)).toString(16).padStart(2, '0')).join('')
     const key = code.toUpperCase()
-    if (!found.has(key)) found.set(key, { code, rgb: `#${six.toUpperCase()}` })
+    if (!found.has(key)) found.set(key, { code, rgb: `#${rgb.toUpperCase()}` })
   }
   return [...found.values()]
 }

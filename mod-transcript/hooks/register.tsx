@@ -998,22 +998,26 @@ export const register: Register = (on, options) => {
     const place = await placeOf($, turn, e.requestId)
     const { Box, Client, Text } = $.ui.resolve(e)
     const failure = apiFailure?.text && e.props.text.trim() === apiFailure.text ? apiFailure : null
-    const colors = failure ? [] : hexColors(e.props.text)
+    const colors = failure ? [] : hexColors(e.props.text, THEME.surface2)
     const reply = async () => (failure ? apiErrorRow({ Box, Text }, failure, widthOf(e)) : next(e))
     // Claude Code draws the reply's markdown, which cannot color a character, so the colors it names show in a strip under it.
     const drawn = async () =>
       colors.length === 0 ? reply() : (
         <Box key="toggle-colored" flexDirection="column">
           {await reply()}
-          <Box key="toggle-colors" marginTop={1}>
-            <Text wrap="wrap">
-              {colors.map((color, n) => (
-                <Text key={`toggle-color-${n}`}>
-                  <Text color={color.rgb}>■</Text>
-                  <Text color={THEME.muted}>{` ${color.code}${n < colors.length - 1 ? '  ' : ''}`}</Text>
-                </Text>
-              ))}
-            </Text>
+          <Box key="toggle-colors" marginTop={1} flexDirection="row" flexWrap="wrap" columnGap={1}>
+            {colors.map((color, n) => (
+              <Box key={`toggle-color-${n}`} flexDirection="row" flexShrink={0}>
+                {look.nerd ? <Text color={THEME.surface2}>{CAPS.left}</Text> : null}
+                <Box key={`toggle-color-${n}-body`} backgroundColor={THEME.surface2} paddingX={look.nerd ? 0 : 1}>
+                  <Text>
+                    <Text color={color.rgb}>■</Text>
+                    <Text color={THEME.muted}>{` ${color.code}`}</Text>
+                  </Text>
+                </Box>
+                {look.nerd ? <Text color={THEME.surface2}>{CAPS.right}</Text> : null}
+              </Box>
+            ))}
           </Box>
         </Box>
       )

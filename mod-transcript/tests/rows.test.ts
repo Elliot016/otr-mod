@@ -61,16 +61,17 @@ test('a notice gives its report the status and time it reports, and a report wit
   expect(withNotice(report, { status: 'completed', durationMs: 952121 })).toEqual({ name: 'general-purpose', status: 'completed', durationMs: 952121 })
 })
 
-test('hex colors come back once each, in order, with short and alpha codes widened to six digits', () => {
-  expect(hexColors('low `#ACB9E6`, high #ea98ee, again #ACB9E6, short #fff and #0f08, alpha #FF6F7A80')).toEqual([
+test('hex colors come back once each, in order, short codes widened and alpha blended over the background', () => {
+  expect(hexColors('low `#ACB9E6`, high #ea98ee, again #ACB9E6, short #fff and #0f08, alpha #FF6F7A80', '#000000')).toEqual([
     { code: '#ACB9E6', rgb: '#ACB9E6' },
     { code: '#ea98ee', rgb: '#EA98EE' },
     { code: '#fff', rgb: '#FFFFFF' },
-    { code: '#0f08', rgb: '#00FF00' },
-    { code: '#FF6F7A80', rgb: '#FF6F7A' },
+    { code: '#0f08', rgb: '#008800' },
+    { code: '#FF6F7A80', rgb: '#80383D' },
   ])
+  expect(hexColors('#FFFFFF00 and #12345678 over white', '#FFFFFF')[0]!.rgb).toBe('#FFFFFF')
 })
 
 test('prompt numbers, issue refs, anchors and longer words are not colors', () => {
-  expect(hexColors('prompt #229, issue #1234, entity &#123; url /page#section, word #deadbeefcafe, id #abcdefg')).toEqual([])
+  expect(hexColors('prompt #229, issue #1234, entity &#123; url /page#section, word #deadbeefcafe, id #abcdefg', '#000000')).toEqual([])
 })
