@@ -179,6 +179,8 @@ test('the prompt row shows when it was sent, the head how long the turn took, an
   // A click on a call's line opens it: what the call gave back shows under the line, the tool row stays hidden, and a second click closes it.
   await prompt.pointer({ in: 'toggle-call-0-colored', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await prompt.find({ type: 'Text', text: /^ok$/ })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: '$ ' })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: ' test .' })).toBeDefined()
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
   await prompt.pointer({ in: 'toggle-call-0-colored', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await prompt.find({ type: 'Text', text: /^ok$/ })).toBeUndefined()

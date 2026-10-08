@@ -526,9 +526,19 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
   const preview = (call: Turn['tools'][number], n: number) => {
     const shown = call.preview?.lines ?? []
     const more = call.preview?.more ?? 0
+    // The call line cuts a long command, so the open call shows it whole first.
+    const command = call.name === 'Bash' ? String(call.input?.command ?? '').split('\n').flatMap(commandLine => wrapWords(commandLine, width - 14)) : []
     return (
       <Box key={`toggle-call-${n}-preview`} flexDirection="column" paddingLeft={3}>
-        {shown.length === 0 ? <Text key="none" color={THEME.muted}>{text.previewEmpty}</Text> : null}
+        {command.map((commandLine, at) => (
+          <Text key={`command-${at}`}>
+            <Text color={THEME.muted}>{at === 0 ? '$ ' : '  '}</Text>
+            {commandParts(commandLine).map((part, index) => (
+              <Text key={`part-${index}`} color={part.color ?? THEME.onSurface} bold={part.bold}>{part.text}</Text>
+            ))}
+          </Text>
+        ))}
+        {shown.length === 0 ?<Text key="none" color={THEME.muted}>{text.previewEmpty}</Text> : null}
         {shown.map((previewLine, at) => {
           const mark = previewLine.kind === 'add' ? '+ ' : previewLine.kind === 'del' ? '- ' : previewLine.kind === 'same' ? '  ' : ''
           const background = previewLine.kind === 'add' ? { backgroundColor: THEME.addBg } : previewLine.kind === 'del' ? { backgroundColor: THEME.delBg } : {}
