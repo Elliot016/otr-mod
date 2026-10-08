@@ -246,8 +246,7 @@ function bubble(parts: Bars, key: string, turn: Turn, body: unknown, isTool = fa
   // Claude Code starts each row with a blank line; in a tool row it rides out of the band, where it paints nothing.
   const inner = isTool ? (
     <Box key={`${key}-band`} flexDirection="row" flexGrow={1} marginTop={1} backgroundColor={THEME.surface1}>
-      {edge(parts, `${key}-rail`, { kind: 'rail', color: THEME.accent })}
-      <Box key={`${key}-tool`} flexDirection="column" flexGrow={1} paddingLeft={1} marginTop={-1}>{body}</Box>
+      <Box key={`${key}-tool`} flexDirection="column" flexGrow={1} paddingLeft={2} marginTop={-1}>{body}</Box>
     </Box>
   ) : body
   return frame(parts, key, inner, false, isDone(turn), isTight, turn)
