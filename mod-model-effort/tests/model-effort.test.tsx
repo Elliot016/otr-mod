@@ -261,3 +261,124 @@ test('the settings pane footer shows the tip of the hovered tab', { options: { i
   expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeUndefined()
   await pane.unmount()
 })
+
+// What Claude Code passes its classic PostModelSwitch hook when /model or the picker moves to `to`.
+const switched = (to: string) => ({ from_model: 'claude-opus-5-5', to_model: to, requested_model: to, source: 'command', context_tokens: 0, prompt_cache_warm: false, cache_ttl: '5m', estimated_cache_write_usd: 0, pricing: 'catalog' }) as never
+
+// One request on a model and level, which leaves the pill on them as a first request does. It registers its own turn.step, so the other stubs go first.
+async function firstRequest($: any, on: any, model: string, effort: string) {
+  on('turn.step', async function* ($$: any, e: any) {
+    yield { kind: 'text', index: 0, text: 'ok' }
+    return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  const stream = $.turn.step({ turnId: 't1', index: 0, model, effort, messageCount: 1 } as never)
+  while ((await stream.next()).done !== true);
+}
+
+test('a model switch through /model or the picker shows on the pill at once, at the level saved for that model', { options: { icons: 'safe' } }, async ($, on) => {
+  const store: Record<string, unknown> = {}
+  band(on as never)
+  on('settings.read', () => ({ value: { modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' }, 'claude-sonnet-5-5': { effortLevel: 'low' } } } }))
+  on('store.get', (_$, e) => ({ value: store[e.key] }))
+  on('store.set', (_$, e) => {
+    store[e.key] = e.value
+    return { value: undefined }
+  })
+  on('classic.PostModelSwitch', () => ({}) as never)
+  await firstRequest($, on, 'claude-opus-5-5', 'medium')
+  const ui = await $.ui.mount(BAND)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(' Opus 5.5 ')
+
+  await $.classic.PostModelSwitch(switched('claude-sonnet-5-5'))
+  await ui.redraw()
+  const drawn = JSON.stringify(await ui.drawn({ in: 'meter' }))
+  expect(drawn).toContain(' Sonnet 5.5 ')
+  expect(drawn).toContain('○ ')
+  expect(drawn).not.toContain('◐ ')
+  expect(store.model).toBe('claude-sonnet-5-5')
+  await ui.unmount()
+})
+
+test('an effort saved by Alt+P or /effort shows on the pill at once; a project settings change does not', { options: { icons: 'safe' } }, async ($, on) => {
+  const settings = { modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' } } }
+  band(on as never)
+  on('settings.read', () => ({ value: settings }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('classic.ConfigChange', () => ({}) as never)
+  await firstRequest($, on, 'claude-opus-5-5', 'medium')
+  const ui = await $.ui.mount(BAND)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('◐ ')
+
+  settings.modelSettings['claude-opus-5-5'].effortLevel = 'high'
+  await $.classic.ConfigChange({ source: 'user_settings', file_path: '/h/.claude/settings.json' } as never)
+  await ui.redraw()
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('● ')
+
+  settings.modelSettings['claude-opus-5-5'].effortLevel = 'low'
+  await $.classic.ConfigChange({ source: 'project_settings', file_path: '/w/.claude/settings.json' } as never)
+  await ui.redraw()
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('● ')
+  await ui.unmount()
+})
+
+test('a clicked level holds on the pill while the saved level is the one before it, and yields to any other', { options: { icons: 'safe' } }, async ($, on) => {
+  const files: Record<string, string> = { '/h/.claude/settings.json': JSON.stringify({ modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' } } }) }
+  const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+  const saveLevel = (effort: string) => {
+    files['/h/.claude/settings.json'] = JSON.stringify({ modelSettings: { 'claude-opus-5-5': { effortLevel: effort } } })
+  }
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('fs.read', (_$, e) => ({ value: files[neutral(e.path)] ?? '' }))
+  on('fs.write', (_$, e) => {
+    files[neutral(e.path)] = e.text
+    return { value: undefined }
+  })
+  on('settings.read', () => ({ value: JSON.parse(files['/h/.claude/settings.json']!) }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('classic.ConfigChange', () => ({}) as never)
+  mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  await firstRequest($, on, 'claude-opus-5-5', 'medium')
+  const ui = await $.ui.mount(BAND)
+  await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
+  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
+  await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('◈ ')
+
+  // Alt+P saves medium, the level before the click: the clicked max still rides on the requests.
+  saveLevel('medium')
+  await $.classic.ConfigChange({ source: 'user_settings' } as never)
+  await ui.redraw()
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('◈ ')
+
+  // Alt+P saves high, another level: the pill shows it and the clicked level is dropped.
+  saveLevel('high')
+  await $.classic.ConfigChange({ source: 'user_settings' } as never)
+  await ui.redraw()
+  const drawn = JSON.stringify(await ui.drawn({ in: 'meter' }))
+  expect(drawn).toContain('● ')
+  expect(drawn).not.toContain('◈ ')
+  await ui.unmount()
+})
+
+test('a settings read that fails leaves the model switch whole', { options: { icons: 'safe' } }, async ($, on) => {
+  const passed: string[] = []
+  on('settings.read', () => {
+    throw new Error('unreadable')
+  })
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('classic.PostModelSwitch', (_$, e) => {
+    passed.push(e.to_model)
+    return {} as never
+  })
+  await firstRequest($, on, 'claude-opus-5-5', 'medium')
+  await $.classic.PostModelSwitch(switched('claude-sonnet-5-5'))
+  expect(passed).toEqual(['claude-sonnet-5-5'])
+})

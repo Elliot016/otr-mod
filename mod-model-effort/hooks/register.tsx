@@ -111,6 +111,35 @@ async function setEffort($: EngineInterface, effort: string) {
 }
 
 
+// The level Claude Code reads for a model: the model's own, else the one for every model.
+async function savedEffort($: EngineInterface, model: string) {
+  const settings = await $.settings.read()
+  const models = settings.modelSettings as Record<string, { effortLevel?: unknown }> | undefined
+  const effort = models?.[model]?.effortLevel ?? settings.effortLevel
+  return typeof effort === 'string' ? effort : null
+}
+
+// The pill's model and level, and the model the store keeps for the next session's start.
+async function setCurrent($: EngineInterface, model: string, effort: string) {
+  await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model, effort })
+  await $.store.set('model', model)
+  await $.store.set('models', withModel(await $.store.get('models'), model))
+  $.ui.invalidate('ui.render')
+}
+
+// Alt+P and /effort save the level to the settings, so a settings change shows it on the pill at once.
+async function followSavedLevel($: EngineInterface) {
+  const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
+  const saved = current ? await savedEffort($, current.model) : null
+  if (!current || !saved) return
+  // Same rule as turn.step: a saved level other than the clicked one and the one before it means another level took over.
+  if (override && saved !== override.effort && saved !== override.before) override = null
+  const effort = override?.effort ?? saved
+  if (effort === current.effort) return
+  await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model: current.model, effort })
+  $.ui.invalidate('ui.render')
+}
+
 // The pill part or model menu entry under the pointer, shown in the tip row above the pill row.
 let bandTip: TipMessage | null = null
 
@@ -137,10 +166,7 @@ async function switchModel($: EngineInterface, id: string) {
     return
   }
   const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
-  await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model: id, effort: current?.effort ?? 'medium' })
-  await $.store.set('model', id)
-  await $.store.set('models', withModel(await $.store.get('models'), id))
-  $.ui.invalidate('ui.render')
+  await setCurrent($, id, current?.effort ?? 'medium')
 }
 
 // Claude Code's own picker has every model, new ones included.
@@ -224,9 +250,8 @@ export const register: Register = (on, options) => {
     // Before the first request, the last session's model and its saved level stand in.
     const model = await $.store.get('model')
     if (typeof model === 'string') {
-      const settings = await $.settings.read()
-      const effort = settings.modelSettings?.[model]?.effortLevel ?? settings.effortLevel
-      if (typeof effort === 'string') await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model, effort })
+      const effort = await savedEffort($, model)
+      if (effort) await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model, effort })
     }
 
     return next(e)
@@ -253,6 +278,30 @@ export const register: Register = (on, options) => {
       })
     }
 
+    return next(e)
+  })
+
+  // Claude Code's own /model and Alt+P picker switch without a request, so the pill follows at once. A failed read keeps the last pill and never blocks the switch.
+  on('classic.PostModelSwitch', async ($, e, next) => {
+    try {
+      const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
+      // A clicked level was set on the old model; the new model's saved level applies.
+      if (e.to_model !== current?.model) override = null
+      await setCurrent($, e.to_model, (await savedEffort($, e.to_model)) ?? current?.effort ?? 'medium')
+    } catch {
+      // The next request shows the model and level.
+    }
+    return next(e)
+  })
+
+  on('classic.ConfigChange', async ($, e, next) => {
+    if (e.source === 'user_settings') {
+      try {
+        await followSavedLevel($)
+      } catch {
+        // The next request shows the level.
+      }
+    }
     return next(e)
   })
 
