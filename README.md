@@ -6,9 +6,15 @@
 
 Add-ons for Claude Code that add panels, buttons and safety checks around the prompt. They need Claude Code 2.1.287 or newer.
 
-**Every terminal mod in 79 seconds**
+**Every terminal mod in 92 seconds**
 
-https://github.com/user-attachments/assets/b0697288-a592-4995-b676-9b6eb7d267a1
+https://github.com/user-attachments/assets/7e2c3727-83d1-4549-9c13-80e51a8bf929
+
+The same session without and with the mods:
+
+| Without mods | With mods |
+| --- | --- |
+| ![](showcase/plain.png) | ![](showcase/transcript-folded.png) |
 
 ## What each mod does
 
@@ -108,7 +114,7 @@ One row of pills opens every panel. Hover one to see what it does.
 
 **Hovering an entry shows its tip**
 
-https://github.com/user-attachments/assets/fc5ca63c-9206-4c17-acab-cd92b64e3ce3
+https://github.com/user-attachments/assets/7bb01973-e907-4807-b571-829e65d71659
 
 ### mod-manager
 
@@ -120,7 +126,7 @@ Hover a mod to read about it, and switch every mod's icons at once.
 
 **Hover a mod, switch the icons**
 
-https://github.com/user-attachments/assets/d93b77a8-7a43-4b82-ac00-1ffc6e6b8da3
+https://github.com/user-attachments/assets/4d2dd504-7a88-4183-818e-0bf9f0cfafa3
 
 ### mod-file-tree
 
@@ -132,7 +138,7 @@ The files Claude touches, colored by what happened to them.
 
 **Live while Claude works**
 
-https://github.com/user-attachments/assets/8652a526-e409-4fac-a0fc-bf8da47239d9
+https://github.com/user-attachments/assets/676f590d-6596-469f-9cba-baa8e23745eb
 
 ### mod-next-steps
 
@@ -144,7 +150,7 @@ Up to three next prompts. Click one, or type its number, to fill the prompt.
 
 **Picking one by its digit**
 
-https://github.com/user-attachments/assets/be54d640-f179-4e19-8cad-1ecef74d8feb
+https://github.com/user-attachments/assets/00b218a3-db7b-45b4-a0a9-0b195198a207
 
 ### mod-prompts
 
@@ -152,31 +158,39 @@ Every prompt of the session; pick one to read it again.
 
 **Pick a prompt to read it**
 
-https://github.com/user-attachments/assets/b1ba4293-9ecc-484b-9e0a-d0d5607bd37b
+https://github.com/user-attachments/assets/6fcaf366-bf6a-4a54-8856-6e80b529f11f
 
 ### mod-skill-panel
 
-Your skills grouped by color, and the panel's settings.
+Your skills grouped by color; click one to add it to the prompt.
 
-| Panel | Settings |
-| --- | --- |
-| ![][img-skill-panel] | ![][img-skill-panel-settings] |
+| Panel | Tags on slash commands | Added to the prompt |
+| --- | --- | --- |
+| ![][img-skill-panel] | ![][img-skill-panel-slash] | ![][img-skill-panel-added] |
 
-**Skills, then the settings**
+| Settings |
+| --- |
+| ![][img-skill-panel-settings] |
 
-https://github.com/user-attachments/assets/90eb8704-5dc3-4695-8a08-96a7bebbc9d0
+**Tags while typing /, add a skill, then the settings**
+
+https://github.com/user-attachments/assets/cd3fef1e-dea9-4a25-b110-e2a87366a7b1
 
 ### mod-transcript
 
-Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge.
+Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge. A reply that names hex colors shows them.
 
 | Folded | Open | Copy a reply |
 | --- | --- | --- |
 | ![][img-transcript-folded] | ![][img-transcript-open] | ![][img-transcript-copy] |
 
+| The colors a reply names |
+| --- |
+| ![][img-transcript-colors] |
+
 **Unfolding a turn**
 
-https://github.com/user-attachments/assets/63e0a726-851b-453b-9895-e6f6f2d42c0d
+https://github.com/user-attachments/assets/586fba29-205c-4ea5-8ef2-7257bc629a75
 
 ### mod-model-effort
 
@@ -188,7 +202,7 @@ The model and its effort level, one click to change.
 
 **Effort on hover, models on click**
 
-https://github.com/user-attachments/assets/6677931a-ca6a-4334-aa5f-b839f8a803d7
+https://github.com/user-attachments/assets/043dd359-6d8a-44aa-b2d4-76d51d5ec376
 
 ### mod-heads-up
 
@@ -200,11 +214,11 @@ Now and then, one thing you should know; every note stays in its panel.
 
 **The panel and a note opened**
 
-https://github.com/user-attachments/assets/a79162ea-11b7-438f-8909-014bd804070f
+https://github.com/user-attachments/assets/4b316cb1-f289-40bc-aee4-95b6f831c437
 
 ### mod-progress
 
-Every agent at a glance: model, effort, context, tokens, time and gates.
+Every agent at a glance: its current step, model, effort, context, tokens, time and gates.
 
 | The pill | The panel |
 | --- | --- |
@@ -212,7 +226,7 @@ Every agent at a glance: model, effort, context, tokens, time and gates.
 
 **Two agents running, opened from the pill**
 
-https://github.com/user-attachments/assets/473e8e21-cd0c-4971-8cef-448d2b092cf0
+https://github.com/user-attachments/assets/5d0136a3-24d8-48ec-ae47-8a8f87ea86bb
 
 ### mod-blast-radius
 
@@ -224,7 +238,7 @@ A risky command waits for your answer. Type 1, 2 or 3 into the empty prompt, or 
 
 **A risky command held**
 
-https://github.com/user-attachments/assets/a3484d78-eacf-4901-a981-e91bf8e6c5a8
+https://github.com/user-attachments/assets/dede1549-47e9-46ee-8ace-d13dc594e6ff
 
 ### mod-collision-guard
 
@@ -244,7 +258,7 @@ Pick what carries over, then hand off or compact. Played at double speed.
 
 **Compact, start to end**
 
-https://github.com/user-attachments/assets/d998cb3a-d2cc-4e6e-ae70-30c4f8dfcd60
+https://github.com/user-attachments/assets/0b9c9abd-03e8-4f36-9069-ae02042a809d
 
 <!-- showcase:end -->
 
@@ -371,8 +385,11 @@ sequenceDiagram
 [img-next-steps]: showcase/next-steps.png
 [img-progress-panel]: showcase/progress-panel.png
 [img-progress-pill]: showcase/progress-pill.png
+[img-skill-panel-added]: showcase/skill-panel-added.png
 [img-skill-panel-settings]: showcase/skill-panel-settings.png
+[img-skill-panel-slash]: showcase/skill-panel-slash.png
 [img-skill-panel]: showcase/skill-panel.png
+[img-transcript-colors]: showcase/transcript-colors.png
 [img-transcript-copy]: showcase/transcript-copy.png
 [img-transcript-folded]: showcase/transcript-folded.png
 [img-transcript-open]: showcase/transcript-open.png

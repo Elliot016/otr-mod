@@ -9,9 +9,13 @@ Chat bubbles for you and Claude, each finished turn folded to one line you can o
 | --- | --- | --- |
 | ![][img-transcript-folded] | ![][img-transcript-open] | ![][img-transcript-copy] |
 
+| The colors a reply names |
+| --- |
+| ![][img-transcript-colors] |
+
 **Unfolding a turn**
 
-https://github.com/user-attachments/assets/63e0a726-851b-453b-9895-e6f6f2d42c0d
+https://github.com/user-attachments/assets/586fba29-205c-4ea5-8ef2-7257bc629a75
 
 ## Features
 
@@ -40,6 +44,7 @@ Change them with `/mod-transcript settings` or the gear pill.
 claude plugin install mod-transcript@claude-mods --scope user
 ```
 
+[img-transcript-colors]: ../showcase/transcript-colors.png
 [img-transcript-copy]: ../showcase/transcript-copy.png
 [img-transcript-folded]: ../showcase/transcript-folded.png
 [img-transcript-open]: ../showcase/transcript-open.png

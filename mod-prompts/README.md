@@ -7,7 +7,7 @@ Every prompt of the session; jump back to any of them.
 
 **Pick a prompt to read it**
 
-https://github.com/user-attachments/assets/b1ba4293-9ecc-484b-9e0a-d0d5607bd37b
+https://github.com/user-attachments/assets/6fcaf366-bf6a-4a54-8856-6e80b529f11f
 
 ## Settings
 

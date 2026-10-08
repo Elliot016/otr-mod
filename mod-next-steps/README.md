@@ -11,7 +11,7 @@ Suggests up to three next prompts after each turn.
 
 **Picking one by its digit**
 
-https://github.com/user-attachments/assets/be54d640-f179-4e19-8cad-1ecef74d8feb
+https://github.com/user-attachments/assets/00b218a3-db7b-45b4-a0a9-0b195198a207
 
 ## Features
 

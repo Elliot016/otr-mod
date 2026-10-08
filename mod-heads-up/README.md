@@ -11,7 +11,7 @@ Now and then flags one thing you should know but might miss, kept by turn in a p
 
 **The panel and a note opened**
 
-https://github.com/user-attachments/assets/a79162ea-11b7-438f-8909-014bd804070f
+https://github.com/user-attachments/assets/4b316cb1-f289-40bc-aee4-95b6f831c437
 
 ## Features
 

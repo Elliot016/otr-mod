@@ -11,7 +11,7 @@ One row of pills above the prompt that opens every panel.
 
 **Hovering an entry shows its tip**
 
-https://github.com/user-attachments/assets/fc5ca63c-9206-4c17-acab-cd92b64e3ce3
+https://github.com/user-attachments/assets/7bb01973-e907-4807-b571-829e65d71659
 
 ## Install
 

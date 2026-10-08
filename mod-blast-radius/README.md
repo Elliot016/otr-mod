@@ -11,7 +11,7 @@ Holds a risky shell command until you choose Cancel or Run.
 
 **A risky command held**
 
-https://github.com/user-attachments/assets/a3484d78-eacf-4901-a981-e91bf8e6c5a8
+https://github.com/user-attachments/assets/dede1549-47e9-46ee-8ace-d13dc594e6ff
 
 ## Features
 

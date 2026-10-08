@@ -11,7 +11,7 @@ Shows the model and effort level; a click changes either.
 
 **Effort on hover, models on click**
 
-https://github.com/user-attachments/assets/6677931a-ca6a-4334-aa5f-b839f8a803d7
+https://github.com/user-attachments/assets/043dd359-6d8a-44aa-b2d4-76d51d5ec376
 
 ## Settings
 

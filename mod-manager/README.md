@@ -11,7 +11,7 @@ Turns mods on and off and edits their settings.
 
 **Hover a mod, switch the icons**
 
-https://github.com/user-attachments/assets/d93b77a8-7a43-4b82-ac00-1ffc6e6b8da3
+https://github.com/user-attachments/assets/4d2dd504-7a88-4183-818e-0bf9f0cfafa3
 
 ## Settings
 

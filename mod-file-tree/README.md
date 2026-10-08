@@ -11,7 +11,7 @@ The files Claude read and changed, with a replay of each edit.
 
 **Live while Claude works**
 
-https://github.com/user-attachments/assets/8652a526-e409-4fac-a0fc-bf8da47239d9
+https://github.com/user-attachments/assets/676f590d-6596-469f-9cba-baa8e23745eb
 
 ## Features
 

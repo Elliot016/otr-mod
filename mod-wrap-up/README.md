@@ -11,7 +11,7 @@ Hands off to a fresh session, or fills `/compact` with what to keep.
 
 **Compact, start to end**
 
-https://github.com/user-attachments/assets/d998cb3a-d2cc-4e6e-ae70-30c4f8dfcd60
+https://github.com/user-attachments/assets/0b9c9abd-03e8-4f36-9069-ae02042a809d
 
 ## Features
 
