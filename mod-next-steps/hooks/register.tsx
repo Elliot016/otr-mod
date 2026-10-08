@@ -309,7 +309,9 @@ export const register: Register = (on, options) => {
       if (group.length || row.length || tip) return pillRow({ Box, Client, Text }, look.nerd, group, row, [...ordered, ...others], tip, e.props.bodyColumns)
       return <Box key="nextsteps" flexDirection="column">{items}{below}</Box>
     }
-    if (steps.length === 0 || isHolding) {
+    // A prompt sent while the mods below draw clears `steps`, so this frame draws the ones it checked.
+    const shown = steps
+    if (shown.length === 0 || isHolding) {
       const waiting = enabled && isSuggesting && !isHolding
       if (cards.length === 0 && !waiting) return next(e)
       return above(await next(e), [
@@ -338,10 +340,10 @@ export const register: Register = (on, options) => {
         ...cards,
         <Box key="nextsteps-rows" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
           <Box key="steps-first" flexDirection="row" justifyContent="space-between" columnGap={1}>
-            {row(steps[0]!, 0)}
+            {row(shown[0]!, 0)}
             {dismiss}
           </Box>
-          {steps.slice(1).map((step, at) => row(step, at + 1))}
+          {shown.slice(1).map((step, at) => row(step, at + 1))}
         </Box>,
     ])
   })
