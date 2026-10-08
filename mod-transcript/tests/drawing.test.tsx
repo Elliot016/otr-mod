@@ -62,6 +62,19 @@ test('the ctrl+o view draws every row as the engine does, so the mod steps aside
   expect(await head.find({ type: 'Button', text: /tool/ })).toBeUndefined()
 })
 
+test('while a subagent transcript is on screen its rows draw as the engine draws them and join no main turn', async ($, on) => {
+  const mount = await open($, on, EDIT_TURN)
+  const band = (agentId?: string) => mount('AbovePrompt', 'band', { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: agentId ? { agentId } : {} })
+  await (await band('a1')).unmount()
+  const subPrompt = await mount('UserMessage', ID(50), prompt('the brief'))
+  expect(await subPrompt.find({ type: 'Text', text: 'base UserMessage' })).toBeDefined()
+  const subCall = await mount('ToolUse', 'toolu_sub', { tool_use_id: 'toolu_sub', tool: 'Read', input: { file_path: '/repo/x.ts' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} })
+  expect(await subCall.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
+  await (await band()).unmount()
+  const head = await mount('UserMessage', ID(1), prompt('edit it'))
+  expect(await head.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+})
+
 test('the normal view still folds the finished turn under its prompt', async ($, on) => {
   const mount = await open($, on, EDIT_TURN)
   const head = await mount('UserMessage', ID(1), prompt('edit it'))
@@ -154,6 +167,77 @@ test('a subagent report draws a head line with its fields, and a card whose body
   expect(await report.find({ type: 'Text', text: 'l6' })).toBeDefined()
   expect(await report.find({ type: 'Text', text: 'l7' })).toBeUndefined()
   expect(await report.find({ type: 'Text', text: '+ 2 more lines' })).toBeDefined()
+})
+
+// A subagent's hand-back, sent from task a2, and the notice that task a2 finished in 15m 52s.
+const HANDBACK = { text: 'Spike and checks: ctrl+o works\nl2', origin: { kind: 'peer', senderTaskId: 'a2' }, from: { name: 'general-purpose' }, isExpanded: false }
+const NOTICE = { text: 'Agent "Live checks" finished', origin: { kind: 'task-notification' }, task: { id: 'a2', status: 'completed', durationMs: 952121 }, isExpanded: false }
+
+const REPORT_TURN = [
+  row(1, 'user', { message: { role: 'user', content: 'first' } }),
+  row(2, 'user', { isMeta: true, origin: { kind: 'peer' }, message: { role: 'user', content: 'Another Claude session sent a message: report' } }),
+  said(3, [{ type: 'text', text: 'Noted.' }]),
+]
+const LATEST_REPORT = REPORT_TURN.join('\n') + '\n'
+const OLD_REPORT = [...REPORT_TURN, row(4, 'user', { message: { role: 'user', content: 'second' } })].join('\n') + '\n'
+
+test('a report drawn before its notice takes the notice status and time, and the notice then draws nothing', async ($, on) => {
+  const mount = await open($, on)
+  const report = await mount('UserMessage', ID(20), HANDBACK)
+  expect(await report.find({ type: 'Text', text: /general-purpose · Spike and checks/ })).toBeDefined()
+  const notice = await mount('UserMessage', ID(21), NOTICE)
+  expect(await notice.find({ type: 'Text', text: /Agent "Live checks" finished/ })).toBeUndefined()
+  expect(await report.find({ type: 'Text', text: /general-purpose · completed · 15m 52s · Spike and checks: ctrl\+o works$/ })).toBeDefined()
+})
+
+test('a notice drawn before its report draws nothing once the report comes, and the report takes its status and time', async ($, on) => {
+  const mount = await open($, on)
+  const notice = await mount('UserMessage', ID(21), NOTICE)
+  expect(await notice.find({ type: 'Text', text: /Agent "Live checks" finished/ })).toBeDefined()
+  const report = await mount('UserMessage', ID(20), HANDBACK)
+  expect(await report.find({ type: 'Text', text: /general-purpose · completed · 15m 52s · Spike and checks/ })).toBeDefined()
+  expect(await notice.find({ type: 'Text', text: /Agent "Live checks" finished/ })).toBeUndefined()
+})
+
+test('a notice with no report keeps its line', async ($, on) => {
+  const mount = await open($, on)
+  const notice = await mount('UserMessage', ID(21), NOTICE)
+  expect(await notice.find({ type: 'Text', text: /a2 · completed · 15m 52s · Agent "Live checks" finished/ })).toBeDefined()
+})
+
+test('an old report draws only its head line', async ($, on) => {
+  const mount = await open($, on, OLD_REPORT)
+  const report = await mount('UserMessage', ID(2), HANDBACK)
+  expect(await report.find({ type: 'Button', text: /general-purpose · Spike and checks/ })).toBeDefined()
+  expect(await report.find({ type: 'Text', text: /l2/ })).toBeUndefined()
+})
+
+test('a click on an old report head opens its body, and a second click folds it again', async ($, on) => {
+  const mount = await open($, on, OLD_REPORT)
+  const report = await mount('UserMessage', ID(2), HANDBACK)
+  await report.press({ key: 'toggle-report-fold-button' })
+  expect(await report.find({ type: 'Text', text: /l2/ })).toBeDefined()
+  await report.press({ key: 'toggle-report-fold-button' })
+  expect(await report.find({ type: 'Text', text: /l2/ })).toBeUndefined()
+})
+
+test('the latest report stays open until the next prompt', async ($, on) => {
+  const mount = await open($, on, LATEST_REPORT)
+  const report = await mount('UserMessage', ID(2), HANDBACK)
+  expect(await report.find({ type: 'Text', text: /l2/ })).toBeDefined()
+})
+
+test('with fold_turns off, an old report stays open', { options: { fold_turns: false } }, async ($, on) => {
+  const mount = await open($, on, OLD_REPORT)
+  const report = await mount('UserMessage', ID(2), HANDBACK)
+  expect(await report.find({ type: 'Text', text: /l2/ })).toBeDefined()
+})
+
+test('a notice that comes after a folded report shows its status and time in the report head', async ($, on) => {
+  const mount = await open($, on, OLD_REPORT)
+  const report = await mount('UserMessage', ID(2), HANDBACK)
+  await mount('UserMessage', ID(21), NOTICE)
+  expect(await report.find({ type: 'Button', text: /general-purpose · completed · 15m 52s/ })).toBeDefined()
 })
 
 test('a diff preview keeps the indentation of its lines', async ($, on) => {

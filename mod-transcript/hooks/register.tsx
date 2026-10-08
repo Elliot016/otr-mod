@@ -19,7 +19,7 @@ import { tokenizeLine, type Role } from './shell'
 import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 import { copyChoices, copyText, type CopyChoice } from './clip'
 import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
-import { apiErrorAction, completeLines, questionsOf, reportOf, statusesOf } from './rows'
+import { apiErrorAction, completeLines, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice, type Notice, type Report } from './rows'
 
 let transcript = ''
 let log = new TurnLog()
@@ -36,6 +36,8 @@ const guess = ($: EngineInterface) =>
     // Without the messages, rows draw as before: unfolded until the transcript is read.
   }))
 let working = false
+// The agent whose transcript is on screen (the band's view); its rows are not the main conversation's turns.
+let viewedAgent: string | undefined
 // The engine's expanded view (ctrl+o, --verbose) draws every row in full, so the rows pass through there.
 let isFullView = false
 // Calls a hook or the person refused (PermissionDenied): an error the person chose, drawn neutral.
@@ -55,6 +57,9 @@ let look = lookFor(false)
 type Kind = 'turns' | 'tools'
 // Spike only: each drawn row's component and id, and whether the transcript parse placed it in a turn.
 const seen = new Map<string, boolean>()
+// Each task's notice, and the tasks with a report drawn; see taskRow.
+const notices = new Map<string, Notice>()
+const reported = new Set<string>()
 
 const PANE = 'toggle-settings'
 let actions: Action[] = []
@@ -405,13 +410,17 @@ function questionRows({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, input: unknown,
 
 const REPORT_LINES = 6
 
+// What a notice or a report row reads from its props.
+type TaskProps = { text: string; origin: { kind: string }; from?: { name: string }; task?: { id?: string; status?: string; type?: string; durationMs?: number; toolUseId?: string } }
+
 // A subagent's or teammate's report: a head line with its sender, status, time and first line, then a card of its fields and first lines.
-function reportRow({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, props: { text: string; from?: { name: string }; task?: { id?: string; status?: string; type?: string; durationMs?: number; toolUseId?: string } }, width: number) {
-  const report = reportOf(props.from, props.task)
+function reportRow(parts: Controls & Rows, props: TaskProps, report: Report, width: number, fold?: { id: string; isOpen: boolean; onPress: () => unknown }) {
+  const { Box, Text } = parts
   const lines = props.text.replace(/\s+$/, '').split('\n')
   const summary = lines.find(line => line.trim())?.trim() ?? ''
   const time = report.durationMs !== undefined ? elapsed(report.durationMs) : ''
   const head = [report.name || text.reportFallback, report.status, time, summary].filter(Boolean).join(` ${MARK.sep} `)
+  const label = `${look.glyph.mark.agent} ${head}`
   const fields = [
     props.task?.id ? fill(text.reportTask, { id: props.task.id }) : '',
     props.task?.type ? fill(text.reportType, { type: props.task.type }) : '',
@@ -419,20 +428,60 @@ function reportRow({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, props: { text: str
   ].filter(Boolean)
   const shown = lines.slice(0, REPORT_LINES)
   const more = lines.length - shown.length
+  const isOpen = fold?.isOpen ?? true
   return (
     <Box key="toggle-report" flexDirection="column">
-      <Text key="toggle-report-head" color={THEME.onSurface} wrap="truncate-end">{cut(`${look.glyph.mark.agent} ${head}`, width)}</Text>
-      <Box key="toggle-report-card" flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>
-        {fields.map((field, n) => (
-          <Text key={`toggle-report-field-${n}`} color={THEME.muted} wrap="truncate-end">{field}</Text>
-        ))}
-        {shown.map((line, n) => (
-          <Text key={`toggle-report-line-${n}`} color={THEME.onSurface} wrap="truncate-end">{cut(line, width - 4) || ' '}</Text>
-        ))}
-        {more > 0 ? <Text key="toggle-report-more" color={THEME.muted}>{fill(text.previewMore, { n: more })}</Text> : null}
-      </Box>
+      {fold ? (
+        toggleLine(parts, 'toggle-report-fold', THEME.accent, fold.isOpen, cut(label, width - 4), { kind: 'turns', id: fold.id }, fold.onPress)
+      ) : (
+        <Text key="toggle-report-head" color={THEME.onSurface} wrap="truncate-end">{cut(label, width)}</Text>
+      )}
+      {isOpen ? (
+        <Box key="toggle-report-card" flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>
+          {fields.map((field, n) => (
+            <Text key={`toggle-report-field-${n}`} color={THEME.muted} wrap="truncate-end">{field}</Text>
+          ))}
+          {shown.map((line, n) => (
+            <Text key={`toggle-report-line-${n}`} color={THEME.onSurface} wrap="truncate-end">{cut(line, width - 4) || ' '}</Text>
+          ))}
+          {more > 0 ? <Text key="toggle-report-more" color={THEME.muted}>{fill(text.previewMore, { n: more })}</Text> : null}
+        </Box>
+      ) : null}
     </Box>
   )
+}
+
+const isSameNotice = (known: Notice | undefined, notice: Notice) => known !== undefined && known.status === notice.status && known.durationMs === notice.durationMs
+
+// Either may draw first, so whichever comes second redraws the row that shows the other.
+function learnNotice($: EngineInterface, id: string, notice: Notice) {
+  if (isSameNotice(notices.get(id), notice)) return
+  notices.set(id, notice)
+  if (reported.has(id)) $.ui.invalidate('ui.render')
+}
+
+function learnReport($: EngineInterface, id: string) {
+  if (reported.has(id)) return
+  reported.add(id)
+  if (notices.has(id)) $.ui.invalidate('ui.render')
+}
+
+// A notice draws nothing once its report draws; a report takes the notice's status and time.
+async function taskRow(parts: Controls & Rows, $: EngineInterface, requestId: string, props: TaskProps, width: number) {
+  const { Box } = parts
+  if (props.origin.kind === 'task-notification') {
+    const id = props.task?.id
+    if (id) learnNotice($, id, { status: props.task?.status, durationMs: props.task?.durationMs })
+    if (id && reported.has(id)) return <Box key="toggle-hidden" />
+    return reportRow(parts, props, reportOf(props.from, props.task), width)
+  }
+  const id = senderTaskOf(props.origin)
+  if (id) learnReport($, id)
+  const report = withNotice(reportOf(props.from, props.task), id ? notices.get(id) : undefined)
+  const turn = log.turnAt(requestId)
+  if (!turn || !isDone(turn)) return reportRow(parts, props, report, width)
+  const isOpen = isTurnOpen(await opened($, 'turns'), turn)
+  return reportRow(parts, props, report, width, { id: turn.prompt, isOpen, onPress: () => flip($, 'turns', turn.prompt) })
 }
 
 // An API error that ended the reply, as one line: red when the person must act, warn when Claude Code retries.
@@ -744,6 +793,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     // Read once: a leave posted while next(e) runs clears `hovered`.
     const tip = tipText(hovered)
+    if (e.surface === 'terminal') viewedAgent = e.props.view.agentId
     if (e.surface !== 'terminal' || e.props.hasSurvey || !tip) return next(e)
     const { Box, Client, Text } = $.ui.resolve(e)
     const others = await next(e)
@@ -813,15 +863,13 @@ export const register: Register = (on, options) => {
   // The prompt row carries the card's head: one line naming what the turn did, which a click folds or unfolds.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal') return next(e)
+    if (e.surface !== 'terminal' || viewedAgent) return next(e)
     isFullView = e.props.isExpanded
-    // A subagent's report opens a turn of its own, as in the transcript.
-    if (isLoaded && (e.props.origin.kind === 'peer' || (e.props.origin.kind === 'composer' && isPrompt(e.props.text)))) log.claim(e.requestId, 'prompt', Date.now(), e.props.origin.kind === 'peer')
+    // A subagent's report opens a turn of its own, as in the transcript, unless it lands while Claude works: the transcript keeps that one in the running turn.
+    const isReport = e.props.origin.kind === 'peer'
+    if (isLoaded && (isReport ? !working : e.props.origin.kind === 'composer' && isPrompt(e.props.text))) log.claim(e.requestId, 'prompt', Date.now(), isReport)
     if (isFullView) return next(e)
-    if (e.props.origin.kind === 'peer' || e.props.origin.kind === 'task-notification') {
-      const { Box, Text } = $.ui.resolve(e)
-      return reportRow({ Box, Text }, e.props, widthOf(e))
-    }
+    if (e.props.origin.kind === 'peer' || e.props.origin.kind === 'task-notification') return taskRow($.ui.resolve(e), $, e.requestId, e.props, widthOf(e))
     if (e.props.origin.kind !== 'composer') return next(e)
     if (!isLoaded && e.props.origin.kind === 'composer') {
       await guess($)
@@ -885,7 +933,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal') return next(e)
+    if (e.surface !== 'terminal' || viewedAgent) return next(e)
     if (isLoaded) log.claim(e.requestId, 'reply')
     if (isFullView) return next(e)
     else {
@@ -908,7 +956,7 @@ export const register: Register = (on, options) => {
   // A finished tool row folds to one line of its own; a click shows Claude Code's full row and result under it.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal') return next(e)
+    if (e.surface !== 'terminal' || viewedAgent) return next(e)
     if (isLoaded) log.claimCall(e.props.tool_use_id, e.props.tool, e.props.input, e.props.isRunning, e.props.output, e.props.isErrored || e.props.isInterrupted)
     else {
       await guess($)
@@ -966,7 +1014,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal') return next(e)
+    if (e.surface !== 'terminal' || viewedAgent) return next(e)
     if (isLoaded) log.claim(e.requestId, 'row')
     if (isFullView) return next(e)
     else {
@@ -986,7 +1034,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal') return next(e)
+    if (e.surface !== 'terminal' || viewedAgent) return next(e)
     // A folded group's calls never draw rows of their own, so the group claims them for the turn.
     if (isLoaded) for (const call of e.props.calls) if (call.tool_use_id) log.claimCall(call.tool_use_id, call.tool, call.input, call.isRunning, call.output, call.isErrored || call.isInterrupted)
     // A group of thinking alone has no calls; it joins the turn by its own message id.
@@ -1014,7 +1062,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal') return next(e)
+    if (e.surface !== 'terminal' || viewedAgent) return next(e)
     if (isLoaded) log.claim(e.requestId, 'row')
     if (isFullView) return next(e)
     else {

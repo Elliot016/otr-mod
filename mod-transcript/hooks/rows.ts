@@ -43,6 +43,20 @@ export function reportOf(from: { name: string } | undefined, task: { id?: string
   return { name: from?.name ?? task?.type ?? task?.id, status: task?.status, durationMs: task?.durationMs, id: task?.id, type: task?.type }
 }
 
+// How a background task ended and how long it ran, from its notice.
+export type Notice = { status?: string; durationMs?: number }
+
+// The task a peer report came from. The declared origin names no task, but the stored one carries it as senderTaskId.
+export function senderTaskOf(origin: unknown): string | undefined {
+  const id = (origin as { senderTaskId?: unknown } | undefined)?.senderTaskId
+  return typeof id === 'string' && id ? id : undefined
+}
+
+// A report with its task's notice: the notice's status and time, since the report row carries neither.
+export function withNotice(report: Report, notice: Notice | undefined): Report {
+  return { ...report, status: notice?.status ?? report.status, durationMs: notice?.durationMs ?? report.durationMs }
+}
+
 // Whole lines of a read and the unfinished last line, which the next read completes.
 export function completeLines(read: string) {
   const end = read.lastIndexOf('\n') + 1

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { apiErrorAction, completeLines, questionsOf, reportOf, statusesOf } from '../hooks/rows'
+import { apiErrorAction, completeLines, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice } from '../hooks/rows'
 
 test('a status word comes from a typed result field, never from the words in the output', () => {
   expect(statusesOf({ isInterrupted: false, isDeclined: false, output: { timedOutAfterMs: 120000 } })).toEqual(['timedOut'])
@@ -47,4 +47,16 @@ test('a read keeps its unfinished last line for the next read', () => {
   expect(completeLines('a\n{"b')).toEqual({ lines: ['a'], rest: '{"b' })
   expect(completeLines('x\n')).toEqual({ lines: ['x'], rest: '' })
   expect(completeLines('')).toEqual({ lines: [], rest: '' })
+})
+
+test('a peer report names its task from the stored origin, when the origin carries one', () => {
+  expect(senderTaskOf({ kind: 'peer', from: 'a1', senderTaskId: 'a1' })).toBe('a1')
+  expect(senderTaskOf({ kind: 'peer' })).toBeUndefined()
+  expect(senderTaskOf(undefined)).toBeUndefined()
+})
+
+test('a notice gives its report the status and time it reports, and a report without a notice keeps its own', () => {
+  const report = reportOf({ name: 'general-purpose' }, undefined)
+  expect(withNotice(report, undefined)).toEqual(report)
+  expect(withNotice(report, { status: 'completed', durationMs: 952121 })).toEqual({ name: 'general-purpose', status: 'completed', durationMs: 952121 })
 })
