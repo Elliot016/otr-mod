@@ -2,7 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { groupSkills, markDescription, readFrontmatter, stripBadges, swatchFor } from '../hooks/tags'
 
-const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+// A drive path the engine took for relative comes back with the plugin's folder in front, so the fixtures read it from the drive letter on.
+const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '').replace(/^[A-Za-z]:/, '')
 
 const FILES: Record<string, string> = {
   '/h/.claude/skills/plain/SKILL.md': '---\nname: plain\ndescription: x\n---\nbody',

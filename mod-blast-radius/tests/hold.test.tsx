@@ -34,6 +34,8 @@ const FILES: Record<string, { kind: 'file' | 'dir'; size: number }> = {
   [`${LONG}/y.txt`]: { kind: 'file', size: 20 },
 }
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+// A drive path the engine took for relative comes back with the plugin's folder in front, so the fixtures read it from the drive letter on.
+const asGiven = (path: string) => path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '')
 
 type World = {
   surfaces?: string[]
@@ -60,7 +62,7 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
   on('session.surfaces', () => ({ value: setup.surfaces ?? ['terminal'] }))
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'OS' ? 'Windows_NT' : e.name === 'USERPROFILE' ? 'C:\\Users\\me' : undefined }))
   on('fs.stat', (_$: unknown, e: { path: string }) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = asGiven(e.path)
     if (path === RULES_PATH) {
       seen.stats++
       if (!rules.current) throw new Error('ENOENT')
@@ -71,7 +73,7 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
     return { value: { ...node, mtimeMs: 0, isLink: false } }
   })
   on('fs.read', (_$: unknown, e: { path: string }) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = asGiven(e.path)
     if (path === RULES_PATH && rules.current) {
       seen.reads++
       return { value: rules.current.text }
@@ -79,7 +81,7 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
     throw new Error('ENOENT')
   })
   on('fs.list', (_$: unknown, e: { path: string }) => {
-    const prefix = `${e.path.replace(/\\/g, '/').replace(/\/$/, '')}/`
+    const prefix = `${asGiven(e.path).replace(/\/$/, '')}/`
     const names = Object.entries(FILES).filter(([path]) => path.startsWith(prefix) && !path.slice(prefix.length).includes('/'))
     return { value: names.map(([path, node]) => ({ name: path.slice(prefix.length), kind: node.kind, size: node.size, mtimeMs: 0, isLink: false })) }
   })
