@@ -26,6 +26,11 @@ test('a /rewind drops the prompts of the abandoned branch, and the next prompt t
   expect(shown(numbers)).toEqual([[1, 'first'], [2, 'third']])
 })
 
+test('a row whose parent Claude Code never wrote joins the chain through the row before it, so the earlier prompts keep their numbers', () => {
+  const numbers = feed([user(1, null, 'first'), said(2, 1), user(3, 2, 'second'), said(5, 4), user(6, 5, 'third')])
+  expect(shown(numbers)).toEqual([[1, 'first'], [2, 'second'], [3, 'third']])
+})
+
 test('a prompt the transcript does not hold, such as one cancelled before it was written, takes no number', () => {
   const numbers = feed([user(1, null, 'first'), said(2, 1)])
   expect(numbers.latest()).toMatchObject({ number: 1, text: 'first' })

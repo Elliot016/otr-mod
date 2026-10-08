@@ -119,6 +119,8 @@ export class TurnLog {
   turns: Turn[] = []
   private byId = new Map<string, Turn>()
   private parents = new Map<string, string | undefined>()
+  // Each row's previous row in file order, the way past a parent Claude Code never wrote.
+  private before = new Map<string, string | undefined>()
   private last: string | undefined
   private numbers: Map<Turn, number> | undefined
   private calls = new Map<string, ToolCall>()
@@ -133,6 +135,7 @@ export class TurnLog {
     }
     if (typeof row?.uuid !== 'string' || row.isSidechain === true) return
     this.parents.set(row.uuid, row.parentUuid ?? row.logicalParentUuid ?? undefined)
+    this.before.set(row.uuid, this.last)
     this.last = row.uuid
     this.numbers = undefined
     const content = row.message?.content
@@ -255,12 +258,17 @@ export class TurnLog {
   numberOf(turn: Turn) {
     if (!this.numbers) {
       const live = new Set<string>()
-      for (let id = this.last; id !== undefined && !live.has(id); id = this.parents.get(id)) live.add(id)
+      for (let id = this.last; id !== undefined && !live.has(id); id = this.parentOf(id)) live.add(id)
       this.numbers = new Map()
       let n = 0
       for (const each of this.turns) if (!each.isReport && (!this.parents.has(each.prompt) || live.has(each.prompt))) this.numbers.set(each, ++n)
     }
     return this.numbers.get(turn)
+  }
+
+  private parentOf(id: string) {
+    const parent = this.parents.get(id)
+    return parent !== undefined && !this.parents.has(parent) ? this.before.get(id) : parent
   }
 
   // The turn a prompt row opens.

@@ -87,12 +87,15 @@ export function parseRow(line: string): Row | undefined {
 
 // The prompts on the live branch, oldest first; a report or an abandoned prompt opens a turn that lists nothing, as turns.ts does.
 export function promptsOf(rows: Row[]): Prompt[] {
-  const byId = new Map(rows.filter(row => !row.isSidechain).map(row => [row.uuid, row]))
+  const main = rows.filter(row => !row.isSidechain)
+  const byId = new Map(main.map(row => [row.uuid, row]))
+  // Each row's previous row in file order, the way past a parent Claude Code never wrote.
+  const before = new Map(main.map((row, n) => [row.uuid, main[n - 1]]))
   const live = new Set<string>()
-  let row = [...rows].reverse().find(candidate => !candidate.isSidechain)
+  let row = main[main.length - 1]
   while (row && !live.has(row.uuid)) {
     live.add(row.uuid)
-    row = row.parent ? byId.get(row.parent) : undefined
+    row = !row.parent ? undefined : (byId.get(row.parent) ?? before.get(row.uuid))
   }
   const prompts: Prompt[] = []
   // The prompt the rows after it belong to, in file order; undefined after a report or an abandoned prompt.

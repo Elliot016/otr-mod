@@ -816,6 +816,17 @@ const NUMBERED = [
   JSON.stringify({ type: 'user', uuid: ID(7), parentUuid: ID(4), message: { role: 'user', content: 'third' } }),
 ].join('\n') + '\n'
 
+test('a row whose parent Claude Code never wrote joins the chain through the row before it, so the earlier prompts keep their numbers', () => {
+  const log = logOf(
+    [
+      row(1, 'user', { message: { role: 'user', content: 'first' } }),
+      said(2, [{ type: 'text', text: 'One.' }]),
+      JSON.stringify({ type: 'user', uuid: ID(4), parentUuid: ID(3), message: { role: 'user', content: 'second' } }),
+    ].join('\n') + '\n',
+  )
+  expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1, 2])
+})
+
 test('a prompt\x27s number is its place among the live prompts, as the Prompts panel counts them', () => {
   const log = logOf(NUMBERED)
   expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1, 2, undefined, undefined, 3])

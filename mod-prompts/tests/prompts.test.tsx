@@ -265,10 +265,10 @@ test('a subagent report opens a turn that is no prompt, so the calls after it co
   expect(listed[0]).toMatchObject({ tools: 2 })
 })
 
-test('the live branch follows parents through main rows only, as turns.ts does', () => {
+test('the live branch follows parents through main rows only, and steps past a subagent parent to the main row before, as turns.ts does', () => {
   const subagent = JSON.stringify({ type: 'user', isSidechain: true, uuid: ID(20), parentUuid: ID(1), message: { role: 'user', content: 'subagent text' } })
   const listed = promptsOf(parseAll([user(1, null, 'first prompt'), subagent, user(21, 20, 'second prompt')]))
-  expect(listed.map(prompt => prompt.text)).toEqual(['second prompt'])
+  expect(listed.map(prompt => prompt.text)).toEqual(['first prompt', 'second prompt'])
 })
 
 // A session whose transcript is `rows`, one row per line as Claude Code writes it, with the pane closed until the mod opens it.
