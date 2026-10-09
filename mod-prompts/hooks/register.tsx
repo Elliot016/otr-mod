@@ -485,8 +485,9 @@ export const register: Register = (on, options) => {
     const hasOpen = selected >= first && selected < first + PAGE_SIZE
     const before = hasOpen ? onPage.filter(stop => stop.index <= selected) : onPage
     const after = hasOpen ? onPage.filter(stop => stop.index > selected) : []
-    const pager = (id: string, label: string, tip: string) => (
-      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: false, bg: THEME.surface3, idle: THEME.secondary, still, tip: { glyph: look.glyph.icon.prompt ?? look.glyph.title, label, text: tip } } satisfies EntryProps} />
+    // At the first or last page the button stays in its place, dimmed; a press there changes nothing.
+    const pager = (id: string, label: string, tip: string, isEdge: boolean) => (
+      <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: false, bg: THEME.surface3, idle: isEdge ? THEME.muted : THEME.secondary, still, tip: { glyph: look.glyph.icon.prompt ?? look.glyph.title, label, text: tip } } satisfies EntryProps} />
     )
     // The engine caps how large one Client's tree may serialize, so a long session's stops spread over several Clients.
     const timeline = (key: string, list: typeof stops, railFirst: boolean) =>
@@ -561,9 +562,9 @@ export const register: Register = (on, options) => {
               // The pager rides in the pinned card, so it stays in view however far the timeline scrolls.
               pageCount > 1 ? (
                 <Box key="pager" flexDirection="row" columnGap={1} flexShrink={0}>
-                  {shownPage > 0 ? pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-prev', text.pagePrev, text.pagePrevTip), 'pager-prev', THEME.surface1) : null}
+                  {pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-prev', text.pagePrev, text.pagePrevTip, shownPage === 0), 'pager-prev', THEME.surface1)}
+                  {pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-next', text.pageNext, text.pageNextTip, shownPage === pageCount - 1), 'pager-next', THEME.surface1)}
                   <Text color={THEME.muted}>{fill(text.page, { page: shownPage + 1, pages: pageCount, from: first + 1, to: first + onPage.length, sep: MARK.sep })}</Text>
-                  {shownPage < pageCount - 1 ? pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-next', text.pageNext, text.pageNextTip), 'pager-next', THEME.surface1) : null}
                 </Box>
               ) : null,
             ])

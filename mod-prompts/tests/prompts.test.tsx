@@ -143,7 +143,7 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   await reopened.unmount()
 })
 
-test('a long session pages by 100, each page split across several timeline Clients', async ($, on) => {
+test('a long session pages by 100, each page split across several timeline Clients, with the pager buttons in fixed places', async ($, on) => {
   const many = Array.from({ length: 342 }, (_, n) => user(n + 1, n === 0 ? null : n, `prompt number ${n + 1} with a few more words to make the row long enough`)).join('\n')
   on('store.get', () => ({ value: '/t/long.jsonl' }))
   on('store.set', () => ({ value: undefined }))
@@ -155,12 +155,15 @@ test('a long session pages by 100, each page split across several timeline Clien
   mock.clock(on)
   const ui = await $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'Pane', requestId: 'prompts', props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as never)
   expect(JSON.stringify(await ui.drawn({ in: 'prompts-tab' }))).toContain('342')
-  // The newest prompt is open, so the last page shows, with a Prev pill and no Next.
+  // The newest prompt is open, so the last page shows. Prev and Next sit side by side before the page text, and both stay drawn, so the text never moves them.
   expect(await ui.find({ type: 'Text', text: 'Page 4 of 4 · 301–342' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' }))).toContain('prompt number 301 ')
   expect(JSON.stringify(await ui.drawn())).toContain('prompt number 342')
   expect(JSON.stringify(await ui.drawn())).not.toContain('prompt number 300 ')
-  expect(JSON.stringify(await ui.drawn())).not.toContain('prompts-page-next')
+  const last = JSON.stringify(await ui.drawn())
+  expect(last.indexOf('prompts-page-prev')).toBeGreaterThan(-1)
+  expect(last.indexOf('prompts-page-next')).toBeGreaterThan(last.indexOf('prompts-page-prev'))
+  expect(last.indexOf('Page 4 of 4')).toBeGreaterThan(last.indexOf('prompts-page-next'))
   // Prev goes back a page; the open prompt's details stay off it.
   await ui.pointer({ in: 'prompts-page-prev', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'Page 3 of 4 · 201–300' })).toBeDefined()
