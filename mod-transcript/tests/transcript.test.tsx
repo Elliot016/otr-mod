@@ -28,6 +28,8 @@ const TRANSCRIPT = [
 // The open turn's chip line, drawn by its Client, and a click at a cell of it.
 const chipsOf = async (ui: any) => JSON.stringify(await ui.drawn({ in: 'toggle-chips-line' }))
 const pick = (ui: any, x: number) => ui.pointer({ in: 'toggle-chips-line', type: 'down', button: 'left', x, y: 0 })
+// The host's Mounted type omits pointer, which the harness serves.
+const pointerOn = <T extends object>(ui: T, event: object) => (ui as T & { pointer: (e: object) => Promise<unknown> }).pointer(event)
 // The head's fold pill is a Client, so its + or − is the isOpen it was handed.
 const isChipOpen = async (ui: any) => (await ui.find({ type: 'Client', key: 'toggle-turn-chip' }))?.props.props?.isOpen
 
@@ -341,7 +343,7 @@ test('a block holding a markdown table drops the bubble padding, since Claude Co
 test('rows drawn before the transcript is read already fold, so none changes height once it is read', async ($, on) => {
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
-  on('session.messages', () => ({ value: MESSAGES }))
+  on('session.messages', () => ({ value: MESSAGES as never }))
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
@@ -420,7 +422,7 @@ test('a new session, whose transcript is not written yet, folds its turns; a gro
   on('session.id', () => ({ value: 's2' }))
   on('env.get', () => ({ value: undefined }))
   on('fs.list', () => ({ value: [] }))
-  on('command.register', () => ({ value: undefined }))
+  on('command.register', () => ({ value: undefined } as never))
   on('ui.panes', () => ({ value: [] }))
   on('session.start', () => ({ cwd: '/w' }))
   mock.clock(on)
@@ -515,7 +517,7 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   expect(await prompt.find({ type: 'Button', text: / Edit\(hooks\/a\.ts\) $/ })).toBeDefined()
 
   // A click on the card's strip folds the turn back.
-  await step.pointer({ in: 'toggle-card-strip', type: 'down', button: 'left', x: 0, y: 0 })
+  await pointerOn(step, { in: 'toggle-card-strip', type: 'down', button: 'left', x: 0, y: 0 })
   expect(await isChipOpen(prompt)).toBe(false)
   expect(await step.find({ type: 'Text' })).toBeUndefined()
 
@@ -614,7 +616,7 @@ test('/mod-transcript settings opens its own panel: a click saves a setting, an 
   on('env.get', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('config.list', () => ({ value: ROWS }))
+  on('config.list', () => ({ value: ROWS as never }))
   on('config.set', (_$, e) => {
     saved.push([e.key, e.value])
     return { value: e.value }
@@ -626,7 +628,7 @@ test('/mod-transcript settings opens its own panel: a click saves a setting, an 
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   mock.clock(on)
 
-  await $.command.run({ command: 'mod-transcript', args: 'settings' })
+  await $.command.run({ command: 'mod-transcript', args: 'settings' } as never)
   const ui = await $.ui.mount({
     plugin: 'mod-transcript',
     surface: 'terminal',
@@ -641,7 +643,7 @@ test('/mod-transcript settings opens its own panel: a click saves a setting, an 
   expect(await ui.find({ type: 'Text', text: /^ 2 tools · Edit$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^● Fixed.$/ })).toBeDefined()
 
-  await ui.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointerOn(ui, { in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
   expect(saved).toEqual([['mod-transcript.fold_turns', false]])
 
   await ui.press({ key: 'action-0' })
@@ -806,17 +808,17 @@ test('hovering a copy choice or the fold chip shows its tip in the band tip row,
   const reply = await mount('AssistantMessage', ID(4), { text: 'Fixed:\n\n```js\nconst a = 1\n```', isFirstOfReply: true })
   const tip = async () => (await band.find({ type: 'Text', text: /copies|folds or unfolds/ }))?.text
   expect(await tip()).toBeUndefined()
-  const shut = Number(String((await reply.drawn({ in: 'toggle-copy-pill' })).children[0].children[0]).length)
-  await reply.pointer({ in: 'toggle-copy-pill', type: 'move', button: 'left', x: shut + 1, y: 0 })
+  const shut = await leadOf(reply)
+  await pointerOn(reply, { in: 'toggle-copy-pill', type: 'move', button: 'left', x: shut + 1, y: 0 })
   expect(await tip()).toBe(' copies this reply')
-  const open = Number(String((await reply.drawn({ in: 'toggle-copy-pill' })).children[0].children[0]).length)
-  await reply.pointer({ in: 'toggle-copy-pill', type: 'move', button: 'left', x: open + 8, y: 0 })
+  const open = await leadOf(reply)
+  await pointerOn(reply, { in: 'toggle-copy-pill', type: 'move', button: 'left', x: open + 8, y: 0 })
   expect(await tip()).toBe(' copies the code blocks')
-  await reply.pointer({ in: 'toggle-copy-pill', type: 'leave', button: 'left', x: 0, y: 0 })
+  await pointerOn(reply, { in: 'toggle-copy-pill', type: 'leave', button: 'left', x: 0, y: 0 })
   expect(await tip()).toBeUndefined()
-  await prompt.pointer({ in: 'toggle-turn-chip', type: 'enter', button: 'left', x: 1, y: 0 })
+  await pointerOn(prompt, { in: 'toggle-turn-chip', type: 'enter', button: 'left', x: 1, y: 0 })
   expect(await tip()).toBe(' folds or unfolds this turn')
-  await prompt.pointer({ in: 'toggle-turn-chip', type: 'leave', button: 'left', x: 1, y: 0 })
+  await pointerOn(prompt, { in: 'toggle-turn-chip', type: 'leave', button: 'left', x: 1, y: 0 })
   expect(await tip()).toBeUndefined()
   for (const ui of [band, prompt, reply]) await ui.unmount()
 })
