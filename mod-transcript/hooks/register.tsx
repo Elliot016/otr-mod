@@ -515,8 +515,8 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
   const kinds = turnKinds(turn)
   const isOpen = (kind: string) => openTools.includes(`${turn.prompt}:${kind}`)
   const chips: Chip[] = [
-    ...(thoughts.length ? [{ kind: 'thinking' as const, mark: look.glyph.mark.thinking, label: text.thought, count: thoughts.length, added: 0, removed: 0, isOpen: isOpen('thinking') }] : []),
-    ...kinds.map(group => ({ kind: group.kind, mark: look.glyph.mark[group.kind], label: text.kindChip[group.kind], count: group.calls.length, added: group.added, removed: group.removed, isOpen: isOpen(group.kind) })),
+    ...(thoughts.length ? [{ kind: 'thinking' as const, mark: look.glyph.mark.thinking as string, label: text.thought, count: thoughts.length, added: 0, removed: 0, isOpen: isOpen('thinking') }] : []),
+    ...kinds.map(group => ({ kind: group.kind, mark: look.glyph.mark[group.kind] as string, label: text.kindChip[group.kind], count: group.calls.length, added: group.added, removed: group.removed, isOpen: isOpen(group.kind) })),
   ]
   const picked = chips.find(chip => chip.isOpen)
   const bar = picked ? style.colors.kinds[picked.kind].hue : THEME.border
@@ -820,6 +820,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-transcript.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
@@ -890,7 +891,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) working = true
+    if (!(e as { agentId?: string }).agentId) working = true
 
     return next(e)
   })
@@ -1045,7 +1046,7 @@ export const register: Register = (on, options) => {
     const place = await placeOf($, turn, e.requestId)
     // In an open turn the head's kind rows list every call, so the row itself draws nothing.
     if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
-    const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body) : body)
+    const inBubble = (body: unknown) => (turn ? bubble({ Box, Client }, 'toggle-bubble', turn, body) : body) as RenderElement
     const isFailed = e.props.isErrored || e.props.isInterrupted
     // A call a hook or the person refused is an error they chose, so it draws neutral.
     const isDeclined = e.props.isErrored && declined.has(e.props.tool_use_id)
