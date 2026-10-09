@@ -7,7 +7,7 @@ import type { Look, Snapshot } from '../types'
 import style from './style'
 import text from './text'
 
-const fill = (template: string, values: Record<string, string | number> = {}) => template.replace(/{(w+)}/g, (slot, name: string) => (name in values ? String(values[name]) : slot))
+export const fill = (template: string, values: Record<string, string | number> = {}) => template.replace(/{(\w+)}/g, (slot, name: string) => (name in values ? String(values[name]) : slot))
 
 const COLORS = style.colors
 const SYMBOL = style.statuslineMarks
@@ -151,7 +151,8 @@ const ringSvg = (kind: keyof typeof ICONS, percent: number, color: string) => {
 }
 
 async function gitState($: EngineInterface, cwd: string, root: string) {
-  const status = await $.process.run(['git', 'status', '--porcelain=v2', '--branch'], { cwd }).catch(() => null)
+  // A large repo or a cold disk can keep git busy for long; the band then shows no branch rather than wait.
+  const status = await $.process.run(['git', 'status', '--porcelain=v2', '--branch'], { cwd, timeoutMs: 5000 }).catch(() => null)
   if (status?.exitCode === 0) {
     const lines = status.stdout.split('\n')
     const header = (name: string) => lines.find(line => line.startsWith(`# branch.${name} `))?.slice(`# branch.${name} `.length).trim() ?? ''
@@ -210,7 +211,11 @@ async function openWith($: EngineInterface, app: keyof typeof OPENERS, path: str
   if (result.exitCode !== 0) $.ui.toast(fill(text.openFailed, { name: opener.name, error: result.stderr.trim() }))
 }
 
+// Refreshes start from the timer, a turn's end and a session's end; one that a newer one overtook drops its older figures.
+let refreshes = 0
+
 async function refresh($: EngineInterface) {
+  const mine = ++refreshes
   const [root, usage, now] = await Promise.all([
     $.session.root(),
     $.session.usage(),
@@ -236,8 +241,14 @@ async function refresh($: EngineInterface) {
     fiveHour: limit('five_hour'),
     sevenDay: limit('seven_day'),
   }
-  await update($, snapshot, () => next)
+  if (mine === refreshes) await update($, snapshot, () => next)
 }
+
+// The 30 s refresh; a second session.start restarts it instead of stacking another.
+let ticker: { cancel: () => void } | null = null
+
+// session.start waits this long at most for the first figures, so a slow git never holds up the start.
+const FIRST_REFRESH_MS = 2000
 
 async function band($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0]) {
   const snap = await read($, snapshot)
@@ -333,14 +344,24 @@ async function band($: EngineInterface, e: Parameters<EngineInterface['ui']['res
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await loadLook($)
-    await refresh($)
-    $.clock.every(30000, () => void refresh($))
+    ticker?.cancel()
+    ticker = $.clock.every(30000, () => void refresh($).catch(() => {}))
+    await Promise.race([refresh($).catch(() => {}), $.clock.sleep(FIRST_REFRESH_MS).catch(() => {})])
 
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    await refresh($)
+    await refresh($).catch(() => {})
+
+    return next(e)
+  })
+
+  // A /resume or /clear changes the branch, cost and context shown: the old figures go at once, the new ones follow once the switch is done.
+  on('session.end', async ($, e, next) => {
+    refreshes += 1
+    await update($, snapshot, () => null)
+    $.clock.after(500, () => void refresh($).catch(() => {}))
 
     return next(e)
   })
