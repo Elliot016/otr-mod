@@ -672,7 +672,7 @@ export const register: Register = (on, options) => {
         $.ui.invalidate('ui.render')
       }
       return (
-        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true, 0), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, still })}</Box>
@@ -779,7 +779,7 @@ export const register: Register = (on, options) => {
         : fill(text.hintReplay, { sep: MARK.sep })
 
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         <Box key="title-line" flexDirection="row" columnGap={1}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(false, touched), still)}
           {current.working ? <Text color={THEME.muted}>{text.working}</Text> : null}
