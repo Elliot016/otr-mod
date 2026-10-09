@@ -2,6 +2,7 @@
 // Tests turn building, timing, previews, row keys and copy choices from a transcript.
 import { expect, mock, test } from 'claude-code/testing'
 
+import { cells } from '../hooks/cells'
 import { copyChoices, copyText } from '../hooks/clip'
 import { callTime, elapsed, previewOf, rowKey, timeOfDay, turnLine, TurnLog } from '../hooks/turns'
 
@@ -243,13 +244,34 @@ test('with expand_live off, the running turn folds its finished tool rows at onc
   expect(JSON.stringify(await tool.drawn({ in: 'toggle-tool-colored' }))).toContain('#7386D0')
 })
 
+test('a head with wide count and time pills cuts its label to the room left, so the line stays one row', { options: { icons: 'nerd' } }, async ($, on) => {
+  const many = [
+    row(1, 'user', { message: { role: 'user', content: 'refactor everything' } }),
+    ...Array.from({ length: 12 }, (_, k) => [
+      said(2 + 2 * k, [{ type: 'tool_use', id: `toolu_w${k}`, name: 'Edit', input: { file_path: `/repo/src/a-rather-long-module-name-${k}.ts` } }]),
+      row(3 + 2 * k, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_w${k}`, content: 'ok' }] }, toolUseResult: { structuredPatch: [{ lines: Array.from({ length: 80 }, () => '+x').concat(Array.from({ length: 15 }, () => '-y')) }] } }),
+    ]).flat(),
+    said(26, [{ type: 'text', text: 'Done.' }]),
+    row(27, 'system', { subtype: 'turn_duration', durationMs: 2442000 }),
+    row(28, 'user', { message: { role: 'user', content: 'next' } }),
+  ].join('\n') + '\n'
+  const { prompt } = await mountTimed($, on, many)
+  const label = String((await prompt.find({ key: 'toggle-turn-button' }))?.props.label ?? '')
+  const pills = cells('+960 −180') + 2 + 1 + cells('took 40m 42s') + 3 + 1
+  // The row's columns, less what widthOf keeps back and the head's chrome around the label.
+  expect(cells(label)).toBeLessThanOrEqual(120 - 6 - 12 - pills)
+  expect(label.endsWith('…')).toBe(true)
+})
+
 test('icons=nerd draws the times as rounded pills', { options: { icons: 'nerd' } }, async ($, on) => {
   const { prompt, tool } = await mountTimed($, on)
   const drawn = JSON.stringify(await prompt.drawn())
   expect(drawn).toContain(String.fromCodePoint(0xe0b6))
   // The time's column carries the prompt's background down a wrapped prompt, and the pill a lighter one so it still shows.
   expect(drawn).toMatch(/"key":"toggle-prompt-time-col"[^}]*"backgroundColor":"#1C2033"/)
-  expect(drawn).toMatch(/"key":"toggle-prompt-time-body","backgroundColor":"#252A42"/)
+  expect(drawn).toMatch(/"key":"toggle-prompt-time-body","height":1,"backgroundColor":"#252A42"/)
+  // Pills stay one row whatever the line's height, so a taller line never paints their fill on the row below.
+  expect(drawn).toMatch(/"key":"toggle-head-time","flexDirection":"row","flexShrink":0,"height":1,"alignSelf":"flex-start"/)
   expect(await prompt.find({ type: 'Text', text: timeOfDay(Date.parse('2026-10-03T14:32:00.000Z')) })).toBeDefined()
   await prompt.press({ key: 'toggle-turn-button' })
   await pick(prompt, 1)

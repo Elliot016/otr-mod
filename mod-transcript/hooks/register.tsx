@@ -291,6 +291,9 @@ const WHEN_WIDTH = 18
 
 const widthOf =(e: { viewport?: { columns: number } }) => Math.max(20, (e.viewport?.columns ?? 100) - 6)
 
+// The head line's cells around its label: the card's edges and padding, the bar and its padding, the fold chip and its gap, and one spare.
+const HEAD_CHROME = 12
+
 // How a turn's row draws: hidden while its turn is folded, inside the card while unfolded, as is in the live turn or as the reply.
 async function placeOf($: EngineInterface, turn: Turn | undefined, requestId: string) {
   if (!turn || !isDone(turn) || rowKey(requestId) === turn.reply) return 'plain'
@@ -486,11 +489,12 @@ type Rows = Bars & { Text: (props: any) => RenderElement }
 function countsPill({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, key: string, added: number, removed: number) {
   if (!added && !removed) return null
   const parts = [added ? <Text key={`${key}-added`} color={THEME.good}>{`+${added}`}</Text> : null, removed ? <Text key={`${key}-removed`} color={THEME.alert}>{`${added ? ' ' : ''}−${removed}`}</Text> : null]
-  if (!look.nerd) return <Box key={key} flexDirection="row" flexShrink={0}>{parts}</Box>
+  if (!look.nerd) return <Box key={key} flexDirection="row" flexShrink={0} height={1} alignSelf="flex-start">{parts}</Box>
+  // One row tall whatever the line's height: a filled body stretched by a taller row painted the row below.
   return (
-    <Box key={key} flexDirection="row" flexShrink={0}>
+    <Box key={key} flexDirection="row" flexShrink={0} height={1} alignSelf="flex-start">
       <Text color={THEME.surface3}>{CAPS.left}</Text>
-      <Box key={`${key}-body`} flexDirection="row" backgroundColor={THEME.surface3}>{parts}</Box>
+      <Box key={`${key}-body`} flexDirection="row" height={1} backgroundColor={THEME.surface3}>{parts}</Box>
       <Text color={THEME.surface3}>{CAPS.right}</Text>
     </Box>
   )
@@ -832,11 +836,12 @@ function loadLook($: EngineInterface) {
 
 // A time as a rounded pill, like the omp transient prompt; plain muted text where the font has no caps.
 function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }, key: string, time: string, fill: string = THEME.surface2) {
-  if (!look.nerd) return <Box key={key} flexShrink={0}><Text color={THEME.muted}>{`${time} `}</Text></Box>
+  if (!look.nerd) return <Box key={key} flexShrink={0} height={1} alignSelf="flex-start"><Text color={THEME.muted}>{`${time} `}</Text></Box>
+  // One row tall whatever the line's height: a filled body stretched by a taller row painted the row below.
   return (
-    <Box key={key} flexDirection="row" flexShrink={0}>
+    <Box key={key} flexDirection="row" flexShrink={0} height={1} alignSelf="flex-start">
       <Text color={fill}>{CAPS.left}</Text>
-      <Box key={`${key}-body`} backgroundColor={fill}><Text color={THEME.muted}>{time}</Text></Box>
+      <Box key={`${key}-body`} height={1} backgroundColor={fill}><Text color={THEME.muted}>{time}</Text></Box>
       <Text color={fill}>{`${CAPS.right} `}</Text>
     </Box>
   )
@@ -1085,11 +1090,15 @@ export const register: Register = (on, options) => {
     // The head: what the turn did, then its line counts and how long it took, each a pill.
     const added = turn.tools.reduce((sum, call) => sum + call.added, 0)
     const removed = turn.tools.reduce((sum, call) => sum + call.removed, 0)
+    const took = turn.durationMs !== undefined ? fill(text.turnTook, { time: elapsed(turn.durationMs) }) : ''
+    // The label gets what the pills leave, so it never wraps: a wrapped label made the line two rows and the pills' fill bled into the second.
+    const countsWidth = added || removed ? cells(`${added ? `+${added}` : ''}${added && removed ? ' ' : ''}${removed ? `−${removed}` : ''}`) + (look.nerd ? 2 : 0) + 1 : 0
+    const tookWidth = took ? cells(took) + (look.nerd ? 3 : 1) + 1 : 0
     const head = (
       <Box key="toggle-head-line" flexDirection="row" columnGap={1}>
-        {toggleLine({ Box, Button, Client }, 'toggle-turn', THEME.accent, isOpen, fit(turnLine(turn), widthOf(e) - 30), { kind: 'turns', id: turn.prompt }, () => flip($, 'turns', turn.prompt))}
+        {toggleLine({ Box, Button, Client }, 'toggle-turn', THEME.accent, isOpen, fit(turnLine(turn), widthOf(e) - HEAD_CHROME - countsWidth - tookWidth), { kind: 'turns', id: turn.prompt }, () => flip($, 'turns', turn.prompt))}
         {countsPill({ Box, Text }, 'toggle-head-counts', added, removed)}
-        {turn.durationMs !== undefined ? timePill({ Box, Text }, 'toggle-head-time', fill(text.turnTook, { time: elapsed(turn.durationMs) }), THEME.surface3) : null}
+        {took ? timePill({ Box, Text }, 'toggle-head-time', took, THEME.surface3) : null}
       </Box>
     )
     const kinds = isOpen && foldTools ? chipSection({ Box, Button, Client, Text }, turn, flips.tools, widthOf(e), id => flip($, 'tools', id)) : null
