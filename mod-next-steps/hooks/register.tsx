@@ -1,6 +1,6 @@
 // mod-next-steps / hooks/register.tsx, by v-amorim
 // Registers the mod: wires the suggestion band, settings pane, commands and toasts.
-import type { ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'
 import { settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -240,7 +240,7 @@ export const register: Register = (on, options) => {
 
   // Subagent turns carry agentId and say nothing about the main prompt.
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) {
+    if (!(e as { agentId?: string }).agentId) {
       working = true
       clearSteps($)
     }
@@ -296,7 +296,8 @@ export const register: Register = (on, options) => {
 
   // One panel at a time: another mod's pane opening closes this one, deferred past that plugin's dispatch.
   on('state.set', async ($, e, next) => {
-    if (e.key === 'pane' && e.plugin !== 'mod-next-steps' && e.value === true) {
+    // The declared state names no other mod's pane, so the types narrow this event to never.
+    if (e.key === 'pane' && e.plugin !== 'mod-next-steps' && (e as { value?: unknown }).value === true) {
       $.clock.after(0, async () => {
         if (!(await isPaneOpen($))) return
         await $.ui.close({ id: PANE })
@@ -316,7 +317,7 @@ export const register: Register = (on, options) => {
     // A command waiting on the person outranks suggestions: the band has few rows, and a hidden hold looks like a hang.
     const isHolding = (await $.state.get({ plugin: 'mod-blast-radius', key: 'holding' })).value === true
     // Joins the shared pill row's top section when other mods drew one below; wrapping it would hide the row from mods drawn around this one, which then start a second row.
-    const above = (below: unknown, items: unknown[]) => {
+    const above = (below: RenderChildren, items: RenderChildren[]) => {
       const { group, row, rest, tip: menuTip } = splitRow(below)
       const tip = hovered?.id ? tipLine({ Box, Text }, tipText(hovered)) : menuTip
       // A heads-up card drawn below this mod still goes above the suggestions: it is rarer and more urgent. Without mod-heads-up nothing matches.
@@ -371,6 +372,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-next-steps.'))
     // A saved change reloads this mod, which redraws the panel with the new value.
