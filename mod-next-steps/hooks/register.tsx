@@ -383,7 +383,7 @@ export const register: Register = (on, options) => {
     }
 
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-next-steps-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneHeadingSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneHeadingSettings, text: text.tipTabSettings } }], still)}
         <Text key="status" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusReload}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: still, tips: text.settingTips })}
