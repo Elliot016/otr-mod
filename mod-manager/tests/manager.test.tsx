@@ -12,6 +12,9 @@ const SETTINGS = {
   model: 'x',
 }
 
+// The host's Mounted type lacks pointer.
+const withPointer = <T,>(m: T) => m as T & { pointer(e: object): Promise<unknown> }
+
 const manifest = (name: string) => JSON.stringify({ name, description: `${name} does a thing`, version: '1.0.0' })
 const hooks = JSON.stringify({ modules: ['./register.tsx'] })
 const source = "on('tool.call', async () => {})\non('ui.render', { component: 'AbovePrompt' }, async () => {})\n$.ui.status('x')\n$.command.register({ name: 'mod-beta', description: 'b' })"
@@ -216,15 +219,15 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
     return <Text>base</Text>
   })
 
-  await $.command.run({ command: 'mod-manager' })
+  await $.command.run({ command: 'mod-manager' } as never)
 
-  const ui = await $.ui.mount({
+  const ui = withPointer(await $.ui.mount({
     plugin: 'mod-manager',
     surface: 'terminal',
     component: 'Pane',
     requestId: 'manager',
     props: { title: 'Mods', isFocused: true, bodyColumns: 80, placement: 'above', scroll: { offset: 0, bodyRows: 20 }, view: {} },
-  } as never)
+  } as never))
 
   const dirs = () => String(JSON.parse(files[settingsPath]!).env.CLAUDE_CODE_PLUGIN_DIRS)
   expect(JSON.stringify(await ui.drawn({ in: 'manager-tab' }))).toContain('3')
@@ -307,7 +310,7 @@ test('a mod page changes its settings, runs its actions, and holds them while Cl
     value: [
       { key: 'alpha.loud', label: 'Loud', description: 'Shouts', kind: 'boolean', value: false, provider: { kind: 'plugin', name: 'alpha' }, isLocked: false },
       { key: 'other.loud', label: 'Not alpha', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'other' }, isLocked: false },
-    ],
+    ] as never,
   }))
   on('config.set', (_$, e) => {
     saved.push([e.key, e.value])
@@ -323,14 +326,14 @@ test('a mod page changes its settings, runs its actions, and holds them while Cl
     return <Text>base</Text>
   })
 
-  await $.command.run({ command: 'mod-manager' })
-  const ui = await $.ui.mount({
+  await $.command.run({ command: 'mod-manager' } as never)
+  const ui = withPointer(await $.ui.mount({
     plugin: 'mod-manager',
     surface: 'terminal',
     component: 'Pane',
     requestId: 'manager',
     props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
-  } as never)
+  } as never))
   // A mod that declares settings carries the gear in the list; a mod without settings does not.
   const listed = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
   expect(listed).toContain('⊛')
@@ -364,7 +367,7 @@ test('the command toggles: it opens a closed pane and closes an open one', async
   })
   on('fs.list', () => ({ value: [] }))
   on('env.get', () => ({ value: '/h' }))
-  on('ui.panes', () => ({ value: open.map(id => ({ id, isPlaced: true })) }))
+  on('ui.panes', () => ({ value: open.map(id => ({ id, isPlaced: true })) as never }))
   on('ui.open', (_$, e) => {
     calls.push(`open ${e.id}`)
     open = [e.id]
@@ -376,8 +379,8 @@ test('the command toggles: it opens a closed pane and closes an open one', async
     return { value: undefined }
   })
 
-  await $.command.run({ command: 'mod-manager' })
-  await $.command.run({ command: 'mod-manager' })
+  await $.command.run({ command: 'mod-manager' } as never)
+  await $.command.run({ command: 'mod-manager' } as never)
   expect(calls).toEqual(['open manager', 'close manager'])
 })
 
@@ -388,7 +391,7 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
   })
   on('fs.list', () => ({ value: [] }))
   on('env.get', () => ({ value: '/h' }))
-  on('ui.panes', () => ({ value: opened.filter(id => !opened.includes(`close ${id}`)).map(id => ({ id, isPlaced: true })) }))
+  on('ui.panes', () => ({ value: opened.filter(id => !opened.includes(`close ${id}`)).map(id => ({ id, isPlaced: true })) as never }))
   on('ui.close', (_$, e) => {
     opened.push(`close ${e.id}`)
     return { value: undefined }
@@ -436,7 +439,7 @@ const iconsPane = async ($: any, on: any) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>base</Text>
   })
-  await $.command.run({ command: 'mod-manager' })
+  await $.command.run({ command: 'mod-manager' } as never)
   const ui = await $.ui.mount({
     plugin: 'mod-manager',
     surface: 'terminal',
@@ -463,24 +466,24 @@ test('the icons switch shows Mixed when mods differ, and one click sets every mo
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.panes', () => ({ value: [] }))
-  on('config.list', () => ({ value: rows() }))
-  on('config.set', (_$: unknown, e: { key: string; value: string }) => {
+  on('config.list', () => ({ value: rows() as never }))
+  on('config.set', ((_$: unknown, e: { key: string; value: string }) => {
     saved.push(e.key)
     values[e.key] = e.value
     return { value: e.value }
-  })
+  }) as never)
   on('ui.render', ($$: any, e: any) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>base</Text>
   })
-  await $.command.run({ command: 'mod-manager' })
-  const ui = await $.ui.mount({
+  await $.command.run({ command: 'mod-manager' } as never)
+  const ui = withPointer(await $.ui.mount({
     plugin: 'mod-manager',
     surface: 'terminal',
     component: 'Pane',
     requestId: 'manager',
     props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
-  } as never)
+  } as never))
   expect(await ui.find({ type: 'Text', text: '· Mixed' })).toBeDefined()
   // The switch sits in its own setting card: the label, the bar, and what it does.
   expect(await ui.find({ type: 'Text', text: /^Sets every mod's icons at once/ })).toBeDefined()
