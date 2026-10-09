@@ -267,6 +267,14 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // A /resume or /clear ends this session: its suggestions, and a reply still on its way, belong to it alone.
+  on('session.end', async ($, e, next) => {
+    working = false
+    clearSteps($)
+
+    return next(e)
+  })
+
   on('ui.message', async ($, e, next) => {
     if (isTipMessage(e.data)) {
       hovered = e.data

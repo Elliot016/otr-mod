@@ -28,6 +28,7 @@ function setup(on: any, reply: () => unknown, below?: (elements: any) => unknown
   on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('prompt.submit', (_$: unknown, e: { text: string }) => ({ text: e.text }))
+  on('session.end', (_$: unknown, e: { sessionId: string }) => ({ sessionId: e.sessionId }))
   on('ui.render', ($: any, e: unknown) => {
     const elements = $.ui.resolve(e)
     return below ? below(elements) : <elements.Text key="base">base</elements.Text>
@@ -184,6 +185,23 @@ test('a reply that arrives after a new prompt is dropped', async ($, on) => {
   await $.prompt.submit({ text: 'next' } as never)
   await clock.settle()
   const ui = await mount($)
+  expect(await ui.find({ key: 'steps-hotkey-button-0' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a /resume or /clear clears the suggestions, and drops a reply still on its way', async ($, on) => {
+  const { clock } = setup(on, () => answered('alpha\nbeta'))
+  await $.turn.complete(DONE as never)
+  await clock.settle()
+  await $.session.end({ reason: 'resume', sessionId: 's1', resume: {} } as never)
+  let ui = await mount($)
+  expect(await ui.find({ key: 'steps-hotkey-button-0' })).toBeUndefined()
+  await ui.unmount()
+
+  await $.turn.complete(DONE as never)
+  await $.session.end({ reason: 'clear', sessionId: 's2', resume: {} } as never)
+  await clock.settle()
+  ui = await mount($)
   expect(await ui.find({ key: 'steps-hotkey-button-0' })).toBeUndefined()
   await ui.unmount()
 })
