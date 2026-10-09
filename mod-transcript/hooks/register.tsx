@@ -23,21 +23,26 @@ import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 import { copyChoices, copyText, type CopyChoice } from './clip'
 import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
 import { apiErrorAction, completeLines, hexColors, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice, type Notice, type Report } from './rows'
+import { bytesOf, CHUNK_BYTES, chunkArgv, utf8Length } from './tail'
 
 let transcript = ''
 let log = new TurnLog()
 let isLoaded = false
-// How much of the transcript text is fed, and whether its last line was still unfinished at the last read.
-let fedChars = 0
+// How many bytes of the transcript are fed, and whether its last line was still unfinished at the last read.
+let fedBytes = 0
 let isPartial = false
+// The session the log belongs to. A /resume or /clear keeps the process and changes the id, so the old log must never draw the new rows.
+let logSession = ''
 // Until the transcript is read, turns come from the in-memory messages: a row that folds later off screen keeps its height and eats the scroll.
 let guessing: Promise<void> | null = null
-const guess = ($: EngineInterface) =>
-  (guessing ??= $.session.messages().then(messages => {
-    if (!isLoaded) log = TurnLog.fromMessages(messages)
+const guess = ($: EngineInterface) => {
+  const session = logSession
+  return (guessing ??= $.session.messages().then(messages => {
+    if (!isLoaded && session === logSession) log = TurnLog.fromMessages(messages)
   }).catch(() => {
     // Without the messages, rows draw as before: unfolded until the transcript is read.
   }))
+}
 let working = false
 // The agent whose transcript is on screen (the band's view); its rows are not the main conversation's turns.
 let viewedAgent: string | undefined
@@ -92,40 +97,130 @@ async function toggleSettings($: EngineInterface) {
   await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, result.isPlaced)
 }
 
-// The transcript's text: '' when there is none yet, null when the file is there but could not be read.
-async function readTranscript($: EngineInterface) {
+// One fs.read takes a file up to this size.
+const WHOLE_READ_BYTES = 4 * 1024 * 1024
+
+// The text from byte `from` on ('' for none, null when unreadable); past one fs.read, only the first read streams the whole file.
+async function readTranscript($: EngineInterface, from: number): Promise<{ text: string | null; size: number }> {
   const size = transcript ? ((await $.fs.stat(transcript).catch(() => null))?.size ?? 0) : 0
-  if (!size) return ''
-  let text = String(await $.fs.read(transcript).catch(() => ''))
-  if (!text) {
-    const isWindows = /^[A-Za-z]:|\\/.test(transcript)
-    // cmd's type rejects forward slashes ("The syntax of the command is incorrect").
-    const argv = isWindows ? ['cmd', '/c', 'type', transcript.replace(/\//g, '\\')] : ['cat', transcript]
-    for await (const chunk of $.process.spawn({ argv })) {
-      if (chunk.stream === 'stdout') text += chunk.text
-    }
+  if (!size || size <= from) return { text: '', size }
+  if (size <= WHOLE_READ_BYTES) {
+    const whole = String(await $.fs.read(transcript).catch(() => ''))
+    if (whole) return { text: from ? new TextDecoder().decode(new TextEncoder().encode(whole).subarray(from)) : whole, size }
   }
-  return text || null
+  if (from > 0) {
+    const parts: Uint8Array[] = []
+    for (let at = from; at < size; at += CHUNK_BYTES) {
+      const { stdout } = await $.process.run(chunkArgv(transcript, at, Math.min(CHUNK_BYTES, size - at)))
+      parts.push(bytesOf(stdout))
+    }
+    const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+    parts.reduce((at, part) => (bytes.set(part, at), at + part.length), 0)
+    return { text: new TextDecoder().decode(bytes), size }
+  }
+  const isWindows = /^[A-Za-z]:|\\/.test(transcript)
+  // cmd's type rejects forward slashes ("The syntax of the command is incorrect").
+  const argv = isWindows ? ['cmd', '/c', 'type', transcript.replace(/\//g, '\\')] : ['cat', transcript]
+  let text = ''
+  for await (const chunk of $.process.spawn({ argv })) {
+    if (chunk.stream === 'stdout') text += chunk.text
+  }
+  return { text: text || null, size }
 }
 
+function startLog(session: string, path = '') {
+  logSession = session
+  transcript = path
+  log = new TurnLog()
+  isLoaded = false
+  fedBytes = 0
+  isPartial = false
+  guessing = null
+  working = false
+  endedPrompt = ''
+  apiFailure = null
+  seen.clear()
+}
+
+// Asking the id on every row slowed scrolling, so rows ask after a session.end, or once this long has passed.
+const SESSION_CHECK_MS = 500
+let sessionCheckedAt = 0
+
+// A new session's rows can draw before its SessionStart arrives, so rows check the id before using the log.
+async function followSession($: EngineInterface) {
+  const now = Date.now()
+  if (logSession && now - sessionCheckedAt < SESSION_CHECK_MS) return
+  sessionCheckedAt = now
+  const asked = logSession
+  const session = await $.session.id().catch(() => logSession)
+  // A SessionStart that switched the log while the id was on its way knows better than this answer.
+  if (session === logSession || asked !== logSession) return
+  startLog(session)
+  // The session's SessionStart may never come, so its transcript is looked up by id.
+  $.clock.after(0, () => void load($))
+}
+
+// One read at a time: two at once would feed the same lines twice.
+let reading: Promise<void> = Promise.resolve()
+const load = ($: EngineInterface) => (reading = reading.then(() => readMore($)).catch(() => {}))
+
+// A startup hook waits this long at most, so a long session's read never holds up the start; rows fold from the guess meanwhile.
+const LOAD_WAIT_MS = 300
+const loadAWhile = ($: EngineInterface) => Promise.race([load($), $.clock.sleep(LOAD_WAIT_MS).catch(() => {})])
+
 // Later reads feed only the text after what was fed; a failed read leaves the log unloaded for the next turn.
-async function load($: EngineInterface) {
+async function readMore($: EngineInterface) {
+  await followSession($)
   if (isLoaded && !isPartial) return
-  if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
-  if (!transcript) transcript = await findTranscript($)
-  const read = await readTranscript($).catch(() => null)
-  if (read === null) return
-  const fresh = read.slice(fedChars)
+  const session = logSession
+  const path = transcript || String((await $.store.get(`transcript:${session}`).catch(() => '')) ?? '') || (await findTranscript($))
+  // A switch while this read waited makes it another session's.
+  if (session !== logSession) return
+  transcript = path
+  const readAt = Date.now()
+  lastRead = `reading ${path}`
+  const failed = (error: Error) => {
+    lastRead = `read failed after ${Date.now() - readAt} ms: ${error?.message ?? error}`
+    return { text: null, size: 0 }
+  }
+  let from = isLoaded ? fedBytes : 0
+  let read = await readTranscript($, from).catch(failed)
+  // A file shorter than what was fed was rewritten, so it is read again from its start.
+  if (read.text !== null && read.size < fedBytes) {
+    isLoaded = false
+    isPartial = false
+    from = 0
+    read = await readTranscript($, 0).catch(failed)
+  }
+  const fresh = read.text
+  if (fresh === null || session !== logSession || path !== transcript) return
+  const fedAt = Date.now()
   const { lines, rest } = completeLines(fresh)
   // A line unfinished through two reads is taken as it stands: feed drops it when it is not JSON.
   const isStale = isPartial && rest.length > 0
-  if (!isLoaded) log = new TurnLog()
-  for (const line of isStale ? [...lines, rest] : lines) log.feed(line)
-  fedChars += isStale ? fresh.length : fresh.length - rest.length
+  // The first read builds its log aside, so rows keep drawing from the guess until it is whole.
+  const target = isLoaded ? log : new TurnLog()
+  const fed = isStale ? [...lines, rest] : lines
+  for (let at = 0; at < fed.length; at += FEED_SLICE) {
+    for (const line of fed.slice(at, at + FEED_SLICE)) target.feed(line)
+    // A long session has tens of thousands of rows; feeding them in one go stalled every row draw meanwhile.
+    if (at + FEED_SLICE < fed.length) {
+      await $.clock.sleep(0)
+      if (session !== logSession || path !== transcript) return
+    }
+  }
+  log = target
+  fedBytes = from + utf8Length(fresh) - (isStale ? 0 : utf8Length(rest))
   isPartial = rest.length > 0 && !isPartial
   isLoaded = true
+  lastRead = `last read: ${fresh.length} chars from byte ${from} in ${fedAt - readAt} ms, ${lines.length} lines fed in ${Date.now() - fedAt} ms`
   $.ui.invalidate('ui.render')
 }
+
+const FEED_SLICE = 2000
+
+// For /mod-transcript debug: how long the last transcript read and feed took.
+let lastRead = ''
 
 // When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
 async function findTranscript($: EngineInterface) {
@@ -157,22 +252,32 @@ const markEnded = () => {
   endedPrompt = log.turns[log.turns.length - 1]?.prompt ?? ''
 }
 
-// Reading the lists subscribes the row to redraws when a click changes them.
-async function opened($: EngineInterface, kind: Kind) {
-  const value = (kind === 'turns' ? await $.state.get({ plugin: 'mod-transcript', key: 'turns' }) : await $.state.get({ plugin: 'mod-transcript', key: 'tools' })).value
-  return Array.isArray(value) ? value : []
+const listOf = (value: unknown): string[] => (Array.isArray(value) ? value : [])
+
+// The flipped lists, copied from $.state: reading the state on every row cost a round trip per row while scrolling. A change redraws every row.
+const flips: Record<Kind, string[]> = { turns: [], tools: [] }
+
+function setFlips($: EngineInterface, kind: Kind, value: unknown) {
+  flips[kind] = listOf(value)
+  $.ui.invalidate('ui.render')
+}
+
+async function readFlips($: EngineInterface) {
+  setFlips($, 'turns', (await $.state.get({ plugin: 'mod-transcript', key: 'turns' })).value)
+  setFlips($, 'tools', (await $.state.get({ plugin: 'mod-transcript', key: 'tools' })).value)
 }
 
 // Writes a list computed from its latest value, only while no other write landed since the read; a lost race reads again.
 async function changeList($: EngineInterface, kind: Kind, change: (list: string[]) => string[]) {
-  const listOf = (value: unknown) => (Array.isArray(value) ? value : [])
   for (let tries = 0; tries < 5; tries++) {
     if (kind === 'turns') {
       const { value, version } = await $.state.get({ plugin: 'mod-transcript', key: 'turns' })
-      if ((await $.state.set({ plugin: 'mod-transcript', key: 'turns' }, change(listOf(value)), { ifVersion: version })).isSet) return
+      const next = change(listOf(value))
+      if ((await $.state.set({ plugin: 'mod-transcript', key: 'turns' }, next, { ifVersion: version })).isSet) return setFlips($, kind, next)
     } else {
       const { value, version } = await $.state.get({ plugin: 'mod-transcript', key: 'tools' })
-      if ((await $.state.set({ plugin: 'mod-transcript', key: 'tools' }, change(listOf(value)), { ifVersion: version })).isSet) return
+      const next = change(listOf(value))
+      if ((await $.state.set({ plugin: 'mod-transcript', key: 'tools' }, next, { ifVersion: version })).isSet) return setFlips($, kind, next)
     }
   }
 }
@@ -189,7 +294,7 @@ const widthOf =(e: { viewport?: { columns: number } }) => Math.max(20, (e.viewpo
 // How a turn's row draws: hidden while its turn is folded, inside the card while unfolded, as is in the live turn or as the reply.
 async function placeOf($: EngineInterface, turn: Turn | undefined, requestId: string) {
   if (!turn || !isDone(turn) || rowKey(requestId) === turn.reply) return 'plain'
-  return isTurnOpen(await opened($, 'turns'), turn) ? 'card' : 'hidden'
+  return isTurnOpen(flips.turns, turn) ? 'card' : 'hidden'
 }
 
 type Elements = { Box: (props: any) => RenderElement }
@@ -481,7 +586,7 @@ async function taskRow(parts: Controls & Rows, $: EngineInterface, requestId: st
   const report = withNotice(reportOf(props.from, props.task), id ? notices.get(id) : undefined)
   const turn = log.turnAt(requestId)
   if (!turn || !isDone(turn)) return reportRow(parts, props, report, width)
-  const isOpen = isTurnOpen(await opened($, 'turns'), turn)
+  const isOpen = isTurnOpen(flips.turns, turn)
   return reportRow(parts, props, report, width, { id: turn.prompt, isOpen, onPress: () => flip($, 'turns', turn.prompt) })
 }
 
@@ -623,7 +728,7 @@ async function answer($: EngineInterface, args: string) {
   if (args.trim() === 'debug') {
     const temp = ((await $.env.get('TEMP')) ?? (await $.env.get('TMPDIR')) ?? '/tmp').replace(/\\/g, '/')
     const rows = [...seen].map(([row, isPlaced]) => `${isPlaced ? 'placed  ' : 'unplaced'} ${row}`)
-    await $.fs.write(`${temp}/mod-transcript-ids.txt`, `${log.turns.length} turns\n${rows.join('\n')}\n`)
+    await $.fs.write(`${temp}/mod-transcript-ids.txt`, `${log.turns.length} turns\n${lastRead}\n${rows.join('\n')}\n`)
     return `${rows.length} drawn rows written to ${temp}/mod-transcript-ids.txt`
   }
   const done = log.turns.filter(isDone)
@@ -764,7 +869,8 @@ export const register: Register = (on, options) => {
       argumentHint: '[settings|debug]',
     })
     await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, await isPaneOpen($))
-    await load($)
+    await readFlips($)
+    await loadAWhile($)
 
     return next(e)
   })
@@ -805,6 +911,12 @@ export const register: Register = (on, options) => {
 
   // One panel at a time: another mod's pane opening closes this one, deferred past that plugin's dispatch.
   on('state.set', async ($, e, next) => {
+    // Another surface, the desktop's say, can fold a turn too.
+    if (e.plugin === 'mod-transcript' && (e.key === 'turns' || e.key === 'tools')) {
+      const result = await next(e)
+      setFlips($, e.key, e.value)
+      return result
+    }
     if (e.key === 'pane' && e.plugin !== 'mod-transcript' && e.value === true) {
       $.clock.after(0, async () => {
         if (!(await isPaneOpen($))) return
@@ -859,16 +971,11 @@ export const register: Register = (on, options) => {
 
   // Only the settings hook event names the transcript; kept per session so a reload finds it again.
   on('classic.SessionStart', async ($, e, next) => {
-    // A compact keeps the same file, which the log already holds.
-    if (e.transcript_path !== transcript || !isLoaded) {
-      transcript = e.transcript_path
-      log = new TurnLog()
-      isLoaded = false
-      fedChars = 0
-      isPartial = false
-      guessing = null
+    // A compact keeps the same session and file, which the log already holds.
+    if (e.session_id !== logSession || e.transcript_path !== transcript || !isLoaded) {
+      startLog(e.session_id, e.transcript_path)
       await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
-      await load($)
+      await loadAWhile($)
     }
     // SessionStart comes between turns, so whatever the transcript holds has ended.
     markEnded()
@@ -886,6 +993,13 @@ export const register: Register = (on, options) => {
   on('classic.StopFailure', async ($, e, next) => {
     apiFailure = { error: e.error, details: e.error_details ?? '', text: (e.last_assistant_message ?? '').trim() }
     $.ui.invalidate('ui.render')
+
+    return next(e)
+  })
+
+  // A /resume or /clear ends this session; the next row asks for the id at once.
+  on('session.end', async ($, e, next) => {
+    sessionCheckedAt = 0
 
     return next(e)
   })
@@ -919,6 +1033,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    await followSession($)
     isFullView = e.props.isExpanded
     // A subagent's report opens a turn of its own, as in the transcript, unless it lands while Claude works: the transcript keeps that one in the running turn.
     const isReport = e.props.origin.kind === 'peer'
@@ -966,7 +1081,7 @@ export const register: Register = (on, options) => {
     if (!turn) return row
     if (!hasHead(turn)) return <Box key="toggle-prompt" flexDirection="column" flexGrow={1}>{row}{opening({ Box, Client })}</Box>
 
-    const isOpen = isTurnOpen(await opened($, 'turns'), turn)
+    const isOpen = isTurnOpen(flips.turns, turn)
     // The head: what the turn did, then its line counts and how long it took, each a pill.
     const added = turn.tools.reduce((sum, call) => sum + call.added, 0)
     const removed = turn.tools.reduce((sum, call) => sum + call.removed, 0)
@@ -977,11 +1092,13 @@ export const register: Register = (on, options) => {
         {turn.durationMs !== undefined ? timePill({ Box, Text }, 'toggle-head-time', fill(text.turnTook, { time: elapsed(turn.durationMs) }), THEME.surface3) : null}
       </Box>
     )
-    const kinds = isOpen && foldTools ? chipSection({ Box, Button, Client, Text }, turn, await opened($, 'tools'), widthOf(e), id => flip($, 'tools', id)) : null
+    const kinds = isOpen && foldTools ? chipSection({ Box, Button, Client, Text }, turn, flips.tools, widthOf(e), id => flip($, 'tools', id)) : null
+    // The reply closes the card; a turn cancelled before any reply has none, so its head closes it whenever no tool row draws below.
+    const isClosed = !turn.reply && (foldTools || !isOpen)
     return (
       <Box key="toggle-prompt" flexDirection="column" flexGrow={1}>
         {row}
-        {frame({ Box, Client }, 'toggle-head-frame', slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, [head, kinds], { kind: 'turns', id: turn.prompt }), true, false)}
+        {frame({ Box, Client }, 'toggle-head-frame', slice({ Box, Client }, 'toggle-head', isOpen ? THEME.accent : THEME.border, [head, kinds], { kind: 'turns', id: turn.prompt }), true, isClosed, false, turn)}
       </Box>
     )
   })
@@ -989,9 +1106,11 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    await followSession($)
     if (isLoaded) log.claim(e.requestId, 'reply')
     if (isFullView) return next(e)
-    else {
+    // Once the transcript is read the guess is not needed, and asking for it fetched every message of the session.
+    if (!isLoaded) {
       await guess($)
       log.adopt(e.requestId, 'text', e.props.text)
     }
@@ -1034,6 +1153,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    await followSession($)
     if (isLoaded) log.claimCall(e.props.tool_use_id, e.props.tool, e.props.input, e.props.isRunning, e.props.output, e.props.isErrored || e.props.isInterrupted)
     else {
       await guess($)
@@ -1058,7 +1178,7 @@ export const register: Register = (on, options) => {
 
     if (e.props.tool === 'AskUserQuestion') return inBubble(questionRows({ Box, Text }, e.props.input, e.props.output, widthOf(e)))
     const { added, removed } = diffStat(e.props.tool, e.props.input, e.props.output, isFailed)
-    const isOpen = (await opened($, 'tools')).includes(e.props.tool_use_id)
+    const isOpen = flips.tools.includes(e.props.tool_use_id)
     const when = showTimes ? callTime(log.callOf(e.props.tool_use_id)) : ''
     // The status words take their room first, so the name is cut to leave it.
     const suffix = statusesOf({ isInterrupted: e.props.isInterrupted, isDeclined, output: e.props.output, input: e.props.input }).map(status => ` ${MARK.sep} ${text.status[status]}`).join('')
@@ -1092,6 +1212,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    await followSession($)
     if (isLoaded) log.claim(e.requestId, 'row')
     if (isFullView) return next(e)
     else {
@@ -1102,7 +1223,7 @@ export const register: Register = (on, options) => {
     seen.set(`ToolResult ${e.requestId}`, Boolean(turn))
     const { Box, Client } = $.ui.resolve(e)
     const place = await placeOf($, turn, e.requestId)
-    if (place === 'hidden' || (place === 'card' && foldTools) || (foldTools && !isLive(turn) && !(await opened($, 'tools')).includes(e.props.tool_use_id))) return <Box key="toggle-hidden" />
+    if (place === 'hidden' || (place === 'card' && foldTools) || (foldTools && !isLive(turn) && !flips.tools.includes(e.props.tool_use_id))) return <Box key="toggle-hidden" />
 
     const body = nested({ Box, Client }, 'toggle-result', await next(e), { kind: 'tools', id: e.props.tool_use_id })
     if (place === 'card') return cardRow({ Box, Client }, body, { kind: 'turns', id: turn!.prompt })
@@ -1112,6 +1233,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    await followSession($)
     // A folded group's calls never draw rows of their own, so the group claims them for the turn.
     if (isLoaded) for (const call of e.props.calls) if (call.tool_use_id) log.claimCall(call.tool_use_id, call.tool, call.input, call.isRunning, call.output, call.isErrored || call.isInterrupted)
     // A group of thinking alone has no calls; it joins the turn by its own message id.
@@ -1140,6 +1262,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
     await loadLook($)
     if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    await followSession($)
     if (isLoaded) log.claim(e.requestId, 'row')
     if (isFullView) return next(e)
     else {

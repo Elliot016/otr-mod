@@ -2,6 +2,8 @@
 // Tests how finished turns, edits and diffs are drawn from transcript rows.
 import { expect, mock, test } from 'claude-code/testing'
 
+import Copy from '../hooks/copy'
+import Fold from '../hooks/fold'
 import { THEME } from '../hooks/theme'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
@@ -307,6 +309,69 @@ test('a transcript read that failed is read again on the next turn', async ($, o
   expect(reads).toBe(1)
   await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false } as never)
   expect(reads).toBe(2)
+})
+
+test('a turn cancelled before any reply still closes its card under the head', async ($, on) => {
+  const mount = await open($, on, [
+    row(1, 'user', { message: { role: 'user', content: 'run it' } }),
+    said(2, [{ type: 'tool_use', id: 'toolu_s', name: 'Bash', input: { command: 'sleep 40' } }]),
+    row(3, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_s', content: 'Interrupted', is_error: true }] } }),
+    row(4, 'user', { message: { role: 'user', content: '[Request interrupted by user for tool use]' } }),
+    row(5, 'user', { message: { role: 'user', content: 'after' } }),
+  ].join('\n') + '\n')
+  const head = await mount('UserMessage', ID(1), prompt('run it'))
+  expect(await head.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+  expect(await head.find({ key: 'toggle-head-frame-bottom' })).toBeDefined()
+})
+
+test('a turn with a reply leaves the closing to the reply row', async ($, on) => {
+  const mount = await open($, on, EDIT_TURN)
+  const head = await mount('UserMessage', ID(1), prompt('edit it'))
+  expect(await head.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+  expect(await head.find({ key: 'toggle-head-frame-bottom' })).toBeUndefined()
+})
+
+// A stand-in surface that counts running timers, since a long session mounts a fold and a copy pill per turn.
+function fakeSurface() {
+  const running = new Set<() => void>()
+  let pointer: (event: any) => void = () => {}
+  const surface: any = {
+    elements: { Box: (props: any) => props, Text: (props: any) => props },
+    state: undefined,
+    columns: 30,
+    setState: (state: any) => (surface.state = state),
+    every: (_ms: number, fn: () => void) => {
+      running.add(fn)
+      return () => running.delete(fn)
+    },
+    onPointer: (handler: (event: any) => void) => (pointer = handler),
+    post: () => {},
+  }
+  return { surface, running, point: (event: object) => pointer(event), tick: () => [...running].forEach(fn => fn()) }
+}
+
+test('a pill at rest runs no timer: fold and copy pills tick only while hovered or fading', () => {
+  const fold = fakeSurface()
+  const foldProps = { kind: 'turns', id: 't', color: THEME.surface2, isOpen: false, nerd: false, still: false } as never
+  Fold(foldProps, fold.surface)
+  expect(fold.running.size).toBe(0)
+  fold.point({ type: 'move', x: 0, y: 0 })
+  Fold(foldProps, fold.surface)
+  expect(fold.running.size).toBe(1)
+  fold.point({ type: 'leave', x: 0, y: 0 })
+  for (let n = 0; n < 5; n++) fold.tick()
+  expect(fold.running.size).toBe(0)
+
+  const copy = fakeSurface()
+  const copyProps = { id: 't', choices: [{ what: 'text', label: 'text' }], icon: 'c', copied: 'copied {what}', bg: THEME.surface2, nerd: false, lead: { char: '─', color: THEME.border } } as never
+  Copy(copyProps, copy.surface)
+  expect(copy.running.size).toBe(0)
+  copy.point({ type: 'move', x: 29, y: 0 })
+  Copy(copyProps, copy.surface)
+  expect(copy.running.size).toBe(1)
+  copy.point({ type: 'leave', x: 0, y: 0 })
+  copy.tick()
+  expect(copy.running.size).toBe(0)
 })
 
 test('two turns opened at once both stay open', async ($, on) => {

@@ -30,6 +30,24 @@ export const copyWidth = (props: Pick<CopyProps, 'choices' | 'copied' | 'nerd'>)
   return (props.nerd ? 2 : 0) + Math.max(open, note) + 3
 }
 
+// Each pill's timer runs from the pointer's first event until the pill is at rest again: every reply of a long session ticking kept the process busy.
+const timers = new WeakMap<object, () => void>()
+
+const wake = (surface: Parameters<ClientModule<CopyProps, State>>[1]) => {
+  if (timers.has(surface)) return
+  const stop = surface.every(TICK_MS, () => {
+    const now = surface.state
+    if (!now) return
+    if (now.note && Date.now() - now.noteAt >= NOTE_MS) surface.setState({ ...now, note: '' })
+    else if (now.over !== -2 && Date.now() - now.at >= QUIET_MS) surface.setState({ ...now, over: -2 })
+    else if (!now.note && now.over === -2) {
+      stop()
+      timers.delete(surface)
+    }
+  })
+  timers.set(surface, stop)
+}
+
 // At rest only the icon at the right end; the pointer opens the choices to its left, so the icon stays put, and lights the one under it.
 const Copy: ClientModule<CopyProps, State> = (props, surface) => {
   const { Box, Text } = surface.elements
@@ -40,15 +58,7 @@ const Copy: ClientModule<CopyProps, State> = (props, surface) => {
   const bodyWidth = hasNote ? state.note.length + 2 : isExpanded ? props.choices.reduce((sum, choice) => sum + choice.label.length + 2, 0) : 0
   const lead = Math.max(0, (surface.columns || copyWidth(props)) - caps - bodyWidth - 3)
 
-  if (!surface.state) {
-    surface.setState(state)
-    surface.every(TICK_MS, () => {
-      const now = surface.state
-      if (!now) return
-      if (now.note && Date.now() - now.noteAt >= NOTE_MS) surface.setState({ ...now, note: '' })
-      else if (now.over !== -2 && Date.now() - now.at >= QUIET_MS) surface.setState({ ...now, over: -2 })
-    })
-  }
+  if (!surface.state) surface.setState(state)
 
   // The choice at cell x, in drawn order: the lead, the left cap, the choices side by side, then the icon.
   const choiceAt = (x: number) => {
@@ -62,6 +72,7 @@ const Copy: ClientModule<CopyProps, State> = (props, surface) => {
   }
 
   surface.onPointer(event => {
+    wake(surface)
     // While folded the choices are not where they will be, so the first event on the pill only opens it; the lead never does.
     const next = event.type === 'leave' || (!isExpanded && event.x < lead) ? -2 : isExpanded ? choiceAt(event.x) : -1
     if (event.type === 'down' && event.button === 'left' && next >= 0) {
