@@ -42,8 +42,9 @@ const seeded = (): Snap => {
   return snap
 }
 
-// `files` are the gates files the session's folder holds, by path under it.
-type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[]; files: Record<string, string> }
+// `files` are the gates files the session's folder holds, by path under it; `repo` names the folder the checker filed them under.
+// `session.id` may change mid-test, as a /resume or /clear changes it.
+type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[]; files: Record<string, string>; repo: string; session: { id: string } }
 
 // Everything the mod reads from the engine, with the store backed by a map and the clock moved only by the test.
 function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], world: Partial<World> = {}) {
@@ -51,8 +52,10 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
   const clock = mock.clock(on, { now: world.now ?? 14 * 60 * 1000 })
   const windows = world.windows ?? []
   const files = world.files ?? { 'GATES.md': GATES, 'gates/leaf-1.1.1.md': GATES.split('\n').slice(0, 7).join('\n') }
-  on('session.id', () => ({ value: 'sid-1' }))
+  on('session.id', () => ({ value: world.session?.id ?? 'sid-1' }))
+  on('session.end', (_$, e) => ({ sessionId: e.sessionId }) as never)
   on('session.cwd', () => ({ value: '/w' }))
+  on('session.repo', () => ({ value: null }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 46, tokens: 92000 }, rateLimits: windows } }))
   on('agent.list', () => ({ value: agents }) as never)
@@ -63,15 +66,20 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
     store.set(e.key, e.value)
     return { value: undefined } as never
   })
+  // With no HOME set and no repo, the session's own folder is <home ''>/.claude/gates/<cwd's name>/<session id>.
+  const folder = `/.claude/gates/${world.repo ?? 'w'}/sid-1`
   on('fs.read', (_$, e) => {
-    const path = neutral(e.path).replace(/^\/w\//, '')
+    const path = neutral(e.path).replace(`${folder}/`, '')
     if (path in files) return { value: files[path]! }
     throw new Error('ENOENT')
   })
+  on('fs.exists', (_$, e) => ({ value: neutral(e.path) === folder }))
   on('fs.list', (_$, e) => ({
-    value: neutral(e.path).endsWith('/gates')
-      ? Object.keys(files).filter(path => path.startsWith('gates/')).map(path => ({ name: path.slice('gates/'.length), kind: 'file', size: 0, mtimeMs: 0, isLink: false }))
-      : [],
+    value: neutral(e.path) === '/.claude/gates'
+      ? ['w', world.repo ?? 'w'].map(name => ({ name, kind: 'dir', size: 0, mtimeMs: 0, isLink: false }))
+      : neutral(e.path) === `${folder}/gates`
+        ? Object.keys(files).filter(path => path.startsWith('gates/')).map(path => ({ name: path.slice('gates/'.length), kind: 'file', size: 0, mtimeMs: 0, isLink: false }))
+        : [],
   }))
   on('env.get', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
@@ -216,6 +224,14 @@ test('the pane marks a finished ledger of gates files as phase done and names th
   await ui.unmount()
 })
 
+test('a session that started outside the repo its checker ran in still finds its gates, under that repo\'s folder', async ($, on) => {
+  stubEngine(on, [], [], { repo: 'mods', files: { 'gates/phase-b.md': MET('G1'), 'gates/ultimate.md': MET('G1') } })
+  await $.session.start({ cwd: '/w' } as never)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'loops' }))).toContain('2/2')
+  await ui.unmount()
+})
+
 test('the band pill counts agents in a badge, and a click toggles the pane', async ($, on) => {
   const opened: string[] = []
   stubEngine(on, [AGENT], opened)
@@ -231,6 +247,23 @@ test('the band pill counts agents in a badge, and a click toggles the pane', asy
   await pointerOn(band, { in: 'menu-entry-progress', type: 'down', x: 1, y: 0, button: 'left' })
   expect(opened).toEqual(['progress'])
   await band.unmount()
+})
+
+test('after a /resume or /clear the pane drops the old session\'s loops and gates', async ($, on) => {
+  const session = { id: 'sid-1' }
+  stubEngine(on, [], [], { session })
+  await $.session.start({ cwd: '/w' } as never)
+  let ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'loops' }))).toContain('312k')
+  await ui.unmount()
+  await $.session.end({ reason: 'clear', sessionId: 'sid-1', resume: {} } as never)
+  session.id = 'sid-2'
+  ui = await $.ui.mount(PANE)
+  const fresh = JSON.stringify(await ui.drawn({ in: 'loops' }).catch(() => ''))
+  expect(fresh).not.toContain('312k')
+  expect(fresh).not.toContain('Haiku 4.5')
+  expect(fresh).not.toContain('2/6')
+  await ui.unmount()
 })
 
 test('the pane draws a card per loop and a click opens its gates', async ($, on) => {

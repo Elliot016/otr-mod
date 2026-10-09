@@ -92,19 +92,35 @@ let still = false
 
 // The figures survive a reload in the store, under the session's id; this is only their cache.
 let snap: Snap | null = null
+// The load in flight, shared, so two hooks never build two snaps and save over each other's changes.
+let snapLoad: Promise<Snap> | null = null
+
+// A /resume or /clear keeps the process and changes the id; asking it on every call would cost a round trip per render, so calls ask after a session.end, or once this long has passed.
+const SESSION_CHECK_MS = 500
+let sessionCheckedAt = 0
 
 async function loadSnap($: EngineInterface) {
-  if (snap) return snap
+  const now = Date.now()
+  if (snap && now - sessionCheckedAt < SESSION_CHECK_MS) return snap
+  sessionCheckedAt = now
   const sid = String(await $.session.id())
-  let stored: Snap | undefined
-  try {
-    const raw = await $.store.get('snap')
-    if (raw && typeof raw === 'object' && (raw as Snap).sid === sid) stored = JSON.parse(JSON.stringify(raw)) as Snap
-  } catch {
-    // An unreadable store starts the figures over.
-  }
-  snap = stored ?? emptySnap(sid)
-  return snap
+  if (snap?.sid === sid) return snap
+  // No session.start follows a /clear, so a snap replacing another session's takes its start time here.
+  const isSwitch = snap !== null
+  snapLoad ??= (async () => {
+    let stored: Snap | undefined
+    try {
+      const raw = await $.store.get('snap')
+      if (raw && typeof raw === 'object' && (raw as Snap).sid === sid) stored = JSON.parse(JSON.stringify(raw)) as Snap
+    } catch {
+      // An unreadable store starts the figures over.
+    }
+    snap = stored ?? (isSwitch ? { ...emptySnap(sid), startedAt: await $.clock.now() } : emptySnap(sid))
+    return snap
+  })().finally(() => {
+    snapLoad = null
+  })
+  return snapLoad
 }
 
 async function saveSnap($: EngineInterface) {
@@ -115,16 +131,38 @@ async function saveSnap($: EngineInterface) {
   }
 }
 
+// The folder found for a session, kept so later refreshes skip the search.
+let foundGates = { session: '', dir: '' }
+
+// The execute skill's folder for this session, as its gates-dir.mjs resolves it: ~/.claude/gates/<repo>/<session id>.
+async function gatesDir($: EngineInterface) {
+  const session = String(await $.session.id())
+  if (foundGates.session === session) return foundGates.dir
+  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+  const base = ((await $.env.get('GATES_HOME')) ?? `${home}/.claude/gates`).replace(/\\/g, '/')
+  const where = ((await $.session.repo())?.root ?? String(await $.session.cwd())).replace(/\\/g, '/').replace(/\/+$/, '')
+  const own = `${base}/${where.split('/').pop()}/${session}`
+  const exists = (dir: string) => $.fs.exists(dir).catch(() => false)
+  // The checker names the repo its shell is in, which drifts once the agent cds; a session id is unique, so any repo folder holding it is this session's.
+  const others = async () => (await $.fs.list(base).catch(() => [])).filter(entry => entry.kind === 'dir').map(entry => `${base}/${entry.name}/${session}`)
+  for (const dir of (await exists(own)) ? [own] : await others()) {
+    if (!(await exists(dir))) continue
+    foundGates = { session, dir }
+    return dir
+  }
+  return own
+}
+
 // GATES.md and every gates/<name>.md make up the main ledger; gates/<name>.md also belongs to the agent of that name.
 async function readGates($: EngineInterface, target: Snap) {
-  const cwd = String(await $.session.cwd()).replace(/\\/g, '/')
+  const dir = await gatesDir($)
   const found: Record<string, Gate[]> = {}
-  const root = await $.fs.read(`${cwd}/GATES.md`).catch(() => null)
+  const root = await $.fs.read(`${dir}/GATES.md`).catch(() => null)
   if (root !== null) found[MAIN_GATES] = parseGates(String(root))
-  for (const entry of await $.fs.list(`${cwd}/gates`).catch(() => [])) {
+  for (const entry of await $.fs.list(`${dir}/gates`).catch(() => [])) {
     if (entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.md')) continue
     const stem = stemOf(entry.name)
-    found[stem] = parseGates(String(await $.fs.read(`${cwd}/gates/${entry.name}`).catch(() => ''))).map(gate => ({ ...gate, file: stem }))
+    found[stem] = parseGates(String(await $.fs.read(`${dir}/gates/${entry.name}`).catch(() => ''))).map(gate => ({ ...gate, file: stem }))
   }
   const isChanged = JSON.stringify(found) !== JSON.stringify(target.gates)
   target.gates = found
@@ -233,6 +271,13 @@ export const register: Register = (on, options) => {
     await $.state.set({ plugin: 'mod-progress', key: 'pane' }, await isOpen($))
     // A hot reload leaves an open pane on its old drawing until something redraws it.
     $.ui.invalidate('ui.render')
+
+    return next(e)
+  })
+
+  // A /resume or /clear ends this session; the next call asks for the id at once.
+  on('session.end', async ($, e, next) => {
+    sessionCheckedAt = 0
 
     return next(e)
   })
