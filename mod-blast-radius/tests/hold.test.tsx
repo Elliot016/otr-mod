@@ -35,6 +35,7 @@ const FILES: Record<string, { kind: 'file' | 'dir'; size: number }> = {
   [`${LONG}/x.txt`]: { kind: 'file', size: 10 },
   [`${LONG}/y.txt`]: { kind: 'file', size: 20 },
 }
+declare const setTimeout: (run: (value?: unknown) => void, ms: number) => unknown
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 // A drive path the engine took for relative comes back with the plugin's folder in front, so the fixtures read it from the drive letter on.
 const asGiven = (path: string) => path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '')
@@ -247,10 +248,10 @@ test('the rules overrule an ok verdict: nothing measured, or a path outside the 
 test('Haiku words replace the heading and the sentence, while Run keeps the rule wording', async ($, on) => {
   const { seen, clock } = world(on)
   const asked: string[] = []
-  on('model.complete', (_$: unknown, e: { model: string; prompt: string }) => {
+  on('model.complete', ((_$: unknown, e: { model: string; prompt: string }) => {
     asked.push(e.model)
     return { value: { isAnswered: true, usage: {}, text: '{"verb":"Delete the build folder","does":"Removes the build output and everything in it.","undo":"No, rebuild it to get it back.","steps":["Deletes the build folder"],"targets":"the build folder","verdict":"ok","why":"build output can be rebuilt"}' } }
-  })
+  }) as never)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
@@ -271,7 +272,7 @@ test('while Haiku writes the card words, a shimmering Explaining shows on the ac
   const { seen, clock } = world(on)
   let release = (_: unknown) => {}
   const pending = new Promise(resolve => (release = resolve))
-  on('model.complete', async () => ({ value: await pending }))
+  on('model.complete', (async () => ({ value: await pending })) as never)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
@@ -291,7 +292,7 @@ test('while Haiku writes the card words, a shimmering Explaining shows on the ac
 
 test('a failed Haiku call leaves the rule wording in place, and the verdict points to Details', async ($, on) => {
   const { seen, clock } = world(on)
-  on('model.complete', () => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } }))
+  on('model.complete', (() => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } })) as never)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
@@ -845,14 +846,14 @@ test('the pills other mods draw stay below the card', { plugins: [stubPills] }, 
 
 test('/mod-blast-radius answers with what it holds', async ($, on) => {
   world(on)
-  const result = await $.command.run({ command: 'mod-blast-radius', args: '' })
+  const result = await $.command.run({ command: 'mod-blast-radius', args: '' } as never)
 
   expect(JSON.stringify(result)).toContain('Blast radius is on: 23 built-in checks')
 })
 
 test('the card: its title in bold alert, a check verdict with an alert mark and muted words', async ($, on) => {
   const { seen, clock } = world(on)
-  on('model.complete', () => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } }))
+  on('model.complete', (() => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } })) as never)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
@@ -897,7 +898,7 @@ test('the Details and Settings tabs swap the panes, each closing the other, and 
 
 test('with nothing held, the Details tab says so in a toast instead of opening an empty pane', async ($, on) => {
   const { seen } = world(on)
-  await $.command.run({ command: 'mod-blast-radius', args: 'settings' })
+  await $.command.run({ command: 'mod-blast-radius', args: 'settings' } as never)
   const settings = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...SETTINGS })
   await click(settings, 'mod-blast-radius-details-tab')
   expect([...seen.panes]).toEqual(['blast-radius-settings'])
