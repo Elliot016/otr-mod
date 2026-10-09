@@ -289,7 +289,7 @@ export const register: Register = (on, options) => {
   // One panel at a time: another mod's pane opening closes this one.
   on('state.set', async ($, e, next) => {
     // Deferred past this dispatch, so this mod's own state write is not nested in another plugin's.
-    if (e.key === 'pane' && e.plugin !== 'mod-skill-panel' && e.value === true) {
+    if (e.key === 'pane' && e.plugin !== 'mod-skill-panel' && (e as { value?: unknown }).value === true) {
       $.clock.after(0, async () => {
         const wasOpen = (await isOpen($)) || (await isOpen($, SETTINGS))
         if (!wasOpen) return
@@ -376,6 +376,7 @@ export const register: Register = (on, options) => {
     if (e.requestId !== PANE && e.requestId !== SETTINGS) return next(e)
     if (isOpening) $.clock.after(0, () => endOpening($))
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
 
     if (e.requestId === SETTINGS) {

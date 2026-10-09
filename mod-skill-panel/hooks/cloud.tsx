@@ -1,6 +1,6 @@
 // mod-skill-panel / hooks/cloud.tsx, by v-amorim
 // Lays out and draws the tag cloud of skill chips with hover and click.
-import type { ClientModule } from 'claude-code'
+import type { ClientModule, RenderChildren } from 'claude-code'
 
 import { mix, postTip } from './entry'
 import { TAG_WASH } from './tags'
@@ -62,7 +62,7 @@ const Cloud: ClientModule<CloudProps, number> = (props, surface) => {
     if (isClick) surface.post({ type: 'add', index } satisfies CloudMessage)
   })
 
-  const pill = (key: string, fill: string, body: unknown) => (
+  const pill = (key: string, fill: string, body: RenderChildren) => (
     <Box key={key} flexDirection="row" flexShrink={0}>
       <Text key={`${key}-left`} color={fill} {...(nerd ? {} : { backgroundColor: fill })}>{nerd ? CAPS.left : ' '}</Text>
       <Box key={`${key}-body`} flexDirection="row" backgroundColor={fill}>{body}</Box>
