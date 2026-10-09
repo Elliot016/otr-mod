@@ -955,6 +955,26 @@ test('a background agent drawn live previews that it runs in the background, not
   expect(log.callOf('toolu_live_bg')!.preview!.lines.map(line => line.text)).toEqual(['Running in the background, its report arrives as a message'])
 })
 
+// A prompt sent mid-turn with an image, as Claude Code stores it: a queued_command whose prompt is content blocks.
+const QUEUED_IMAGE = (n: number, text: string) =>
+  row(n, 'attachment', { attachment: { type: 'queued_command', prompt: [{ type: 'text', text }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBOR' } }], commandMode: 'prompt', origin: { kind: 'human' } } })
+
+test('a prompt sent mid-turn with an image takes its own place and number, and its row drawn under another id joins that turn', () => {
+  const log = logOf([
+    row(1, 'user', { message: { role: 'user', content: 'commit it all' } }),
+    said(2, [{ type: 'text', text: 'Committing.' }]),
+    QUEUED_IMAGE(3, '[Image #1] the header still overlaps here?'),
+    said(4, [{ type: 'text', text: 'Fixed.' }]),
+    row(5, 'user', { message: { role: 'user', content: 'push the mods repo' } }),
+  ].join('\n') + '\n')
+  expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1, 2, 3])
+  // The engine draws the queued prompt under an id of its own.
+  log.claim('drawn-queued-row', 'prompt', Date.now(), false, '[Image #1] the header still overlaps here?')
+  expect(log.turns).toHaveLength(3)
+  expect(log.turnAt('drawn-queued-row')).toBe(log.turns[1])
+  expect(log.numberOf(log.turnAt('drawn-queued-row')!)).toBe(2)
+})
+
 test('a background agent drawn before its input streams in takes its name from the launch result', () => {
   const log = new TurnLog()
   log.claim(ID(61), 'prompt')

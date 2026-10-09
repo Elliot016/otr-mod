@@ -1042,7 +1042,7 @@ export const register: Register = (on, options) => {
     isFullView = e.props.isExpanded
     // A subagent's report opens a turn of its own, as in the transcript, unless it lands while Claude works: the transcript keeps that one in the running turn.
     const isReport = e.props.origin.kind === 'peer'
-    if (isLoaded && (isReport ? !working : e.props.origin.kind === 'composer' && isPrompt(e.props.text))) log.claim(e.requestId, 'prompt', Date.now(), isReport)
+    if (isLoaded && (isReport ? !working : e.props.origin.kind === 'composer' && isPrompt(e.props.text))) log.claim(e.requestId, 'prompt', Date.now(), isReport, String(e.props.text ?? ''))
     if (isFullView) return next(e)
     if (e.props.origin.kind === 'peer' || e.props.origin.kind === 'task-notification') return taskRow($.ui.resolve(e), $, e.requestId, e.props, widthOf(e))
     if (e.props.origin.kind !== 'composer') return next(e)

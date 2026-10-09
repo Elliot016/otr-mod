@@ -21,6 +21,8 @@ export type Turn = {
   replyText?: string
   // A subagent report opens a turn of its own, yet is not a prompt the person sent, so it takes no number.
   isReport?: boolean
+  // A prompt sent while a turn ran: Claude Code draws it under another id than the file's, so its row is matched by this text.
+  queuedText?: string
 }
 
 // The part of a session message (`$.session.messages()`) a guessed turn reads.
@@ -153,9 +155,13 @@ export class TurnLog {
       if (isPrompt(userText(content))) this.start(row.uuid, timeOf(row))
       return
     }
-    // A meta queued command is a report delivered mid-turn, which stays in the running turn.
-    if (row.type === 'attachment' && row.attachment?.type === 'queued_command' && typeof row.attachment.prompt === 'string') {
-      if (!row.attachment.isMeta && isPrompt(row.attachment.prompt)) this.start(row.uuid, timeOf(row))
+    // A meta queued command is a report delivered mid-turn, which stays in the running turn. A prompt with an image holds content blocks, not a string.
+    if (row.type === 'attachment' && row.attachment?.type === 'queued_command') {
+      const said = userText(row.attachment.prompt)
+      if (!row.attachment.isMeta && isPrompt(said)) {
+        this.start(row.uuid, timeOf(row))
+        this.turns[this.turns.length - 1]!.queuedText = said.trim()
+      }
       return
     }
     if (!current) return
@@ -194,10 +200,16 @@ export class TurnLog {
   }
 
   // A row drawn after the transcript was read: a new prompt opens a turn, any other row joins the latest one.
-  claim(requestId: string, kind: 'prompt' | 'reply' | 'row', at = Date.now(), isReport = false) {
+  claim(requestId: string, kind: 'prompt' | 'reply' | 'row', at = Date.now(), isReport = false, text = '') {
     if (this.turnOf(requestId) || this.turnAt(requestId)) return
     if (kind === 'prompt') {
       if (requestId === PLACEHOLDER) return
+      const queued = text.trim() ? this.turns.find(turn => turn.queuedText === text.trim()) : undefined
+      if (queued) {
+        this.drawnAs.set(rowKey(requestId), queued)
+        queued.queuedText = undefined
+        return
+      }
       this.start(requestId, at, isReport)
       return
     }
@@ -276,11 +288,14 @@ export class TurnLog {
     return parent !== undefined && !this.parents.has(parent) ? this.before.get(id) : parent
   }
 
-  // The turn a prompt row opens.
+  // The turn a prompt row opens, by its own id or, for a queued prompt, by the id its row was drawn under.
   turnAt(requestId: string) {
     const key = rowKey(requestId)
-    return this.turns.find(turn => rowKey(turn.prompt) === key)
+    return this.drawnAs.get(key) ?? this.turns.find(turn => rowKey(turn.prompt) === key)
   }
+
+  // A queued prompt's drawn row id -> its turn.
+  private drawnAs = new Map<string, Turn>()
 
   // The turns from the session's messages, which the engine holds before the transcript is read; rows join them as they draw.
   static fromMessages(messages: readonly MessageRow[]) {
