@@ -1,3 +1,5 @@
+// mod-progress / types/index.d.ts, by v-amorim
+// Declares the mod's plugin state type and the menu mod's shared state.
 declare module 'claude-code' {
   interface PluginState {
     'mod-progress': { pane: boolean }

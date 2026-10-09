@@ -1,3 +1,5 @@
+// mod-transcript / tests/labels.test.ts, by v-amorim
+// Tests the label each tool call shows, such as pattern and folder.
 import { expect, test } from 'claude-code/testing'
 
 import { toolLabel } from '../hooks/turns'

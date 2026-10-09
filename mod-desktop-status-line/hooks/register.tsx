@@ -1,3 +1,5 @@
+// mod-desktop-status-line / hooks/register.tsx, by v-amorim
+// Draws the status line above the prompt with branch, context, limits and cost.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 

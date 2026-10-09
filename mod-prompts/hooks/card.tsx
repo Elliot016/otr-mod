@@ -1,3 +1,4 @@
+// hooks/card.tsx, by v-amorim
 // Shared sticky card. Copy unchanged into every mod whose pane has a card.
 import type { RenderElement } from 'claude-code'
 

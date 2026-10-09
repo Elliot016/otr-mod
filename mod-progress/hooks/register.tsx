@@ -1,3 +1,5 @@
+// mod-progress / hooks/register.tsx, by v-amorim
+// Registers the mod: wires the band pill, pane, settings, stop line and loop tracking.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'

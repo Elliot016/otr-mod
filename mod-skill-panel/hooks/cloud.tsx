@@ -1,3 +1,5 @@
+// mod-skill-panel / hooks/cloud.tsx, by v-amorim
+// Lays out and draws the tag cloud of skill chips with hover and click.
 import type { ClientModule } from 'claude-code'
 
 import { mix, postTip } from './entry'

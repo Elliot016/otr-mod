@@ -1,3 +1,5 @@
+// mod-skill-panel / hooks/register.tsx, by v-amorim
+// Registers the mod: wires the skills and agents tabs, settings pane, command and footer entry.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { layoutCloud, type CloudGroup, type CloudMessage, type CloudProps } from './cloud'

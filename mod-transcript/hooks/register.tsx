@@ -1,3 +1,5 @@
+// mod-transcript / hooks/register.tsx, by v-amorim
+// Registers the transcript's drawing, commands, settings pane and click handling with the engine.
 import type { ConfigValue, EngineInterface, ModelApiError, Register, RenderElement } from 'claude-code'
 
 import { cells, cut, fit, wrapWords } from './cells'

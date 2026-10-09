@@ -1,3 +1,5 @@
+// mod-model-effort / hooks/register.tsx, by v-amorim
+// Registers the mod: wires the meter, settings pane, commands, toasts and model switching.
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import { displayName, LEVEL_LOOK, LEVELS, withEffort, withModel } from './levels'

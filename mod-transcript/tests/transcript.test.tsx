@@ -1,3 +1,5 @@
+// mod-transcript / tests/transcript.test.tsx, by v-amorim
+// Tests turn building, timing, previews, row keys and copy choices from a transcript.
 import { expect, mock, test } from 'claude-code/testing'
 
 import { copyChoices, copyText } from '../hooks/clip'

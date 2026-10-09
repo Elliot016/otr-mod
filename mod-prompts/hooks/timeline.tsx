@@ -1,3 +1,5 @@
+// mod-prompts / hooks/timeline.tsx, by v-amorim
+// Draws the timeline rail of prompt stops with dots, times and click handling.
 import type { ClientModule } from 'claude-code'
 
 import { postTip } from './entry'

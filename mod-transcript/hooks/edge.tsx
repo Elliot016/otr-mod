@@ -1,3 +1,5 @@
+// mod-transcript / hooks/edge.tsx, by v-amorim
+// Draws one row's share of a reply bubble's top, bottom or side border.
 import type { ClientModule } from 'claude-code'
 
 // A Box border is all four sides or none, and a reply's bubble spans many rows, so each row draws its own share.

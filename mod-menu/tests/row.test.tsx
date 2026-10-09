@@ -1,3 +1,5 @@
+// mod-menu / tests/row.test.tsx, by v-amorim
+// Tests how tip messages become band tip row text and how a leave clears it.
 import { expect, test } from 'claude-code/testing'
 
 import { tipText } from '../hooks/entry'

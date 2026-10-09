@@ -1,3 +1,5 @@
+// mod-skill-panel / hooks/agents.ts, by v-amorim
+// Reads agent files and groups agents by model with a color for each.
 import style from './style'
 
 export type Agent = { name: string; model: string; description: string; tools: number }

@@ -1,3 +1,5 @@
+// mod-skill-panel / hooks/tags.ts, by v-amorim
+// Reads skill frontmatter, groups skills by tag and builds colored tag badges.
 import style from './style'
 import text from './text'
 import { mix } from './entry'

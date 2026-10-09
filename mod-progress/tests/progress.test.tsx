@@ -1,3 +1,5 @@
+// mod-progress / tests/progress.test.tsx, by v-amorim
+// Tests gates parsing, loop rows, context figures, stop lines, workflow agents and pane drawing.
 import { expect, mock, test } from 'claude-code/testing'
 
 import { applyCall, applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gatesStemIn, gaugeColor, windowFor, isGatesPath, modelInfo, parseGates, settle, stepOf, type Snap } from '../hooks/progress'

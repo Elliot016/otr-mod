@@ -1,3 +1,4 @@
+// hooks/look.tsx, by v-amorim
 // Shared look; every mod carries the same copy.
 import type { RenderElement } from 'claude-code'
 

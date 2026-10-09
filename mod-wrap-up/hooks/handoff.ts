@@ -1,3 +1,5 @@
+// mod-wrap-up / hooks/handoff.ts, by v-amorim
+// Builds the handoff prompt, clamps its word count and parses threads and notes.
 import text from './text'
 
 export const DEFAULT_WORDS = 400

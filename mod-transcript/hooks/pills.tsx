@@ -1,3 +1,4 @@
+// hooks/pills.tsx, by v-amorim
 // Shared pill row. Copy unchanged into every mod that draws in the row.
 import type { RenderElement } from 'claude-code'
 

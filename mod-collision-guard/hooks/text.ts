@@ -1,3 +1,4 @@
+// mod-collision-guard / hooks/text.ts, by v-amorim
 // Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "paneTitle": "Collision guard",

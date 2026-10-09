@@ -2,7 +2,8 @@
   "name": "claude-mods",
   "description": "Claude Code mods in the Moonlight look: a mod manager, skill and prompt sidebars, a clickable effort pill, and the pill bar that switches between them",
   "owner": {
-    "name": "Amorim"
+    "name": "Vinicius Amorim",
+    "url": "https://github.com/v-amorim"
   },
   "plugins": [
     {

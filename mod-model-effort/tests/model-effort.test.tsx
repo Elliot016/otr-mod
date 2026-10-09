@@ -1,3 +1,5 @@
+// mod-model-effort / tests/model-effort.test.tsx, by v-amorim
+// Tests the footer meter: effort saving, model switching, icon modes, settings pane and tips.
 import { expect, mock, test } from 'claude-code/testing'
 import { THEME } from '../hooks/theme'
 

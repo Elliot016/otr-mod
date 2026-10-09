@@ -1,3 +1,5 @@
+// mod-prompts / tests/prompts.test.tsx, by v-amorim
+// Tests prompt extraction, timeline paging, jump targets, settings tabs, icon modes and prompt cards.
 import { expect, mock, test } from 'claude-code/testing'
 
 import { parseRow, promptsOf, targetOf } from '../hooks/prompts'

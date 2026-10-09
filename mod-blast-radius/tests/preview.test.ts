@@ -1,3 +1,5 @@
+// mod-blast-radius / tests/preview.test.ts, by v-amorim
+// Tests path resolution, size formatting and measuring a command's targets on an in-memory disk.
 import { expect, test } from 'claude-code/testing'
 
 import { formatSize, measure, resolvePath, type Io } from '../hooks/preview'

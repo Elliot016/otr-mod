@@ -1,3 +1,4 @@
+<!-- mod-file-tree / README.md, by v-amorim -->
 <!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
 # mod-file-tree
 
@@ -51,8 +52,14 @@ Change them with `/mod-file-tree settings` or the gear pill.
 | Wrap long diff lines | on | Replay lines wrap onto the next row. Off, they are cut at the pane edge |
 | Turns in the recent view | `5` | How many latest turns to cover. The middle view of the tree shows them, from 2 to 20 |
 
+## License
+
+Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
+
+[doc-author]: https://github.com/v-amorim
 [doc-icons]: ../README.md#icons-and-nerd-fonts
 [doc-install]: ../README.md#install
+[doc-license]: ../LICENSE
 [doc-root]: ../README.md
 
 [img-file-tree-panel]: ../showcase/file-tree-panel.png

@@ -1,3 +1,5 @@
+// mod-transcript / hooks/rows.ts, by v-amorim
+// Reads typed row fields for call statuses, questions, reports, API errors and notices.
 import type { ModelApiError } from 'claude-code'
 
 // The words a finished call shows after its name; each comes from a typed field, never from the output's text.

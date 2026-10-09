@@ -1,3 +1,4 @@
+// mod-blast-radius / hooks/explain.ts, by v-amorim
 // Plain-words copy for the card and the details pane, and the fitting rules that keep the card inside the band. Pure: no engine calls.
 import { formatSize, type Report } from './preview'
 import { classify, heredocs, type Risk, type UserRule } from './risk'

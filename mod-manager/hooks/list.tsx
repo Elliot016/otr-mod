@@ -1,3 +1,5 @@
+// mod-manager / hooks/list.tsx, by v-amorim
+// Draws the mod list rows with status marks, tips and theme colors.
 import type { ClientModule } from 'claude-code'
 
 import { mix, postTip } from './entry'

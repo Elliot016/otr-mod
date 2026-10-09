@@ -1,3 +1,5 @@
+// mod-heads-up / tests/ask.test.ts, by v-amorim
+// Tests check scheduling, prompt building and reply parsing for findings and rewrites.
 import { expect, test } from 'claude-code/testing'
 
 import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt } from '../hooks/ask'

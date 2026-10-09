@@ -1,3 +1,5 @@
+// mod-blast-radius / tests/hold.test.tsx, by v-amorim
+// Tests holding a command, the Haiku prompt and reply parsing, and the settings and details panes.
 import { expect, mock, test } from 'claude-code/testing'
 import { describePrompt, parseDescribed, verdictOf } from '../hooks/haiku'
 

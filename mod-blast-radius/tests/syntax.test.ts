@@ -1,3 +1,5 @@
+// mod-blast-radius / tests/syntax.test.ts, by v-amorim
+// Tests shell tokenizing into roles, exact round trip of lines, color legend and wrapping.
 import { expect, test } from 'claude-code/testing'
 
 import { colorLines, LEGEND, tokenizeLine, wrapSpans } from '../hooks/syntax'

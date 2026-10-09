@@ -1,3 +1,4 @@
+// mod-prompts / hooks/prompts.ts, by v-amorim
 // What the sidebar keeps of a transcript row; tool results and replies are most of the bytes and are dropped here.
 export type Row = {
   uuid: string

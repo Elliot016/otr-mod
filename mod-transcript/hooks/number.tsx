@@ -1,3 +1,5 @@
+// mod-transcript / hooks/number.tsx, by v-amorim
+// Draws the prompt number pill and measures its width in cells.
 import type { ClientModule } from 'claude-code'
 
 import { postTip } from './entry'

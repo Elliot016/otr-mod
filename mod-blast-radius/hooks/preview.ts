@@ -1,3 +1,4 @@
+// mod-blast-radius / hooks/preview.ts, by v-amorim
 // Read-only previews; `$` cannot cross an import, so the caller hands in plain functions (Io).
 import type { Risk } from './risk'
 import text from './text'

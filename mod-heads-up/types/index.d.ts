@@ -1,3 +1,5 @@
+// mod-heads-up / types/index.d.ts, by v-amorim
+// Declares the plugin state shape for the pane and related mods' flags.
 declare module 'claude-code' {
   interface PluginState {
     'mod-heads-up': { pane: boolean; open: string[] }

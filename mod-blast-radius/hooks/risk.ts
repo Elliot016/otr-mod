@@ -1,3 +1,4 @@
+// mod-blast-radius / hooks/risk.ts, by v-amorim
 // Pure matcher: which Bash commands are risky. No engine calls, so tests feed it plain strings.
 import words from './text'
 import { fill } from './theme'

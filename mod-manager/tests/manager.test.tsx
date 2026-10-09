@@ -1,3 +1,5 @@
+// mod-manager / tests/manager.test.tsx, by v-amorim
+// Tests mod discovery, feature listing and enabling or disabling mods in settings.
 import { expect, test } from 'claude-code/testing'
 
 import { discover, featuresOf, setEnabled, type Io } from '../hooks/registry'

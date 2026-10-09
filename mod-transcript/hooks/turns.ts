@@ -1,3 +1,5 @@
+// mod-transcript / hooks/turns.ts, by v-amorim
+// Groups transcript rows into turns and builds tool labels, timings and turn lines.
 import text from './text'
 import { fill, MARK } from './theme'
 

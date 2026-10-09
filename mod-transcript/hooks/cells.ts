@@ -1,3 +1,4 @@
+// hooks/cells.ts, by v-amorim
 // Terminal cells: East Asian wide and emoji code points take two, combining marks and joiners none, anything else one.
 const WIDE: [number, number][] = [
   [0x1100, 0x115f],

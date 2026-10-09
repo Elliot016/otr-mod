@@ -1,3 +1,4 @@
+// mod-progress / hooks/progress.ts, by v-amorim
 // The data side of the mod: gates files, loop figures, rows. No `$` in here, so tests call it directly.
 import marks from './marks'
 import style from './style'

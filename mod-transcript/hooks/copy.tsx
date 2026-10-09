@@ -1,3 +1,5 @@
+// mod-transcript / hooks/copy.tsx, by v-amorim
+// Draws the copy pill whose choices copy parts of a reply on click.
 import type { ClientModule } from 'claude-code'
 
 import { postTip } from './entry'

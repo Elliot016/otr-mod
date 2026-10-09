@@ -1,3 +1,5 @@
+// mod-transcript / tests/wedge.test.ts, by v-amorim
+// Tests wedge choice for iTerm2 with custom box drawing on, off or unreadable.
 import { expect, test } from 'claude-code/testing'
 
 import { detectWedge, FILLED, OUTLINE } from '../hooks/wedge'

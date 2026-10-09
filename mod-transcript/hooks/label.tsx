@@ -1,3 +1,5 @@
+// mod-transcript / hooks/label.tsx, by v-amorim
+// Draws a fold line's colored label that folds its section on click.
 import type { ClientModule } from 'claude-code'
 
 import type { BarMessage, BarProps } from './bar'

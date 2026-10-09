@@ -1,3 +1,5 @@
+// mod-file-tree / types/index.d.ts, by v-amorim
+// Declares the plugin state shape for the pane and file log.
 declare module 'claude-code' {
   interface PluginState {
     'mod-file-tree': {

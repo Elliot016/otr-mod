@@ -1,3 +1,4 @@
+// mod-heads-up / hooks/prompts.ts, by v-amorim
 // The session's prompts, numbered as mod-transcript and mod-prompts number them: the place among the prompts on the live branch, oldest first. Pure: no engine calls.
 
 // Claude Code draws a prompt once under this id as it is sent, then again under its own uuid; only the uuid draw is the prompt's row.

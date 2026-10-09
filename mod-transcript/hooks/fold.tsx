@@ -1,3 +1,5 @@
+// mod-transcript / hooks/fold.tsx, by v-amorim
+// Draws the fold pill that lightens under the pointer and folds on click.
 import type { ClientModule } from 'claude-code'
 
 import type { BarMessage, BarProps } from './bar'

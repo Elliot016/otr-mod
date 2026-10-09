@@ -1,3 +1,5 @@
+// mod-file-tree / tests/file-tree.test.tsx, by v-amorim
+// Tests the file log: diff lines, relative paths, rows, turn views and transcript parsing.
 import { expect, mock, test } from 'claude-code/testing'
 
 import { cells, cut } from '../hooks/cells'

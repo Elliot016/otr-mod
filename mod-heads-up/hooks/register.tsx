@@ -1,3 +1,5 @@
+// mod-heads-up / hooks/register.tsx, by v-amorim
+// Registers the heads up pane, pill, commands and side check flow with the engine.
 import type { ConfigValue, EngineInterface, Register, SessionMessage } from 'claude-code'
 
 import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt, type Direction } from './ask'

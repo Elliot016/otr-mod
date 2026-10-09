@@ -1,3 +1,5 @@
+// mod-transcript / hooks/bar.tsx, by v-amorim
+// Draws a card's left strip that folds its turn or tools on click.
 import type { ClientModule } from 'claude-code'
 
 import { postTip } from './entry'

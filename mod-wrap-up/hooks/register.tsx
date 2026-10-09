@@ -1,3 +1,5 @@
+// mod-wrap-up / hooks/register.tsx, by v-amorim
+// Registers the wrap-up pill, commands, settings pane and handoff or compact actions with the engine.
 import type { ConfigValue, EngineInterface, ModelForkResult, Register, RenderElement } from 'claude-code'
 
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'

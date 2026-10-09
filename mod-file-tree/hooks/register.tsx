@@ -1,3 +1,5 @@
+// mod-file-tree / hooks/register.tsx, by v-amorim
+// Registers the files sidebar: pane, pill, command, toasts and settings wiring with the engine.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { NAME_COLOR, OPEN_CELLS, type ListMessage, type Row as ListRow } from './list'

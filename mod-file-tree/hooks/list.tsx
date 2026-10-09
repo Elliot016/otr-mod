@@ -1,3 +1,5 @@
+// mod-file-tree / hooks/list.tsx, by v-amorim
+// Draws the file tree rows with indent guides, icons and tone colors for Claude's activity.
 import type { ClientModule } from 'claude-code'
 
 import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, mix, postTip, shimmerColor, stepToward, TICK_MS } from './entry'

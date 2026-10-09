@@ -1,3 +1,4 @@
+// mod-heads-up / hooks/notes.ts, by v-amorim
 // The session's notes, when a check runs and how the conversation is packed for it. Pure: no engine calls.
 import type { SessionMessage } from 'claude-code'
 

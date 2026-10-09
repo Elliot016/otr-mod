@@ -1,3 +1,5 @@
+// mod-menu / hooks/register.tsx, by v-amorim
+// Registers the command that hides or shows the panel pills above the prompt.
 import type { Register } from 'claude-code'
 
 import { isTipMessage, tipText } from './entry'

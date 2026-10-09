@@ -1,3 +1,5 @@
+// mod-manager / hooks/register.tsx, by v-amorim
+// Registers the mod manager pane, pill, command and toggle actions with the engine.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'

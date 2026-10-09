@@ -1,3 +1,4 @@
+<!-- mod-collision-guard / README.md, by v-amorim -->
 <!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
 # mod-collision-guard
 
@@ -45,8 +46,14 @@ Change them with `/mod-collision-guard settings` or the gear pill.
 | Window (minutes) | `30` | How long an edit counts as recent. Only other sessions' edits count |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
+## License
+
+Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
+
+[doc-author]: https://github.com/v-amorim
 [doc-icons]: ../README.md#icons-and-nerd-fonts
 [doc-install]: ../README.md#install
+[doc-license]: ../LICENSE
 [doc-root]: ../README.md
 
 [img-collision-guard]: ../showcase/collision-guard.png

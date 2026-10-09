@@ -1,3 +1,4 @@
+// mod-progress / hooks/stop.ts, by v-amorim
 // Why the main turn stopped: StopFailure's error kind in words, its tone, and when a full usage window resets. No `$` in here, so tests call it directly.
 import { formatElapsed, type Stop } from './progress'
 import text from './text'

@@ -1,3 +1,4 @@
+// hooks/entry.tsx, by v-amorim
 // Shared pill entry. Master in mod-menu; copy unchanged into every mod that draws a menu entry.
 import type { ClientModule, ClientSurface } from 'claude-code'
 

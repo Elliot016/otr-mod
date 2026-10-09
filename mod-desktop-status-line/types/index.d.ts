@@ -1,3 +1,5 @@
+// mod-desktop-status-line / types/index.d.ts, by v-amorim
+// Declares the snapshot type for branch, git state, cost, context and usage limits.
 export type Snapshot = {
   now: number
   branch: string

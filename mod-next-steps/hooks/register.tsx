@@ -1,3 +1,5 @@
+// mod-next-steps / hooks/register.tsx, by v-amorim
+// Registers the mod: wires the suggestion band, settings pane, commands and toasts.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'

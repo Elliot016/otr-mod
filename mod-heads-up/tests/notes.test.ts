@@ -1,3 +1,5 @@
+// mod-heads-up / tests/notes.test.ts, by v-amorim
+// Tests note deduplication by reworded topic words, recent sessions and saved state.
 import { expect, test } from 'claude-code/testing'
 
 import { recentSessions, restates, savedOf } from '../hooks/notes'

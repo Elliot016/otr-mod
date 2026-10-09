@@ -1,3 +1,4 @@
+// mod-heads-up / hooks/transcript.ts, by v-amorim
 // Reads the session transcript a chunk at a time from a byte offset. Pure: no engine calls, so the reads stay in register.tsx.
 import { PromptNumbers } from './prompts'
 

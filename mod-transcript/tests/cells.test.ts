@@ -1,3 +1,5 @@
+// mod-transcript / tests/cells.test.ts, by v-amorim
+// Tests terminal cell width counting plus cutting, fitting and word wrapping by cells.
 import { expect, test } from 'claude-code/testing'
 
 import { cells, cut, fit, wrapWords } from '../hooks/cells'

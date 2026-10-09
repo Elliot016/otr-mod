@@ -1,3 +1,5 @@
+// mod-heads-up / tests/heads-up.test.tsx, by v-amorim
+// Tests the panel above the prompt: rendering, pill, pane and note cards.
 import { expect, mock, test } from 'claude-code/testing'
 
 const BAND = {

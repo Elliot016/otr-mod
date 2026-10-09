@@ -1,3 +1,5 @@
+// mod-file-tree / hooks/transcript.ts, by v-amorim
+// Reduces tool calls, live or parsed from the transcript, into per-file change plans.
 import text from './text'
 import { fill } from './theme'
 import { commit, diffLines, emptyLog, relPath, touch, type Kind, type Line, type Log } from './tree'

@@ -1,3 +1,5 @@
+// mod-manager / hooks/registry.ts, by v-amorim
+// Discovers installed mods, reads their features and writes enabled state to settings.
 import type { Previews } from './settings'
 import { fill } from './theme'
 import shown from './text'

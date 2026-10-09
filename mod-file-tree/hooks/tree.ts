@@ -1,3 +1,5 @@
+// mod-file-tree / hooks/tree.ts, by v-amorim
+// Builds the log of touched files, diff lines, rows and per-turn views.
 import text from './text'
 import { fill } from './theme'
 

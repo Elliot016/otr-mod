@@ -1,3 +1,4 @@
+// hooks/settings.tsx, by v-amorim
 // Shared settings body; every mod carries the same copy.
 import type { ConfigRow, ConfigValue, RenderElement } from 'claude-code'
 

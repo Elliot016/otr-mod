@@ -1,3 +1,5 @@
+// mod-transcript / tests/drawing.test.tsx, by v-amorim
+// Tests how finished turns, edits and diffs are drawn from transcript rows.
 import { expect, mock, test } from 'claude-code/testing'
 
 import { THEME } from '../hooks/theme'

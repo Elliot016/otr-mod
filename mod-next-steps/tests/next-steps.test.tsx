@@ -1,3 +1,5 @@
+// mod-next-steps / tests/next-steps.test.tsx, by v-amorim
+// Tests the suggestion band: generation after a turn, filling the prompt, clearing and failures.
 import { expect, mock, test } from 'claude-code/testing'
 
 const BAND = {

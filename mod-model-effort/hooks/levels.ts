@@ -1,3 +1,5 @@
+// mod-model-effort / hooks/levels.ts, by v-amorim
+// Lists the effort levels and their glyphs and colors, matching the status line.
 import style from './style'
 
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const

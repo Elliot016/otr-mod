@@ -1,3 +1,5 @@
+// mod-wrap-up / tests/wrap-up.test.tsx, by v-amorim
+// Tests handoff prompt building, word clamping, thread parsing and the wrap-up band's drawing.
 import { expect, mock, test } from 'claude-code/testing'
 
 import { buildPrompt, clampWords, compactNote, isFresh, parseThreads, scopeNote, skillBody } from '../hooks/handoff'

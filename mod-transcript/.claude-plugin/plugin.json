@@ -2,8 +2,10 @@
   "name": "mod-transcript",
   "version": "0.1.0",
   "description": "Restyles the transcript: your prompts and Claude's replies as chat bubbles, each finished turn folded under its prompt to one summary line (tools, file changes, skills, agents) with the final reply kept, each finished tool row folded to one line, Bash commands in shell colors, and a copy button under each reply. A click unfolds a turn or a call in place",
+  "license": "MIT",
   "author": {
-    "name": "Amorim"
+    "name": "Vinicius Amorim",
+    "url": "https://github.com/v-amorim"
   },
   "types": "./types/index.d.ts",
   "userConfig": {

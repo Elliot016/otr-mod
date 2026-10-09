@@ -1,3 +1,4 @@
+// mod-blast-radius / hooks/syntax.ts, by v-amorim
 // Shell syntax roles for drawing a command: one scanner for the colors, the same step rules the matcher uses for what is risky. Pure.
 import { classify, HEREDOC_MARK, receiverOf, RUNS_BODY, type UserRule } from './risk'
 import words from './text'

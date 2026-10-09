@@ -1,3 +1,5 @@
+// mod-transcript / hooks/dot.tsx, by v-amorim
+// Draws a running command's dot, blinking between two colors until it finishes.
 import type { ClientModule } from 'claude-code'
 
 export type DotProps = { color: string; dim: string; still: boolean }

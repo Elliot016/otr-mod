@@ -2,8 +2,10 @@
   "name": "mod-manager",
   "version": "0.1.0",
   "description": "Lists every mod, toggles it on or off, and shows what it does",
+  "license": "MIT",
   "author": {
-    "name": "Amorim"
+    "name": "Vinicius Amorim",
+    "url": "https://github.com/v-amorim"
   },
   "types": "./types/index.d.ts",
   "userConfig": {

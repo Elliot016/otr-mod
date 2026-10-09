@@ -1,3 +1,5 @@
+// tests/look.test.ts, by v-amorim
+// Tests Nerd Font detection and icon mode choice against fake host files and commands.
 import { expect, test } from 'claude-code/testing'
 
 import { detectNerd, isNerdName, lookFor, type Host } from '../hooks/look'

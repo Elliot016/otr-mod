@@ -2,8 +2,10 @@
   "name": "mod-blast-radius",
   "version": "0.1.0",
   "description": "Holds a risky Bash command (rm, git reset --hard, force push, SQL DROP and more) before it runs, shows what it would change, and lets you Run or Cancel",
+  "license": "MIT",
   "author": {
-    "name": "Amorim"
+    "name": "Vinicius Amorim",
+    "url": "https://github.com/v-amorim"
   },
   "types": "./types/index.d.ts",
   "userConfig": {

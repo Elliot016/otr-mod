@@ -1,3 +1,5 @@
+// mod-heads-up / tests/prompts.test.ts, by v-amorim
+// Tests prompt numbering: branches, wrappers, interruptions and placeholder rows.
 import { expect, test } from 'claude-code/testing'
 
 import { PromptNumbers } from '../hooks/prompts'

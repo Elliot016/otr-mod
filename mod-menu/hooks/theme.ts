@@ -1,3 +1,4 @@
+// hooks/theme.ts, by v-amorim
 // Shared mod theme; every mod carries the same copy. Colors, marks and glyphs live in style.ts.
 import style from './style'
 

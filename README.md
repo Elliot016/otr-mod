@@ -330,6 +330,10 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 | Load the clone in every session | Add each mod folder of the clone to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `;` on Windows and `:` elsewhere |
 | Pass a slash command from Git Bash | `MSYS_NO_PATHCONV=1 claude "/mod-<name> settings"`, since Git Bash rewrites `/x` into a Windows path |
 
+## License and credits
+
+Made by [Vinicius Amorim][author] and released under the [MIT license][license]. Bug reports and pull requests are welcome, especially from Linux terminals, which are untested.
+
 ## Build your own
 
 <details>

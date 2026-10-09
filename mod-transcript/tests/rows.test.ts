@@ -1,3 +1,5 @@
+// mod-transcript / tests/rows.test.ts, by v-amorim
+// Tests status words, API error actions, questions, reports and notices read from rows.
 import { expect, test } from 'claude-code/testing'
 
 import { apiErrorAction, completeLines, hexColors, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice } from '../hooks/rows'

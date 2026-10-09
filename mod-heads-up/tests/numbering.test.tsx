@@ -1,3 +1,5 @@
+// mod-heads-up / tests/numbering.test.tsx, by v-amorim
+// Tests prompt numbering across a transcript branch as the panel shows it.
 import { expect, mock, test } from 'claude-code/testing'
 
 const ID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`

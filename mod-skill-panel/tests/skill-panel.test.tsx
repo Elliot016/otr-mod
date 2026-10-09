@@ -1,3 +1,5 @@
+// mod-skill-panel / tests/skill-panel.test.tsx, by v-amorim
+// Tests skill tags and grouping, agents tab, command toggle, settings pill, tips and waiting card.
 import { expect, mock, test } from 'claude-code/testing'
 
 import { groupSkills, markDescription, readFrontmatter, stripBadges, swatchFor } from '../hooks/tags'

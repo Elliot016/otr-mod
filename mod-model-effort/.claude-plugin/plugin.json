@@ -2,7 +2,8 @@
   "name": "mod-model-effort",
   "version": "0.1.0",
   "description": "A clickable effort meter in the prompt footer, five squares from low to max: click one to set that level, saved for the model like Alt+P does",
-  "author": { "name": "Amorim" },
+  "license": "MIT",
+  "author": { "name": "Vinicius Amorim", "url": "https://github.com/v-amorim" },
   "types": "./types/index.d.ts",
   "userConfig": {
     "icons": {

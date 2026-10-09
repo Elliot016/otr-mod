@@ -2,7 +2,8 @@
   "name": "mod-next-steps",
   "version": "0.1.0",
   "description": "After each finished turn, up to three short next-prompt suggestions sit above the input as one-line rows; a click fills the prompt without sending",
-  "author": { "name": "Amorim" },
+  "license": "MIT",
+  "author": { "name": "Vinicius Amorim", "url": "https://github.com/v-amorim" },
   "types": "./types/index.d.ts",
   "userConfig": {
     "animations": {

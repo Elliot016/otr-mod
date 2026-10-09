@@ -2,8 +2,10 @@
   "name": "mod-progress",
   "version": "0.1.0",
   "description": "A live view of this session's work: the main session and every subagent with model, effort, context fill, tokens, elapsed time and gate progress, in a pill and a pane",
+  "license": "MIT",
   "author": {
-    "name": "Amorim"
+    "name": "Vinicius Amorim",
+    "url": "https://github.com/v-amorim"
   },
   "types": "./types/index.d.ts",
   "userConfig": {

@@ -1,3 +1,5 @@
+// mod-collision-guard / hooks/guard.ts, by v-amorim
+// Holds the pure logic that records edits per session and finds conflicts between sessions.
 import text from './text'
 import { fill } from './theme'
 

@@ -1,3 +1,4 @@
+// mod-heads-up / hooks/ask.ts, by v-amorim
 // What the side check asks the model and how its reply is read. Pure: no engine calls.
 
 export type Tag = 'You should know' | 'Heads up'

@@ -1,3 +1,5 @@
+// mod-heads-up / tests/transcript.test.ts, by v-amorim
+// Tests chunked transcript reads: byte offsets, chunk arguments and line feeding.
 import { expect, test } from 'claude-code/testing'
 
 import { PromptNumbers } from '../hooks/prompts'

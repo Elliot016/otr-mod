@@ -1,3 +1,4 @@
+// mod-transcript / hooks/shell.ts, by v-amorim
 // Shell syntax roles for drawing a command, copied from mod-blast-radius/hooks/syntax.ts (mods never share code). Pure.
 
 export type Role = 'command' | 'option' | 'text' | 'variable' | 'number' | 'operator' | 'plain'

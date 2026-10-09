@@ -1,3 +1,5 @@
+// mod-wrap-up / hooks/choice.tsx, by v-amorim
+// Draws the wrap-up pill and its option cards with hover tips and idle muting.
 import type { ClientModule } from 'claude-code'
 
 import { postTip, type EntryMessage, type Tip } from './entry'

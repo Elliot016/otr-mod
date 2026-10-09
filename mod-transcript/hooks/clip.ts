@@ -1,3 +1,5 @@
+// mod-transcript / hooks/clip.ts, by v-amorim
+// Extracts a reply's code, text, tables or links from its markdown for copying.
 import { cells } from './cells'
 
 // What the copy pill takes out of a reply's markdown: the whole of it, its code, plain text, its tables or its links.

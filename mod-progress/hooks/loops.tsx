@@ -1,3 +1,4 @@
+// mod-progress / hooks/loops.tsx, by v-amorim
 // The pane's list: a card per loop, two rows each, its gates under it when clicked.
 import type { ClientModule } from 'claude-code'
 

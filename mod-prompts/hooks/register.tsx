@@ -1,3 +1,5 @@
+// mod-prompts / hooks/register.tsx, by v-amorim
+// Registers the mod: wires the prompts sidebar, timeline, settings, jumps and toasts.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { cardSpace, stickyCard } from './card'

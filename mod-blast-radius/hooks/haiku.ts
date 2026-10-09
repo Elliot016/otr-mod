@@ -1,3 +1,4 @@
+// mod-blast-radius / hooks/haiku.ts, by v-amorim
 // Haiku fills the card's words from a template; the rules alone decide what is held, and the code keeps every number. Pure: no engine calls.
 import type { Report } from './preview'
 import text from './text'

@@ -1,3 +1,5 @@
+// mod-blast-radius / tests/risk.test.ts, by v-amorim
+// Tests which commands the risk checks hold, their reasons, user rules, and safe temp deletes.
 import { expect, test } from 'claude-code/testing'
 
 import { capLines, segmentsOf, stepsView } from '../hooks/explain'

@@ -1,3 +1,5 @@
+// mod-prompts / tests/transcript.test.ts, by v-amorim
+// Tests transcript reading when a row's parent is missing, keeping earlier prompts listed.
 import { expect, test } from 'claude-code/testing'
 
 import { promptsOf, TranscriptRows } from '../hooks/prompts'

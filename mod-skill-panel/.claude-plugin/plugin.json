@@ -2,8 +2,10 @@
   "name": "mod-skill-panel",
   "version": "0.1.0",
   "description": "Colors each skill in the slash list by the color-tag in its frontmatter, and /mod-skill-panel opens a sidebar of skills grouped by tag where pressing one adds it to the prompt",
+  "license": "MIT",
   "author": {
-    "name": "Amorim"
+    "name": "Vinicius Amorim",
+    "url": "https://github.com/v-amorim"
   },
   "types": "./types/index.d.ts",
   "userConfig": {

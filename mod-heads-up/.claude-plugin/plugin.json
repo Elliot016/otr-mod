@@ -2,7 +2,8 @@
   "name": "mod-heads-up",
   "version": "0.1.0",
   "description": "While Claude works, a side check now and then flags one thing you should understand and probably missed: a card above the prompt, and a Heads up panel with every note of the session by turn",
-  "author": { "name": "Amorim" },
+  "license": "MIT",
+  "author": { "name": "Vinicius Amorim", "url": "https://github.com/v-amorim" },
   "types": "./types/index.d.ts",
   "userConfig": {
     "enabled": {

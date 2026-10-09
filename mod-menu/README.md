@@ -1,3 +1,4 @@
+<!-- mod-menu / README.md, by v-amorim -->
 <!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
 # mod-menu
 
@@ -33,8 +34,14 @@ Always shown.
 | --- |
 | https://github.com/user-attachments/assets/7bb01973-e907-4807-b571-829e65d71659 |
 
+## License
+
+Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
+
+[doc-author]: https://github.com/v-amorim
 [doc-icons]: ../README.md#icons-and-nerd-fonts
 [doc-install]: ../README.md#install
+[doc-license]: ../LICENSE
 [doc-root]: ../README.md
 
 [img-menu-band]: ../showcase/menu-band.png

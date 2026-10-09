@@ -1,3 +1,4 @@
+// mod-model-effort / hooks/text.ts, by v-amorim
 // Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "sendFirst": "mod-model-effort: send a message first, so the meter knows the model",

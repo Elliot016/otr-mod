@@ -1,3 +1,4 @@
+<!-- mod-desktop-status-line / README.md, by v-amorim -->
 <!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
 # mod-desktop-status-line
 
@@ -23,6 +24,12 @@ To install every mod at once, see [Install][doc-install]. For sharper icons, see
 
 Desktop app only.
 
+## License
+
+Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
+
+[doc-author]: https://github.com/v-amorim
 [doc-icons]: ../README.md#icons-and-nerd-fonts
 [doc-install]: ../README.md#install
+[doc-license]: ../LICENSE
 [doc-root]: ../README.md

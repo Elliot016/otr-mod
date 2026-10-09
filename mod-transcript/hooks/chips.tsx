@@ -1,3 +1,5 @@
+// mod-transcript / hooks/chips.tsx, by v-amorim
+// Draws clickable tool chips with marks, counts and added or removed line totals.
 import type { ClientModule } from 'claude-code'
 
 import { cells } from './cells'

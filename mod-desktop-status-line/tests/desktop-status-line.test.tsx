@@ -1,3 +1,5 @@
+// mod-desktop-status-line / tests/desktop-status-line.test.tsx, by v-amorim
+// Tests the status line band rendering from a fixed snapshot of branch, limits and cost.
 import { expect, test } from 'claude-code/testing'
 
 const BAND = (surface: string) =>

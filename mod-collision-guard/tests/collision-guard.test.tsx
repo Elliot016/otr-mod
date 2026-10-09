@@ -1,3 +1,5 @@
+// mod-collision-guard / tests/collision-guard.test.tsx, by v-amorim
+// Tests conflict detection across sessions, the time window, the proceed dialog and clearing edits.
 import { expect, mock, test } from 'claude-code/testing'
 
 const NOW = 1_800_000_000_000

@@ -1,3 +1,5 @@
+// mod-collision-guard / hooks/register.tsx, by v-amorim
+// Wires the mod into the engine: checks edit tools for conflicts, asks, and draws its pane.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, pathOf, recordEdit, type Io } from './guard'

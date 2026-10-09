@@ -1,3 +1,5 @@
+// mod-model-effort / hooks/meter.tsx, by v-amorim
+// Draws the footer meter with model pill and effort levels, handling hover and clicks.
 import type { ClientModule } from 'claude-code'
 
 import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, postTip, stepToward, type Tip } from './entry'

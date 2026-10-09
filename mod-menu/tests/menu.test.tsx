@@ -1,3 +1,5 @@
+// mod-menu / tests/menu.test.tsx, by v-amorim
+// Tests the command that flips the hidden flag and stores it for the next session.
 import { expect, test } from 'claude-code/testing'
 
 test('/mod-menu flips hidden and stores it for the next session', async ($, on) => {

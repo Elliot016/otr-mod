@@ -1,3 +1,5 @@
+// mod-transcript / hooks/wedge.ts, by v-amorim
+// Picks the filled or outline wedge glyphs depending on the terminal's box drawing.
 export type Wedge = { left: string; right: string }
 
 export const FILLED: Wedge = { left: '◤', right: '◥' }

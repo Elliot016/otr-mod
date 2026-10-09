@@ -1,3 +1,5 @@
+// mod-blast-radius / hooks/register.tsx, by v-amorim
+// Wires the mod into the engine: holds risky Bash commands, draws the card, pane and settings.
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Look } from './look'
