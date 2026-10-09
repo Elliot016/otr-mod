@@ -462,7 +462,7 @@ export const register: Register = (on, options) => {
     if (e.requestId === SETTINGS) {
       const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-prompts.'))
       return (
-        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
@@ -522,7 +522,7 @@ export const register: Register = (on, options) => {
 
     // Mouse only: the jump is a Button, since a scroll needs the person's press behind it; a click on a stop opens it.
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(text.hint, { sep: MARK.sep })}</Text>
         {prompts.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
