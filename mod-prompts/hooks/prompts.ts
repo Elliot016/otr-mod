@@ -140,6 +140,16 @@ export class TranscriptRows {
     }
     return lines.length
   }
+
+  // Feeds text that follows what was fed, for a read that took only the new bytes; returns the unfinished last line.
+  append(text: string) {
+    const end = text.lastIndexOf('\n') + 1
+    for (const line of text.slice(0, end).split('\n')) {
+      const row = line.trim() ? parseRow(line) : undefined
+      if (row) this.rows.push(row)
+    }
+    return text.slice(end)
+  }
 }
 
 // A message drawn as several rows gets ids that keep its uuid's first four groups, so rows match on those.

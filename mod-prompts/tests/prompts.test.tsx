@@ -345,6 +345,86 @@ test('a card that holds its whole prompt has no count', async ($, on) => {
   await ui.unmount()
 })
 
+// One process that switches sessions; each session's transcript sits under its store key.
+// isBig: the file reads as past one fs.read's 4 MiB, so the host refuses fs.read and tail.ts's process reads it; reads: each process read's start.
+function sessions(on: any, files: Record<string, string>) {
+  const w = { session: 'a', files, isOpen: false, isBig: false, reads: [] as number[] }
+  on('store.get', (_$: unknown, e: { key: string }) => ({ value: e.key.startsWith('transcript:') ? `/t/${e.key.slice('transcript:'.length)}.jsonl` : undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: w.session }))
+  const idOf = (path: string) => path.replace(/\\/g, '/').match(/\/([^/]+)\.jsonl$/)?.[1] ?? ''
+  on('fs.stat', (_$: unknown, e: { path: string }) => ({ value: { kind: 'file', size: w.isBig ? 5 * 1024 * 1024 : new TextEncoder().encode(w.files[idOf(e.path)] ?? '').length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', (_$: unknown, e: { path: string }) => {
+    if (w.isBig) throw new Error('over 4 MiB')
+    return { value: w.files[idOf(e.path)] ?? '' }
+  })
+  on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    const from = Number(e.argv[e.argv.length - 2]) - 1
+    w.reads.push(from)
+    return { value: { exitCode: 0, stdout: btoaBytes(new TextEncoder().encode(w.files[idOf(e.argv[e.argv.length - 3]!)] ?? '').subarray(from)), stderr: '' } }
+  })
+  on('ui.panes', () => ({ value: w.isOpen ? [{ id: 'prompts', isPlaced: true }] as never : [] }))
+  on('ui.open', () => {
+    w.isOpen = true
+    return { value: { isPlaced: true } }
+  })
+  on('turn.complete', () => ({ text: '' }))
+  on('session.end', (_$: unknown, e: { sessionId: string }) => ({ sessionId: e.sessionId }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  mock.env(on, {})
+  return { w, clock: mock.clock(on) }
+}
+
+test('a resume to another session and back lists each session\'s own prompts, and /clear lists none of the old ones', async ($, on) => {
+  const { w, clock } = sessions(on, { a: `${user(1, null, 'alpha prompt')}\n`, b: `${user(11, null, 'beta prompt')}\n` })
+  const listed = async () => {
+    await clock.settle()
+    const ui = await paneOf($)
+    await clock.settle()
+    const drawn = JSON.stringify(await ui.drawn())
+    await ui.unmount()
+    return drawn
+  }
+  expect(await listed()).toContain('alpha prompt')
+  for (const [to, shown, gone] of [['b', 'beta prompt', 'alpha prompt'], ['a', 'alpha prompt', 'beta prompt']] as const) {
+    await $.session.end({ reason: 'resume', sessionId: w.session, resume: {} } as never)
+    w.session = to
+    const drawn = await listed()
+    expect(drawn).toContain(shown)
+    expect(drawn).not.toContain(gone)
+  }
+  await $.session.end({ reason: 'clear', sessionId: 'a', resume: {} } as never)
+  w.session = 'c'
+  expect(await listed()).not.toContain('alpha prompt')
+})
+
+test('a turn that ends with the pane open reads only the bytes after what was fed', async ($, on) => {
+  const { w, clock } = sessions(on, { a: `${user(1, null, 'first prompt é')}\n` })
+  await $.command.run({ command: 'mod-prompts' } as never)
+  const fed = new TextEncoder().encode(w.files.a!).length
+  w.files.a += `${user(2, 1, 'second prompt')}\n`
+  w.isBig = true
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: 'ok', isAborted: false } as never)
+  await clock.settle()
+  expect(w.reads[0]).toBe(fed)
+  const ui = await paneOf($)
+  expect(JSON.stringify(await ui.drawn())).toContain('second prompt')
+  await ui.unmount()
+})
+
+const DIGITS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+const btoaBytes = (bytes: Uint8Array) => {
+  let out = ''
+  for (let at = 0; at < bytes.length; at += 3) {
+    const n = (bytes[at]! << 16) | ((bytes[at + 1] ?? 0) << 8) | (bytes[at + 2] ?? 0)
+    out += DIGITS[n >> 18]! + DIGITS[(n >> 12) & 63]! + (at + 1 < bytes.length ? DIGITS[(n >> 6) & 63]! : '=') + (at + 2 < bytes.length ? DIGITS[n & 63]! : '=')
+  }
+  return out
+}
+
 test('a turn that ends while the pane is open reads an unchanged transcript no more', async ($, on) => {
   const transcript = `${user(1, null, 'first prompt')}\n${reply(2, 1)}\n`
   let isOpen = false

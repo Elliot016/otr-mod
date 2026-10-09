@@ -9,6 +9,7 @@ import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { promptsOf, promptText, rowKey, targetOf, TranscriptRows, type Prompt } from './prompts'
+import { bytesOf, CHUNK_BYTES, chunkArgv, utf8Length } from './tail'
 import { GUTTER, timelineRows, type TimelineMessage, type TimelineProps } from './timeline'
 import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
@@ -94,8 +95,11 @@ const PAGE_SIZE = 100
 
 let transcript = ''
 let transcriptRows = new TranscriptRows()
-// The file's size at the last read, so a turn that added nothing reads nothing.
-let readSize = -1
+// The bytes of the file fed so far, and the unfinished line after them; a turn that added nothing reads nothing.
+let fedBytes = 0
+let carry = ''
+// A file that could not be read at this size is not read again until it grows.
+let failedSize = -1
 // Read in full once, then in part; prompts drawn in between come from the rows Claude Code draws.
 let isLoaded = false
 // A turn ended, so the next read takes what it added.
@@ -112,29 +116,101 @@ const drawn = new Map<string, string>()
 
 const isOpen = async ($: EngineInterface, id = PANE) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
-// A long session outgrows $.fs.read's 4 MiB cap; then the transcript streams through the platform's own file printer.
-async function load($: EngineInterface) {
-  if (isLoaded && !isStale) return
+// The session the prompts belong to. A /resume or /clear keeps the process and changes the id, so the old list must never show for the new one.
+let listSession = ''
+
+function startList(session: string, path = '') {
+  listSession = session
+  transcript = path
+  transcriptRows = new TranscriptRows()
+  fedBytes = 0
+  carry = ''
+  failedSize = -1
+  isLoaded = false
   isStale = false
-  if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
-  if (!transcript) transcript = await findTranscript($)
-  if (!transcript) return
-  const { size } = await $.fs.stat(transcript).catch(() => ({ size: -1 }))
-  if (isLoaded && size >= 0 && size === readSize) return
-  let text = String(await $.fs.read(transcript).catch(() => ''))
-  if (!text && size > 0) {
-    const isWindows = /^[A-Za-z]:|\\/.test(transcript)
-    // cmd's type rejects forward slashes ("The syntax of the command is incorrect").
-    const argv = isWindows ? ['cmd', '/c', 'type', transcript.replace(/\//g, '\\')] : ['cat', transcript]
-    for await (const chunk of $.process.spawn({ argv })) {
-      if (chunk.stream === 'stdout') text += chunk.text
-    }
+  prompts = []
+  selected = -1
+  page = -1
+  note = ''
+  drawn.clear()
+}
+
+// Asking the id on every row would cost a round trip each, so rows ask after a session.end, or once this long has passed.
+const SESSION_CHECK_MS = 500
+let sessionCheckedAt = 0
+
+async function followSession($: EngineInterface) {
+  const now = Date.now()
+  if (listSession && now - sessionCheckedAt < SESSION_CHECK_MS) return
+  sessionCheckedAt = now
+  const asked = listSession
+  const session = String(await $.session.id().catch(() => listSession))
+  // A SessionStart that switched the list while the id was on its way knows better than this answer.
+  if (session !== listSession && asked === listSession) startList(session)
+}
+
+// One read at a time: two at once would feed the same lines twice.
+let reading: Promise<void> = Promise.resolve()
+const load = ($: EngineInterface) => (reading = reading.then(() => readMore($)).catch(() => {}))
+
+// An open or a draw waits this long at most, so a long session's first read never holds up the panel; it redraws once the read lands.
+const LOAD_WAIT_MS = 300
+const loadAWhile = ($: EngineInterface) => Promise.race([load($), $.clock.sleep(LOAD_WAIT_MS).catch(() => {})])
+
+// One fs.read takes a file up to this size.
+const WHOLE_READ_BYTES = 4 * 1024 * 1024
+
+// The file's text from byte `from` on; past one fs.read, only the first read streams the whole file, later ones take the new bytes.
+async function readFrom($: EngineInterface, path: string, from: number, size: number) {
+  if (size <= WHOLE_READ_BYTES) {
+    const whole = String(await $.fs.read(path).catch(() => ''))
+    if (whole) return from ? new TextDecoder().decode(new TextEncoder().encode(whole).subarray(from)) : whole
   }
-  // A failed read leaves the transcript unloaded, so the next open tries again.
-  if (!text) return
-  transcriptRows.feed(text)
-  readSize = size
+  if (from > 0) {
+    const parts: Uint8Array[] = []
+    for (let at = from; at < size; at += CHUNK_BYTES) parts.push(bytesOf((await $.process.run(chunkArgv(path, at, Math.min(CHUNK_BYTES, size - at)))).stdout))
+    const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+    parts.reduce((at, part) => (bytes.set(part, at), at + part.length), 0)
+    return new TextDecoder().decode(bytes)
+  }
+  const isWindows = /^[A-Za-z]:|\\/.test(path)
+  // cmd's type rejects forward slashes ("The syntax of the command is incorrect").
+  const argv = isWindows ? ['cmd', '/c', 'type', path.replace(/\//g, '\\')] : ['cat', path]
+  let text = ''
+  for await (const chunk of $.process.spawn({ argv })) {
+    if (chunk.stream === 'stdout') text += chunk.text
+  }
+  return text
+}
+
+async function readMore($: EngineInterface) {
+  await followSession($)
+  if (isLoaded && !isStale) return
+  const session = listSession
+  isStale = false
+  const path = transcript || String((await $.store.get(`transcript:${session}`).catch(() => '')) ?? '') || (await findTranscript($))
+  if (!path || session !== listSession) return
+  transcript = path
+  const { size } = await $.fs.stat(path).catch(() => ({ size: -1 }))
+  if (size < 0 || size === failedSize || (isLoaded && size === fedBytes)) return
+  // A file shorter than what was fed was rewritten, so it is read again from its start.
+  if (size < fedBytes) {
+    transcriptRows = new TranscriptRows()
+    fedBytes = 0
+    carry = ''
+  }
+  const from = fedBytes
+  const fresh = await readFrom($, path, from, size).catch(() => '')
+  if (session !== listSession || path !== transcript) return
+  // A failed read leaves the transcript unloaded until the file grows, so a draw does not read it again and again.
+  if (!fresh) {
+    failedSize = size
+    return
+  }
+  carry = transcriptRows.append(carry + fresh)
+  fedBytes = from + utf8Length(fresh)
   isLoaded = true
+  $.ui.invalidate('ui.render')
   // Prompts drawn since the read, not yet in the file, stay at the end.
   const read = promptsOf(transcriptRows.rows)
   // A queued prompt is drawn under another id than the file's, so a drawn one also matches it by its text.
@@ -188,7 +264,7 @@ async function togglePane($: EngineInterface) {
   note = ''
   selected = -1
   page = -1
-  await load($)
+  await loadAWhile($)
   const opened = await $.ui.open({ id: PANE, title: text.paneTitle, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.panelWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-prompts', key: 'pane' }, opened.isPlaced)
@@ -310,15 +386,16 @@ export const register: Register = (on, options) => {
 
   // Only the settings hook event names the transcript; kept per session so a reload finds it again.
   on('classic.SessionStart', async ($, e, next) => {
-    // A compact keeps the same transcript, and the prompts learned since the read are already here.
-    if (e.transcript_path !== transcript) {
-      isLoaded = false
-      prompts = []
-      transcriptRows = new TranscriptRows()
-      readSize = -1
-    }
-    transcript = e.transcript_path
+    // A compact keeps the same session and transcript, and the prompts learned since the read are already here.
+    if (e.session_id !== listSession || e.transcript_path !== transcript) startList(e.session_id, e.transcript_path)
     await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
+
+    return next(e)
+  })
+
+  // A /resume or /clear ends this session; the next row asks for the id at once.
+  on('session.end', async ($, e, next) => {
+    sessionCheckedAt = 0
 
     return next(e)
   })
@@ -341,6 +418,7 @@ export const register: Register = (on, options) => {
   // Each prompt row as Claude Code draws it, so a jump scrolls to the id the row really has.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     await loadLook($)
+    await followSession($)
     drawn.set(rowKey(e.requestId), e.requestId)
     // A prompt sent after the read joins the list as its row draws.
     const text = e.props.origin?.kind === 'composer' ? promptText(String(e.props.text ?? '')) : undefined
@@ -473,7 +551,8 @@ export const register: Register = (on, options) => {
     }
 
     // A reload resets module state while the pane stays open, so read the transcript again.
-    if (prompts.length === 0) await load($)
+    await followSession($)
+    if (prompts.length === 0) await loadAWhile($)
 
     // Pane padding, the section's border and padding, the gutter and the dot.
     const width = Math.max(10, e.props.bodyColumns - 2 - 4 - GUTTER - 2)
