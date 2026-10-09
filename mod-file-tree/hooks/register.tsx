@@ -41,17 +41,75 @@ let previews: Previews | undefined
 
 const isOpen = async ($: EngineInterface, id: string) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
-// A reload empties the module copy and $.state still holds it; only an empty state reads the transcript.
+// The session the log belongs to. A /resume or /clear keeps the process and changes the id, so the old log must never show for the new one.
+let logSession = ''
+
+function startLog(session: string, path = '') {
+  logSession = session
+  transcript = path
+  log = undefined
+  loading = null
+  changes = []
+  cleared = { seq: 0, step: 0 }
+  replayTurn = null
+  index = 0
+  collapsed = []
+  opened = []
+  note = ''
+  landed.clear()
+}
+
+// Asking the id on every hook would cost a round trip each, so hooks ask after a session.end, or once this long has passed.
+const SESSION_CHECK_MS = 500
+let sessionCheckedAt = 0
+
+async function followSession($: EngineInterface) {
+  const now = Date.now()
+  if (logSession && now - sessionCheckedAt < SESSION_CHECK_MS) return
+  sessionCheckedAt = now
+  const asked = logSession
+  const session = String(await $.session.id().catch(() => logSession))
+  // A SessionStart that switched the log while the id was on its way knows better than this answer.
+  if (session !== logSession && asked === logSession) startLog(session)
+}
+
+// The transcript read in flight, one per session; changes made meanwhile replay onto what it builds, so a live edit is never lost.
+let loading: { session: string; done: Promise<void> } | null = null
+let changes: ((current: Log) => Log)[] = []
+
+// A hook waits this long at most for the read, so a long session's transcript never holds up the start or the pane.
+const LOAD_WAIT_MS = 300
+
+// A reload empties the module copy and $.state still holds it; only an empty state, or another session's, reads the transcript.
 async function hydrate($: EngineInterface) {
+  await followSession($)
   if (log) return log
-  cleared = (await $.state.get({ plugin: 'mod-file-tree', key: 'cleared' })).value ?? cleared
-  log = (await $.state.get({ plugin: 'mod-file-tree', key: 'log' })).value as Log | undefined
-  if (!log) await load($)
-  return log ?? (log = emptyLog())
+  const session = logSession
+  const owner = (await $.state.get({ plugin: 'mod-file-tree', key: 'session' })).value
+  const kept = (await $.state.get({ plugin: 'mod-file-tree', key: 'log' })).value as Log | undefined
+  if (session !== logSession) return log ?? emptyLog()
+  if (kept && owner === session) {
+    cleared = (await $.state.get({ plugin: 'mod-file-tree', key: 'cleared' })).value ?? cleared
+    log = kept
+    return log
+  }
+  if (!loading) loading = { session, done: load($, session) }
+  log = emptyLog()
+  await Promise.race([loading.done, $.clock.sleep(LOAD_WAIT_MS).catch(() => {})])
+  return log ?? emptyLog()
+}
+
+// Every change to the log goes through here, so one made while the transcript loads is replayed onto it.
+async function apply($: EngineInterface, change: (current: Log) => Log) {
+  await hydrate($)
+  log = change(log ?? emptyLog())
+  if (loading) changes.push(change)
+  await save($)
 }
 
 async function save($: EngineInterface) {
   await $.state.set({ plugin: 'mod-file-tree', key: 'log' }, log ?? emptyLog())
+  await $.state.set({ plugin: 'mod-file-tree', key: 'session' }, logSession)
   $.ui.invalidate('ui.render')
 }
 
@@ -68,22 +126,33 @@ async function findTranscript($: EngineInterface) {
 }
 
 // Builds the log from the whole transcript; a long session outgrows $.fs.read's 4 MiB cap, so it then streams through the platform's file printer.
-async function load($: EngineInterface) {
-  if (!transcript) transcript = String((await $.store.get(`transcript:${await $.session.id()}`)) ?? '')
-  if (!transcript) transcript = await findTranscript($)
-  if (!transcript) return
-  let raw = String(await $.fs.read(transcript).catch(() => ''))
-  if (!raw) {
-    const isWindows = /^[A-Za-z]:|\\/.test(transcript)
-    // cmd's type rejects forward slashes.
-    const argv = isWindows ? ['cmd', '/c', 'type', transcript.replace(/\//g, '\\')] : ['cat', transcript]
-    for await (const chunk of $.process.spawn({ argv })) {
-      if (chunk.stream === 'stdout') raw += chunk.text
+async function load($: EngineInterface, session: string) {
+  const path = transcript || String((await $.store.get(`transcript:${session}`).catch(() => '')) ?? '') || (await findTranscript($))
+  if (session !== logSession) return
+  transcript = path
+  let raw = ''
+  if (path) {
+    raw = String(await $.fs.read(path).catch(() => ''))
+    if (!raw) {
+      const isWindows = /^[A-Za-z]:|\\/.test(path)
+      // cmd's type rejects forward slashes.
+      const argv = isWindows ? ['cmd', '/c', 'type', path.replace(/\//g, '\\')] : ['cat', path]
+      for await (const chunk of $.process.spawn({ argv })) {
+        if (chunk.stream === 'stdout') raw += chunk.text
+      }
     }
   }
+  // A switch while the file was read makes it another session's.
+  if (session !== logSession) return
   const parsed = new TranscriptFiles(String((await $.session.cwd().catch(() => '')) ?? ''))
   for (const line of raw.split('\n')) if (line.trim()) parsed.feed(line)
-  log = { ...parsed.log, working: false }
+  if (session !== logSession) return
+  log = changes.reduce((current, change) => change(current), { ...parsed.log, working: false })
+  changes = []
+  loading = null
+  $.ui.invalidate('ui.render')
+  // A pane render can be what started the read, and a render may not write state.
+  $.clock.after(0, () => void save($))
 }
 
 // The log the pane shows: the whole session or the latest turn, without what a clear hid.
@@ -500,27 +569,20 @@ export const register: Register = (on, options) => {
       const cwd = String((await $.session.cwd().catch(() => '')) ?? '')
       const shells = shellPlans((ran as { result?: { bashEditDiff?: unknown } })?.result?.bashEditDiff, cwd)
       if (shells.length > 0) {
-        await hydrate($)
-        for (const shell of shells) {
-          log = commit(touch(log!, shell.path, shell.kind), shell.path, shell.tool, shell.kind, shell.note, shell.lines)
-          landed.set(shell.path, { at: Date.now(), seq: log.seq })
-        }
-        await save($)
+        await apply($, current => shells.reduce((each, shell) => commit(touch(each, shell.path, shell.kind), shell.path, shell.tool, shell.kind, shell.note, shell.lines), current))
+        for (const shell of shells) landed.set(shell.path, { at: Date.now(), seq: log!.seq })
       }
       return ran
     }
 
-    await hydrate($)
-    log = touch(log!, plan.path, plan.kind)
-    await save($)
+    await apply($, current => touch(current, plan.path, plan.kind))
 
     const result = await next(e)
     const isFailed = typeof result === 'object' && result !== null && ('deny' in result || ('isError' in result && result.isError === true))
     if (plan.kind !== 'read' && !isFailed) {
-      log = commit(log!, plan.path, plan.tool, plan.kind, plan.note, plan.lines)
-      landed.set(plan.path, { at: Date.now(), seq: log.seq })
-      if (replayTurn === null) index = Math.max(0, stepsOfTurn(viewOf(log), null).length - 1)
-      await save($)
+      await apply($, current => commit(current, plan.path, plan.tool, plan.kind, plan.note, plan.lines))
+      landed.set(plan.path, { at: Date.now(), seq: log!.seq })
+      if (replayTurn === null) index = Math.max(0, stepsOfTurn(viewOf(log!), null).length - 1)
     }
 
     return result
@@ -528,11 +590,9 @@ export const register: Register = (on, options) => {
 
   on('turn.start', async ($, e, next) => {
     if (!(e as { agentId?: string }).agentId) {
-      await hydrate($)
-      log = { ...log!, turn: log!.turn + 1, working: true }
       opened = []
       replayTurn = null
-      await save($)
+      await apply($, current => ({ ...current, turn: current.turn + 1, working: true }))
     }
 
     return next(e)
@@ -540,10 +600,8 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId) {
-      await hydrate($)
-      log = { ...log!, working: false }
       if (replayTurn === null) index = 0
-      await save($)
+      await apply($, current => ({ ...current, working: false }))
     }
 
     return next(e)
@@ -551,16 +609,21 @@ export const register: Register = (on, options) => {
 
   // Only the settings hook event names the transcript. A compact keeps the same file and the log already holds it, so only a new transcript is read.
   on('classic.SessionStart', async ($, e, next) => {
-    if (e.transcript_path !== transcript || !log) {
-      transcript = e.transcript_path
-      log = undefined
-      cleared = { seq: 0, step: 0 }
+    if (e.session_id !== logSession || e.transcript_path !== transcript || !log) {
+      startLog(e.session_id, e.transcript_path)
       await $.state.set({ plugin: 'mod-file-tree', key: 'cleared' }, cleared)
       await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
-      await load($)
-      log ??= emptyLog()
-      await save($)
+      // The state may hold another session's log, which this one must not reuse.
+      await $.state.set({ plugin: 'mod-file-tree', key: 'session' }, '')
+      await hydrate($)
     }
+
+    return next(e)
+  })
+
+  // A /resume or /clear ends this session; the next hook asks for the id at once.
+  on('session.end', async ($, e, next) => {
+    sessionCheckedAt = 0
 
     return next(e)
   })

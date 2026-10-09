@@ -96,8 +96,29 @@ const fadeLevels = (levels: Record<number, number>, hovered: number) => {
 const isFading = (levels: Record<number, number>, hovered: number) =>
   Object.entries(levels).some(([row, level]) => level !== (Number(row) === hovered ? HOVER_STEPS : 0)) || (hovered >= 0 && !levels[hovered])
 
-// The ticker starts once per instance and reads the latest rows from here, since its closure keeps the first ones.
+// The tickers read the latest rows from here, since their closures keep the first ones.
 const latest = new WeakMap<object, ListProps>()
+
+// Each list's two timers run only while there is something to move, a live or glowing row or a fading hover: idle lists ticking cost a wakeup each.
+const timers = new WeakMap<object, Partial<Record<'move' | 'fade', () => void>>>()
+
+const run = (surface: Parameters<ClientModule<ListProps, State>>[1], kind: 'move' | 'fade', ms: number, step: () => boolean) => {
+  const own = timers.get(surface) ?? {}
+  if (own[kind]) return
+  const stop = surface.every(ms, () => {
+    if (step()) return
+    stop()
+    delete own[kind]
+  })
+  own[kind] = stop
+  timers.set(surface, own)
+}
+
+// A glow keeps the ticker one step past its end, so the row's last frame is its own colors.
+const isMoving = (rows: ListProps['rows']) => {
+  const now = Date.now()
+  return rows.some(row => row.tone === 'live' || (row.changedAt !== undefined && now - row.changedAt < GLOW_MS + TICK_MS * 2))
+}
 
 // The tree rows; a click anywhere on a row selects it, the row under the pointer lights up, and the file Claude is on shimmers.
 const FileList: ClientModule<ListProps, State> = (props, surface) => {
@@ -110,25 +131,26 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
   const phase = surface.state?.phase ?? 0
   const levels = surface.state?.levels ?? {}
 
-  if (!surface.state) {
-    surface.setState({ hovered: -1, phase: 0, levels: {} })
-    // Redraws only while a row is live, glowing or fading its hover.
-    surface.every(TICK_MS, () => {
+  if (!surface.state) surface.setState({ hovered: -1, phase: 0, levels: {} })
+  if (!props.still && isMoving(rows)) {
+    run(surface, 'move', TICK_MS, () => {
       const state = surface.state
-      const shown = latest.get(surface)?.rows ?? []
-      const now = Date.now()
-      // A glow keeps the ticker one step past its end, so the row's last frame is its own colors.
-      const isMoving = shown.some(row => row.tone === 'live' || (row.changedAt !== undefined && now - row.changedAt < GLOW_MS + TICK_MS * 2))
-      if (state && isMoving && !latest.get(surface)?.still) surface.setState({ ...state, phase: state.phase + 1 })
-    })
-    // The hover fade runs on its own, faster timer.
-    surface.every(HOVER_TICK_MS, () => {
-      const state = surface.state
-      if (state && !latest.get(surface)?.still && isFading(state.levels ?? {}, state.hovered)) surface.setState({ ...state, levels: fadeLevels(state.levels ?? {}, state.hovered) })
+      if (!state || latest.get(surface)?.still || !isMoving(latest.get(surface)?.rows ?? [])) return false
+      surface.setState({ ...state, phase: state.phase + 1 })
+      return true
     })
   }
 
   surface.onPointer(event => {
+    // The hover fade runs on its own, faster timer.
+    if (!props.still) {
+      run(surface, 'fade', HOVER_TICK_MS, () => {
+        const state = surface.state
+        if (!state || latest.get(surface)?.still || !isFading(state.levels ?? {}, state.hovered)) return false
+        surface.setState({ ...state, levels: fadeLevels(state.levels ?? {}, state.hovered) })
+        return true
+      })
+    }
     const row = event.type !== 'leave' && event.y >= 0 && event.y < rows.length ? event.y : -1
     const next = props.still ? (row >= 0 ? { [row]: HOVER_STEPS } : {}) : fadeLevels(levels, row)
     const isOpenMark = row >= 0 && rows[row]!.endMark !== '' && event.x >= props.width - OPEN_CELLS

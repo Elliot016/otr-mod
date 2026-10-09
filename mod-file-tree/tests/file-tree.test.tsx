@@ -3,6 +3,7 @@
 import { expect, mock, test, type Mounted, type TestBody } from 'claude-code/testing'
 
 import { cells, cut } from '../hooks/cells'
+import FileList, { type Row as ListRow } from '../hooks/list'
 import { THEME } from '../hooks/theme'
 import { TranscriptFiles } from '../hooks/transcript'
 import { diffLines, emptyLog, commit, iconOf, relPath, rootOf, rowsOf, touch, turnView } from '../hooks/tree'
@@ -562,6 +563,135 @@ test('clear hides what came before it, though the transcript still holds it', as
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: /^No files touched yet/ })).toBeDefined()
   await ui.unmount()
+})
+
+// One process that switches sessions: each session's transcript is <id>.jsonl in a projects folder; held: a read of it waits until released.
+const editOf = (id: string, path: string) => [prompt(`edit ${path}`), use(id, 'Edit', { file_path: path, old_string: 'a', new_string: 'b' }), result(id, PATCH), ''].join('\n')
+
+function sessions(on: Parameters<TestBody>[1], files: Record<string, string>) {
+  const w = { session: 'a', files, held: null as Promise<void> | null }
+  const idOf = (path: string) => path.replace(/\\/g, '/').match(/\/([^/]+)\.jsonl$/)?.[1] ?? ''
+  on('session.cwd', () => ({ value: '/w' }))
+  on('session.id', () => ({ value: w.session }))
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('fs.list', () => ({ value: [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('fs.exists', (_$, e) => ({ value: idOf(e.path) in w.files }))
+  on('fs.read', async (_$, e) => {
+    if (w.held) await w.held
+    return { value: w.files[idOf(e.path)] ?? '' }
+  })
+  on('ui.panes', () => ({ value: [] }))
+  on('tool.call', () => ({ result: { text: 'ok' } }) as never)
+  on('session.start', () => ({ cwd: '/w' }) as never)
+  on('session.end', (_$, e) => ({ sessionId: e.sessionId }) as never)
+  on('command.register', () => ({ value: undefined }) as never)
+  const clock = mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  return { w, clock }
+}
+
+// The whole session's tree, as the Session scope draws it.
+const sessionTree = async (ui: Mounted) => {
+  await pointing(ui).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
+  return JSON.stringify(await ui.drawn({ in: 'list-0' }).catch(() => ''))
+}
+
+test('a resume to another session and back shows each session\'s own files, with no SessionStart', async ($, on) => {
+  const { w, clock } = sessions(on, { a: editOf('ta', '/w/alpha.ts'), b: editOf('tb', '/w/beta.ts') })
+  await $.session.start({ cwd: '/w' } as never)
+  let ui = await $.ui.mount(PANE)
+  expect(await sessionTree(ui)).toContain('alpha.ts')
+  await ui.unmount()
+
+  await $.session.end({ reason: 'resume', sessionId: 'a', resume: {} } as never)
+  w.session = 'b'
+  ui = await $.ui.mount(PANE)
+  await clock.settle()
+  const resumed = await sessionTree(ui)
+  expect(resumed).toContain('beta.ts')
+  expect(resumed).not.toContain('alpha.ts')
+  await ui.unmount()
+
+  await $.session.end({ reason: 'resume', sessionId: 'b', resume: {} } as never)
+  w.session = 'a'
+  ui = await $.ui.mount(PANE)
+  await clock.settle()
+  const back = await sessionTree(ui)
+  expect(back).toContain('alpha.ts')
+  expect(back).not.toContain('beta.ts')
+  await ui.unmount()
+})
+
+test('/clear starts an empty tree: no file of the session before it', async ($, on) => {
+  const { w, clock } = sessions(on, { a: editOf('ta', '/w/alpha.ts') })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.session.end({ reason: 'clear', sessionId: 'a', resume: {} } as never)
+  w.session = 'c'
+  const ui = await $.ui.mount(PANE)
+  await clock.settle()
+  expect(await sessionTree(ui)).not.toContain('alpha.ts')
+  await ui.unmount()
+})
+
+test('a slow transcript read never holds up session.start, and an edit made while it reads is kept', async ($, on) => {
+  const { w, clock } = sessions(on, { a: editOf('ta', '/w/alpha.ts') })
+  let release = () => {}
+  w.held = new Promise<void>(resolve => (release = resolve))
+  let isStarted = false
+  const starting = $.session.start({ cwd: '/w' } as never).then(() => (isStarted = true))
+  await clock.advance(400)
+  expect(isStarted).toBe(true)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/fresh.ts', old_string: 'x\n', new_string: 'y\n' } as never)
+  w.held = null
+  release()
+  await starting
+  await clock.settle()
+  const ui = await $.ui.mount(PANE)
+  const tree = await sessionTree(ui)
+  expect(tree).toContain('alpha.ts')
+  expect(tree).toContain('fresh.ts')
+  await ui.unmount()
+})
+
+// A stand-in surface that counts running timers, since a long tree mounts several lists.
+function fakeSurface() {
+  const running = new Set<() => void>()
+  let pointer: (event: any) => void = () => {}
+  const surface: any = {
+    elements: { Box: (props: any) => props, Text: (props: any) => props },
+    state: undefined,
+    setState: (state: any) => (surface.state = state),
+    every: (_ms: number, fn: () => void) => {
+      running.add(fn)
+      return () => running.delete(fn)
+    },
+    onPointer: (handler: (event: any) => void) => (pointer = handler),
+    post: () => {},
+  }
+  return { surface, running, point: (event: object) => pointer(event), tick: () => [...running].forEach(fn => fn()) }
+}
+
+test('a list at rest runs no timer; a live row moves it until it settles, and a hover fades it out', () => {
+  const row = (tone: ListRow['tone']): ListRow => ({ guides: '', mark: '', name: 'a.ts', tone, add: 0, del: 0, status: '', pad: 0, endMark: '', endColor: THEME.pill, tip: '', tipLabel: '', openTip: '' })
+  const props = (tone: ListRow['tone']) => ({ rows: [row(tone)], width: 30, glyph: '', openLabel: '' })
+  const list = fakeSurface()
+  FileList(props('changed'), list.surface)
+  expect(list.running.size).toBe(0)
+  FileList(props('live'), list.surface)
+  expect(list.running.size).toBe(1)
+  FileList(props('changed'), list.surface)
+  list.tick()
+  expect(list.running.size).toBe(0)
+  list.point({ type: 'move', x: 1, y: 0 })
+  FileList(props('changed'), list.surface)
+  list.point({ type: 'leave', x: 1, y: 0 })
+  for (let n = 0; n < 6; n++) list.tick()
+  expect(list.running.size).toBe(0)
 })
 
 test('session.start registers the command and /mod-file-tree toggles the pane', async ($, on) => {

@@ -12,6 +12,7 @@ declare module 'claude-code' {
         steps: { id: number; turn: number; path: string; tool: string; kind: string; note: string; add: number; del: number; lines: { op: string; t: string }[] }[]
       }
       cleared: { seq: number; step: number }
+      session: string
     }
     'mod-menu': { hidden: boolean }
   }
