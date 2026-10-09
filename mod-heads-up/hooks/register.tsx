@@ -588,7 +588,7 @@ export const register: Register = (on, options) => {
       await update($, card, { isRead: true })
     } else if (id.startsWith('headsup-note-')) {
       const noteId = id.slice('headsup-note-'.length)
-      await setOpen($, noteId, !(await openIds($)).includes(noteId))
+      await $.state.set(OPEN_KEY, [noteId])
       wording = ''
       await update($, noteId, { isRead: true })
     } else if (id.startsWith('headsup-understood-')) {
@@ -688,37 +688,21 @@ export const register: Register = (on, options) => {
     const entryPill = (id: string, label: string, subLead: string | undefined, tip: Tip, extra: Partial<EntryProps> = {}) =>
       pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip, ...(subLead ? { subLead } : {}), ...extra } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
 
-    // One round section per note. The header is always shown and every part of it toggles the note; ↗ stays a Button, since a transcript scroll needs the person's press.
-    const noteSection = (found: Note, isOpened: boolean) => {
-      const isRewording = wording === found.id
-      const turn = fill(text.turnNumber, { n: found.turn })
-      const time = clock(found.at)
-      const toggleId = `headsup-note-${found.id}`
-      const tip = { glyph: bare(isOpened ? look.glyph.expanded : look.glyph.collapsed), label: text.noteLabel, text: text.tipNote }
-      const part = (key: string, label: string, extra: Partial<EntryProps>) => (
-        <Client key={key} module="./entry.tsx" height={1} props={{ id: toggleId, label, isOpen: !found.isRead, bg: THEME.surface1, idle: THEME.muted, nerd, still, tip, ...extra } satisfies EntryProps} />
-      )
-      // Pane padding, section border and padding, the glyph, three subpills, and the ↗ pill.
-      const room = Math.max(8, inner - turn.length - found.tag.length - time.length - 24)
-      return section(elements, look, `note-${found.id}`, '', '', [
-        <Box key={`note-head-${found.id}`} flexDirection="row">
-          {part(toggleId, '', { lead: isOpened ? look.glyph.expanded : look.glyph.collapsed, leadColor: THEME.accent, subLead: turn, subLeadColor: THEME.muted })}
-          {part(`note-tag-${found.id}`, '', { subLead: found.tag, subLeadColor: THEME.accent })}
-          {part(`note-time-${found.id}`, time, { isOpen: false })}
-          {isOpened ? null : <Box key={`note-summary-${found.id}`} flexShrink={1}>{part(`note-summary-text-${found.id}`, fit(found.learn, room), {})}</Box>}
-          <Box key={`note-gap-${found.id}`} flexGrow={1} />
-          <Box key={`note-jump-pill-${found.id}`} flexShrink={0}>
-            {pill({ Box, Text }, nerd, THEME.surface3, (
-              <Button key={`note-jump-${found.id}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `note-jump-box-${found.id}`, color: THEME.accent }} onPress={() => jump($, found.turn, found.promptId ?? '')} />
-            ), `note-jump-box-${found.id}`, THEME.surface1)}
-          </Box>
-        </Box>,
-        ...(isOpened ? noteBody(found, isRewording) : []),
-      ])
+    // The Prompts look: the selected note in a card on top, with its three actions in one row at the card's foot, and every note in a timeline under it.
+    // A part of a timeline row: every part posts the row's one id, so a click anywhere on the row selects the note.
+    const rowPart = (found: Note, key: string, label: string, extra: Partial<EntryProps>) => {
+      const tip = { glyph: bare(look.glyph.expanded), label: text.noteLabel, text: text.tipNote }
+      return <Client key={key} module="./entry.tsx" height={1} props={{ id: `headsup-note-${found.id}`, label, isOpen: !found.isRead, bg: THEME.surface1, idle: THEME.muted, nerd, still, tip, ...extra } satisfies EntryProps} />
     }
 
-    const noteBody = (found: Note, isRewording: boolean) => {
-      return [
+    const noteCard = (found: Note) => {
+      const turn = fill(text.turnNumber, { n: found.turn })
+      return section(elements, look, 'note-card', '', '', [
+        <Box key="note-card-head" flexDirection="row" columnGap={1}>
+          {pill({ Box, Text }, nerd, THEME.surface3, <Text color={THEME.muted}>{turn}</Text>, 'note-card-turn', THEME.surface1)}
+          <Text color={THEME.onSurface} bold>{clock(found.at)}</Text>
+          <Text color={THEME.accent}>{found.tag}</Text>
+        </Box>,
         <Box key={`summary-${found.id}`} marginTop={1}>
           <Text color={THEME.onSurface} bold>{found.learn}</Text>
         </Box>,
@@ -728,37 +712,66 @@ export const register: Register = (on, options) => {
           </Box>
         ) : null,
         ...found.body.map((line, at) => <Text key={`body-${found.id}-${at}`} color={THEME.onSurface}>{`${MARK.bullet} ${line}`}</Text>),
-        <Box key={`actions-${found.id}`} flexDirection="row" columnGap={1} marginTop={1} flexWrap="wrap">
-          {entryPill(`headsup-understood-${found.id}`, text.gotIt, bare(look.glyph.ok), { glyph: bare(look.glyph.ok), label: text.gotIt, text: text.tipGotIt })}
-          {entryPill(`headsup-chat-${found.id}`, text.askClaude, bare(look.glyph.go), { glyph: bare(look.glyph.go), label: text.askClaude, text: text.tipAsk })}
-          {pill({ Box, Text }, nerd, THEME.surface2, <Client key={`headsup-reword-${found.id}`} module="./entry.tsx" height={1} props={{ id: `headsup-reword-${found.id}`, label: text.reword, isOpen: isRewording, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting.endsWith(`-${found.id}`), subLead: bare(look.glyph.cycle), tip: { glyph: bare(look.glyph.cycle), label: text.reword, text: text.tipReword } } satisfies EntryProps} />, `headsup-reword-${found.id}-pill`, THEME.surface1)}
-        </Box>,
-        // The three rewrites, shown once Reword is pressed: a choice bar on one surface2 pill.
-        isRewording ? (
-          <Box key={`redo-row-${found.id}`} flexDirection="row" marginTop={1}>
-            {pill({ Box, Text }, nerd, THEME.surface2, (
-              <Box key={`redo-body-${found.id}`} flexDirection="row">
-                {DIRECTIONS.map(([direction, label, tipBody]) => {
-                  const id = `headsup-redo-${direction}-${found.id}`
-                  return <Client key={id} module="./entry.tsx" height={1} props={{ id, label: ` ${label} `, isOpen: false, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting === `${direction}-${found.id}`, tip: { glyph: bare(look.glyph.cycle), label, text: tipBody } } satisfies EntryProps} />
-                })}
-              </Box>
-            ), `redo-${found.id}`, THEME.surface1)}
-          </Box>
-        ) : null,
-      ]
+        actionsBar(found),
+      ])
+    }
+
+    const timeline = (list: Note[], selected: Note) =>
+      section(elements, look, 'note-timeline', '', '', list.flatMap((found, at) => {
+        const isSelected = found.id === selected.id
+        const time = clock(found.at)
+        // Pane padding, section border and padding, the time, the dot, gaps, and the ↗ pill.
+        const room = Math.max(8, inner - time.length - 12)
+        return [
+          <Box key={`note-row-${found.id}`} flexDirection="row">
+            {rowPart(found, `headsup-note-${found.id}`, time, { isOpen: false })}
+            {rowPart(found, `note-dot-${found.id}`, '', { lead: isSelected ? MARK.stopOpen : MARK.stop, leadColor: isSelected ? THEME.accent : THEME.muted })}
+            <Box key={`note-summary-${found.id}`} flexShrink={1}>{rowPart(found, `note-summary-text-${found.id}`, fit(found.learn, room), { isOpen: isSelected })}</Box>
+            <Box key={`note-gap-${found.id}`} flexGrow={1} />
+            <Box key={`note-jump-pill-${found.id}`} flexShrink={0}>
+              {pill({ Box, Text }, nerd, THEME.surface3, (
+                <Button key={`note-jump-${found.id}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `note-jump-box-${found.id}`, color: THEME.accent }} onPress={() => jump($, found.turn, found.promptId ?? '')} />
+              ), `note-jump-box-${found.id}`, THEME.surface1)}
+            </Box>
+          </Box>,
+          at < list.length - 1 ? <Text key={`note-rail-${found.id}`} color={THEME.muted}>{`${' '.repeat(time.length + 3)}${MARK.rail}`}</Text> : null,
+        ]
+      }))
+
+    // One row, always: Reword swaps the other two buttons for its three choices, so no button changes place with the note's text.
+    const actionsBar = (found: Note) => {
+      const isRewording = wording === found.id
+      const reword = pill({ Box, Text }, nerd, THEME.surface2, <Client key={`headsup-reword-${found.id}`} module="./entry.tsx" height={1} props={{ id: `headsup-reword-${found.id}`, label: text.reword, isOpen: isRewording, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting.endsWith(`-${found.id}`), subLead: bare(look.glyph.cycle), tip: { glyph: bare(look.glyph.cycle), label: text.reword, text: text.tipReword } } satisfies EntryProps} />, `headsup-reword-${found.id}-pill`, THEME.surface1)
+      return (
+        <Box key="headsup-actions" flexDirection="row" columnGap={1} flexShrink={0} marginTop={1}>
+          {isRewording ? null : entryPill(`headsup-understood-${found.id}`, text.gotIt, bare(look.glyph.ok), { glyph: bare(look.glyph.ok), label: text.gotIt, text: text.tipGotIt })}
+          {isRewording ? null : entryPill(`headsup-chat-${found.id}`, text.askClaude, bare(look.glyph.go), { glyph: bare(look.glyph.go), label: text.askClaude, text: text.tipAsk })}
+          {reword}
+          {isRewording ? pill({ Box, Text }, nerd, THEME.surface2, (
+            <Box key={`redo-body-${found.id}`} flexDirection="row">
+              {DIRECTIONS.map(([direction, label, tipBody]) => {
+                const id = `headsup-redo-${direction}-${found.id}`
+                return <Client key={id} module="./entry.tsx" height={1} props={{ id, label: ` ${label} `, isOpen: false, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting === `${direction}-${found.id}`, tip: { glyph: bare(look.glyph.cycle), label, text: tipBody } } satisfies EntryProps} />
+              })}
+            </Box>
+          ), `redo-${found.id}`, THEME.surface1) : null}
+        </Box>
+      )
     }
 
     const opened = await openIds($)
     const ordered = byTurn(saved.notes).flatMap(group => group.notes)
+    // The list reads oldest first, as Prompts does; the card shows the last note the person picked, or the newest.
+    const chronological = [...ordered].sort((a, b) => a.at - b.at)
+    const selected = [...opened].reverse().map(id => ordered.find(found => found.id === id)).find(Boolean) ?? chronological[chronological.length - 1]
     const checkedLine = await lastCheckLine($)
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.hint, { sep: MARK.sep })}</Text>
         <Text wrap="truncate-end" color={THEME.muted}>{checkedLine}</Text>
-        {ordered.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
-        {ordered.map(found => noteSection(found, opened.includes(found.id)))}
+        {selected ? noteCard(selected) : <Text color={THEME.muted}>{text.empty}</Text>}
+        {selected ? timeline(chronological, selected) : null}
         <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
         {paneFooter(elements, paneTip, e.props.bodyColumns, e.props.scroll)}
       </Box>

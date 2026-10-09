@@ -38,7 +38,7 @@ export default {
   "tipTabNotes": "lists every note of this session",
   "tipTabSettings": "opens this mod's settings",
   "tipJump": "scrolls the chat to this turn",
-  "tipNote": "opens or folds this note",
+  "tipNote": "shows this note in the card",
   "tipGotIt": "marks it read, skips this topic later",
   "tipAsk": "drafts a follow-up in your prompt",
   "tipReword": "shows ways to rewrite this note",
