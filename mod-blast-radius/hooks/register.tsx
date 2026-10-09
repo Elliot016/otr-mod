@@ -246,7 +246,7 @@ async function pause($: EngineInterface) {
 
 // Both panes' title line: Details and Settings as tabs, the shown one open.
 const tabs = (isSettings: boolean) => [
-  { id: DETAILS_TAB, label: text.card.details, icon: look.glyph.mark.shell, isOpen: !isSettings, tip: { glyph: look.glyph.mark.shell, label: text.card.details, text: text.tipTabDetails } },
+  { id: DETAILS_TAB, label: text.card.details, icon: look.glyph.mark.shell ?? '', isOpen: !isSettings, tip: { glyph: look.glyph.mark.shell ?? '', label: text.card.details, text: text.tipTabDetails } },
   { id: SETTINGS_TAB, label: text.ui.settings, icon: look.glyph.gear, isOpen: isSettings, tip: { glyph: look.glyph.gear, label: text.ui.settings, text: text.tipTabSettings } },
 ]
 
@@ -286,7 +286,7 @@ const refusal = (decision: Decision | null) =>
     cancel: 'the person pressed Cancel',
     interrupted: 'the turn was interrupted',
     error: 'Blast radius hit an error while holding it',
-  })[decision ?? 'error'] ?? 'no answer was recorded'
+  } as Record<string, string | undefined>)[decision ?? 'error'] ?? 'no answer was recorded'
 
 type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
@@ -364,7 +364,7 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
       {body}
       <Box key="hold-actions" flexDirection="row" columnGap={ACTION_GAP}>
         {entry('blast-cancel', labels.cancel, HOTKEY.cancel, labels.cancel, text.tips.cancel, look.glyph.close)}
-        {entry('blast-details', labels.details, HOTKEY.details, labels.details, text.tips.details, look.glyph.mark.shell)}
+        {entry('blast-details', labels.details, HOTKEY.details, labels.details, text.tips.details, look.glyph.mark.shell ?? '')}
         {entry('blast-run', labels.run, HOTKEY.run, labels.run, text.tips.run, look.glyph.go, THEME.alert)}
         {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
         {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 3 * ACTION_EXTRA + 3 * ACTION_GAP + text.card.explaining.length + 2 <= width ? (
@@ -525,7 +525,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) {
+    if (!(e as { agentId?: string }).agentId) {
       working = true
       $.ui.invalidate('ui.render')
     }
@@ -548,6 +548,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     await loadLook($)
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
 
     if (e.requestId === LIST_PANE) {
@@ -688,6 +689,7 @@ export const register: Register = (on, options) => {
   // The hold is a card above the pill row, so it draws wherever the band does, desktop included.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     await loadLook($)
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     if (!held || !held.report || !held.plain || held.decision !== null) {
       if (toasts.items.length === 0) return next(e)
