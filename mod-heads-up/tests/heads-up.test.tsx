@@ -2,6 +2,9 @@
 // Tests the panel above the prompt: rendering, pill, pane and note cards.
 import { expect, mock, test } from 'claude-code/testing'
 
+// The host test types ship no DOM or node globals.
+declare const setTimeout: (handler: (value: unknown) => void, ms: number) => unknown
+
 const BAND = {
   component: 'AbovePrompt',
   props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 100, scroll: { offset: 0, bodyRows: 12 }, view: {} },
@@ -138,7 +141,7 @@ const drawn = async (ui: any, key: string) => JSON.stringify(await ui.drawn({ in
 
 // A finding on the card: a prompt sent, then the sixth step of its turn.
 async function finding($: any, clock: any, turnId = 't1') {
-  await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' } as never)
   await step($, 6, { turnId })
   await clock.settle()
 }
@@ -212,7 +215,7 @@ for (const [verdict, isShown] of [['drop', false], ['keep', true]] as const) {
     const first = new Promise(resolve => (release = resolve))
     let calls = 0
     const { clock, forks } = setup(on, { reply: () => (calls++ === 0 ? first : answered(verdict)) })
-    await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+    await $.prompt.submit({ text: 'Add follow-ups to /ask' } as never)
     await step($, 6)
     await clock.settle()
     // The main agent takes another step before the check answers.
@@ -235,7 +238,7 @@ test('with no newer step there is no recheck', async ($, on) => {
 
 test('above medium effort the check goes to the session model at medium with the packed conversation', async ($, on) => {
   const { clock, forks, completes } = setup(on)
-  await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' } as never)
   await step($, 6, { effort: 'high' })
   await clock.settle()
   expect(forks.length).toBe(0)
@@ -279,8 +282,8 @@ test('a reworded repeat of a note already shown is not shown again', async ($, o
   let learn = FULL_LEARN
   const { clock, forks } = setup(on, { reply: () => answered(about(learn)) })
   await finding($, clock)
-  await $.prompt.submit({ text: 'next' })
-  await $.prompt.submit({ text: 'and next' })
+  await $.prompt.submit({ text: 'next' } as never)
+  await $.prompt.submit({ text: 'and next' } as never)
   learn = REWORDED
   await step($, 6, { turnId: 't2' })
   await clock.settle()
@@ -324,7 +327,7 @@ test('the pane says when the last check ran: no check yet, then the turn it read
   await finding($, clock)
   expect(JSON.stringify(await panel.drawn())).toContain('Last check: turn 1, under a minute ago. Nothing to flag.')
   answer = FULL
-  await $.prompt.submit({ text: 'and next' })
+  await $.prompt.submit({ text: 'and next' } as never)
   await step($, 6, { turnId: 't2' })
   await clock.settle()
   expect(JSON.stringify(await panel.drawn())).toContain('Last check: turn 2, under a minute ago. Flagged a note.')
@@ -473,11 +476,11 @@ test('the card clears after two prompts, or at once on ×, and stays in the pane
   let n = 0
   const { clock } = setup(on, { reply: () => answered(about(topics[n++] ?? FULL_LEARN)) })
   await finding($, clock)
-  await $.prompt.submit({ text: 'next' })
+  await $.prompt.submit({ text: 'next' } as never)
   let ui = await band($)
   expect(await ui.find({ key: 'headsup-card' })).toBeDefined()
   await ui.unmount()
-  await $.prompt.submit({ text: 'and next' })
+  await $.prompt.submit({ text: 'and next' } as never)
   ui = await band($)
   expect(await ui.find({ key: 'headsup-card' })).toBeUndefined()
   await ui.unmount()
@@ -544,13 +547,13 @@ test('a note keeps the row of its own prompt, so its jump does not reach a later
   let n = 0
   const { clock, store } = setup(on, { reply: () => answered(about(topics[n++] ?? FULL_LEARN)) })
   const row = (requestId: string) => $.ui.mount({ plugin: 'mod-heads-up', surface: 'terminal', component: 'UserMessage', requestId, props: { text: 'Add follow-ups to /ask', origin: { kind: 'composer' } } } as never)
-  await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' } as never)
   await row('p0')
   await step($, 6, { turnId: 't1' })
   await clock.settle()
-  await $.prompt.submit({ text: 'next' })
-  await $.prompt.submit({ text: 'and next' })
-  await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+  await $.prompt.submit({ text: 'next' } as never)
+  await $.prompt.submit({ text: 'and next' } as never)
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' } as never)
   await row('p3')
   await step($, 6, { turnId: 't2' })
   await clock.settle()
@@ -592,12 +595,12 @@ test('enabled off makes no model call; forget empties the known topics', { optio
 
 test('a check reads only the bytes the transcript gained since the last check', async ($, on) => {
   const { clock, reads, runs } = setup(on, { reply: () => answered('learn: none') })
-  await $.prompt.submit({ text: 'Add follow-ups to /ask' })
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' } as never)
   const gainedFrom = encoder.encode(transcriptFor(['Add follow-ups to /ask'])).length
   await step($, 6)
   await clock.settle()
   expect(reads.filter(each => each.as === 'bytes').length).toBe(1)
-  await $.prompt.submit({ text: 'and next' })
+  await $.prompt.submit({ text: 'and next' } as never)
   await step($, 6, { turnId: 't2' })
   await clock.settle()
   expect(reads.filter(each => each.as === 'bytes').length).toBe(1)
