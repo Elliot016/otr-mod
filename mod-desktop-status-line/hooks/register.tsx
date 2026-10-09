@@ -179,6 +179,7 @@ const encodePowerShell = (script: string) => {
     bytes[i * 2] = code & 0xff
     bytes[i * 2 + 1] = code >> 8
   }
+  // @ts-expect-error The runtime has Uint8Array.toBase64, the installed lib types predate it.
   return bytes.toBase64()
 }
 
@@ -245,6 +246,7 @@ async function band($: EngineInterface, e: Parameters<EngineInterface['ui']['res
 
   if (!snap) return null
 
+  // @ts-expect-error The host types omit Svg from this element set, yet the band draws it.
   const { Box, Button, Link, Svg, Text } = $.ui.resolve(e)
   const clock = new Date(snap.now).toTimeString().slice(0, 5)
   const stats: { kind: keyof typeof ICONS; percent: number; value: string; label?: string; tooltip: string; color: string }[] = []
