@@ -447,7 +447,7 @@ export const register: Register = (on, options) => {
       const settingRows = (await $.config.list()).filter(row => row.key.startsWith('mod-progress.'))
       const { rows } = await currentRows($)
       return (
-        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs('settings', rows.length - 1), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows: settingRows, actions: [], working: false, run: async () => {}, still })}</Box>
@@ -464,7 +464,7 @@ export const register: Register = (on, options) => {
     const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd, viewing: e.props.view.agentId ?? '' })) as LoopsProps
 
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs('list', rows.length - 1), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || text.hint}</Text>
         {/* A blank row of the same height while no stop shows, so the list below does not move when one appears. */}
