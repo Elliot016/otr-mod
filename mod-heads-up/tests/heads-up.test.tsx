@@ -38,12 +38,12 @@ const transcriptFor = (prompts: string[]) =>
 const encoder = new TextEncoder()
 const base64Of = (bytes: Uint8Array) => btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''))
 
-type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean; gate?: Promise<unknown>; oversize?: boolean }
+type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean; gate?: Promise<unknown>; oversize?: boolean; session?: { id: string } }
 
 // Stubs everything the mod touches. `forks` and `completes` record what the model was asked, `store` what the mod saved, `reads` and `runs` the file and process calls, and the transcript holds each prompt the test sent. `gate` holds every read of a session's notes until it resolves; `oversize` makes the file read past 4 MiB, as the engine refuses it.
-function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate, oversize = false }: Setup = {}) {
+function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate, oversize = false, session = { id: 's1' } }: Setup = {}) {
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 5, 16, 52) })
-  const store = new Map<string, unknown>([['transcript:s1', TRANSCRIPT]])
+  const store = new Map<string, unknown>([['transcript:s1', TRANSCRIPT], ['transcript:s2', TRANSCRIPT]])
   const sent: string[] = []
   const forks: string[] = []
   const completes: { model: string; effort?: string; prompt: string }[] = []
@@ -66,7 +66,7 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate,
     store.delete(e.key)
     return { value: undefined }
   })
-  on('session.id', () => ({ value: 's1' }))
+  on('session.id', () => ({ value: session.id }))
   on('session.start', () => ({ cwd: '/w' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.messages', () => ({ value: [{ role: 'user', text: 'Add follow-ups to /ask', toolUses: [] }] }))
@@ -449,6 +449,26 @@ test('the X on the panel card hides it and keeps the timeline, and a click on a 
   await click(panel, `headsup-note-${id}`)
   await clock.settle()
   expect(JSON.stringify(await panel.find({ key: 'note-card' }))).toContain('Watch how often people ask follow-ups.')
+  await panel.unmount()
+})
+
+test('a card closed in one session shows again after a /resume away and back', async ($, on) => {
+  const session = { id: 's1' }
+  const { clock } = setup(on, { session })
+  await finding($, clock)
+  let panel = await pane($)
+  await click(panel, 'headsup-close')
+  await clock.settle()
+  expect(JSON.stringify(await panel.drawn())).not.toContain('"key":"note-card"')
+  await panel.unmount()
+  for (const id of ['s2', 's1']) {
+    session.id = id
+    panel = await pane($)
+    await clock.settle()
+    await panel.unmount()
+  }
+  panel = await pane($)
+  expect(JSON.stringify(await panel.drawn())).toContain('"key":"note-card"')
   await panel.unmount()
 })
 

@@ -31,8 +31,9 @@ const FULL = [
 
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
 
-// The session's transcript is whatever the file read returns; the store keeps what the mod saved.
-function setup(on: any) {
+// The transcript is what the file read returns; isBig makes it past 4 MiB, so fs.read refuses and the mod streams it.
+function setup(on: any, isBig = false) {
+  const runs: string[][] = []
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 8, 9, 0) })
   const store = new Map<string, unknown>()
   on('store.get', (_$: unknown, e: { key: string }) => ({ value: store.get(e.key) }))
@@ -52,8 +53,21 @@ function setup(on: any) {
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/home/u' : undefined }))
   on('fs.list', () => ({ value: [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
   on('fs.exists', () => ({ value: true }))
-  on('fs.stat', () => ({ value: { kind: 'file', size: new TextEncoder().encode(TRANSCRIPT_TEXT).length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', (_$: unknown, e: { as?: string }) => ({ value: e.as === 'bytes' ? { base64: btoa(TRANSCRIPT_TEXT) } : TRANSCRIPT_TEXT }))
+  const bytes = new TextEncoder().encode(TRANSCRIPT_TEXT).length
+  on('fs.stat', () => ({ value: { kind: 'file', size: isBig ? bytes + 5 * 1024 * 1024 : bytes, mtimeMs: 0, isLink: false } }))
+  on('fs.read', (_$: unknown, e: { as?: string }) => {
+    if (isBig) throw new Error('over 4 MiB')
+    return { value: e.as === 'bytes' ? { base64: btoa(TRANSCRIPT_TEXT) } : TRANSCRIPT_TEXT }
+  })
+  on('process.spawn', async function* () {
+    yield { stream: 'stdout', text: TRANSCRIPT_TEXT }
+    return { value: { code: 0, signal: null } }
+  })
+  // What lies past the streamed text reads as nothing yet.
+  on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    runs.push(e.argv)
+    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+  })
   on('classic.SessionStart', () => ({}))
   on('turn.step', async function* (_$: unknown, e: { turnId: string; index: number }) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage: null }
@@ -62,7 +76,7 @@ function setup(on: any) {
     const { Text } = $.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  return { clock, store }
+  return { clock, store, runs }
 }
 
 async function step($: any, index: number, extra: object = {}) {
@@ -88,6 +102,19 @@ test('a note takes the number its prompt has on the live branch: a prompt before
   await step($, 6)
   await clock.settle()
   expect(notesOf(store)).toEqual([[3, 'Also check the docs']])
+})
+
+test('a long session\'s transcript is streamed once, not read 2 MiB at a time, and numbers the same', async ($, on) => {
+  const { clock, store, runs } = setup(on, true)
+  await $.prompt.submit({ text: 'Add tests' } as never)
+  await $.prompt.submit({ text: 'Use the other approach' } as never)
+  await $.prompt.submit({ text: 'Also check the docs' } as never)
+  await draw($, ID(7), 'Also check the docs')
+  await step($, 6)
+  await clock.settle()
+  expect(notesOf(store)).toEqual([[3, 'Also check the docs']])
+  // One range read past the streamed bytes, which finds nothing new.
+  expect(runs.length).toBe(1)
 })
 
 test('the same note when the session start named the transcript', async ($, on) => {

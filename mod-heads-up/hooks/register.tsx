@@ -12,7 +12,7 @@ import { settingChoice, settingsBody, type Action, type Previews } from './setti
 import text from './text'
 import { fill, MARK, mix, statusColor, THEME, WASH } from './theme'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { bytesOf, CHUNK_BYTES, chunkArgv, feedLines } from './transcript'
+import { bytesOf, CHUNK_BYTES, chunkArgv, feedLines, utf8Length, WHOLE_READ_BYTES } from './transcript'
 
 // The settings (userConfig), fixed per activation: a change reloads the mod.
 let iconMode: IconMode = 'auto'
@@ -141,6 +141,12 @@ async function loadSession($: EngineInterface, session: string) {
   ])
   // A load for another session started meanwhile: that one owns the state now.
   if (loading?.session !== session) return
+  // The panel's view of the session before a /resume or /clear is not this one's.
+  if (loadedSession && loadedSession !== session) {
+    isCardClosed = false
+    wording = ''
+    note = ''
+  }
   loadedSession = session
   saved = savedOf(nextSaved)
   seen = stringsOf(nextSeen)
@@ -192,6 +198,17 @@ async function numberPrompts($: EngineInterface) {
   // A file that shrank, or another transcript, starts over.
   if (transcript?.path !== path || size < transcript.read) transcript = { path, read: 0, numbers: new PromptNumbers() }
   const cache = transcript
+  // A long session's first read streams the whole file once: one PowerShell per 2 MiB took far longer on a file of hundreds of MB.
+  if (cache.read === 0 && size > WHOLE_READ_BYTES) {
+    const isWindows = /^[A-Za-z]:|\\/.test(path)
+    // cmd's type rejects forward slashes.
+    const argv = isWindows ? ['cmd', '/c', 'type', path.replace(/\//g, '\\')] : ['cat', path]
+    let text = ''
+    for await (const chunk of $.process.spawn({ argv })) if (chunk.stream === 'stdout') text += chunk.text
+    const whole = text.slice(0, text.lastIndexOf('\n') + 1)
+    for (const line of whole.split('\n')) if (line.trim()) cache.numbers.feed(line)
+    cache.read = utf8Length(whole)
+  }
   let carry: Uint8Array = new Uint8Array(0)
   let at = cache.read
   while (at < size) {

@@ -5,6 +5,24 @@ import { PromptNumbers } from './prompts'
 // Bytes per process read: base64 grows a third, so the output stays under the 4 MiB the process result keeps.
 export const CHUNK_BYTES = 2 * 1024 * 1024
 
+// One fs.read takes a file up to this size.
+export const WHOLE_READ_BYTES = 4 * 1024 * 1024
+
+// How many bytes the text takes in UTF-8, without building them.
+export function utf8Length(text: string) {
+  let bytes = 0
+  for (let at = 0; at < text.length; at++) {
+    const code = text.charCodeAt(at)
+    if (code < 0x80) bytes += 1
+    else if (code < 0x800) bytes += 2
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4
+      at++
+    } else bytes += 3
+  }
+  return bytes
+}
+
 const LINE_END = 10
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
