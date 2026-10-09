@@ -104,8 +104,33 @@ const startFade = (surface: ClientSurface<State>) => {
   fades.set(surface, stop)
 }
 
-// The ticker starts once per instance and reads the latest props from here, since its closure keeps the first ones.
+// The ticker reads the latest props from here, since its closure keeps the first ones.
 const latest = new WeakMap<object, EntryProps>()
+
+// Each instance's running tick: it starts when there is a shimmer to move or a hover to watch, and stops at rest, since every pill ticking idle cost a wakeup each.
+const ticks = new WeakMap<object, () => void>()
+
+const startTick = (surface: ClientSurface<State>) => {
+  if (ticks.has(surface)) return
+  const stop = surface.every(TICK_MS, () => {
+    const state = surface.state
+    if (!state) return
+    const now = latest.get(surface)
+    if (!now?.still && (now?.isBusy || isPressed(state, now))) surface.setState({ ...state, phase: state.phase + 1 })
+    else if (state.pressed) surface.setState({ ...state, pressed: undefined })
+    else if (state.isOver && Date.now() - state.at >= HOVER_QUIET_MS) {
+      surface.setState({ ...state, isOver: false, at: Date.now() })
+      if (!now?.still) startFade(surface)
+      const id = now?.id ?? ''
+      if (now?.tip) postTip(surface, id, null)
+      else surface.post({ type: 'menu-hover', id, isOver: false } satisfies EntryMessage)
+    } else if (!state.isOver) {
+      stop()
+      ticks.delete(surface)
+    }
+  })
+  ticks.set(surface, stop)
+}
 
 // A Button inverts under the pointer, so the entry is plain text that lights up like a sidebar row.
 const Entry: ClientModule<EntryProps, State> = (props, surface) => {
@@ -114,26 +139,11 @@ const Entry: ClientModule<EntryProps, State> = (props, surface) => {
   const hovered = surface.state?.isOver === true
   latest.set(surface, props)
 
-  if (!surface.state) {
-    surface.setState({ isOver: false, at: 0, phase: 0 })
-    // Redraws only while busy or ending a stale hover; an idle entry's tick changes nothing.
-    surface.every(TICK_MS, () => {
-      const state = surface.state
-      if (!state) return
-      const now = latest.get(surface)
-      if (!now?.still && (now?.isBusy || isPressed(state, now))) surface.setState({ ...state, phase: state.phase + 1 })
-      else if (state.pressed) surface.setState({ ...state, pressed: undefined })
-      else if (state.isOver && Date.now() - state.at >= HOVER_QUIET_MS) {
-        surface.setState({ ...state, isOver: false, at: Date.now() })
-        if (!now?.still) startFade(surface)
-        const id = latest.get(surface)?.id ?? props.id
-        if (latest.get(surface)?.tip) postTip(surface, id, null)
-        else surface.post({ type: 'menu-hover', id, isOver: false } satisfies EntryMessage)
-      }
-    })
-  }
+  if (!surface.state) surface.setState({ isOver: false, at: 0, phase: 0 })
+  if (props.isBusy && !props.still) startTick(surface)
 
   surface.onPointer(event => {
+    startTick(surface)
     const over = event.type !== 'leave'
     if (over !== hovered) {
       if (props.tip) postTip(surface, props.id, over ? props.tip : null)
