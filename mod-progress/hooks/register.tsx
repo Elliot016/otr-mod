@@ -251,8 +251,9 @@ export const register: Register = (on, options) => {
 
   // One panel at a time: another mod's pane opening closes this one.
   on('state.set', async ($, e, next) => {
+    // The declared state names no other mod's pane, so the types narrow this event to never.
     // Deferred past this dispatch, so this mod's own state write is not nested in another plugin's.
-    if (e.key === 'pane' && e.plugin !== 'mod-progress' && e.value === true) {
+    if (e.key === 'pane' && e.plugin !== 'mod-progress' && (e as { value?: unknown }).value === true) {
       $.clock.after(0, async () => {
         const wasOpen = (await isOpen($)) || (await isOpen($, SETTINGS))
         if (!wasOpen) return
@@ -269,7 +270,7 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if ('agentId' in result) {
       const current = await loadSnap($)
-      current.agents[result.agentId] = {
+      current.agents[result.agentId!] = {
         model: result.model,
         tokens: 0,
         context: 0,
@@ -284,7 +285,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) {
+    if (!(e as { agentId?: string }).agentId) {
       const current = await loadSnap($)
       current.busy = true
       delete current.stop
@@ -306,7 +307,7 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     const current = await loadSnap($)
-    if (!e.agentId) {
+    if (!(e as { agentId?: string }).agentId) {
       current.busy = false
       delete current.main.step
     }
@@ -344,7 +345,7 @@ export const register: Register = (on, options) => {
     // The step is set before the call runs, so the head row shows what the tool is doing while it works.
     try {
       const current = await loadSnap($)
-      applyCall(current, e.agentId, String(e.tool), e as unknown as Record<string, unknown>)
+      applyCall(current, e.agentId, String(e.tool), { ...e })
       await saveSnap($)
       $.ui.invalidate('ui.render')
     } catch {
@@ -353,7 +354,7 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     // The observers never fail the call they watch.
     try {
-      const input = e as unknown as Record<string, unknown>
+      const input: Record<string, unknown> = { ...e }
       const tool = String(e.tool)
       const current = await loadSnap($)
       const owner = e.agentId ? current.agents[e.agentId] : current
@@ -439,6 +440,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.requestId !== PANE && e.requestId !== SETTINGS) return next(e)
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
 
     if (e.requestId === SETTINGS) {

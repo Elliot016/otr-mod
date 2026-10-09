@@ -1,6 +1,6 @@
 // mod-progress / hooks/loops.tsx, by v-amorim
 // The pane's list: a card per loop, two rows each, its gates under it when clicked.
-import type { ClientModule } from 'claude-code'
+import type { ClientModule, RenderChildren } from 'claude-code'
 
 import { postTip } from './entry'
 import { lookFor } from './look'
@@ -32,6 +32,7 @@ export function layoutLoops(rows: Row[], expanded: string) {
 
 const LEVELS = style.levels as Record<string, { glyph: string; color: string }>
 
+// @ts-expect-error Row holds undefined fields, which the host's JsonValue props type refuses.
 const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
   const { Box, Text } = surface.elements
   const { rows, width, expanded, nerd, viewing } = props
@@ -51,7 +52,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
   })
 
   // A pill on the card: rounded caps on Nerd, a space each side on safe.
-  const pill = (key: string, on: string, body: unknown) => (
+  const pill = (key: string, on: string, body: RenderChildren) => (
     <Box key={key} flexDirection="row" flexShrink={0}>
       <Text key={`${key}-left`} color={THEME.surface1} backgroundColor={on}>{nerd ? CAPS.left : ' '}</Text>
       <Box key={`${key}-body`} flexDirection="row" backgroundColor={THEME.surface1}>{body}</Box>
@@ -72,7 +73,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
     const on = isHover ? THEME.lifted : THEME.surface2
     const strip = <Text key={`${key}-strip`} color={row.hue}>{own.strip}</Text>
     const isViewed = line.kind === 'head' && row.id === viewing
-    const frame = (inner: unknown) => (
+    const frame = (inner: RenderChildren) => (
       <Box key={key} height={1} width={width} flexDirection="row" backgroundColor={on}>
         {strip}
         <Text key={`${key}-pad`} color={THEME.accent} bold>{isViewed ? MARK.cursor : ' '}</Text>
