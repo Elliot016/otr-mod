@@ -87,7 +87,8 @@ export class TranscriptFiles {
     // A prompt, or a subagent's report that Claude answers in a turn of its own, starts a turn.
     const isPeer = row.type === 'user' && row.isMeta && row.origin?.kind === 'peer'
     const isTyped = row.type === 'user' && !row.isMeta && !row.isCompactSummary && !(Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result')) && isPrompt(userText(content))
-    const isQueued = row.type === 'attachment' && row.attachment?.type === 'queued_command' && !row.attachment.isMeta && isPrompt(String(row.attachment.prompt ?? ''))
+    // A prompt with an image holds content blocks, not a string.
+    const isQueued = row.type === 'attachment' && row.attachment?.type === 'queued_command' && !row.attachment.isMeta && isPrompt(userText(row.attachment.prompt))
     if (isPeer || isTyped || isQueued) {
       this.log = { ...this.log, turn: this.log.turn + 1 }
       return

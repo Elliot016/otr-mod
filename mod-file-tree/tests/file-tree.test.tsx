@@ -429,6 +429,13 @@ const SESSION = [
   '',
 ].join('\n')
 
+test('a prompt sent mid-turn with an image, stored as content blocks, opens a turn; a meta one does not', () => {
+  const parsed = new TranscriptFiles('/w')
+  const queued = (isMeta: boolean, text: string) => jrow({ type: 'attachment', attachment: { type: 'queued_command', isMeta, prompt: [{ type: 'text', text }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBOR' } }] } })
+  for (const line of [prompt('first'), queued(false, '[Image #1] the header'), queued(true, '<task-notification>done</task-notification>')]) parsed.feed(line)
+  expect(parsed.log.turn).toBe(2)
+})
+
 test('the transcript rebuilds every file and edit: the stored patch, a new file, and no step for a failed edit', () => {
   const parsed = new TranscriptFiles('C:\\repo')
   for (const line of SESSION.split('\n')) if (line) parsed.feed(line)
