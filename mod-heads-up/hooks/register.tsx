@@ -110,7 +110,7 @@ let mainSteps = 0
 // `<direction>-<note id>` while a rewrite runs.
 let rewriting = ''
 // The notes opened in the panel, kept in $.state so they survive redraws.
-const OPEN_KEY = { plugin: 'mod-heads-up', key: 'open' }
+const OPEN_KEY = { plugin: 'mod-heads-up', key: 'open' } as const
 const openIds = async ($: EngineInterface) => stringsOf((await $.state.get(OPEN_KEY)).value)
 
 async function setOpen($: EngineInterface, id: string, isOpen: boolean) {
@@ -190,7 +190,7 @@ async function numberPrompts($: EngineInterface) {
   // A file that shrank, or another transcript, starts over.
   if (transcript?.path !== path || size < transcript.read) transcript = { path, read: 0, numbers: new PromptNumbers() }
   const cache = transcript
-  let carry = new Uint8Array(0)
+  let carry: Uint8Array = new Uint8Array(0)
   let at = cache.read
   while (at < size) {
     const chunk = await readBytes($, path, at, Math.min(CHUNK_BYTES, size - at))
@@ -542,7 +542,8 @@ export const register: Register = (on, options) => {
 
   // One panel at a time: another mod's pane opening closes this one, deferred past that plugin's dispatch.
   on('state.set', async ($, e, next) => {
-    if (e.key === 'pane' && e.plugin !== 'mod-heads-up' && e.value === true) {
+    // The declared state names no other mod's pane, so the types narrow this event to never.
+    if (e.key === 'pane' && e.plugin !== 'mod-heads-up' && (e as { value?: unknown }).value === true) {
       $.clock.after(0, async () => {
         if (!(await isOpen($)) && !(await isOpen($, SETTINGS))) return
         await $.ui.close({ id: PANE })
@@ -662,6 +663,7 @@ export const register: Register = (on, options) => {
     if (isOpening) $.clock.after(0, () => endOpening($))
     await ensureLoaded($)
     const elements = $.ui.resolve(e)
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = elements
     const nerd = look.nerd
 
