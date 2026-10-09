@@ -614,7 +614,7 @@ export const register: Register = (on, options) => {
       if (report.isUnknown && report.note) touches.push(plainText('touch-note', report.note, THEME.muted))
 
       return (
-        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
           <Text color={THEME.muted} wrap="truncate-end">{`${text.ui.readOnly} ${MARK.sep} ${text.ui.answerOnCard}`}</Text>
           {section({ Box, Text }, look, 'does', '', '', [...does, plainText('why-source', fill(text.ui.heldBy, { source: source.replace(/\.$/, '') }), THEME.muted, { key: 'why-source' })])}
@@ -651,7 +651,7 @@ export const register: Register = (on, options) => {
     ]
 
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
         <Text wrap="truncate-end" color={statusColor(note || bad)}>{note || bad || `${text.ui.statusHint} ${MARK.sep} ${text.ui.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still, tips: text.settingTips })}
