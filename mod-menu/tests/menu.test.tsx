@@ -9,7 +9,7 @@ test('/mod-menu flips hidden and stores it for the next session', async ($, on) 
     return { value: undefined }
   })
 
-  await $.command.run({ command: 'mod-menu' })
-  await $.command.run({ command: 'mod-menu' })
+  await $.command.run({ command: 'mod-menu' } as never)
+  await $.command.run({ command: 'mod-menu' } as never)
   expect(stored).toEqual([true, false])
 })
