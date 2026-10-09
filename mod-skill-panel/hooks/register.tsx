@@ -382,7 +382,7 @@ export const register: Register = (on, options) => {
     if (e.requestId === SETTINGS) {
       const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-skill-panel.'))
       return (
-        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs('settings'), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
@@ -427,7 +427,7 @@ export const register: Register = (on, options) => {
     const empty = view === 'agents' && agents.length === 0
 
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(view), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(view === 'agents' ? text.agentsHint : text.hint, { sep: MARK.sep })}</Text>
         {empty ? <Text color={THEME.muted}>{text.noAgents}</Text> : null}
