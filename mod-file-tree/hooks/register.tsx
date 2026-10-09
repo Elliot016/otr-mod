@@ -476,7 +476,8 @@ export const register: Register = (on, options) => {
 
   // Deferred past this dispatch, so this mod's own state write is not nested in another plugin's.
   on('state.set', async ($, e, next) => {
-    if (e.key === 'pane' && e.plugin !== 'mod-file-tree' && e.value === true) {
+    // The declared state names no other mod's pane, so the types narrow this event to never.
+    if (e.key === 'pane' && e.plugin !== 'mod-file-tree' && (e as { value?: unknown }).value === true) {
       $.clock.after(0, async () => {
         const wasOpen = (await isOpen($, PANE)) || (await isOpen($, SETTINGS))
         if (!wasOpen) return
@@ -526,7 +527,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) {
+    if (!(e as { agentId?: string }).agentId) {
       await hydrate($)
       log = { ...log!, turn: log!.turn + 1, working: true }
       opened = []
@@ -659,6 +660,7 @@ export const register: Register = (on, options) => {
     if (e.requestId !== PANE && e.requestId !== SETTINGS) return next(e)
     if (isOpening) $.clock.after(0, () => endOpening($))
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const elements = { Box, Button, Text }
 

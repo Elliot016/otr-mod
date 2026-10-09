@@ -1,6 +1,6 @@
 // mod-file-tree / hooks/list.tsx, by v-amorim
 // Draws the file tree rows with indent guides, icons and tone colors for Claude's activity.
-import type { ClientModule } from 'claude-code'
+import type { ClientModule, RenderElement } from 'claude-code'
 
 import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, mix, postTip, shimmerColor, stepToward, TICK_MS } from './entry'
 import { CAPS, THEME } from './theme'
@@ -47,7 +47,7 @@ export const OPEN_CELLS = 4
 export const NAME_COLOR: Record<Tone, string> = { live: THEME.onSurface, added: THEME.good, changed: THEME.warn, read: THEME.secondary, dir: THEME.onSurface }
 
 // Lines added and removed in one pill; plain colored text where the font has no caps.
-const countsPill = (Text: (props: any) => unknown, add: number, del: number, nerd: boolean) => {
+const countsPill = (Text: (props: any) => RenderElement, add: number, del: number, nerd: boolean) => {
   const parts = [add > 0 ? <Text key="add" color={THEME.good} backgroundColor={nerd ? THEME.surface3 : undefined}>{`+${add}`}</Text> : null, del > 0 ? <Text key="del" color={THEME.alert} backgroundColor={nerd ? THEME.surface3 : undefined}>{`${add > 0 ? ' ' : ''}−${del}`}</Text> : null]
   if (!nerd) return parts
   return [<Text key="counts-left" color={THEME.surface3}>{CAPS.left}</Text>, ...parts, <Text key="counts-right" color={THEME.surface3}>{CAPS.right}</Text>]
@@ -62,14 +62,14 @@ const LIVE_BG = THEME.surface3
 // The live word's pill: rounded caps where the font has them, a space on each side elsewhere.
 const LIVE_PILL = THEME.border
 
-const livePill = (Text: (props: any) => unknown, word: string, nerd: boolean) => [
+const livePill = (Text: (props: any) => RenderElement, word: string, nerd: boolean) => [
   <Text key="live-cap-left" color={LIVE_PILL}>{nerd ? CAPS.left : ' '}</Text>,
   <Text key="live-word" color={THEME.pill} backgroundColor={LIVE_PILL}>{word}</Text>,
   <Text key="live-cap-right" color={LIVE_PILL}>{nerd ? CAPS.right : ' '}</Text>,
 ]
 
 // A Client draws Text only, so the open mark's pill draws its caps itself; OPEN_CELLS counts these cells.
-const openPill = (Text: (props: any) => unknown, glyph: string, color: string, nerd: boolean) =>
+const openPill = (Text: (props: any) => RenderElement, glyph: string, color: string, nerd: boolean) =>
   nerd
     ? [
         <Text key="open-gap">{' '}</Text>,
