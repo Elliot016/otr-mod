@@ -4,6 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { parseRow, promptsOf, targetOf } from '../hooks/prompts'
 
+const pointer = (ui: object, event: object) => (ui as { pointer: (event: object) => Promise<void> }).pointer(event)
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const user = (n: number, parent: number | null, content: unknown, extra: object = {}) =>
   JSON.stringify({ type: 'user', uuid: ID(n), parentUuid: parent === null ? null : ID(parent), timestamp: '2026-10-03T11:58:00Z', message: { role: 'user', content }, ...extra })
@@ -51,10 +52,10 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   })
   on('ui.panes', () => ({ value: [] }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('ui.focus', () => ({ value: { isFocused: true } }))
+  on('ui.focus', () => ({ value: { isFocused: true } } as never))
   on('ui.scroll', (_$, e) => {
     scrolled.push(String((e as { to?: { requestId?: string } }).to?.requestId))
-    return { value: {} }
+    return { value: {} } as never
   })
   mock.clock(on)
   on('ui.render', ($$, e) => {
@@ -63,7 +64,7 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   })
 
   await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
-  await $.command.run({ command: 'mod-prompts' })
+  await $.command.run({ command: 'mod-prompts' } as never)
 
   // Claude Code draws the first prompt's row under a split-row id that keeps the uuid's first four groups.
   const row = await $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'UserMessage', requestId: `${ID(1).slice(0, 24)}000000000007`, props: { text: 'first prompt', origin: { kind: 'composer' } } } as never)
@@ -90,16 +91,16 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' })).split(`${hhmm} `).length - 1).toBe(2)
 
   // A hovered stop or tab puts its tip in the pane footer; leaving clears it.
-  await ui.pointer({ in: 'timeline-before', type: 'move', x: 8, y: 0 })
+  await pointer(ui, { in: 'timeline-before', type: 'move', x: 8, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' · shows this prompt in full' })).toBeDefined()
-  await ui.pointer({ in: 'timeline-before', type: 'leave', x: 0, y: 0 })
+  await pointer(ui, { in: 'timeline-before', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' · shows this prompt in full' })).toBeUndefined()
-  await ui.pointer({ in: 'prompts-settings', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'prompts-settings', type: 'move', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' · opens this mod\'s settings' })).toBeDefined()
-  await ui.pointer({ in: 'prompts-settings', type: 'leave', x: 0, y: 0 })
+  await pointer(ui, { in: 'prompts-settings', type: 'leave', x: 0, y: 0 })
 
   // A click on a stop opens it, and the stops after it move under its details; the jump Button scrolls.
-  await ui.pointer({ in: 'timeline-before', type: 'down', button: 'left', x: 8, y: 0 })
+  await pointer(ui, { in: 'timeline-before', type: 'down', button: 'left', x: 8, y: 0 })
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' }))).toContain(' first prompt')
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-after' }))).toContain('second prompt')
   // Safe mode pads the jump glyph inside its pill, since it has no rounded caps.
@@ -165,7 +166,7 @@ test('a long session pages by 100, each page split across several timeline Clien
   expect(last.indexOf('prompts-page-next')).toBeGreaterThan(last.indexOf('prompts-page-prev'))
   expect(last.indexOf('Page 4 of 4')).toBeGreaterThan(last.indexOf('prompts-page-next'))
   // Prev goes back a page; the open prompt's details stay off it.
-  await ui.pointer({ in: 'prompts-page-prev', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointer(ui, { in: 'prompts-page-prev', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'Page 3 of 4 · 201–300' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' }))).toContain('prompt number 201 ')
   expect(JSON.stringify(await ui.drawn())).not.toContain('timeline-after')
@@ -203,16 +204,16 @@ test('the title tabs swap the sidebar and its settings', async ($, on) => {
     ({ plugin: 'mod-prompts', surface: 'terminal', component: 'Pane', requestId, props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } }) as never
 
   const ui = await $.ui.mount(pane('prompts'))
-  await ui.pointer({ in: 'prompts-settings', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointer(ui, { in: 'prompts-settings', type: 'down', button: 'left', x: 1, y: 0 })
   expect(opened).toEqual(['prompts-settings'])
   await ui.unmount()
 
   const settings = await $.ui.mount(pane('prompts-settings'))
   expect(await settings.find({ type: 'Text', text: 'Animations' })).toBeDefined()
   // A settings control's tip is its description's first sentence, led by a lowercase letter.
-  await settings.pointer({ in: 'setting-0-flip', type: 'move', x: 1, y: 0 })
+  await pointer(settings, { in: 'setting-0-flip', type: 'move', x: 1, y: 0 })
   expect(await settings.find({ type: 'Text', text: ' · entries shimmer while they wait' })).toBeDefined()
-  await settings.pointer({ in: 'prompts-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointer(settings, { in: 'prompts-tab', type: 'down', button: 'left', x: 1, y: 0 })
   expect(opened).toEqual(['prompts-settings', 'prompts'])
   await settings.unmount()
 })
@@ -305,10 +306,10 @@ const paneOf = ($: any) =>
 
 test('a prompt sent again with the same text is listed again', async ($, on) => {
   session(on, [user(1, null, 'continue'), reply(2, 1)].join('\n'))
-  await $.command.run({ command: 'mod-prompts' })
+  await $.command.run({ command: 'mod-prompts' } as never)
   await sent($, ID(50), 'continue')
   await sent($, ID(51), 'continue')
-  await $.command.run({ command: 'mod-prompts' })
+  await $.command.run({ command: 'mod-prompts' } as never)
   const ui = await paneOf($)
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' })).split(' continue').length - 1).toBe(3)
   await ui.unmount()
@@ -316,7 +317,7 @@ test('a prompt sent again with the same text is listed again', async ($, on) => 
 
 test('a placeholder draw lists no prompt, and the uuid draw that follows lists it once', async ($, on) => {
   const clock = session(on, user(1, null, '/mod-menu'))
-  await $.command.run({ command: 'mod-prompts' })
+  await $.command.run({ command: 'mod-prompts' } as never)
   await sent($, 'placeholder', 'fresh prompt')
   const empty = await paneOf($)
   expect(await empty.find({ type: 'Text', text: 'No prompts yet.' })).toBeDefined()
@@ -330,7 +331,7 @@ test('a placeholder draw lists no prompt, and the uuid draw that follows lists i
 
 test('a card that cuts a long prompt ends with a muted count of the lines it leaves out', async ($, on) => {
   session(on, user(1, null, 'word '.repeat(120).trim()))
-  await $.command.run({ command: 'mod-prompts' })
+  await $.command.run({ command: 'mod-prompts' } as never)
   const ui = await paneOf($)
   expect(await ui.find({ type: 'Text', text: '+6 more lines' })).toBeDefined()
   await ui.unmount()
@@ -338,7 +339,7 @@ test('a card that cuts a long prompt ends with a muted count of the lines it lea
 
 test('a card that holds its whole prompt has no count', async ($, on) => {
   session(on, user(1, null, 'first prompt'))
-  await $.command.run({ command: 'mod-prompts' })
+  await $.command.run({ command: 'mod-prompts' } as never)
   const ui = await paneOf($)
   expect(await ui.find({ type: 'Text', text: /more lines/ })).toBeUndefined()
   await ui.unmount()
@@ -356,7 +357,7 @@ test('a turn that ends while the pane is open reads an unchanged transcript no m
     reads += 1
     return { value: transcript }
   })
-  on('ui.panes', () => ({ value: isOpen ? [{ id: 'prompts', isPlaced: true }] : [] }))
+  on('ui.panes', () => ({ value: isOpen ? [{ id: 'prompts', isPlaced: true }] as never : [] }))
   on('ui.open', () => {
     isOpen = true
     return { value: { isPlaced: true } }
@@ -368,7 +369,7 @@ test('a turn that ends while the pane is open reads an unchanged transcript no m
   })
   mock.env(on, {})
   const clock = mock.clock(on)
-  await $.command.run({ command: 'mod-prompts' })
+  await $.command.run({ command: 'mod-prompts' } as never)
   expect(reads).toBe(1)
   await $.turn.complete({ turnId: 't1', reason: 'answer', answer: 'ok', isAborted: false } as never)
   await clock.settle()
