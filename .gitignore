@@ -4,3 +4,6 @@
 # Videos live as GitHub attachments (showcase/videos.json); renders stay local.
 showcase/*.mp4
 showcase/gif/
+
+# Python bytecode.
+__pycache__/
