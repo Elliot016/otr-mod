@@ -504,7 +504,7 @@ export const register: Register = (on, options) => {
     const run = async (_action: Action) => openCard($, 'handoff')
 
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-wrap-up-settings-tab', label: `${text.label} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSettings, text: text.tips.tab } }], still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still })}
