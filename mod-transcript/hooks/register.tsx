@@ -834,7 +834,7 @@ export const register: Register = (on, options) => {
     }
 
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-transcript-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSubheading, text: text.tipTabSettings } }], false)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.paneHintClick} ${MARK.sep} ${text.paneHintSaved}`}</Text>
         <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: false, tips: text.settingTips })}</Box>
