@@ -727,7 +727,7 @@ export const register: Register = (on, options) => {
         return [
           <Box key={`note-row-${found.id}`} flexDirection="row">
             {rowPart(found, `headsup-note-${found.id}`, time, { isOpen: false })}
-            {rowPart(found, `note-dot-${found.id}`, '', { lead: isSelected ? MARK.stopOpen : MARK.stop, leadColor: isSelected ? THEME.accent : THEME.muted })}
+            {rowPart(found, `note-dot-${found.id}`, '', { lead: isSelected || !found.isRead ? MARK.stopOpen : MARK.stop, leadColor: !found.isRead ? THEME.accent : isSelected ? THEME.pill : THEME.muted })}
             <Box key={`note-summary-${found.id}`} flexShrink={1}>{rowPart(found, `note-summary-text-${found.id}`, fit(found.learn, room), { isOpen: isSelected })}</Box>
             <Box key={`note-gap-${found.id}`} flexGrow={1} />
             <Box key={`note-jump-pill-${found.id}`} flexShrink={0}>

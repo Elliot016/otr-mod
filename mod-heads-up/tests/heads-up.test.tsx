@@ -355,6 +355,25 @@ test('two hooks that ask at once share one load, so the second reads the notes t
   await panel.unmount()
 })
 
+test('the timeline dot marks what is unread: a filled badge-blue dot, and a read note goes back to the muted or selected look', async ($, on) => {
+  const { store } = setup(on)
+  const note = (n: number, isRead: boolean) => ({ id: `n${n}-${n}`, turn: n, prompt: `prompt ${n}`, at: n, isRead, learn: `learn ${n}`, tag: 'Heads up', title: `title ${n}`, body: [`body ${n}`] })
+  store.set('notes:s1', { notes: [note(1, true), note(2, false), note(3, false)], card: null, since: 0, checked: null })
+  const panel = await pane($)
+  const dot = async (n: number) => {
+    const props = JSON.stringify(await panel.find({ key: `note-dot-n${n}-${n}` }))
+    return [props.match(/"lead":"([^"]*)"/)?.[1], props.match(/"leadColor":"([^"]*)"/)?.[1]]
+  }
+  // Muted and hollow when read, the menu badge's blue and filled when unread, whether or not the note is the one open in the card.
+  expect(await dot(1)).toEqual(['○', '#9BA3C4'])
+  expect(await dot(2)).toEqual(['●', '#7386D0'])
+  expect(await dot(3)).toEqual(['●', '#7386D0'])
+  await click(panel, 'headsup-note-n3-3')
+  expect(await dot(3)).toEqual(['●', '#CED9FF'])
+  expect(await dot(2)).toEqual(['●', '#7386D0'])
+  await panel.unmount()
+})
+
 test('the card has two actions, Open and ×, and no Know this already', async ($, on) => {
   const { clock } = setup(on)
   await finding($, clock)
