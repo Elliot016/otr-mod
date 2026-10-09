@@ -2,7 +2,7 @@
 // Tests gates parsing, loop rows, context figures, stop lines, workflow agents and pane drawing.
 import { expect, mock, test } from 'claude-code/testing'
 
-import { applyCall, applyStep, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gatesStemIn, gaugeColor, windowFor, isGatesPath, modelInfo, parseGates, settle, stepOf, type Snap } from '../hooks/progress'
+import { applyCall, applyStep, finishAgent, applyTask, bandSummary, buildRows, emptySnap, formatElapsed, formatTokens, gatesOf, gatesStemIn, gaugeColor, windowFor, isGatesPath, modelInfo, parseGates, settle, stepOf, type Snap } from '../hooks/progress'
 import { resumeAt, stopLine, stopOf } from '../hooks/stop'
 import { THEME } from '../hooks/theme'
 
@@ -501,4 +501,65 @@ test('a subagent with no gates file shows its own task list as gates, and the ma
   expect(open).toContain('#2 write summary')
   expect(open).not.toContain('No gates for this agent yet')
   await pane.unmount()
+})
+
+const WORKFLOW = { runId: 'wf_abc123def', index: 1, name: 'finder-1', description: 'Find the callers' }
+
+test('a workflow run\'s agents are no list entry, yet they get a row each, after the listed agents, in spawn order', () => {
+  const snap = emptySnap('s')
+  snap.agents.w2 = { model: 'claude-sonnet-5-5', tokens: 9, context: 4000, spawnedAt: 2000, workflow: { ...WORKFLOW, index: 2, name: 'editor-2', description: 'Edit the callers' } }
+  snap.agents.w1 = { model: 'claude-haiku-4-5', tokens: 5, context: 100, spawnedAt: 1000, workflow: WORKFLOW }
+  const rows = buildRows(snap, [{ ...AGENT }], { window: 200000, startedAt: 0 }, 5000, 'main', 'x', undefined)
+  expect(rows.map(row => [row.name, row.status, row.run])).toEqual([['main', 'done', undefined], ['leaf-1.1.1', 'running', undefined], ['finder-1', 'running', 'wf_abc123def'], ['editor-2', 'running', 'wf_abc123def']])
+  expect(rows[2]).toMatchObject({ description: 'Find the callers', model: 'claude-haiku-4-5', tokens: 5, elapsed: '4s' })
+  expect(bandSummary(rows).count).toBe(3)
+})
+
+test('a workflow agent is done or failed once its turn ends, and an agent the list also names shows once', () => {
+  const snap = emptySnap('s')
+  snap.agents.w1 = { tokens: 1, context: 1, spawnedAt: 1000, workflow: WORKFLOW }
+  snap.agents.w2 = { tokens: 1, context: 1, spawnedAt: 1000, workflow: { ...WORKFLOW, index: 2, name: 'editor-2' }, step: 'Edit(a.ts)' }
+  snap.agents.a1 = { tokens: 1, context: 1, spawnedAt: 1000, workflow: { ...WORKFLOW, index: 3, name: 'same' } }
+  expect(finishAgent(snap, 'w1', 4000, false)).toBe(true)
+  expect(finishAgent(snap, 'w2', 5000, true)).toBe(true)
+  expect(finishAgent(snap, 'w1', 9000, true)).toBe(false)
+  expect(finishAgent(snap, 'nope', 9000, false)).toBe(false)
+  expect(snap.agents.w2!.step).toBeUndefined()
+  const rows = buildRows(snap, [{ ...AGENT }], undefined, 9000, 'main', 'x', undefined)
+  expect(rows.filter(row => row.run).map(row => [row.name, row.status, row.elapsed])).toEqual([['leaf-1.1.1', 'running', '8s'], ['finder-1', 'done', '3s'], ['editor-2', 'failed', '4s']])
+  expect(buildRows(snap, [{ ...AGENT, id: 'a1' }], undefined, 9000, 'main', 'x', undefined).filter(row => row.id === 'a1')).toHaveLength(1)
+})
+
+test('a workflow agent\'s spawn keeps its run, and its own turn ending or failing settles its row', async ($, on) => {
+  const { store } = stubEngine(on, [])
+  store.set('snap', emptySnap('sid-1'))
+  on('agent.spawn', (_$, e) => ({ model: 'claude-haiku-4-5', agentId: e.name === 'finder-1' ? 'w1' : 'w2' }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  await $.session.start({ cwd: '/w' } as never)
+  const spawn = (name: string, index: number) => ({ tool_use_id: '', prompt: 'Find the callers\nmore', description: 'Find the callers', name, subagentType: 'general-purpose', provider: { plugin: 'x', tier: 'user' }, parentModel: 'm', workflow: { runId: 'wf_abc123def', agentIndex: index } }) as never
+  await $.agent.spawn(spawn('finder-1', 1))
+  await $.agent.spawn(spawn('editor-2', 2))
+  expect((store.get('snap') as Snap).agents.w1?.workflow).toEqual({ runId: 'wf_abc123def', index: 1, name: 'finder-1', description: 'Find the callers' })
+  await $.turn.complete({ turnId: 't', agentId: 'w1', reason: 'answer' } as never)
+  await $.turn.complete({ turnId: 't', agentId: 'w2', reason: 'error' } as never)
+  const saved = store.get('snap') as Snap
+  expect([saved.agents.w1?.endedAt, saved.agents.w1?.isFailed]).toEqual([14 * 60 * 1000, undefined])
+  expect([saved.agents.w2?.endedAt, saved.agents.w2?.isFailed]).toEqual([14 * 60 * 1000, true])
+})
+
+test('the pane groups a workflow run\'s agents under a line that counts how many are done', async ($, on) => {
+  const snap = seeded()
+  snap.agents.w1 = { model: 'claude-haiku-4-5', tokens: 5, context: 100, spawnedAt: 1000, endedAt: 3000, workflow: WORKFLOW }
+  snap.agents.w2 = { model: 'claude-sonnet-5-5', tokens: 9, context: 400, spawnedAt: 2000, workflow: { ...WORKFLOW, index: 2, name: 'editor-2', description: 'Edit the callers' } }
+  const { store } = stubEngine(on)
+  store.set('snap', snap)
+  await $.session.start({ cwd: '/w' } as never)
+  const ui = await $.ui.mount(PANE)
+  const list = JSON.stringify(await ui.drawn({ in: 'loops' }))
+  expect(list).toContain('Workflow abc123')
+  expect(list).toContain('1 of 2 done')
+  expect(list).toContain('finder-1')
+  expect(list).toContain('editor-2')
+  expect(list.indexOf('leaf-1.1.1')).toBeLessThan(list.indexOf('Workflow abc123'))
+  await ui.unmount()
 })

@@ -13,12 +13,13 @@ import { CAPS, decodeAll, fill, MARK, THEME } from './theme'
 export type LoopsProps = { rows: Row[]; width: number; expanded: string; nerd: boolean; viewing: string }
 export type LoopsMessage = { type: 'toggle'; id: string }
 
-type Line = { kind: 'head' | 'pills' | 'gate' | 'empty' | 'gap'; loop: number; gate?: number }
+type Line = { kind: 'head' | 'pills' | 'gate' | 'empty' | 'gap' | 'run'; loop: number; gate?: number; run?: string }
 
-// The rows top to bottom: head, pills, then the gates of the open loop, then a gap before the next card.
+// The rows top to bottom: a line naming the workflow run where its agents start, then head, pills, the gates of the open loop, and a gap before the next card.
 export function layoutLoops(rows: Row[], expanded: string) {
   const lines: Line[] = []
   rows.forEach((row, loop) => {
+    if (row.run && row.run !== rows[loop - 1]?.run) lines.push({ kind: 'run', loop: -1, run: row.run })
     lines.push({ kind: 'head', loop }, { kind: 'pills', loop })
     if (row.id === expanded) {
       if (row.gates.length === 0) lines.push({ kind: 'empty', loop })
@@ -61,6 +62,11 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
   const drawLine = (line: Line, at: number) => {
     const key = `line-${at}`
     if (line.kind === 'gap') return <Box key={key} height={1} />
+    if (line.kind === 'run') {
+      const members = rows.filter(each => each.run === line.run)
+      const label = fill(text.workflowRun, { id: line.run!.replace(/^wf_/, '').slice(0, 6), sep: MARK.sep, done: members.filter(each => each.status !== 'running').length, total: members.length })
+      return <Box key={key} height={1} width={width} paddingLeft={1}><Text wrap="truncate-end" color={THEME.secondary} bold>{label}</Text></Box>
+    }
     const row = rows[line.loop]!
     const isHover = hovered === line.loop
     const on = isHover ? THEME.lifted : THEME.surface2

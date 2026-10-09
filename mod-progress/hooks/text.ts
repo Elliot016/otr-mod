@@ -15,6 +15,8 @@ export default {
   "settingsWaiting": "Settings panel waiting: {reason}",
   "commandDescription": "Open the progress sidebar; `settings` opens its settings panel",
   "mainName": "main",
+  "workflowAgent": "Workflow agent {n}",
+  "workflowRun": "Workflow {id} {sep} {done} of {total} done",
   "mainTask": "this session",
   "noGates": "No gates for this agent yet",
   "stepRead": "Reading {what}",

@@ -8,7 +8,9 @@ import { fill } from './theme'
 export type GateState = 'met' | 'open' | 'abandoned'
 export type Gate = { id: string; text: string; state: GateState }
 export type Task = { id: string; subject: string; status: string }
-export type Loop = { model?: string; effort?: string; tokens: number; context: number; spawnedAt?: number; endedAt?: number; gatesStem?: string; tasks?: Task[]; step?: string }
+// A workflow script's agent: no list entry names it, so its run, place, name and task are kept from its spawn.
+export type WorkflowAgent = { runId: string; index: number; name: string; description: string }
+export type Loop = { model?: string; effort?: string; tokens: number; context: number; spawnedAt?: number; endedAt?: number; isFailed?: true; gatesStem?: string; tasks?: Task[]; step?: string; workflow?: WorkflowAgent }
 export type Usage = { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }
 
 // The main turn's last stop on an API error (StopFailure): its error kind, when it happened, and the reset of a full usage window.
@@ -189,6 +191,8 @@ export type Row = {
   status: Status
   model: string
   hue: string
+  // The workflow run this agent belongs to; the rows of one run sit together.
+  run?: string
   effort: string | undefined
   percent: number | undefined
   tokens: number
@@ -211,6 +215,18 @@ export function settle(snap: Snap, list: AgentLite[], now: number) {
     }
   }
   return changed
+}
+
+export const firstLine = (text: string) => (text.split('\n')[0] ?? '').trim()
+
+// A workflow agent ends with its own turn; true when this marked it.
+export function finishAgent(snap: Snap, id: string, now: number, isFailed: boolean) {
+  const loop = snap.agents[id]
+  if (!loop?.workflow || loop.endedAt !== undefined) return false
+  loop.endedAt = now
+  if (isFailed) loop.isFailed = true
+  delete loop.step
+  return true
 }
 
 const taskGate = (task: Task): Gate => ({ id: `#${task.id}`, text: task.subject, state: task.status === 'completed' ? 'met' : 'open' })
@@ -246,9 +262,15 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
     gates: mainGates,
     hasGates: mainGates.length > 0,
   }]
-  for (const info of list) {
-    const loop = snap.agents[info.id] ?? { tokens: 0, context: 0 }
-    const status = statusOf(info.status)
+  const listed = new Set(list.map(info => info.id))
+  const ofWorkflow = Object.entries(snap.agents)
+    .filter(([id, loop]) => loop.workflow && !listed.has(id))
+    .sort(([, a], [, b]) => (a.spawnedAt ?? 0) - (b.spawnedAt ?? 0) || a.workflow!.index - b.workflow!.index)
+  const entries = [
+    ...list.map(info => ({ info, loop: snap.agents[info.id] ?? { tokens: 0, context: 0 }, status: statusOf(info.status) })),
+    ...ofWorkflow.map(([id, loop]) => ({ info: { id, name: loop.workflow!.name, description: loop.workflow!.description, type: '', status: loop.endedAt === undefined ? 'running' : loop.isFailed ? 'failed' : 'completed' }, loop, status: (loop.endedAt === undefined ? 'running' : loop.isFailed ? 'failed' : 'done') as Status })),
+  ]
+  for (const { info, loop, status } of entries) {
     const gates = gatesFor(gatesOf(snap, info, loop.gatesStem), loop.tasks)
     rows.push({
       id: info.id,
@@ -258,6 +280,7 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
       status,
       model: loop.model ?? '',
       hue: modelInfo(loop.model).hue,
+      ...(loop.workflow ? { run: loop.workflow.runId } : {}),
       effort: loop.effort,
       percent: percent(loop, windowFor(loop.model, model, usage?.window, loop.context)),
       tokens: loop.tokens,

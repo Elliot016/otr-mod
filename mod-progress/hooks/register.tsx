@@ -6,7 +6,7 @@ import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } f
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
 import { layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
 import { menuEntry, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
-import { applyCall, applyStep, applyTask, bandSummary, buildRows, emptySnap, gatesStemIn, isGatesPath, MAIN_GATES, parseGates, settle, stemOf, type AgentLite, type Gate, type Snap, type Usage, type UsageLite } from './progress'
+import { applyCall, applyStep, applyTask, bandSummary, buildRows, emptySnap, finishAgent, firstLine, gatesStemIn, isGatesPath, MAIN_GATES, parseGates, settle, stemOf, type AgentLite, type Gate, type Snap, type Usage, type UsageLite } from './progress'
 import { stopLine, stopOf } from './stop'
 import { settingChoice, settingsBody } from './settings'
 import text from './text'
@@ -269,7 +269,14 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if ('agentId' in result) {
       const current = await loadSnap($)
-      current.agents[result.agentId] = { model: result.model, tokens: 0, context: 0, spawnedAt: await $.clock.now(), gatesStem: gatesStemIn(e.prompt) }
+      current.agents[result.agentId] = {
+        model: result.model,
+        tokens: 0,
+        context: 0,
+        spawnedAt: await $.clock.now(),
+        gatesStem: gatesStemIn(e.prompt),
+        ...(e.workflow ? { workflow: { runId: e.workflow.runId, index: e.workflow.agentIndex, name: e.name ?? fill(text.workflowAgent, { n: e.workflow.agentIndex }), description: firstLine(e.description ?? e.prompt) } } : {}),
+      }
       await saveSnap($)
       $.ui.invalidate('ui.render')
     }
@@ -303,7 +310,10 @@ export const register: Register = (on, options) => {
       current.busy = false
       delete current.main.step
     }
-    settle(current, (await $.agent.list()) as AgentLite[], await $.clock.now())
+    const now = await $.clock.now()
+    // A workflow agent is in no list, so its own turn ending is the only sign it is over.
+    if (e.agentId) finishAgent(current, e.agentId, now, e.reason !== 'answer')
+    settle(current, (await $.agent.list()) as AgentLite[], now)
     await readGates($, current)
     await saveSnap($)
     $.ui.invalidate('ui.render')
@@ -312,7 +322,13 @@ export const register: Register = (on, options) => {
 
   // The main turn ended on an API error. A subagent's failure is its own turn, so it leaves the main line alone.
   on('classic.StopFailure', async ($, e, next) => {
-    if (!e.agent_id) {
+    if (e.agent_id) {
+      const current = await loadSnap($)
+      if (finishAgent(current, e.agent_id, await $.clock.now(), true)) {
+        await saveSnap($)
+        $.ui.invalidate('ui.render')
+      }
+    } else {
       const current = await loadSnap($)
       const usage = await $.session.usage().catch(() => undefined)
       current.stop = stopOf(e.error, await $.clock.now(), usage?.rateLimits ?? [])
