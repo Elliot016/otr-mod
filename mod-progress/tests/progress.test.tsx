@@ -24,7 +24,10 @@ const GATES = [
 
 const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
 
-type On =Parameters<Parameters<typeof test>[1]>[1]
+type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1]
+
+// The host's mounted-UI type lacks pointer
+const pointerOn = (mounted: unknown, event: object) => (mounted as { pointer: (event: object) => Promise<void> }).pointer(event)
 
 const AGENT = { id: 'a1', name: 'leaf-1.1.1', description: 'Build the leaf', type: 'general-purpose', status: 'running' }
 
@@ -56,7 +59,7 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
   on('store.get', (_$, e) => ({ value: store.get(e.key) }))
   on('store.set', (_$, e) => {
     store.set(e.key, e.value)
-    return { value: undefined }
+    return { value: undefined } as never
   })
   on('fs.read', (_$, e) => {
     const path = neutral(e.path)
@@ -73,7 +76,7 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
     opened.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('state.set', () => ({ value: undefined }))
+  on('state.set', () => ({ value: undefined } as never))
   return { store, clock }
 }
 
@@ -164,7 +167,7 @@ test('the band pill counts agents in a badge, and a click toggles the pane', asy
   const pill = JSON.stringify(await band.drawn({ in: 'menu-entry-progress' }))
   expect(pill).toContain('Progress')
   expect(pill).toContain('" 1 "')
-  await band.pointer({ in: 'menu-entry-progress', type: 'down', x: 1, y: 0, button: 'left' })
+  await pointerOn(band, { in: 'menu-entry-progress', type: 'down', x: 1, y: 0, button: 'left' })
   expect(opened).toEqual(['progress'])
   await band.unmount()
 })
@@ -182,11 +185,11 @@ test('the pane draws a card per loop and a click opens its gates', async ($, on)
   expect(list).toContain('312k')
   expect(list).toContain('1/4')
   expect(list).not.toContain('G1')
-  await ui.pointer({ in: 'loops', type: 'down', x: 3, y: 0, button: 'left' })
+  await pointerOn(ui, { in: 'loops', type: 'down', x: 3, y: 0, button: 'left' })
   const open = JSON.stringify(await ui.drawn({ in: 'loops' }))
   expect(open).toContain('G1 renders end to end')
   expect(open).toContain('abandoned')
-  await ui.pointer({ in: 'loops', type: 'down', x: 3, y: 0, button: 'left' })
+  await pointerOn(ui, { in: 'loops', type: 'down', x: 3, y: 0, button: 'left' })
   expect(JSON.stringify(await ui.drawn({ in: 'loops' }))).not.toContain('G1')
   await ui.unmount()
 })
@@ -249,18 +252,18 @@ test('hovering the band pill shows its tip in the tip row, and a card shows its 
   await $.session.start({ cwd: '/w' } as never)
   const band = await $.ui.mount(BAND)
   expect(await band.find({ type: 'Text', text: /running, gates|every agent with/ })).toBeUndefined()
-  await band.pointer({ in: 'menu-entry-progress', type: 'enter', x: 1, y: 0, button: 'left' })
+  await pointerOn(band, { in: 'menu-entry-progress', type: 'enter', x: 1, y: 0, button: 'left' })
   expect((await band.find({ type: 'Text', text: /running, gates|every agent with/ }))?.text).toMatch(/^ (\d+ running, gates \d+\/\d+|every agent with its context, tokens and gates)$/)
   expect((await band.find({ type: 'Text', text: /^Progress:$/ }))?.text).toBe('Progress:')
-  await band.pointer({ in: 'menu-entry-progress', type: 'leave', x: 1, y: 0, button: 'left' })
+  await pointerOn(band, { in: 'menu-entry-progress', type: 'leave', x: 1, y: 0, button: 'left' })
   expect(await band.find({ type: 'Text', text: /running, gates|every agent with/ })).toBeUndefined()
   await band.unmount()
 
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ type: 'Text', text: /shows or hides/ })).toBeUndefined()
-  await pane.pointer({ in: 'loops', type: 'move', x: 3, y: 0, button: 'left' })
+  await pointerOn(pane, { in: 'loops', type: 'move', x: 3, y: 0, button: 'left' })
   expect((await pane.find({ type: 'Text', text: /shows or hides this agent/ }))?.text).toContain("shows or hides this agent's gates")
-  await pane.pointer({ in: 'loops', type: 'leave', x: 3, y: 0, button: 'left' })
+  await pointerOn(pane, { in: 'loops', type: 'leave', x: 3, y: 0, button: 'left' })
   expect(await pane.find({ type: 'Text', text: /shows or hides this agent/ })).toBeUndefined()
   await pane.unmount()
 })
@@ -353,7 +356,7 @@ test('the band pill tip carries the stop line while the turn is stopped, and its
   await $.session.start({ cwd: '/w' } as never)
   await $.classic.StopFailure({ error: 'billing_error' } as never)
   const band = await $.ui.mount(BAND)
-  await band.pointer({ in: 'menu-entry-progress', type: 'enter', x: 1, y: 0, button: 'left' })
+  await pointerOn(band, { in: 'menu-entry-progress', type: 'enter', x: 1, y: 0, button: 'left' })
   expect((await band.find({ type: 'Text', text: /Stopped 0s ago/ }))?.text).toBe(' Stopped 0s ago: billing problem.')
   await clock.advance(2 * 60000)
   await band.redraw()
@@ -495,7 +498,7 @@ test('a subagent with no gates file shows its own task list as gates, and the ma
 
   const pane = await $.ui.mount(PANE)
   expect(JSON.stringify(await pane.drawn({ in: 'loops' }))).toContain('1/2')
-  await pane.pointer({ in: 'loops', type: 'down', x: 3, y: 3, button: 'left' })
+  await pointerOn(pane, { in: 'loops', type: 'down', x: 3, y: 3, button: 'left' })
   const open = JSON.stringify(await pane.drawn({ in: 'loops' }))
   expect(open).toContain('#1 scan files')
   expect(open).toContain('#2 write summary')
