@@ -96,8 +96,15 @@ let hovering = -1
 let note = ''
 let working = false
 
-async function toggleMod($: EngineInterface, index: number) {
-  const mod = mods[index]
+// Toggles run in turn, as two read-edit-writes of settings.json would cross; a queued click names its mod, since a landed toggle re-sorts the rows.
+let toggling: Promise<void> = Promise.resolve()
+const queueToggle = ($: EngineInterface, index: number) => {
+  const name = mods[index]?.name
+  return (toggling = toggling.then(() => (name ? toggleMod($, name) : undefined)).catch(() => {}))
+}
+
+async function toggleMod($: EngineInterface, name: string) {
+  const mod = mods.find(each => each.name === name)
   if (!mod) return
   const outcome = await setEnabled(ioOf($), mod, !mod.enabled)
   if (outcome.ok) {
@@ -115,16 +122,26 @@ async function toggleMod($: EngineInterface, index: number) {
 
 // Claude Code picks up a settings.json write a moment later; a reload before that applied the old toggles.
 // The pending toggles take effect through a plugin reload, once the settings file has every one.
+// A second Apply while one runs would reload twice.
+let isApplying = false
+
 async function applyChanges($: EngineInterface) {
-  await settingsCaughtUp($)
-  note = await $.command
-    .run({ command: 'reload-plugins' })
-    .then(() => {
-      changed.clear()
-      return `${MARK.ok} ${text.reloading}`
-    })
-    .catch(error => `${MARK.warn} ${fill(text.reloadFailed, { error: String(error) })}`)
-  $.ui.invalidate('ui.render')
+  if (isApplying) return
+  isApplying = true
+  try {
+    await toggling
+    await settingsCaughtUp($).catch(() => {})
+    note = await $.command
+      .run({ command: 'reload-plugins' })
+      .then(() => {
+        changed.clear()
+        return `${MARK.ok} ${text.reloading}`
+      })
+      .catch(error => `${MARK.warn} ${fill(text.reloadFailed, { error: String(error) })}`)
+    $.ui.invalidate('ui.render')
+  } finally {
+    isApplying = false
+  }
 }
 
 async function settingsCaughtUp($: EngineInterface) {
@@ -374,7 +391,7 @@ export const register: Register = (on, options) => {
     // A click posts only its own message, so a toggle also says which row the pointer is on.
     if (message.type === 'toggle') {
       hovering = message.index
-      await toggleMod($, message.index)
+      await queueToggle($, message.index)
     }
     if (message.type === 'select') {
       hovering = -1

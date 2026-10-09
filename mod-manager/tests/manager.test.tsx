@@ -191,6 +191,55 @@ test('showcase uses showcase.json, else derives from the hooks source', async ()
 // The engine rewrites paths in the host's style, so compare on a neutral form.
 const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
 
+test('two toggles pressed at once both land in settings.json', async ($, on) => {
+  const { files } = disk()
+  const settingsPath = '/h/.claude/settings.json'
+  on('fs.read', async (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    // A slow disk widens the window where two read-edit-writes would cross.
+    await new Promise(resolve => setTimeout(resolve, 5))
+    return { value: files[path]! }
+  })
+  on('fs.write', (_$, e) => {
+    files[neutral(e.path)] = e.text
+    return { value: undefined }
+  })
+  on('fs.list', () => ({
+    value: [
+      { name: 'alpha', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
+      { name: 'beta', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
+    ],
+  }))
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: [] }))
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  await $.command.run({ command: 'mod-manager' } as never)
+  const ui = withPointer(await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: true, bodyColumns: 80, placement: 'above', scroll: { offset: 0, bodyRows: 20 }, view: {} },
+  } as never))
+  // One post lands per frame, so the second click comes a moment after the first, while its settings.json write is still under way.
+  const rows = ((await ui.find({ type: 'Client', key: 'list-dir' }))?.props.props.rows ?? []) as { index: number; slug: string }[]
+  const indexOf = (slug: string) => rows.find(row => row.slug === slug)!.index
+  const first = ui.post({ type: 'toggle', index: indexOf('beta') }, { in: 'list-dir' })
+  await new Promise(resolve => setTimeout(resolve, 1))
+  await Promise.all([first, ui.post({ type: 'toggle', index: indexOf('alpha') }, { in: 'list-dir' })])
+  await new Promise(resolve => setTimeout(resolve, 100))
+  const settings = JSON.parse(files[settingsPath]!)
+  expect(String(settings.env.CLAUDE_CODE_PLUGIN_DIRS)).toContain('beta')
+  expect(settings.enabledPlugins['alpha@inline']).toBe(false)
+  await ui.unmount()
+})
+
 test('pane lists mods on the terminal and a toggle press writes settings', async ($, on) => {
   const { files } = disk()
   const settingsPath = '/h/.claude/settings.json'
