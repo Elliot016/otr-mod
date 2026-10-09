@@ -249,8 +249,8 @@ test('a long suggestion is cut to fit a narrow band', async ($, on) => {
   await ui.unmount()
 })
 
-for (const [icons, one] of [['nerd', '"1"'], ['safe', '" 1 "']]) {
-  test(`each suggestion is a pill led by its digit as a subpill, icons=${icons}`, { options: { icons } }, async ($, on) => {
+for (const [icons, one] of [['nerd', '"1"'], ['safe', '" 1 "']] as const) {
+  test(`each suggestion is a pill led by its digit as a subpill, icons=${icons}`, { options: { icons } } as never, async ($, on) => {
     const { clock } = setup(on, () => answered('alpha\nbeta'))
     await $.turn.complete(DONE as never)
     await clock.settle()
@@ -273,11 +273,11 @@ for (const icons of ['nerd', 'safe']) {
       throw new Error('ENOENT')
     })
     on('config.list', () => ({
-      value: [
+      value: ([
         { key: 'mod-next-steps.enabled', label: 'Suggest next steps', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'mod-next-steps' }, isLocked: false },
         { key: 'mod-next-steps.count', label: 'Suggestions', kind: 'number', value: 3, provider: { kind: 'plugin', name: 'mod-next-steps' }, isLocked: false },
         { key: 'other.x', label: 'Not mine', kind: 'boolean', value: true, provider: { kind: 'plugin', name: 'other' }, isLocked: false },
-      ],
+      ] as never),
     }))
     const saved: unknown[] = []
     on('config.set', (_$, e) => {
@@ -285,7 +285,7 @@ for (const icons of ['nerd', 'safe']) {
       return { value: e.value }
     })
 
-    await $.command.run({ command: 'mod-next-steps', args: 'settings' })
+    await $.command.run({ command: 'mod-next-steps', args: 'settings' } as never)
     const ui = await $.ui.mount({
       plugin: 'mod-next-steps',
       surface: 'terminal',
@@ -300,9 +300,10 @@ for (const icons of ['nerd', 'safe']) {
     expect(await ui.find({ type: 'Text', text: /Suggest next steps/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Not mine/ })).toBeUndefined()
 
-    await ui.pointer({ in: 'setting-1-up', type: 'down', button: 'left', x: 1, y: 0 })
+    const pointing = ui as typeof ui & { pointer(e: object): Promise<void> }
+    await pointing.pointer({ in: 'setting-1-up', type: 'down', button: 'left', x: 1, y: 0 })
     expect(saved).toEqual([['mod-next-steps.count', 3]])
-    await ui.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
+    await pointing.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
     expect(saved[1]).toEqual(['mod-next-steps.enabled', false])
     await ui.unmount()
   })
