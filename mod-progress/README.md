@@ -4,7 +4,7 @@
 
 Part of [moonlight-claude-mods][doc-root].
 
-The main session and every subagent: model, effort, context fill, tokens, time and gate progress.
+The main session, every subagent and every agent of a workflow run: model, effort, context fill, tokens, time and gate progress.
 
 ## Install
 

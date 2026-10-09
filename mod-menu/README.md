@@ -4,7 +4,7 @@
 
 Part of [moonlight-claude-mods][doc-root].
 
-One row of pills above the prompt that opens every panel.
+The switch that hides or shows the pill row above the prompt, plus its hover tips; each panel mod draws its own pill.
 
 ## Install
 
@@ -22,7 +22,7 @@ To install every mod at once, see [Install][doc-install]. For sharper icons, see
 
 ## How to open
 
-Always shown.
+`/mod-menu`.
 
 ## See it
 

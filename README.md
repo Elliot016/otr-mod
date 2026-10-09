@@ -4,7 +4,7 @@
 
 # moonlight-claude-mods
 
-Add-ons for the Claude Code terminal that add panels, safety checks and pills (small clickable labels in a row above the prompt). One more mod styles the desktop app. They need Claude Code 2.1.287 or newer.
+Add-ons for the Claude Code terminal that add panels, safety checks and pills (small clickable labels in a row above the prompt). One more mod styles the desktop app. They need Claude Code 2.1.287 or newer, and they are tested on Windows Terminal and macOS iTerm2.
 
 ## Install
 
@@ -68,7 +68,7 @@ Click a name for its screenshots, features and settings.
 
 | Mod | What it does | How to open it |
 | --- | --- | --- |
-| [`mod-menu`][doc-mod-menu] | One row of pills above the prompt that opens every panel | Always shown |
+| [`mod-menu`][doc-mod-menu] | The switch that hides or shows the pill row above the prompt, plus its hover tips; each panel mod draws its own pill | `/mod-menu` |
 | [`mod-manager`][doc-mod-manager] | Turns mods on and off and edits their settings | The gear pill, or `/mod-manager` |
 | [`mod-skill-panel`][doc-mod-skill-panel] | Lists your skills and agents; a click adds one to the prompt | Skills pill |
 | [`mod-prompts`][doc-mod-prompts] | Every prompt of the session; jump back to any of them | Prompts pill |
@@ -76,7 +76,7 @@ Click a name for its screenshots, features and settings.
 | [`mod-transcript`][doc-mod-transcript] | Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors | Automatic |
 | [`mod-model-effort`][doc-mod-model-effort] | Shows the model and effort level; a click changes either | The model pill |
 | [`mod-heads-up`][doc-mod-heads-up] | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
-| [`mod-progress`][doc-mod-progress] | The main session and every subagent: model, effort, context fill, tokens, time and gate progress | Progress pill |
+| [`mod-progress`][doc-mod-progress] | The main session, every subagent and every agent of a workflow run: model, effort, context fill, tokens, time and gate progress | Progress pill |
 | [`mod-next-steps`][doc-mod-next-steps] | Suggests up to three next prompts after each turn | Automatic |
 | [`mod-wrap-up`][doc-mod-wrap-up] | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
 | [`mod-blast-radius`][doc-mod-blast-radius] | Holds a risky shell command until you choose Cancel or Run | Automatic |
@@ -175,7 +175,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 <!-- showcase:start -->
 
 <details>
-<summary><b>mod-menu</b>: One row of pills opens every panel. Hover one to see what it does.</summary>
+<summary><b>mod-menu</b>: Each panel mod draws its own pill in one row. Hover one to see what it does.</summary>
 
 | Hovering an entry shows its tip |
 | --- |
@@ -428,6 +428,9 @@ sequenceDiagram
 ```
 
 </details>
+
+[author]: https://github.com/v-amorim
+[license]: LICENSE
 
 [doc-mod-blast-radius]: mod-blast-radius/README.md
 [doc-mod-collision-guard]: mod-collision-guard/README.md
