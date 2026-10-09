@@ -21,6 +21,24 @@ type Hover = { over: number; at: number; tipId?: string | null }
 // Each option's cells: its label padded by one, plus room for the lifted pill's caps where the font has them.
 const widthOf = (label: string, nerd: boolean) => label.length + 2 + (nerd ? 2 : 0)
 
+// The stale-hover watch runs only while the pointer is on the pill, so an idle pill costs no wakeups.
+const timers = new WeakMap<object, () => void>()
+
+const watch = (surface: Parameters<ClientModule<ChoiceProps, Hover>>[1], id: string) => {
+  if (timers.has(surface)) return
+  const stop = surface.every(TICK_MS, () => {
+    const state = surface.state
+    if (state && state.over !== -2 && Date.now() - state.at < HOVER_QUIET_MS) return
+    if (state && state.over !== -2) {
+      surface.setState({ over: -2, at: Date.now(), tipId: null })
+      postTip(surface, id, null)
+    }
+    stop()
+    timers.delete(surface)
+  })
+  timers.set(surface, stop)
+}
+
 // Like the effort pill: at rest only the label, the pointer opens the options and lights the one under it.
 const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
@@ -28,15 +46,7 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
   const isExpanded = props.isIdle && (over !== -2 || props.mode !== null)
   const head = ` ${props.label} `
 
-  if (!surface.state) {
-    surface.setState({ over: -2, at: 0 })
-    surface.every(TICK_MS, () => {
-      const state = surface.state
-      if (!state || state.over === -2 || Date.now() - state.at < HOVER_QUIET_MS) return
-      surface.setState({ over: -2, at: Date.now(), tipId: null })
-      postTip(surface, props.id, null)
-    })
-  }
+  if (!surface.state) surface.setState({ over: -2, at: 0 })
 
   // The option at cell x, from the drawn order: the head, then the options side by side, as in the menu group.
   const optionAt = (x: number) => {
@@ -50,6 +60,7 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
   }
 
   surface.onPointer(event => {
+    watch(surface, props.id)
     // While folded the options are not where they will be, so the first event only opens the pill.
     const next = event.type === 'leave' ? -2 : isExpanded ? optionAt(event.x) : -1
     const isClick = event.type === 'down' && event.button === 'left'

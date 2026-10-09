@@ -4,6 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { buildPrompt, clampWords, compactNote, isFresh, parseThreads, scopeNote, skillBody } from '../hooks/handoff'
 import { CAPS, THEME } from '../hooks/theme'
+import Choice from '../hooks/choice'
 declare const setTimeout: (run: (value: unknown) => void, ms: number) => unknown
 
 const SKILL = '---\nname: session-handoff\ndescription: x\n---\n\n# session-handoff\n\nWrite one message.'
@@ -417,4 +418,29 @@ test('the settings pane footer shows the tip of the hovered tab', { options: { i
   await pane.pointer({ in: 'mod-wrap-up-settings-tab', type: 'leave', x: 0, y: 0 } as never)
   expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeUndefined()
   await pane.unmount()
+})
+
+test('the wrap-up pill at rest runs no timer; a hover watches until the pointer leaves', () => {
+  const running = new Set<() => void>()
+  let pointer: (event: any) => void = () => {}
+  const surface: any = {
+    elements: { Box: (props: any) => props, Text: (props: any) => props },
+    state: undefined,
+    setState: (state: any) => (surface.state = state),
+    every: (_ms: number, fn: () => void) => {
+      running.add(fn)
+      return () => running.delete(fn)
+    },
+    onPointer: (handler: (event: any) => void) => (pointer = handler),
+    post: () => {},
+  }
+  const tip = { glyph: '', label: '', text: '' }
+  const props = { id: 'wrap', label: 'Wrap up', options: [{ id: 'go', label: 'Go' }], mode: null, bg: THEME.surface2, nerd: false, isIdle: true, tips: [tip, tip] }
+  Choice(props, surface)
+  expect(running.size).toBe(0)
+  pointer({ type: 'move', x: 1, y: 0 })
+  expect(running.size).toBe(1)
+  pointer({ type: 'leave', x: 1, y: 0 })
+  ;[...running].forEach(fn => fn())
+  expect(running.size).toBe(0)
 })
