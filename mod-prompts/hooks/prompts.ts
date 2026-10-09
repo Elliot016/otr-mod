@@ -49,6 +49,14 @@ export const promptText = (text: string) => {
   return trimmed && !WRAPPER.test(trimmed) && !INTERRUPTED.test(trimmed) && !trimmed.startsWith('/') ? trimmed : undefined
 }
 
+// A message's text: the string itself, or its text blocks joined.
+const textOf = (content: unknown) =>
+  typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content.filter((block: any) => block?.type === 'text' && typeof block.text === 'string').map((block: any) => block.text).join('\n')
+      : ''
+
 export function parseRow(line: string): Row | undefined {
   let row: any
   try {
@@ -63,10 +71,10 @@ export function parseRow(line: string): Row | undefined {
     isSidechain: row.isSidechain === true,
     at: typeof row.timestamp === 'string' ? row.timestamp : undefined,
   }
-  // A prompt typed while a turn ran is stored as a queued_command attachment, not a user row; a meta one is a note the harness queued.
-  if (row.type === 'attachment' && row.attachment?.type === 'queued_command' && typeof row.attachment.prompt === 'string') {
+  // A prompt typed while a turn ran is a queued_command attachment (content blocks when it has an image); a meta one is a note the harness queued.
+  if (row.type === 'attachment' && row.attachment?.type === 'queued_command') {
     if (row.attachment.isMeta === true) return base
-    return { ...base, prompt: promptText(row.attachment.prompt), isQueued: true }
+    return { ...base, prompt: promptText(textOf(row.attachment.prompt)), isQueued: true }
   }
   if (row.type === 'system' && row.subtype === 'turn_duration' && typeof row.durationMs === 'number') return { ...base, durationMs: row.durationMs }
   if (row.type === 'user' && row.isMeta === true && row.origin?.kind === 'peer') return { ...base, isReport: true }
@@ -77,13 +85,7 @@ export function parseRow(line: string): Row | undefined {
   if (row.type !== 'user' || row.isMeta || row.isCompactSummary || row.message?.role !== 'user') return base
   const content = row.message.content
   if (Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result')) return { ...base, ...changedLines(row) }
-  const text =
-    typeof content === 'string'
-      ? content
-      : Array.isArray(content)
-        ? content.filter((block: any) => block?.type === 'text' && typeof block.text === 'string').map((block: any) => block.text).join('\n')
-        : ''
-  return { ...base, prompt: promptText(text) }
+  return { ...base, prompt: promptText(textOf(content)) }
 }
 
 // The prompts on the live branch, oldest first; a report or an abandoned prompt opens a turn that lists nothing, as turns.ts does.
