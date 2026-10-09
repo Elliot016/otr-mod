@@ -30,6 +30,7 @@ export default {
   "noAgents": "No agents yet: only the main session so far.",
   "gaugePercent": "{percent}%",
   "gatesCount": "{done}/{total}",
+  "phaseDone": "phase done",
   "tokensTime": "{tokens} {sep} {time}",
   "unknownModel": "unknown model",
   "tipTabList": "lists every agent of this session",

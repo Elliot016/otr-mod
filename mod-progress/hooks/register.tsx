@@ -115,7 +115,7 @@ async function saveSnap($: EngineInterface) {
   }
 }
 
-// GATES.md is the main session's, gates/<name>.md belongs to the agent of that name.
+// GATES.md and every gates/<name>.md make up the main ledger; gates/<name>.md also belongs to the agent of that name.
 async function readGates($: EngineInterface, target: Snap) {
   const cwd = String(await $.session.cwd()).replace(/\\/g, '/')
   const found: Record<string, Gate[]> = {}
@@ -123,7 +123,8 @@ async function readGates($: EngineInterface, target: Snap) {
   if (root !== null) found[MAIN_GATES] = parseGates(String(root))
   for (const entry of await $.fs.list(`${cwd}/gates`).catch(() => [])) {
     if (entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.md')) continue
-    found[stemOf(entry.name)] = parseGates(String(await $.fs.read(`${cwd}/gates/${entry.name}`).catch(() => '')))
+    const stem = stemOf(entry.name)
+    found[stem] = parseGates(String(await $.fs.read(`${cwd}/gates/${entry.name}`).catch(() => ''))).map(gate => ({ ...gate, file: stem }))
   }
   const isChanged = JSON.stringify(found) !== JSON.stringify(target.gates)
   target.gates = found

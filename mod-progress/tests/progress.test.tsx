@@ -42,13 +42,15 @@ const seeded = (): Snap => {
   return snap
 }
 
-type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[] }
+// `files` are the gates files the session's folder holds, by path under it.
+type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[]; files: Record<string, string> }
 
 // Everything the mod reads from the engine, with the store backed by a map and the clock moved only by the test.
 function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], world: Partial<World> = {}) {
   const store = new Map<string, unknown>([['snap', seeded()]])
   const clock = mock.clock(on, { now: world.now ?? 14 * 60 * 1000 })
   const windows = world.windows ?? []
+  const files = world.files ?? { 'GATES.md': GATES, 'gates/leaf-1.1.1.md': GATES.split('\n').slice(0, 7).join('\n') }
   on('session.id', () => ({ value: 'sid-1' }))
   on('session.cwd', () => ({ value: '/w' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
@@ -62,12 +64,15 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
     return { value: undefined } as never
   })
   on('fs.read', (_$, e) => {
-    const path = neutral(e.path)
-    if (path === '/w/GATES.md') return { value: GATES }
-    if (path === '/w/gates/leaf-1.1.1.md') return { value: GATES.split('\n').slice(0, 7).join('\n') }
+    const path = neutral(e.path).replace(/^\/w\//, '')
+    if (path in files) return { value: files[path]! }
     throw new Error('ENOENT')
   })
-  on('fs.list', (_$, e) => ({ value: neutral(e.path).endsWith('/gates') ? [{ name: 'leaf-1.1.1.md', kind: 'file', size: 0, mtimeMs: 0, isLink: false }] : [] }))
+  on('fs.list', (_$, e) => ({
+    value: neutral(e.path).endsWith('/gates')
+      ? Object.keys(files).filter(path => path.startsWith('gates/')).map(path => ({ name: path.slice('gates/'.length), kind: 'file', size: 0, mtimeMs: 0, isLink: false }))
+      : [],
+  }))
   on('env.get', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
   on('session.start', () => ({ cwd: '/w' }))
@@ -147,12 +152,68 @@ test('rows: main first, agents in order, task list stands in for missing gates, 
 
   snap.gates.GATES = parseGates(GATES)
   snap.gates['leaf-1.1.1'] = parseGates(GATES).slice(0, 1)
-  expect(buildRows(snap, list, undefined, 0, 'main', 'x', undefined)[0]!.gates).toHaveLength(4)
+  expect(buildRows(snap, list, undefined, 0, 'main', 'x', undefined)[0]!.gates).toHaveLength(5)
   expect(bandSummary(rows)).toEqual({ count: 1, done: 1, total: 2 })
 
   expect(settle(snap, list, 99)).toBe(true)
   expect(snap.agents.a2!.endedAt).toBe(99)
   expect(snap.agents.a1!.endedAt).toBeUndefined()
+})
+
+const MET = (id: string) => [`- [x] ${id}: done`, '      EVIDENCE: ok 1 passed', ''].join('\n')
+
+test('the main ledger sums GATES.md and every gates file, and the band counts each gate once', () => {
+  const snap = emptySnap('s')
+  snap.gates.GATES = parseGates(MET('G1'))
+  snap.gates['phase-b'] = parseGates(`${MET('G1')}\n${MET('G2')}`).map(gate => ({ ...gate, file: 'phase-b' }))
+  snap.gates.ultimate = parseGates(MET('G1')).map(gate => ({ ...gate, file: 'ultimate' }))
+  const list = [{ id: 'a1', name: 'phase-b', description: 'one', type: 'general-purpose', status: 'running' }]
+  const rows = buildRows(snap, list, undefined, 0, 'main', 'x', undefined)
+  const main = rows[0]!
+  expect(main.gates.map(gate => `${gate.file ?? ''}/${gate.id}`)).toEqual(['/G1', 'phase-b/G1', 'phase-b/G2', 'ultimate/G1'])
+  expect(rows[1]!.gates).toHaveLength(2)
+  expect(bandSummary(rows)).toEqual({ count: 1, done: 4, total: 4 })
+})
+
+test('phase done: only a ledger read from gates files with no open gate says so', () => {
+  const snap = emptySnap('s')
+  const rowOf = () => buildRows(snap, [], undefined, 0, 'main', 'x', undefined)[0]!
+  expect(rowOf().isPhaseDone).toBe(false)
+
+  applyTask(snap, 'TaskCreate', { subject: 'step A' }, '1')
+  applyTask(snap, 'TaskUpdate', { taskId: '1', status: 'completed' })
+  expect(rowOf().isPhaseDone).toBe(false)
+
+  snap.gates.GATES = parseGates(`${MET('G1')}\n- [ ] G2: later\n      EVIDENCE: pending\n`)
+  expect(rowOf().isPhaseDone).toBe(false)
+
+  snap.gates.GATES = parseGates(MET('G1'))
+  expect(rowOf().isPhaseDone).toBe(true)
+
+  snap.gates.GATES = parseGates(`${MET('G1')}\n- [ ] G2: given up\nABANDON: G2 not possible\n`)
+  expect(rowOf().isPhaseDone).toBe(true)
+})
+
+test('the pane shows no phase done while a gate is open', async ($, on) => {
+  stubEngine(on)
+  await $.session.start({ cwd: '/w' } as never)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'loops' }))).not.toContain('phase done')
+  await ui.unmount()
+})
+
+test('the pane marks a finished ledger of gates files as phase done and names the file on each gate', async ($, on) => {
+  stubEngine(on, [], [], { files: { 'gates/phase-b.md': MET('G1'), 'gates/ultimate.md': MET('G1') } })
+  await $.session.start({ cwd: '/w' } as never)
+  const ui = await $.ui.mount(PANE)
+  const closed = JSON.stringify(await ui.drawn({ in: 'loops' }))
+  expect(closed).toContain('2/2')
+  expect(closed).toContain('phase done')
+  await pointerOn(ui, { in: 'loops', type: 'down', x: 3, y: 0, button: 'left' })
+  const open = JSON.stringify(await ui.drawn({ in: 'loops' }))
+  expect(open).toContain('phase-b/G1 done')
+  expect(open).toContain('ultimate/G1 done')
+  await ui.unmount()
 })
 
 test('the band pill counts agents in a badge, and a click toggles the pane', async ($, on) => {
@@ -183,7 +244,9 @@ test('the pane draws a card per loop and a click opens its gates', async ($, on)
   expect(list).toContain('Haiku 4.5')
   expect(list).toContain('46%')
   expect(list).toContain('312k')
-  expect(list).toContain('1/4')
+  // The main card sums GATES.md and gates/leaf-1.1.1.md; the agent's card shows only its own file.
+  expect(list).toContain('2/6')
+  expect(list).toContain('1/2')
   expect(list).not.toContain('G1')
   await pointerOn(ui, { in: 'loops', type: 'down', x: 3, y: 0, button: 'left' })
   const open = JSON.stringify(await ui.drawn({ in: 'loops' }))

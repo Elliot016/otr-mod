@@ -6,7 +6,8 @@ import text from './text'
 import { fill } from './theme'
 
 export type GateState = 'met' | 'open' | 'abandoned'
-export type Gate = { id: string; text: string; state: GateState }
+// `file` names the gates/<file>.md a gate came from; GATES.md's own gates carry none.
+export type Gate = { id: string; text: string; state: GateState; file?: string }
 export type Task = { id: string; subject: string; status: string }
 // A workflow script's agent: no list entry names it, so its run, place, name and task are kept from its spawn.
 export type WorkflowAgent = { runId: string; index: number; name: string; description: string }
@@ -199,6 +200,8 @@ export type Row = {
   elapsed: string
   gates: Gate[]
   hasGates: boolean
+  // The main ledger reads from gates files and none is open: every written phase is finished, which says nothing about the ones not written yet.
+  isPhaseDone?: boolean
 }
 
 export const statusOf = (status: string): Status => (status === 'completed' ? 'done' : status === 'failed' || status === 'killed' ? 'failed' : 'running')
@@ -241,7 +244,9 @@ const shownDescription = (loop: Loop, status: Status, description: string) => (s
 export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | undefined, now: number, mainName: string, mainTask: string, mainModel: string | undefined): Row[] {
   const main = snap.main
   const model = main.model ?? mainModel
-  const mainGates = gatesFor(snap.gates[MAIN_GATES], snap.tasks)
+  // The main ledger is GATES.md plus every gates/<name>.md, the way execute splits a run across files.
+  const ledger = Object.entries(snap.gates).sort(([a], [b]) => Number(b === MAIN_GATES) - Number(a === MAIN_GATES)).flatMap(([, gates]) => gates)
+  const mainGates = gatesFor(ledger, snap.tasks)
   const window = windowFor(model, model, usage?.window)
   const started = usage?.startedAt ?? snap.startedAt
   const percent = (loop: Loop, size: number) => (loop.context > 0 ? Math.min(100, Math.round((loop.context / size) * 100)) : undefined)
@@ -261,6 +266,7 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
     elapsed: started === undefined ? '' : formatElapsed(now - started),
     gates: mainGates,
     hasGates: mainGates.length > 0,
+    isPhaseDone: ledger.length > 0 && !ledger.some(gate => gate.state === 'open'),
   }]
   const listed = new Set(list.map(info => info.id))
   const ofWorkflow = Object.entries(snap.agents)
@@ -296,6 +302,7 @@ export const countGates = (gates: Gate[]) => ({ done: gates.filter(gate => gate.
 
 // The band pill's badge: how many agents ran besides the main session.
 export function bandSummary(rows: Row[]) {
-  const gates = countGates(rows.flatMap(row => row.gates))
+  // The main ledger holds the gates of every file, and an agent paired with a file lists the same objects again.
+  const gates = countGates([...new Set(rows.flatMap(row => row.gates))])
   return { count: rows.filter(row => !row.isMain && row.status === 'running').length, ...gates }
 }

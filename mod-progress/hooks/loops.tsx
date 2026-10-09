@@ -123,7 +123,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
             <Text>
               <Text color={doneColor}>{own.barCell.repeat(cells)}</Text>
               <Text color={THEME.lifted}>{own.barCell.repeat(marks.barCells - cells)}</Text>
-              <Text color={THEME.muted}>{` ${fill(text.gatesCount, { done: gates.done, total: gates.total })}`}</Text>
+              <Text color={THEME.muted}>{` ${fill(text.gatesCount, { done: gates.done, total: gates.total })}${row.isPhaseDone ? ` ${MARK.sep} ${text.phaseDone}` : ''}`}</Text>
             </Text>
           )) : null}
         </Box>,
@@ -141,7 +141,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
         <Text key={`${key}-mark`} color={mark.color}>{mark.glyph}</Text>
         <Box key={`${key}-text`} flexGrow={1} flexShrink={1}>
           <Text wrap="truncate-end" color={gate.state === 'open' ? THEME.onSurface : THEME.muted}>
-            {`${gate.id} ${gate.text}${gate.state === 'abandoned' ? ` ${MARK.sep} ${text.abandoned}` : ''}`}
+            {`${row.isMain && gate.file ? `${gate.file}/` : ''}${gate.id} ${gate.text}${gate.state === 'abandoned' ? ` ${MARK.sep} ${text.abandoned}` : ''}`}
           </Text>
         </Box>
       </Box>,
