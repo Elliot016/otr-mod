@@ -397,7 +397,7 @@ export const register: Register = (on, options) => {
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const redraw = () => $.ui.invalidate('ui.render')
     const frame = (children: RenderChildren) => (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {children}
         <Box key="footer-space" height={FOOTER_ROWS} />
         {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll)}
