@@ -102,7 +102,7 @@ const outputText = (output: any) =>
     .join('\n')
 
 // An edit shows its patch, a new file its content as added lines; any other call the start of its result.
-export function previewOf(name: string, input: any, output: any, text: string): Preview {
+export function previewOf(name: string, input: any, output: any, result: string): Preview {
   const patch = Array.isArray(output?.structuredPatch) ? output.structuredPatch : []
   const diff: PreviewLine[] = patch.flatMap((hunk: any) =>
     (Array.isArray(hunk?.lines) ? hunk.lines : []).filter((line: unknown) => typeof line === 'string').map((line: string) => ({
@@ -112,7 +112,8 @@ export function previewOf(name: string, input: any, output: any, text: string): 
   )
   if (diff.length) return capped(diff)
   if (name === 'Write' && typeof input?.content === 'string') return capped(input.content.split('\n').map((line: string) => ({ text: line, kind: 'add' as const })))
-  const body = (text || outputText(output)).replace(/\s+$/, '')
+  // A background agent's own result is only its launch: the report comes later as a message.
+  const body = (output?.isAsync === true ? text.previewBackground : result || outputText(output)).replace(/\s+$/, '')
   return capped(body ? body.split('\n').map(line => ({ text: line, kind: 'out' as const })) : [])
 }
 
@@ -221,6 +222,8 @@ export class TurnLog {
     // A row first draws while its input still streams in, so a later, fuller input replaces the first.
     if (input && Object.keys(input).length >= Object.keys(call.input ?? {}).length) call.input = input
     if (isRunning) return
+    // A background agent's launch result names its task, for a row drawn before its input streamed in.
+    if ((name === 'Agent' || name === 'Task') && !call.input?.description && typeof output?.description === 'string') call.input = { ...call.input, description: output.description }
     if (call.endedAt === undefined) call.endedAt = at
     // A group's copy of the output may lack the patch its own row carries, so any later count fills in.
     const stat = diffStat(name, call.input, output, isFailed)

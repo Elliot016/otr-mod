@@ -52,6 +52,7 @@ export default {
   "tipCopyChoice": { "reply": "copies the whole reply", "code": "copies the code blocks", "text": "copies the reply as plain text", "table": "copies the tables", "links": "copies the links" },
   "previewMore": "+ {n} more lines",
   "previewEmpty": "No output",
+  "previewBackground": "Running in the background, its report arrives as a message",
   "kind": {
     "read": { "one": "Read {n} file", "many": "Read {n} files" },
     "search": { "one": "Searched {n} pattern", "many": "Searched {n} patterns" },

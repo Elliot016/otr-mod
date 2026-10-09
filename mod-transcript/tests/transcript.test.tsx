@@ -68,6 +68,20 @@ test('a call first seen finished shows no time, and a later output with the patc
   expect([log.callOf('toolu_g')!.added, log.callOf('toolu_g')!.removed]).toEqual([2, 1])
 })
 
+test('a background agent call read from the transcript previews that it runs in the background', () => {
+  const log = logOf(
+    [
+      row(1, 'user', { message: { role: 'user', content: 'research it' } }),
+      said(2, [{ type: 'tool_use', id: 'toolu_bg', name: 'Agent', input: { description: 'Research launch posts', prompt: 'p' } }]),
+      row(3, 'user', {
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_bg', content: [{ type: 'text', text: 'Async agent launched successfully.' }] }] },
+        toolUseResult: { isAsync: true, status: 'async_launched', agentId: 'a1', description: 'Research launch posts', prompt: 'p' },
+      }),
+    ].join('\n') + '\n',
+  )
+  expect(log.callOf('toolu_bg')!.preview!.lines.map(line => line.text)).toEqual(['Running in the background, its report arrives as a message'])
+})
+
 test('an opened call previews its diff, a new file, or the start of its result', () => {
   const edit = previewOf('Edit', {}, { structuredPatch: PATCH }, 'The file was updated')
   expect(edit.lines.map(line => `${line.kind}:${line.text}`)).toEqual(['same:keep', 'del:old', 'add:new', 'add:added'])
@@ -906,4 +920,20 @@ test('a guessed prompt is not adopted by the placeholder row', () => {
   log.adopt('placeholder', 'prompt', 'first')
   log.adopt(ID(1), 'prompt', 'first')
   expect(log.turns.map(turn => turn.prompt)).toEqual([ID(1)])
+})
+
+const LAUNCH = { isAsync: true, status: 'async_launched', agentId: 'a1', description: 'Research launch posts', prompt: 'p' }
+
+test('a background agent drawn live previews that it runs in the background, not "No output"', () => {
+  const log = new TurnLog()
+  log.claim(ID(60), 'prompt')
+  log.claimCall('toolu_live_bg', 'Agent', { description: 'Research launch posts' }, false, LAUNCH)
+  expect(log.callOf('toolu_live_bg')!.preview!.lines.map(line => line.text)).toEqual(['Running in the background, its report arrives as a message'])
+})
+
+test('a background agent drawn before its input streams in takes its name from the launch result', () => {
+  const log = new TurnLog()
+  log.claim(ID(61), 'prompt')
+  log.claimCall('toolu_live_name', 'Agent', {}, false, LAUNCH)
+  expect(turnLine(log.turns[log.turns.length - 1]!)).toBe('1 tool · Agent(Research launch posts)')
 })
