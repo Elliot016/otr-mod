@@ -290,8 +290,9 @@ export const register: Register = (on, options) => {
     await loadLook($)
     await $.command.register({ name: 'mod-model-effort', description: text.commandDescription, argumentHint: '[settings]' })
     await $.state.set({ plugin: 'mod-model-effort', key: 'pane' }, await isPaneOpen($))
-    // Before the first request, the last session's model and its saved level stand in.
-    const model = await $.store.get('model')
+    // Before the first request, the session's own model stands in, else the last session's; `--model` can differ from the last one.
+    const own = await $.session.model().catch(() => undefined)
+    const model = typeof own === 'string' && own ? own : await $.store.get('model')
     if (typeof model === 'string') {
       const effort = await savedEffort($, model)
       if (effort) await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model, effort })

@@ -29,6 +29,33 @@ const targets = (lit: number) => LEVELS.map((_, index) => (index <= lit ? HOVER_
 // The ticker reads the latest props from here, since its closure keeps the first ones.
 const latest = new WeakMap<object, MeterProps>()
 
+// The timer runs while a glyph fades or a hover may need ending, and stops at rest, so an idle meter costs no wakeups.
+const timers = new WeakMap<object, () => void>()
+
+const wake = (surface: Parameters<ClientModule<MeterProps, Hover>>[1]) => {
+  if (timers.has(surface)) return
+  const stop = surface.every(HOVER_TICK_MS, () => {
+    const state = surface.state
+    const now = latest.get(surface)
+    if (!state || !now) return
+    const goal = targets(litOf(now, state.level))
+    const lights = state.lights ?? goal
+    if (lights.some((light, index) => light !== goal[index])) {
+      surface.setState({ ...state, lights: now.still ? goal : lights.map((light, index) => stepToward(light, goal[index]! > 0)) })
+      return
+    }
+    if (state.level === -2) {
+      stop()
+      timers.delete(surface)
+      return
+    }
+    if (Date.now() - state.at < HOVER_QUIET_MS) return
+    surface.setState({ ...state, level: -2, at: Date.now(), tipId: null })
+    postTip(surface, 'effort-meter', null)
+  })
+  timers.set(surface, stop)
+}
+
 // Mouse-only slider: a level glyph and the space after it set that level.
 const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
@@ -39,27 +66,14 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   // The level under the pointer previews what a click would set: -1 on the model name, -2 off the pill.
   const hovered = surface.state?.level ?? -2
   latest.set(surface, props)
-  if (!surface.state) {
-    surface.setState({ level: -2, at: 0, lights: targets(reached) })
-    // Redraws only while a glyph fades or a stale hover needs ending.
-    surface.every(HOVER_TICK_MS, () => {
-      const state = surface.state
-      const now = latest.get(surface)
-      if (!state || !now) return
-      const goal = targets(litOf(now, state.level))
-      const lights = state.lights ?? goal
-      if (lights.some((light, index) => light !== goal[index])) {
-        surface.setState({ ...state, lights: now.still ? goal : lights.map((light, index) => stepToward(light, goal[index]! > 0)) })
-        return
-      }
-      if (state.level === -2 || Date.now() - state.at < HOVER_QUIET_MS) return
-      surface.setState({ ...state, level: -2, at: Date.now(), tipId: null })
-      postTip(surface, 'effort-meter', null)
-    })
-  }
+  if (!surface.state) surface.setState({ level: -2, at: 0, lights: targets(reached) })
+  // A new effort from outside moves the lights too.
+  const goalNow = targets(litOf(props, hovered))
+  if ((surface.state?.lights ?? goalNow).some((light, index) => light !== goalNow[index])) wake(surface)
   // At rest the pill shows only the current level; the pointer on it opens every level.
   const isExpanded = hovered !== -2
   surface.onPointer(event => {
+    wake(surface)
     const slot = event.x - start
     // While folded the slots are not where they will be, so the first event only opens the meter.
     const level = event.type === 'leave' ? -2 : isExpanded && slot >= 0 && slot < LEVELS.length * 2 ? Math.floor(slot / 2) : -1

@@ -4,6 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import { THEME } from '../hooks/theme'
 
 import { displayName, withEffort } from '../hooks/levels'
+import Meter from '../hooks/meter'
 
 // The host's test types omit `pointer` and a drawn element's `children`.
 const pointer = (ui: object, event: object) => (ui as { pointer: (event: object) => Promise<void> }).pointer(event)
@@ -441,4 +442,48 @@ test('a settings read that fails leaves the model switch whole', { options: { ic
   await firstRequest($, on, 'claude-opus-5-5', 'medium')
   await $.classic.PostModelSwitch(switched('claude-sonnet-5-5'))
   expect(passed).toEqual(['claude-sonnet-5-5'])
+})
+
+test('before the first request the pill shows this session\'s model, not the last session\'s', async ($, on) => {
+  const files: Record<string, string> = { '/h/.claude/settings.json': JSON.stringify(SETTINGS, null, 2) + '\n' }
+  const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+  const shown: unknown[] = []
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('fs.read', (_$, e) => ({ value: files[neutral(e.path)] ?? '' }))
+  on('store.get', (_$, e) => ({ value: e.key === 'model' ? 'claude-opus-5-5' : undefined }))
+  on('session.model', () => ({ value: 'claude-sonnet-5-5' }))
+  on('settings.read', () => ({ value: { modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' }, 'claude-sonnet-5-5': { effortLevel: 'low' } } } }))
+  on('session.start', () => ({ cwd: '/w' }))
+  on('command.register', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [] }))
+  on('state.set', (_$, e) => {
+    if (e.key === 'current') shown.push(e.value)
+    return { value: undefined } as never
+  })
+  mock.clock(on)
+  await $.session.start({ cwd: '/w' } as never)
+  expect((shown[0] as { model?: string } | undefined)?.model).toBe('claude-sonnet-5-5')
+})
+
+test('the meter at rest runs no timer; a new effort fades its lights, then it stops', () => {
+  const running = new Set<() => void>()
+  const surface: any = {
+    elements: { Box: (props: any) => props, Text: (props: any) => props },
+    state: undefined,
+    setState: (state: any) => (surface.state = state),
+    every: (_ms: number, fn: () => void) => {
+      running.add(fn)
+      return () => running.delete(fn)
+    },
+    onPointer: () => {},
+    post: () => {},
+  }
+  const tip = { glyph: '', label: '', text: '' }
+  const props = (effort: string) => ({ effort, model: 'Opus', bg: THEME.surface2, tipModel: tip, tipRest: tip, tipLevels: [tip, tip, tip, tip, tip] })
+  Meter(props('medium'), surface)
+  expect(running.size).toBe(0)
+  Meter(props('high'), surface)
+  expect(running.size).toBe(1)
+  for (let n = 0; n < 6; n++) [...running].forEach(fn => fn())
+  expect(running.size).toBe(0)
 })
