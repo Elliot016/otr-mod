@@ -1,11 +1,15 @@
 // mod-file-tree / tests/file-tree.test.tsx, by v-amorim
 // Tests the file log: diff lines, relative paths, rows, turn views and transcript parsing.
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test, type Mounted, type TestBody } from 'claude-code/testing'
 
 import { cells, cut } from '../hooks/cells'
 import { THEME } from '../hooks/theme'
 import { TranscriptFiles } from '../hooks/transcript'
 import { diffLines, emptyLog, commit, iconOf, relPath, rootOf, rowsOf, touch, turnView } from '../hooks/tree'
+
+type Pointer = { pointer: (event: object) => Promise<unknown> }
+// The host types leave `pointer` off a mounted UI.
+const pointing = <T extends Mounted>(ui: T) => ui as T & Pointer
 
 const nf = (code: number) => String.fromCodePoint(code)
 
@@ -26,7 +30,7 @@ const SHELL_DIFF = {
 const isTranscript = (path: string) => path.replace(/\\/g, '/').endsWith('/s1.jsonl')
 
 // `transcript.text` is the session's .jsonl, which a test may grow between events.
-const stubs = (on: Parameters<Parameters<typeof test>[1]>[1], opened: string[] = [], transcript = { text: '', reads: 0 }) => {
+const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }) => {
   on('session.cwd', () => ({ value: '/w' }))
   on('session.id', () => ({ value: 's1' }))
   on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
@@ -139,9 +143,9 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   expect(drawn).toContain('"+2"')
   expect(drawn).toContain('" −1"')
   // A folder the person opens stays open while Claude works; a second click folds it again.
-  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 3, y: 2 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 3, y: 2 })
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('a.ts')
-  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 3, y: 2 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 3, y: 2 })
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).not.toContain('a.ts')
 
   await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false, reason: 'end_turn' } as never)
@@ -155,7 +159,7 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   expect(await ui.find({ type: 'Text', text: /Modified/ })).toBeDefined()
 
   // A click on the fourth row (docs, new.md, src, a.ts) opens a.ts in the replay.
-  const click = (key: string, y = 0) => ui.pointer({ in: key, type: 'down', button: 'left', x: 2, y })
+  const click = (key: string, y = 0) => pointing(ui).pointer({ in: key, type: 'down', button: 'left', x: 2, y })
   await click('list-0', 3)
   const replay = async () => JSON.stringify(await ui.drawn())
   expect(await ui.find({ type: 'Text', text: '1 of 2' })).toBeDefined()
@@ -176,7 +180,7 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
 
   // Back in the tree, a click on the src folder's row folds it away.
   await click('tab-tree')
-  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 4, y: 2 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 4, y: 2 })
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).not.toContain('a.ts')
   await ui.unmount()
 })
@@ -197,13 +201,13 @@ test('a read-only file has no diff to replay', async ($, on) => {
   stubs(on)
   await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
   const ui = await $.ui.mount(PANE)
-  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 2, y: 0 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 2, y: 0 })
   expect(await ui.find({ type: 'Text', text: /only\.md was only read/ })).toBeDefined()
   await ui.unmount()
 })
 
 // The commands the mod runs, each answered with the given exit code; `code` is not on PATH here.
-const launches = (on: Parameters<Parameters<typeof test>[1]>[1]) => {
+const launches = (on: Parameters<TestBody>[1]) => {
   const ran: string[] = []
   on('process.run', (_$, e) => {
     const argv = (e as unknown as { argv: string[] }).argv
@@ -221,7 +225,7 @@ test("a file row ends in the open mark; a click on it opens the file instead of 
   // Safe mode pads the mark inside its surface-3 pill.
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(`"backgroundColor":"${THEME.surface3}"},"children":[" ↗ "]`)
   // The pane is 70 columns, the rows 66 cells: the mark is the last one.
-  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
   // VS Code first; without it, the system's opener.
   expect(ran).toEqual(['code /w/only.md', 'open /w/only.md'])
   expect(await ui.find({ type: 'Text', text: /^. Opened only\.md in its default app/ })).toBeDefined()
@@ -235,17 +239,17 @@ test('a hovered row, end mark, bar option or tab puts its tip in the pane footer
   await $.tool.call({ tool: 'Edit', file_path: '/w/a.ts', old_string: 'x', new_string: 'y' } as never)
   const ui = await $.ui.mount(PANE)
   const footer = (tip: string) => ui.find({ type: 'Text', text: ` · ${tip}` })
-  await ui.pointer({ in: 'list-0', type: 'move', x: 4, y: 0 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'move', x: 4, y: 0 })
   expect(await footer('replays the edits on this file')).toBeDefined()
-  await ui.pointer({ in: 'list-0', type: 'move', x: 65, y: 0 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'move', x: 65, y: 0 })
   expect(await footer('opens this file in VS Code')).toBeDefined()
-  await ui.pointer({ in: 'list-0', type: 'move', x: 4, y: 1 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'move', x: 4, y: 1 })
   expect(await footer('only read, nothing to replay')).toBeDefined()
-  await ui.pointer({ in: 'list-0', type: 'leave', x: 0, y: 0 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'leave', x: 0, y: 0 })
   expect(await footer('only read, nothing to replay')).toBeUndefined()
-  await ui.pointer({ in: 'scope-session', type: 'move', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'scope-session', type: 'move', x: 1, y: 0 })
   expect(await footer('files from the whole session')).toBeDefined()
-  await ui.pointer({ in: 'filetree-settings', type: 'move', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'filetree-settings', type: 'move', x: 1, y: 0 })
   expect(await footer('opens this mod\x27s settings')).toBeDefined()
   await ui.unmount()
 })
@@ -257,12 +261,12 @@ test('a folder row and the footer open their folder in the file manager; a faile
   await $.tool.call({ tool: 'Read', file_path: '/w/src/b.ts' } as never)
   const ui = await $.ui.mount(PANE)
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(' ⊞')
-  await ui.pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
   expect(await ui.find({ type: 'Text', text: /^. Opened hooks in the file manager/ })).toBeDefined()
   // A click on the mark opens the folder; it does not fold it.
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('a.ts')
   // The footer's mark opens the session's own folder.
-  await ui.pointer({ in: 'session-reveal', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'session-reveal', type: 'down', button: 'left', x: 1, y: 0 })
   expect(ran).toEqual(['open /w/hooks', 'open /w'])
   expect(await ui.find({ type: 'Text', text: /^. Opened w in the file manager/ })).toBeDefined()
   await ui.unmount()
@@ -276,7 +280,7 @@ test('an opener that cannot start says why in the status line', async ($, on) =>
   await $.tool.call({ tool: 'Read', file_path: '/w/hooks/a.ts' } as never)
   await $.tool.call({ tool: 'Read', file_path: '/w/src/b.ts' } as never)
   const ui = await $.ui.mount(PANE)
-  await ui.pointer({ in: 'session-reveal', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'session-reveal', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: /Could not open w: \S/ })).toBeDefined()
   await ui.unmount()
 })
@@ -352,13 +356,13 @@ test('the title row pill swaps the panel for its settings and back', async ($, o
   on('config.list', () => ({ value: [] }) as never)
   const ui = await $.ui.mount(PANE)
   expect(JSON.stringify(await ui.drawn({ in: 'filetree-settings' }))).toContain('Settings')
-  await ui.pointer({ in: 'filetree-settings', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'filetree-settings', type: 'down', button: 'left', x: 1, y: 0 })
   expect(opened).toEqual(['filetree-settings'])
   await ui.unmount()
 
   const settings = await $.ui.mount({ ...(PANE as object), requestId: 'filetree-settings' } as never)
   expect(JSON.stringify(await settings.drawn({ in: 'filetree-tab' }))).toContain('Files')
-  await settings.pointer({ in: 'filetree-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(settings).pointer({ in: 'filetree-tab', type: 'down', button: 'left', x: 1, y: 0 })
   expect(opened).toEqual(['filetree-settings', 'filetree'])
   await settings.unmount()
 })
@@ -384,7 +388,7 @@ test('the Files pill opens the pane from the band', async ($, on) => {
     props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} },
   } as never)
   expect(JSON.stringify(await band.drawn({ in: 'menu-entry-filetree' }))).toContain('Files')
-  await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-filetree' } as never)
+  await pointing(band).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-filetree' } as never)
   expect(opened).toContain('filetree')
   await band.unmount()
 })
@@ -429,7 +433,7 @@ test('a resumed session, with nothing in $.state, shows the files from its trans
   const ui = await $.ui.mount(PANE)
   // This turn is the default view; Session shows the whole transcript.
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).not.toContain('a.ts')
-  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
+  await pointing(ui).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
   const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(drawn).toContain('a.ts')
   expect(drawn).toContain('new.md')
@@ -450,7 +454,7 @@ test('the transcript is read once; later calls add on top, and the transcript gr
   const turn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(turn).toContain('fresh.ts')
   expect(turn).not.toContain('old.ts')
-  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
+  await pointing(ui).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
   expect(JSON.stringify(await ui.drawn({ in: 'filetree-tab' }))).toContain('2')
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' })).match(/fresh\.ts/g)).toHaveLength(1)
   await ui.unmount()
@@ -463,7 +467,7 @@ test('a session with many files draws in several lists, and a click in a later o
   const ui = await $.ui.mount(PANE)
   expect(JSON.stringify(await ui.drawn({ in: 'list-3' }))).toContain('f145.ts')
   // A click reports its row within that list, and the list adds its offset into the whole tree.
-  await ui.pointer({ type: 'down', x: 2, y: 145 - 3 * 40, button: 'left', in: 'list-3' } as never)
+  await pointing(ui).pointer({ type: 'down', x: 2, y: 145 - 3 * 40, button: 'left', in: 'list-3' } as never)
   expect(await ui.find({ type: 'Text', text: /Replaying f145\.ts/ })).toBeDefined()
   await ui.unmount()
 })
@@ -506,7 +510,7 @@ test('the recent view keeps the files of the last N turns, N from the recent_tur
   stubs(on, [], transcript)
   const ui = await $.ui.mount(PANE)
   expect(JSON.stringify(await ui.drawn({ in: 'scope-recent' }))).toContain('Last 2 turns')
-  await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-recent' } as never)
+  await pointing(ui).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-recent' } as never)
   const recent = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(recent).toContain('recent.ts')
   expect(recent).toContain('now.ts')
@@ -542,7 +546,7 @@ test('animations off: the file Claude is on draws whole, without the shimmer', {
 test('clear hides what came before it, though the transcript still holds it', async ($, on) => {
   const transcript = { text: SESSION.replace(/C:\\\\repo/g, '/w'), reads: 0 }
   stubs(on, [], transcript)
-  await $.command.run({ command: 'mod-file-tree', args: 'clear' })
+  await $.command.run({ command: 'mod-file-tree', args: 'clear' } as never)
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: /^No files touched yet/ })).toBeDefined()
   await ui.unmount()
@@ -559,6 +563,6 @@ test('session.start registers the command and /mod-file-tree toggles the pane', 
   })
   await $.session.start({ cwd: '/w' } as never)
   expect(registered).toEqual(['mod-file-tree'])
-  await $.command.run({ command: 'mod-file-tree', args: 'settings' })
+  await $.command.run({ command: 'mod-file-tree', args: 'settings' } as never)
   expect(opened).toEqual(['filetree-settings'])
 })
