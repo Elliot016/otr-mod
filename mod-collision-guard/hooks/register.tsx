@@ -259,7 +259,7 @@ export const register: Register = (on, options) => {
     }
 
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-collision-guard-settings-tab', label: `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneTitleSettings, text: text.tipTabSettings } }], false)}
         <Text key="settings-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.defaultNote} ${MARK.sep} ${text.defaultNoteTail}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews , still: false })}
