@@ -1,6 +1,6 @@
 // mod-manager / hooks/register.tsx, by v-amorim
 // Registers the mod manager pane, pill, command and toggle actions with the engine.
-import type { ConfigValue, EngineInterface, Register } from 'claude-code'
+import type { ConfigValue, EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
 import { fill, MARK, statusColor, THEME } from './theme'
@@ -268,7 +268,7 @@ export const register: Register = (on, options) => {
 
   // Subagent turns carry agentId and say nothing about the main prompt being free.
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) {
+    if (!(e as { agentId?: string }).agentId) {
       working = true
       $.ui.invalidate('ui.render')
     }
@@ -300,7 +300,8 @@ export const register: Register = (on, options) => {
   // One panel at a time: another mod's pane opening closes this one.
   on('state.set', async ($, e, next) => {
     // Deferred past this dispatch, so this mod's own state write is not nested in another plugin's.
-    if (e.key === 'pane' && e.plugin !== 'mod-manager' && e.value === true) {
+    // The declared state names no other mod's pane, so the types narrow this event to never.
+    if (e.key === 'pane' && e.plugin !== 'mod-manager' && (e as { value?: unknown }).value === true) {
       $.clock.after(0, async () => {
         if (!(await isOpen($))) return
         await $.ui.close({ id: 'manager' })
@@ -392,9 +393,10 @@ export const register: Register = (on, options) => {
     // A reload resets module state while the pane stays open, so reload the list.
     if (mods.length === 0) mods = await discover(ioOf($))
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const redraw = () => $.ui.invalidate('ui.render')
-    const frame = (children: unknown) => (
+    const frame = (children: RenderChildren) => (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {children}
         <Box key="footer-space" height={FOOTER_ROWS} />
