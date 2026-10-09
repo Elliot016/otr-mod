@@ -5,6 +5,10 @@ import { THEME } from '../hooks/theme'
 
 import { displayName, withEffort } from '../hooks/levels'
 
+// The host's test types omit `pointer` and a drawn element's `children`.
+const pointer = (ui: object, event: object) => (ui as { pointer: (event: object) => Promise<void> }).pointer(event)
+const children = (element: object) => (element as { children: unknown[] }).children
+
 const SETTINGS = { env: { KEEP: '1' }, modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium', other: 1 } }, model: 'x' }
 
 test('withEffort edits only the model effort and refuses broken JSON', () => {
@@ -50,31 +54,31 @@ test('the footer meter follows each request and a click saves that level', async
   expect(drawn).toContain(' Opus 5.5 ')
   expect(drawn).not.toContain('medium')
   // At rest only the current level shows.
-  expect((await ui.drawn({ in: 'meter' })).children.filter(Boolean)).toHaveLength(2)
+  expect(children(await ui.drawn({ in: 'meter' })).filter(Boolean)).toHaveLength(2)
 
   // The pointer opens every level; hovering the fourth previews it: every glyph up to it lit, the hovered one bold, the fifth still dark.
-  await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
-  await ui.pointer({ in: 'meter', type: 'move', x: 16, y: 0 })
-  const glyphs = (await ui.drawn({ in: 'meter' })).children.slice(1) as { props: { color: string; bold?: boolean } }[]
+  await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'move', x: 16, y: 0 })
+  const glyphs = children(await ui.drawn({ in: 'meter' })).slice(1) as { props: { color: string; bold?: boolean } }[]
   expect(glyphs.slice(0, 4).every(glyph => glyph.props.color !== THEME.border)).toBe(true)
   expect(glyphs[4]!.props.color).toBe(THEME.border)
   expect(glyphs[3]!.props.bold).toBe(true)
   // The hovered level names itself beside the pill, as a click does.
   expect(await ui.find({ type: 'Text', text: 'xhigh' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Effort:', bold: true })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Effort:', bold: true } as never)).toBeDefined()
   expect(await ui.find({ type: 'Text', text: ' sets effort to xhigh' })).toBeDefined()
-  await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'Effort:' })).toBeUndefined()
-  expect((await ui.drawn({ in: 'meter' })).children.filter(Boolean)).toHaveLength(2)
+  expect(children(await ui.drawn({ in: 'meter' })).filter(Boolean)).toHaveLength(2)
 
   // ' Opus 5.5 ' (10 cells) comes first; once open, the fifth glyph sits at x 18.
-  await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
-  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
   expect(JSON.parse(files['/h/.claude/settings.json']!).modelSettings['claude-opus-5-5'].effortLevel).toBe('max')
   expect(files['/h/.claude/settings.json.mod-model-effort.bak']).toContain('"medium"')
   // The level word shows on a click, then leaves. The pointer leaves too, so the tip naming the level is gone.
   expect(await ui.find({ type: 'Text', text: 'max' })).toBeDefined()
-  await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'leave', x: 0, y: 0 })
   await clock.advance(2000)
   expect(await ui.find({ type: 'Text', text: 'max' })).toBeUndefined()
   await ui.unmount()
@@ -103,13 +107,13 @@ test('a click on the model name lists the models used before, and a pick switche
   expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
 
   // The × closes the menu without switching.
-  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
-  await ui.pointer({ in: 'effort-model-close', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  await pointer(ui, { in: 'effort-model-close', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
   expect(ran).toEqual([])
 
   // The current model leads, then the others in the order they were used; a model never seen before still shows.
-  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
   // Each entry is a pill: the current one on surface3 with a green ✓ subpill, the others on surface2 with a blank as wide, so names line up.
   const current = JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))
   expect(current).toContain('" ✓ "')
@@ -125,15 +129,15 @@ test('a click on the model name lists the models used before, and a pick switche
   expect(all).toContain('" All models… "')
   expect(await ui.find({ key: 'effort-model-0-pill-body' })).toBeDefined()
 
-  await ui.pointer({ in: 'effort-model-1', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointer(ui, { in: 'effort-model-1', type: 'down', button: 'left', x: 1, y: 0 })
   expect(ran).toEqual(['model claude-sonnet-5-5'])
   expect(await ui.find({ key: 'effort-model-all' })).toBeUndefined()
   expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(' Sonnet 5.5 ')
   expect(store.models).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-newmodel-6-0'])
 
   // All models opens Claude Code's own picker.
-  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
-  await ui.pointer({ in: 'effort-model-all', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  await pointer(ui, { in: 'effort-model-all', type: 'down', button: 'left', x: 1, y: 0 })
   expect(ran).toEqual(['model claude-sonnet-5-5', 'model '])
   await ui.unmount()
 })
@@ -174,8 +178,8 @@ test('a clicked level rides on each request until Alt+P saves another', async ($
 
   await step(0)
   const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
-  await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
-  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
   await step(1)
 
   // Alt+P saves high; Claude Code's own level takes over again.
@@ -205,7 +209,7 @@ test('icons=nerd draws the pill with rounded caps', { options: { icons: 'nerd' }
   const ui = await $.ui.mount(BAND)
   expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(CAP)
   // The model menu's subpills take the Nerd ✓ and go glyphs, bare and capped.
-  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
   const current = JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))
   expect(current).toContain(`"${String.fromCodePoint(0xeab2)}"`)
   expect(current).toContain(CAP)
@@ -227,9 +231,9 @@ test('/mod-model-effort settings opens the pane and the pane draws a setting row
     opened.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('state.set', () => ({ value: undefined }))
-  on('config.list', () => ({ value: [{ key: 'mod-model-effort.animations', label: 'Animations', value: true, kind: 'boolean', description: 'Entries shimmer' }] }))
-  await $.command.run({ command: 'mod-model-effort', args: 'settings' })
+  on('state.set', () => ({ value: undefined }) as never)
+  on('config.list', () => ({ value: [{ key: 'mod-model-effort.animations', label: 'Animations', value: true, kind: 'boolean', description: 'Entries shimmer' }] as never }))
+  await $.command.run({ command: 'mod-model-effort', args: 'settings' } as never)
   expect(opened).toEqual(['model-effort-settings'])
 
   const pane = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'Pane', requestId: 'model-effort-settings', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
@@ -244,12 +248,12 @@ test('a hovered control names itself in the tip row, a model menu entry and the 
   band(on as never)
   on('store.get', () => ({ value: undefined }))
   const ui = await $.ui.mount(NARROW)
-  await ui.pointer({ in: 'meter', type: 'move', x: 0, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'move', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' switches the model' })).toBeDefined()
-  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 0, y: 0 })
-  await ui.pointer({ in: 'effort-model-all', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 0, y: 0 })
+  await pointer(ui, { in: 'effort-model-all', type: 'move', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' opens the full model picker' })).toBeDefined()
-  await ui.pointer({ in: 'effort-model-all', type: 'leave', x: 0, y: 0 })
+  await pointer(ui, { in: 'effort-model-all', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' opens the full model picker' })).toBeUndefined()
   await ui.unmount()
 })
@@ -257,9 +261,9 @@ test('a hovered control names itself in the tip row, a model menu entry and the 
 test('the settings pane footer shows the tip of the hovered tab', { options: { icons: 'safe' } }, async ($, on) => {
   on('config.list', () => ({ value: [] }))
   const pane = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'Pane', requestId: 'model-effort-settings', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
-  await pane.pointer({ in: 'mod-model-effort-settings-tab', type: 'move', x: 1, y: 0 })
+  await pointer(pane, { in: 'mod-model-effort-settings-tab', type: 'move', x: 1, y: 0 })
   expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeDefined()
-  await pane.pointer({ in: 'mod-model-effort-settings-tab', type: 'leave', x: 0, y: 0 })
+  await pointer(pane, { in: 'mod-model-effort-settings-tab', type: 'leave', x: 0, y: 0 })
   expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeUndefined()
   await pane.unmount()
 })
@@ -402,9 +406,9 @@ test('a clicked level holds on the pill while the saved level is the one before 
   })
   await firstRequest($, on, 'claude-opus-5-5', 'medium')
   const ui = await $.ui.mount(BAND)
-  await ui.pointer({ in: 'meter', type: 'move', x: 1, y: 0 })
-  await ui.pointer({ in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
-  await ui.pointer({ in: 'meter', type: 'leave', x: 0, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'leave', x: 0, y: 0 })
   expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('◈ ')
 
   // Alt+P saves medium, the level before the click: the clicked max still rides on the requests.
