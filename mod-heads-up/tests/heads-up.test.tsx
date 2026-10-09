@@ -434,6 +434,24 @@ test('the panel shows the newest note in a card over a timeline of every note, a
   await panel.unmount()
 })
 
+test('the X on the panel card hides it and keeps the timeline, and a click on a row shows the card again', async ($, on) => {
+  const { clock } = setup(on)
+  await finding($, clock)
+  const panel = await pane($)
+  const id = String(JSON.stringify(await panel.drawn()).match(/"id":"headsup-note-([^"]+)"/)?.[1])
+  expect(JSON.stringify(await panel.find({ key: 'note-card' }))).toContain('"id":"headsup-close"')
+  await click(panel, 'headsup-close')
+  await clock.settle()
+  const closed = JSON.stringify(await panel.drawn())
+  expect(closed).not.toContain('"key":"note-card"')
+  expect(closed).toContain(`"key":"note-row-${id}"`)
+  expect(closed).not.toContain('No notes yet')
+  await click(panel, `headsup-note-${id}`)
+  await clock.settle()
+  expect(JSON.stringify(await panel.find({ key: 'note-card' }))).toContain('Watch how often people ask follow-ups.')
+  await panel.unmount()
+})
+
 test('the card keeps the three buttons in one row, and Reword puts its three choices in that same row', async ($, on) => {
   const { clock } = setup(on)
   await finding($, clock)

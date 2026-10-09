@@ -117,6 +117,8 @@ async function setOpen($: EngineInterface, id: string, isOpen: boolean) {
   const ids = (await openIds($)).filter(each => each !== id)
   await $.state.set(OPEN_KEY, isOpen ? [...ids, id] : ids)
 }
+// The panel's X hid the card; a click on a timeline row or a new note shows it again.
+let isCardClosed = false
 // The note whose rewording choices are shown.
 let wording = ''
 let note = ''
@@ -245,6 +247,7 @@ async function check($: EngineInterface) {
     const added: Note = { ...found, id: `n${saved.notes.length + 1}-${at}`, turn, prompt: running?.text ?? '', promptId: running?.id, at, isRead: false }
     saved = { ...saved, notes: [...saved.notes, added], card: added.id, since: 0, checked: { turn, at, found: true } }
     seen = remember(seen, found.learn, SEEN_KEPT)
+    isCardClosed = false
     await save($)
     await $.store.set(`seen:${session}`, seen).catch(() => {})
   } catch {
@@ -376,6 +379,7 @@ async function openingPane($: EngineInterface, open: () => Promise<void>) {
 // The card's Learn more: the panel opens on that note, already expanded and read.
 async function learnMore($: EngineInterface, id: string) {
   await setOpen($, id, true)
+  isCardClosed = false
   bandTip = ''
   if (saved.card === id) saved = { ...saved, card: null, since: 0 }
   await update($, id, { isRead: true })
@@ -590,8 +594,15 @@ export const register: Register = (on, options) => {
     } else if (id.startsWith('headsup-note-')) {
       const noteId = id.slice('headsup-note-'.length)
       await $.state.set(OPEN_KEY, [noteId])
+      isCardClosed = false
       wording = ''
       await update($, noteId, { isRead: true })
+    } else if (id === 'headsup-close') {
+      isCardClosed = true
+      wording = ''
+      paneTip = null
+      await $.state.set(OPEN_KEY, [])
+      $.ui.invalidate('ui.render')
     } else if (id.startsWith('headsup-understood-')) {
       const noteId = id.slice('headsup-understood-'.length)
       await setOpen($, noteId, false)
@@ -704,6 +715,8 @@ export const register: Register = (on, options) => {
           {pill({ Box, Text }, nerd, THEME.surface3, <Text color={THEME.muted}>{turn}</Text>, 'note-card-turn', THEME.surface1)}
           <Text color={THEME.onSurface} bold>{clock(found.at)}</Text>
           <Text color={THEME.accent}>{found.tag}</Text>
+          <Box key="note-card-gap" flexGrow={1} />
+          {entryPill('headsup-close', bare(look.glyph.close), undefined, { glyph: bare(look.glyph.close), label: text.close, text: text.tipClose })}
         </Box>,
         <Box key={`summary-${found.id}`} marginTop={1}>
           <Text color={THEME.onSurface} bold>{found.learn}</Text>
@@ -718,9 +731,9 @@ export const register: Register = (on, options) => {
       ])
     }
 
-    const timeline = (list: Note[], selected: Note) =>
+    const timeline = (list: Note[], selected: Note | undefined) =>
       section(elements, look, 'note-timeline', '', '', list.flatMap((found, at) => {
-        const isSelected = found.id === selected.id
+        const isSelected = found.id === selected?.id
         const time = clock(found.at)
         // Pane padding, section border and padding, the time, the dot, gaps, and the ↗ pill.
         const room = Math.max(8, inner - time.length - 12)
@@ -765,15 +778,15 @@ export const register: Register = (on, options) => {
     const ordered = byTurn(saved.notes).flatMap(group => group.notes)
     // The list reads oldest first, as Prompts does; the card shows the last note the person picked, or the newest.
     const chronological = [...ordered].sort((a, b) => a.at - b.at)
-    const selected = [...opened].reverse().map(id => ordered.find(found => found.id === id)).find(Boolean) ?? chronological[chronological.length - 1]
+    const selected = isCardClosed ? undefined : ([...opened].reverse().map(id => ordered.find(found => found.id === id)).find(Boolean) ?? chronological[chronological.length - 1])
     const checkedLine = await lastCheckLine($)
     return (
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.hint, { sep: MARK.sep })}</Text>
         <Text wrap="truncate-end" color={THEME.muted}>{checkedLine}</Text>
-        {selected ? noteCard(selected) : <Text color={THEME.muted}>{text.empty}</Text>}
-        {selected ? timeline(chronological, selected) : null}
+        {selected ? noteCard(selected) : chronological.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
+        {chronological.length > 0 ? timeline(chronological, selected) : null}
         <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
         {paneFooter(elements, paneTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
