@@ -675,7 +675,7 @@ export const register: Register = (on, options) => {
         $.ui.invalidate('ui.render')
       }
       return (
-        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, nerd, tabs(true), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, tips: text.settingTips, still })}
@@ -768,7 +768,7 @@ export const register: Register = (on, options) => {
     const selected = [...opened].reverse().map(id => ordered.find(found => found.id === id)).find(Boolean) ?? chronological[chronological.length - 1]
     const checkedLine = await lastCheckLine($)
     return (
-      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.hint, { sep: MARK.sep })}</Text>
         <Text wrap="truncate-end" color={THEME.muted}>{checkedLine}</Text>
