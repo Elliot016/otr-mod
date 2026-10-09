@@ -1,8 +1,12 @@
 // mod-skill-panel / tests/skill-panel.test.tsx, by v-amorim
 // Tests skill tags and grouping, agents tab, command toggle, settings pill, tips and waiting card.
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test, type TestBody } from 'claude-code/testing'
 
 import { groupSkills, markDescription, readFrontmatter, stripBadges, swatchFor } from '../hooks/tags'
+
+type Pointer = { pointer: (event: object) => Promise<unknown> }
+// The host types leave `pointer` off a mounted UI.
+const pointing = <T extends object>(ui: T) => ui as T & Pointer
 
 // A drive path the engine took for relative comes back with the plugin's folder in front, so the fixtures read it from the drive letter on.
 const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '').replace(/^[A-Za-z]:/, '')
@@ -15,7 +19,7 @@ const FILES: Record<string, string> = {
   '/h/.claude/agents/helper.md': '---\nname: helper\ndescription: Helps\n---\nbody',
 }
 
-type On = Parameters<Parameters<typeof test>[1]>[1]
+type On = Parameters<TestBody>[1]
 
 const stubSkills = (on: On) => {
   on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
@@ -115,7 +119,7 @@ test('panel lists skill groups and a press fills the prompt', async ($, on) => {
   })
 
   await $.session.start({ cwd: '/h' } as never)
-  await $.command.run({ command: 'mod-skill-panel' })
+  await $.command.run({ command: 'mod-skill-panel' } as never)
 
   const ui = await $.ui.mount({
     plugin: 'mod-skill-panel',
@@ -137,22 +141,22 @@ test('panel lists skill groups and a press fills the prompt', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: '/rev' })).toBeDefined()
 
   // Row 1 is the rule between the groups; nothing on it reacts.
-  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 1 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 1 })
   expect(box).toBe('please ')
   expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain('─')
 
   // The card's title leads with the tag's icon as a subpill.
   expect(await ui.find({ key: 'card-icon' })).toBeDefined()
   // Pointing at a chip shows it in the card and adds nothing.
-  await ui.pointer({ in: 'skills-cloud', type: 'move', x: 14, y: 2 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'move', x: 14, y: 2 })
   expect(await ui.find({ type: 'Text', text: '/plain' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'x' })).toBeDefined()
   expect(box).toBe('please ')
 
   // A click on a chip adds it; a repeat is skipped.
-  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 0 })
-  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 2 })
-  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 0 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 0 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 2 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 0 })
   expect(box).toBe('please /rev /plain ')
   await ui.unmount()
 })
@@ -167,12 +171,12 @@ test('the agents tab groups agents by model and a click mentions one in the prom
     return { isFilled: true }
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('state.set', () => ({ value: undefined }))
+  on('state.set', () => ({ value: undefined }) as never)
 
   await $.session.start({ cwd: '/h' } as never)
   const ui = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
   expect(JSON.stringify(await ui.drawn({ in: 'skills-agents' }))).toContain('2')
-  await ui.pointer({ in: 'skills-agents', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'skills-agents', type: 'down', button: 'left', x: 1, y: 0 })
 
   // haiku before inherit; an agent without a model is "inherit", one without tools gets every tool.
   const cloud = JSON.stringify(await ui.drawn({ in: 'agents-cloud' }))
@@ -180,7 +184,7 @@ test('the agents tab groups agents by model and a click mentions one in the prom
   expect(await ui.find({ type: 'Text', text: '@agent-finder' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '· 2 tools' })).toBeDefined()
 
-  await ui.pointer({ in: 'agents-cloud', type: 'down', button: 'left', x: 14, y: 2 })
+  await pointing(ui).pointer({ in: 'agents-cloud', type: 'down', button: 'left', x: 14, y: 2 })
   expect(box).toBe('@agent-helper ')
   await ui.unmount()
 })
@@ -191,7 +195,7 @@ test("the agents tab adds the project's agents, which win over a same-named one 
     '/p/.claude/agents/finder.md': '---\nname: finder\ndescription: The project finder\nmodel: sonnet\n---\nbody',
     '/p/.claude/agents/local.md': '---\nname: local\ndescription: Only here\n---\nbody',
   }
-  const file = (name: string) => ({ name, kind: 'file', size: 0, mtimeMs: 0, isLink: false })
+  const file = (name: string) => ({ name, kind: 'file' as const, size: 0, mtimeMs: 0, isLink: false })
   on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
   on('fs.list', (_$, e) => {
     const path = neutral(e.path)
@@ -206,12 +210,12 @@ test("the agents tab adds the project's agents, which win over a same-named one 
   })
   stubSession(on)
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('state.set', () => ({ value: undefined }))
+  on('state.set', () => ({ value: undefined }) as never)
 
   await $.session.start({ cwd: 'C:\\p' } as never)
   const ui = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
   expect(JSON.stringify(await ui.drawn({ in: 'skills-agents' }))).toContain('3')
-  await ui.pointer({ in: 'skills-agents', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'skills-agents', type: 'down', button: 'left', x: 1, y: 0 })
   const cloud = JSON.stringify(await ui.drawn({ in: 'agents-cloud' }))
   expect(cloud).toContain('local')
   expect(cloud).toContain('sonnet')
@@ -222,7 +226,7 @@ test("the agents tab adds the project's agents, which win over a same-named one 
 test('the command toggles: it opens a closed pane and closes an open one', async ($, on) => {
   let open: string[] = []
   const calls: string[] = []
-  on('ui.panes', () => ({ value: open.map(id => ({ id, isPlaced: true })) }))
+  on('ui.panes', () => ({ value: open.map(id => ({ id, isPlaced: true })) as never }))
   on('ui.open', (_$, e) => {
     calls.push(`open ${e.id}`)
     open = [e.id]
@@ -231,11 +235,11 @@ test('the command toggles: it opens a closed pane and closes an open one', async
   on('ui.close', (_$, e) => {
     calls.push(`close ${e.id}`)
     open = []
-    return { value: undefined }
+    return { value: undefined } as never
   })
 
-  await $.command.run({ command: 'mod-skill-panel' })
-  await $.command.run({ command: 'mod-skill-panel' })
+  await $.command.run({ command: 'mod-skill-panel' } as never)
+  await $.command.run({ command: 'mod-skill-panel' } as never)
   expect(calls).toEqual(['open skill-panel', 'close skill-panel'])
 })
 
@@ -263,7 +267,7 @@ test('the title tabs swap the sidebar and its settings, and a settings pill save
   stubSkills(on)
   let open: string[] = []
   const calls: string[] = []
-  on('ui.panes', () => ({ value: open.map(id => ({ id, isPlaced: true })) }))
+  on('ui.panes', () => ({ value: open.map(id => ({ id, isPlaced: true })) as never }))
   on('ui.open', (_$, e) => {
     calls.push(`open ${e.id}`)
     open = [e.id]
@@ -272,31 +276,31 @@ test('the title tabs swap the sidebar and its settings, and a settings pill save
   on('ui.close', (_$, e) => {
     calls.push(`close ${e.id}`)
     open = open.filter(id => id !== e.id)
-    return { value: undefined }
+    return { value: undefined } as never
   })
   on('config.list', () => ({ value: [{ key: 'mod-skill-panel.animations', label: 'Animations', kind: 'boolean', value: true, description: 'd' }] }) as never)
   const saved: unknown[] = []
-  on('config.set', (_$: unknown, e: { key: string; value: unknown }) => {
+  on('config.set', (_$, e) => {
     saved.push([e.key, e.value])
-    return { value: e.value }
+    return { value: e.value } as never
   })
   const pane = (requestId: string) =>
     ({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId, props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } }) as never
 
-  await $.command.run({ command: 'mod-skill-panel' })
+  await $.command.run({ command: 'mod-skill-panel' } as never)
   const ui = await $.ui.mount(pane('skill-panel'))
   // The open tab does nothing.
-  await ui.pointer({ in: 'skills-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'skills-tab', type: 'down', button: 'left', x: 1, y: 0 })
   expect(calls).toEqual(['open skill-panel'])
-  await ui.pointer({ in: 'skills-settings', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'skills-settings', type: 'down', button: 'left', x: 1, y: 0 })
   expect(calls).toEqual(['open skill-panel', 'close skill-panel', 'open skill-panel-settings'])
   await ui.unmount()
 
   const settings = await $.ui.mount(pane('skill-panel-settings'))
   expect(await settings.find({ type: 'Text', text: 'Animations' })).toBeDefined()
-  await settings.pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(settings).pointer({ in: 'setting-0-flip', type: 'down', button: 'left', x: 1, y: 0 })
   expect(saved).toEqual([['mod-skill-panel.animations', false]])
-  await settings.pointer({ in: 'skills-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  await pointing(settings).pointer({ in: 'skills-tab', type: 'down', button: 'left', x: 1, y: 0 })
   expect(calls.slice(-2)).toEqual(['close skill-panel-settings', 'open skill-panel'])
   await settings.unmount()
 })
@@ -308,10 +312,10 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
   })
   on('fs.list', () => ({ value: [] }))
   on('env.get', () => ({ value: '/h' }))
-  on('ui.panes', () => ({ value: opened.filter(id => !opened.includes(`close ${id}`)).map(id => ({ id, isPlaced: true })) }))
+  on('ui.panes', () => ({ value: opened.filter(id => !opened.includes(`close ${id}`)).map(id => ({ id, isPlaced: true })) as never }))
   on('ui.close', (_$, e) => {
     opened.push(`close ${e.id}`)
-    return { value: undefined }
+    return { value: undefined } as never
   })
   on('ui.open', (_$, e) => {
     opened.push(e.id)
@@ -331,17 +335,17 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
   const idle = await $.ui.mount(band)
   expect(await idle.find({ type: 'Text', text: 'other mod' })).toBeDefined()
   // The pointer on the entry shows its tip under the row, and leaving takes it away.
-  await idle.pointer({ type: 'move', x: 1, y: 0, in: 'menu-entry-skills' })
-  expect(await idle.find({ type: 'Text', text: 'Skills:', bold: true })).toBeDefined()
+  await pointing(idle).pointer({ type: 'move', x: 1, y: 0, in: 'menu-entry-skills' })
+  expect(await idle.find({ type: 'Text', text: 'Skills:', bold: true } as never)).toBeDefined()
   expect(await idle.find({ type: 'Text', text: /^ browse your skills/ })).toBeDefined()
-  await idle.pointer({ type: 'leave', x: 0, y: 0, in: 'menu-entry-skills' })
+  await pointing(idle).pointer({ type: 'leave', x: 0, y: 0, in: 'menu-entry-skills' })
   expect(await idle.find({ type: 'Text', text: 'Skills:' })).toBeUndefined()
-  await idle.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
+  await pointing(idle).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(opened).toEqual(['skill-panel'])
   await idle.unmount()
 
   const busy = await $.ui.mount(band)
-  await busy.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
+  await pointing(busy).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(opened).toEqual(['skill-panel', 'close skill-panel'])
   await busy.unmount()
 })
@@ -370,18 +374,18 @@ test('a pane that waits says why in a wrapped card above the row, not in Claude 
     props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} },
   })
 
-  await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
+  await pointing(band).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(await band.find({ type: 'Text', text: 'Skills panel waiting: unasked below 144 columns (99 now)' })).toBeDefined()
   expect(engineToasts).toEqual([])
   // Hovering the × leaves the card; a click on it dismisses.
-  await band.pointer({ type: 'move', x: 0, y: 0, in: 'toast-skills-1' })
+  await pointing(band).pointer({ type: 'move', x: 0, y: 0, in: 'toast-skills-1' })
   expect(await band.find({ type: 'Text', text: 'Dismiss:' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeDefined()
-  await band.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'toast-skills-1' })
+  await pointing(band).pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'toast-skills-1' })
   expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeUndefined()
 
   // A second one leaves on its own after the timeout.
-  await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
+  await pointing(band).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeDefined()
   await clock.advance(4000)
   expect(await band.find({ type: 'Text', text: /^Skills panel waiting/ })).toBeUndefined()
@@ -395,7 +399,7 @@ test('its entry shimmers from the click until the pane draws', async ($, on) => 
   })
   on('fs.list', () => ({ value: [] }))
   on('env.get', () => ({ value: '/h' }))
-  on('ui.panes', () => ({ value: opened.map(id => ({ id, isPlaced: true })) }))
+  on('ui.panes', () => ({ value: opened.map(id => ({ id, isPlaced: true })) as never }))
   on('ui.open', (_$, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true } }
@@ -415,7 +419,7 @@ test('its entry shimmers from the click until the pane draws', async ($, on) => 
   const letters = async () => JSON.stringify(await band.drawn({ in: 'menu-entry-skills' })).split('"type":"Text"').length - 1
   expect(await letters()).toBe(1)
 
-  await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
+  await pointing(band).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-skills' })
   expect(await letters()).toBe(' Skills '.length)
 
   const pane = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 60 } } as never)
@@ -434,7 +438,7 @@ test('its entry joins the row another panel opened, above the hint line', async 
       { type: 'Box', props: { key: 'menu-row', flexDirection: 'row' }, children: [{ type: 'Text', props: {}, children: ['Mods'] }] },
       { type: 'Text', props: {}, children: ['? for shortcuts'] },
     ],
-  }))
+  }) as never)
 
   const ui = await $.ui.mount({
     plugin: 'mod-skill-panel',
@@ -453,7 +457,7 @@ test('its entry joins the row another panel opened, above the hint line', async 
 test('a hovered tab or chip puts its tip in the pane footer, and leaving clears it', async ($, on) => {
   on('session.start', () => ({ cwd: '/h' }))
   on('command.register', () => ({ value: { command: 'mod-skill-panel' } }))
-  on('state.set', () => ({ value: undefined }))
+  on('state.set', () => ({ value: undefined }) as never)
   const ui = await skillsPane($, on)
   await $.session.start({ cwd: '/h' } as never)
   expect(await ui.find({ type: 'Text', text: /^ · / })).toBeUndefined()
