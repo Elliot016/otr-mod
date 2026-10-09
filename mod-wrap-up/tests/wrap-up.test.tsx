@@ -4,6 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { buildPrompt, clampWords, compactNote, isFresh, parseThreads, scopeNote, skillBody } from '../hooks/handoff'
 import { CAPS, THEME } from '../hooks/theme'
+declare const setTimeout: (run: (value: unknown) => void, ms: number) => unknown
 
 const SKILL = '---\nname: session-handoff\ndescription: x\n---\n\n# session-handoff\n\nWrite one message.'
 const USAGE = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
@@ -104,7 +105,7 @@ test('the idle pill reads Wrap up; the pointer opens Handoff and Compact and lig
   expect(await label(band, 'wrap-up-entry')).not.toContain(THEME.lifted)
 
   await band.pointer({ type: 'move', x: OPTION_X.safe.compact, y: 0, in: 'wrap-up-entry' } as never)
-  const drawn = await band.drawn({ in: 'wrap-up-entry' }) as { children: { children: { props: { color: string }; children: string[] }[] }[] }
+  const drawn: { children: { children: { props: { color: string }; children: string[] }[] }[] } = await band.drawn({ in: 'wrap-up-entry' }) as never
   const lit = drawn.children.flatMap(child => child.children ?? []).filter(text => text.props?.color === THEME.accent)
   expect(lit.map(text => text.children.join(''))).toEqual([' Compact '])
   expect(await label(band, 'wrap-up-entry')).not.toContain(THEME.lifted)
@@ -285,7 +286,7 @@ test('a refused /clear falls back to /clear in the composer and keeps the handof
 
 test('the typed command opens the card, in Compact mode with `compact`', async ($, on) => {
   const w = world(on, answered)
-  const done = await $.command.run({ command: 'mod-wrap-up', args: 'compact' })
+  const done = await $.command.run({ command: 'mod-wrap-up', args: 'compact' } as never)
   expect(done.text).toBe('Pick what carries over above the prompt')
   const band = await $.ui.mount(BAND())
   expect(await label(band, 'wrap-up-entry')).toContain(THEME.lifted)
@@ -322,7 +323,7 @@ test('on auto the saved icons draw while the font is read beside session.start, 
   on('session.start', () => ({ cwd: '/w' }))
   on('command.register', () => ({ value: { command: 'mod-wrap-up' } }))
   on('ui.panes', () => ({ value: [] }))
-  on('state.set', () => ({ value: undefined }))
+  on('state.set', () => ({ value: undefined }) as never)
 
   // The font read is still held here, so a session.start that waited on it would never return.
   await $.session.start({ cwd: '/w' } as never)
@@ -373,7 +374,7 @@ test('max_words reaches the fork prompt', { options: { max_words: 250 } }, async
 
 test('the settings pane draws its title, status line and settings', { options: { icons: 'safe' } }, async ($, on) => {
   world(on, answered)
-  on('config.list', () => ({ value: [{ key: 'mod-wrap-up.max_words', label: 'Handoff length', value: 400, kind: 'number', description: 'cap' }] }))
+  on('config.list', () => ({ value: [{ key: 'mod-wrap-up.max_words', label: 'Handoff length', value: 400, kind: 'number', description: 'cap' }] }) as never)
   const pane = await $.ui.mount({
     plugin: 'mod-wrap-up',
     surface: 'terminal',
@@ -410,10 +411,10 @@ test('a hovered pill part and card control show their tip in the tip row, and cl
 test('the settings pane footer shows the tip of the hovered tab', { options: { icons: 'safe' } }, async ($, on) => {
   world(on, answered)
   on('config.list', () => ({ value: [] }))
-  const pane = await $.ui.mount({ plugin: 'mod-wrap-up', surface: 'terminal', component: 'Pane', requestId: 'wrap-up', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
-  await pane.pointer({ in: 'mod-wrap-up-settings-tab', type: 'move', x: 1, y: 0 })
+  const pane: Awaited<ReturnType<typeof $.ui.mount>> & Pick<Band, 'pointer'> = await $.ui.mount({ plugin: 'mod-wrap-up', surface: 'terminal', component: 'Pane', requestId: 'wrap-up', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never) as never
+  await pane.pointer({ in: 'mod-wrap-up-settings-tab', type: 'move', x: 1, y: 0 } as never)
   expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeDefined()
-  await pane.pointer({ in: 'mod-wrap-up-settings-tab', type: 'leave', x: 0, y: 0 })
+  await pane.pointer({ in: 'mod-wrap-up-settings-tab', type: 'leave', x: 0, y: 0 } as never)
   expect(await pane.find({ type: 'Text', text: " · shows this mod's settings" })).toBeUndefined()
   await pane.unmount()
 })
