@@ -199,7 +199,8 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('tool.call', { tool: EDIT_TOOLS }, async ($, e, next) => {
+  // The host accepts a list of tools here, yet its types name a single one.
+  on('tool.call', { tool: EDIT_TOOLS as unknown as 'Edit' }, async ($, e, next) => {
     const path = pathOf(e as unknown as Record<string, unknown>)
     if (!path) return next(e)
 
@@ -246,6 +247,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-collision-guard.'))
     // A saved change reloads this mod, which redraws the panel with the new value.

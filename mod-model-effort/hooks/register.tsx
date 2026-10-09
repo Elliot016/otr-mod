@@ -352,7 +352,7 @@ export const register: Register = (on, options) => {
     // Claude Code reads the saved level only at startup, so a clicked level rides on each request until Alt+P or /effort saves another.
     if (override) {
       const settings = await $.settings.read({ source: 'user' })
-      const saved = settings.modelSettings?.[e.model]?.effortLevel
+      const saved = (settings.modelSettings as Record<string, { effortLevel?: unknown } | undefined> | undefined)?.[e.model]?.effortLevel
       if (saved !== override.effort && saved !== override.before) override = null
     }
     const effort = override?.effort ?? e.effort
@@ -451,6 +451,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-model-effort.'))
 

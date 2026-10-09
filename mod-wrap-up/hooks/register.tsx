@@ -393,7 +393,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!e.agentId) {
+    if (!(e as { agentId?: string }).agentId) {
       working = true
       $.ui.invalidate('ui.render')
     }
@@ -417,7 +417,8 @@ export const register: Register = (on, options) => {
   })
 
   on('state.set', async ($, e, next) => {
-    if (e.key === 'pane' && e.plugin !== 'mod-wrap-up' && e.value === true) {
+    // The declared state names no other mod's pane, so the types narrow this event to never.
+    if (e.key === 'pane' && e.plugin !== 'mod-wrap-up' && (e as { value?: unknown }).value === true) {
       $.clock.after(0, async () => {
         if (!(await isOpen($))) return
         await $.ui.close({ id: PANE })
@@ -497,6 +498,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     if (e.requestId !== PANE) return next(e)
 
+    // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-wrap-up.'))
     const run = async (_action: Action) => openCard($, 'handoff')
