@@ -46,8 +46,9 @@ export class PromptNumbers {
     // A subagent's report is a meta row, which is not a prompt the person sent, so it takes no number.
     if (row.type === 'user' && !row.isMeta && !row.isCompactSummary && !(Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result'))) {
       this.add(row.uuid, userText(content))
-    } else if (row.type === 'attachment' && row.attachment?.type === 'queued_command' && !row.attachment.isMeta && typeof row.attachment.prompt === 'string') {
-      this.add(row.uuid, row.attachment.prompt)
+    } else if (row.type === 'attachment' && row.attachment?.type === 'queued_command' && !row.attachment.isMeta) {
+      // A prompt with an image holds content blocks, not a string.
+      this.add(row.uuid, userText(row.attachment.prompt))
     }
   }
 

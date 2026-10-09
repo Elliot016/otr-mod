@@ -17,6 +17,12 @@ const feed = (lines: string[]) => {
 const shown = (numbers: PromptNumbers) => numbers.numbered().map(prompt => [prompt.number, prompt.text])
 const draws = (...pairs: [string, string][]) => pairs.map(([id, text]) => ({ id, text }))
 
+test('a prompt sent mid-turn with an image, stored as content blocks, takes its number in place', () => {
+  const queued = row(3, 2, { type: 'attachment', attachment: { type: 'queued_command', prompt: [{ type: 'text', text: '[Image #1] the header' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBOR' } }] } })
+  const numbers = feed([user(1, null, 'first'), said(2, 1), queued, user(4, 3, 'push it')])
+  expect(shown(numbers)).toEqual([[1, 'first'], [2, '[Image #1] the header'], [3, 'push it']])
+})
+
 test('a prompt the transcript holds is numbered from the file, though the mod never saw it sent', () => {
   const numbers = feed([user(1, null, 'first'), said(2, 1), user(3, 2, 'second'), said(4, 3)])
   expect(shown(numbers)).toEqual([[1, 'first'], [2, 'second']])
