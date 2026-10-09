@@ -484,7 +484,7 @@ const CRITICAL_DIR_NAMES = [
   'spaces', 'chatbot',
   'warehouse', 'supabase',
   'bundle',
-  'pipeline', 'factory', 'linkedService', 'adf-shop-prod', 'dataset',
+  'pipeline', 'factory', 'linkedService', 'dataset',
 ]
 const CRITICAL_DIRS = CRITICAL_DIR_NAMES.join('|')
 

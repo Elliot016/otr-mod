@@ -53,7 +53,6 @@ const TABLE: Row[] = [
   ['rm -rf pipeline', 'rm', CRITICAL],
   ['rm -rf factory', 'rm', CRITICAL],
   ['rm -rf linkedService', 'rm', CRITICAL],
-  ['rm -rf adf-shop-prod', 'rm', CRITICAL],
   ['rm --recursive dataset', 'rm', CRITICAL],
   ['rm -rf srcs', 'rm', RECURSIVE],
   // recursive, then plain file deletion
