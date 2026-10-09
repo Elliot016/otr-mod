@@ -224,12 +224,24 @@ test("a file row ends in the open mark; a click on it opens the file instead of 
   const ui = await $.ui.mount(PANE)
   // Safe mode pads the mark inside its surface-3 pill.
   expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain(`"backgroundColor":"${THEME.surface3}"},"children":[" ↗ "]`)
-  // The pane is 70 columns, the rows 66 cells: the mark is the last one.
-  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
+  // The pane is 70 columns, the rows 64 cells: the mark is the last one.
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 63, y: 0 })
   // VS Code first; without it, the system's opener.
   expect(ran).toEqual(['code /w/only.md', 'open /w/only.md'])
   expect(await ui.find({ type: 'Text', text: /^. Opened only\.md in its default app/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /only\.md was only read/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+const textOf = (node: unknown): string =>
+  typeof node === 'string' ? node : Array.isArray(node) ? node.map(textOf).join('') : node && typeof node === 'object' ? textOf((node as { children?: unknown }).children) : ''
+
+test('a row fills the section exactly: the pane less its padding, the section border and its padding', async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Read', file_path: '/w/block-destructive-with-askuser.py' } as never)
+  const ui = await $.ui.mount(PANE)
+  // A row one cell too wide makes the host clip the last letter of a long name.
+  expect(cells(textOf(await ui.drawn({ in: 'list-0' })))).toBe(64)
   await ui.unmount()
 })
 

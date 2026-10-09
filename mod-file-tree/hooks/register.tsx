@@ -711,8 +711,8 @@ export const register: Register = (on, options) => {
         </Box>
       ), `${key}-bar`, THEME.bg)
 
-    // The pane and the section each pad one column on both sides.
-    const width = Math.max(20, e.props.bodyColumns - 4)
+    // The pane pads one column on both sides, the section its border and one more column.
+    const width = Math.max(20, e.props.bodyColumns - 6)
     const tree =
       rows.length === 0
         ? <Text key="tree-empty" color={THEME.muted}>{text.treeEmpty}</Text>
