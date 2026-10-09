@@ -147,7 +147,7 @@ test('recording prunes own entries older than the window', async ($, on) => {
 
 test('session.end empties the session log, and clear does the same on request', async ($, on) => {
   const w = world(on, {})
-  on('command.register', () => ({ value: undefined }))
+  on('command.register', () => ({ value: undefined }) as never)
   on('session.end', () => ({ sessionId: 'mine' }))
   await call($)
   expect(JSON.parse(w.files[`${DIR}/mine.json`]!)).toHaveLength(1)
@@ -155,7 +155,7 @@ test('session.end empties the session log, and clear does the same on request', 
   expect(w.files[`${DIR}/mine.json`]).toBe('[]')
 
   await call($)
-  await $.command.run({ command: 'mod-collision-guard', args: 'clear' })
+  await $.command.run({ command: 'mod-collision-guard', args: 'clear' } as never)
   expect(w.files[`${DIR}/mine.json`]).toBe('[]')
 })
 
