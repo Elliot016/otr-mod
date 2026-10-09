@@ -1,6 +1,6 @@
 // mod-menu / hooks/register.tsx, by v-amorim
 // Registers the command that hides or shows the panel pills above the prompt.
-import type { Register } from 'claude-code'
+import type { Register, RenderChildren } from 'claude-code'
 
 import { isTipMessage, tipText } from './entry'
 import { splitRow, tipLine } from './pills'
@@ -42,7 +42,7 @@ export const register: Register = on => {
     const { group, row } = splitRow(others)
     // Only a row another mod drew has a tip site to fill; the rest passes through.
     if (group.length === 0 && row.length === 0) return others
-    const children = (others as { children?: unknown[] }).children ?? []
+    const children = (others as { children?: RenderChildren[] }).children ?? []
 
     return <Box key="menu-rows" flexDirection="column">{children.map(child => ((child as { props?: { key?: string } }).props?.key === 'menu-tip' ? tipLine({ Box, Text }, hoveredTip) : child))}</Box>
   })
