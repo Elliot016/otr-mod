@@ -62,6 +62,19 @@ test('a call drawn before its input streams in gets the input later, and never s
   expect(turnLine(last)).toContain('Edit(hooks/b.ts)')
 })
 
+test("a background agent's call stays out of the main turn, whether its row draws before or after the call is known as the agent's", () => {
+  const log = logOf(TRANSCRIPT)
+  const last = log.turns[log.turns.length - 1]!
+  log.claimCall('toolu_main', 'Bash', { command: 'git status' }, false, {})
+  log.claimCall('toolu_early', 'Write', { file_path: '/w/hooks/ledger.ts', content: 'a\nb' }, false, {})
+  log.dropForeign('toolu_early')
+  log.dropForeign('toolu_late')
+  log.claimCall('toolu_late', 'Edit', { file_path: '/w/hooks/text.ts', old_string: 'a', new_string: 'b' }, false, {})
+  expect(last.tools.map(call => call.id)).toEqual(['toolu_main'])
+  expect(log.turnOf('toolu_early')).toBeUndefined()
+  expect(log.callOf('toolu_late')).toBeUndefined()
+})
+
 test('a call first seen finished shows no time, and a later output with the patch fills in its counts', () => {
   const log = new TurnLog()
   log.claim(ID(50), 'prompt')

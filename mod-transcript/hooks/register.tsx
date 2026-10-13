@@ -1009,6 +1009,15 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on('tool.call', async ($, e, next) => {
+    if (e.agentId && e.tool_use_id) {
+      log.dropForeign(e.tool_use_id)
+      $.ui.invalidate('ui.render')
+    }
+
+    return next(e)
+  })
+
   on('turn.start', async ($, e, next) => {
     if (!(e as { agentId?: string }).agentId) working = true
 

@@ -129,6 +129,7 @@ export class TurnLog {
   private last: string | undefined
   private numbers: Map<Turn, number> | undefined
   private calls = new Map<string, ToolCall>()
+  private foreign = new Set<string>()
   private thinking: string | undefined
 
   feed(line: string) {
@@ -221,6 +222,7 @@ export class TurnLog {
 
   // A tool row drawn after the transcript was read: the call joins the latest turn, and ends once its row stops running.
   claimCall(id: string, name: string, input: any, isRunning: boolean, output: any, isFailed = false, at = Date.now()) {
+    if (this.foreign.has(id)) return
     let call = this.calls.get(id)
     if (!call) {
       const current = this.turns[this.turns.length - 1]
@@ -268,6 +270,18 @@ export class TurnLog {
 
   callOf(toolUseId: string) {
     return this.calls.get(toolUseId)
+  }
+
+  // A background agent's rows draw in the main view too, sometimes before its call names the agent, so a claim already made is undone.
+  dropForeign(toolUseId: string) {
+    this.foreign.add(toolUseId)
+    const call = this.calls.get(toolUseId)
+    const turn = this.byId.get(toolUseId)
+    if (!call || !turn) return
+    turn.tools = turn.tools.filter(item => item !== call)
+    turn.ids.delete(toolUseId)
+    this.byId.delete(toolUseId)
+    this.calls.delete(toolUseId)
   }
 
   // The number mod-prompts gives the prompt: its place among the prompts on the live branch (the parent chain from the last row, so /rewind's abandoned rows drop out), oldest first.
