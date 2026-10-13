@@ -2,6 +2,7 @@
 // Registers the wrap-up pill, commands, settings pane and handoff or compact actions with the engine.
 import type { ConfigValue, EngineInterface, ModelForkResult, Register, RenderElement } from 'claude-code'
 
+import { AUTO_SYSTEM, autoPrompt, capWords, clampCompactAt, clampCompactTokens, clampEvery, emptyLedger, flip, isDue, mergeDelta, mergeInstructions, parseRelated, parseUpdate, projectSlug, readLedger, RELATED_SYSTEM, relatedPrompt, restoreContext, shortGoal, shouldCompact, yieldsToManual, type Carry, type CompactMarks, type Ledger } from './ledger'
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
 import { detectNerd, FOOTER_ROWS, heading, lookFor, paneFooter, type IconMode, withMark } from './look'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
@@ -19,6 +20,32 @@ const PANE = 'wrap-up'
 let iconMode: IconMode = 'auto'
 let maxWords = clampWords(undefined)
 let look = lookFor(false)
+
+// The automatic handoff, fixed per activation like the settings above.
+let autoOn = true
+let every = 1
+let marks: CompactMarks = { percent: 65, tokens: 400_000 }
+let compactOn = false
+
+// Counters that reset on a compaction, a clear or a newer run; a result that finds them moved is stale and dropped.
+let turnsSince = 0
+let runId = 0
+let epoch = 0
+let cursor = 0
+// A clear waits for the first prompt to decide; a compaction waits for the next one to carry the handoff.
+let awaitFirst = false
+let inject = false
+let manualAt: number | null = null
+let ledgerPath = ''
+
+// The chain this process works on: the session id it started with, kept across /compact and a carried /clear.
+let chain = ''
+let clearedFrom = ''
+// The first prompt after a clear was carried or started fresh; held is the other chain a switch brings back.
+type Choice = { carry: Carry; goal: string; token: number }
+let choice: Choice | null = null
+let choiceToken = 0
+let held: string | null = null
 
 let working = false
 let isRunning = false
@@ -196,7 +223,7 @@ async function finishCard($: EngineInterface) {
     await startHandoff($, scopeNote(picked.threads ?? [], keptThreads(picked), picked.also))
     return
   }
-  const instructions = compactNote(picked.threads ?? [], keptThreads(picked), picked.also)
+  const instructions = compactNote(picked.threads ?? [], keptThreads(picked), picked.also, autoOn ? await ledgerFile($) : '')
   const filled = await $.prompt.fill({ text: instructions ? `/compact ${instructions}` : '/compact', mode: 'replace' })
   say($, filled.isFilled ? `${MARK.ok} ${text.compactFilled}` : `${MARK.warn} ${text.compactNotFilled}`)
 }
@@ -225,7 +252,8 @@ async function startHandoff($: EngineInterface, scope: string) {
     $.ui.invalidate('ui.render')
     say($, text.writing)
     const skill = await $.fs.read(`${$.plugin.root}/skills/session-handoff/SKILL.md`).then(String)
-    const prompt = scope ? `${buildPrompt(skill, maxWords)}\n\n${scope}` : buildPrompt(skill, maxWords)
+    const base = buildPrompt(skill, maxWords, autoOn ? await ledgerFile($) : '')
+    const prompt = scope ? `${base}\n\n${scope}` : base
     let result = await $.model.fork({ prompt })
     if (!result.isAnswered && result.reason === 'nothing-to-fork') result = await summarizeTranscript($, prompt)
     if (!result.isAnswered) {
@@ -241,7 +269,8 @@ async function startHandoff($: EngineInterface, scope: string) {
       say($, `${MARK.warn} ${text.startedWorking}`)
       return
     }
-    await $.store.set('pending', { text: summary, at: await $.clock.now() })
+    manualAt = await $.clock.now()
+    await $.store.set('pending', { text: summary, at: manualAt })
     try {
       await $.command.run({ command: 'clear' })
     } catch {
@@ -267,6 +296,179 @@ async function answer($: EngineInterface, args: string) {
   }
   openCard($, args.trim() === 'compact' ? 'compact' : 'handoff')
   return text.cardOpened
+}
+
+// One folder per project under the mod's data dir; empty when the home folder is unknown.
+async function ledgerDir($: EngineInterface) {
+  try {
+    const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+    if (!home) return ''
+    const dir = `${home}/.claude/mods-data/mod-wrap-up/${projectSlug(await $.session.cwd())}`
+    // A reload mid-session forgets the chain; the ledger that lists this session or the one before a clear still names it.
+    if (!chain) {
+      const id = await $.session.id()
+      chain = (await chainOf($, dir, id)) ?? (clearedFrom ? await chainOf($, dir, clearedFrom) : undefined) ?? id
+    }
+    return dir
+  } catch {
+    return ''
+  }
+}
+
+async function ledgerFile($: EngineInterface) {
+  const dir = await ledgerDir($)
+  if (dir) ledgerPath = fileOf(dir)
+  return ledgerPath
+}
+
+// One file per chain, so sessions sharing a folder never read or write each other's ledger.
+const fileOf = (dir: string, of = chain) => `${dir}/ledgers/${of}.json`
+
+const loadLedger = async ($: EngineInterface, dir: string, of = chain) => readLedger(await $.fs.read(fileOf(dir, of)).then(String).catch(() => ''))
+
+const saveLedger = ($: EngineInterface, dir: string, ledger: Ledger, of = chain) => $.fs.write(fileOf(dir, of), JSON.stringify(ledger, null, 1))
+
+const withSession = (ledger: Ledger, id: string) => ({ ...ledger, sessions: ledger.sessions.includes(id) ? ledger.sessions : [...ledger.sessions, id] })
+
+// A resumed session's chain is the ledger that already lists it.
+async function chainOf($: EngineInterface, dir: string, id: string) {
+  const entries = await $.fs.list(`${dir}/ledgers`).catch(() => [])
+  for (const entry of entries) {
+    if (entry.kind !== 'file' || !entry.name.endsWith('.json')) continue
+    const of = entry.name.slice(0, -'.json'.length)
+    if ((await loadLedger($, dir, of))?.sessions.includes(id)) return of
+  }
+  return undefined
+}
+
+// A startup starts its own chain; a resume (the transcript has messages) picks its chain back up.
+async function openLedger($: EngineInterface) {
+  const dir = await ledgerDir($)
+  if (!dir) return
+  const id = await $.session.id()
+  const messages = await $.session.messages().catch(() => [])
+  chain = Array.isArray(messages) && messages.length > 0 ? ((await chainOf($, dir, id)) ?? id) : id
+  if (!(await loadLedger($, dir))) await saveLedger($, dir, emptyLedger(await $.clock.now(), id))
+  await ledgerFile($)
+}
+
+// Sonnet reads the ledger and the turns since the last update, never the last handoff, then the delta merges into the ledger on disk.
+// The mod's own compaction skips its session.compact hook, so it hands over the handoff and resets the cursor itself.
+async function compactIfFull($: EngineInterface) {
+  if (!autoOn || !compactOn || working) return
+  const { context } = await $.session.usage()
+  if (!shouldCompact(context ?? {}, marks)) return
+  const dir = await ledgerDir($)
+  const ledger = dir ? await loadLedger($, dir) : null
+  $.ui.toast(fill(text.auto.compacting, { tokens: `${Math.round((context.tokens ?? 0) / 1000)}K`, percent: Math.round(context.percent ?? 0) }))
+  const result = await $.session.compact(ledger?.handoff ? { instructions: mergeInstructions(undefined, ledger.handoff, fileOf(dir)) } : {}).catch(() => null)
+  if (result && 'messages' in result && result.messages) {
+    cursor = result.messages.length
+    epoch += 1
+    runId += 1
+    inject = true
+  }
+}
+
+async function runAuto($: EngineInterface) {
+  if (!autoOn || isRunning) return
+  const mine = (runId += 1)
+  const mineEpoch = epoch
+  try {
+    const dir = await ledgerDir($)
+    if (!dir) return
+    const ledger = (await loadLedger($, dir)) ?? emptyLedger(await $.clock.now(), await $.session.id())
+    const messages = await $.session.messages()
+    const turns = Array.isArray(messages) && cursor > 0 && cursor <= messages.length ? messages.slice(cursor) : messages
+    if (!Array.isArray(turns) || turns.length === 0) return
+    const skill = await $.fs.read(`${$.plugin.root}/skills/session-handoff/SKILL.md`).then(String)
+    const reply = await $.model.complete({ model: 'sonnet', effort: 'low', system: AUTO_SYSTEM, prompt: autoPrompt(skill, maxWords, ledger, transcriptText(turns, 150_000)), maxTokens: 4000, timeoutMs: 180_000 }).catch(() => null)
+    if (mine !== runId || mineEpoch !== epoch || !reply?.isAnswered) return
+    const update = parseUpdate(reply.text)
+    if (!update) return
+    const now = await $.clock.now()
+    await saveLedger($, dir, { ...mergeDelta(ledger, update.delta, now), handoff: capWords(update.handoff, maxWords), handoffAt: now })
+    cursor = messages.length
+  } catch {
+    // A background update never shows an error; the next turn tries again.
+  }
+}
+
+// The context a prompt carries after a compaction: the ledger's latest handoff and its path.
+async function restoreFrom($: EngineInterface) {
+  const dir = await ledgerDir($)
+  const ledger = dir ? await loadLedger($, dir) : null
+  return ledger?.handoff ? restoreContext(ledger.handoff, fileOf(dir)) : ''
+}
+
+function showChoice($: EngineInterface, carry: Carry, goal: string) {
+  const token = (choiceToken += 1)
+  choice = { carry, goal, token }
+  $.clock.after(120_000, () => {
+    if (choice?.token !== token) return
+    choice = null
+    $.ui.invalidate('ui.render')
+  })
+  $.ui.invalidate('ui.render')
+}
+
+// The first prompt after a clear: related work keeps the ledger and carries the handoff, unrelated work archives it and starts a new one.
+async function decideAfterClear($: EngineInterface, prompt: string) {
+  const dir = await ledgerDir($)
+  const ledger = dir ? await loadLedger($, dir) : null
+  if (!dir || !ledger || !(ledger.handoff || ledger.goal)) return ''
+  const reply = await $.model.complete({ model: 'sonnet', effort: 'low', system: RELATED_SYSTEM, prompt: relatedPrompt(ledger.goal, ledger.handoff, prompt), maxTokens: 100, timeoutMs: 20_000 }).catch(() => null)
+  const id = await $.session.id()
+  if (!reply?.isAnswered || parseRelated(reply.text)) {
+    await saveLedger($, dir, withSession(ledger, id))
+    showChoice($, 'carried', ledger.goal)
+    return ledger.handoff ? restoreContext(ledger.handoff, fileOf(dir)) : ''
+  }
+  held = chain
+  chain = id
+  await saveLedger($, dir, emptyLedger(await $.clock.now(), id))
+  showChoice($, 'fresh', ledger.goal)
+  return ''
+}
+
+// What a prompt carries beside its text: the post-clear decision once, or the handoff once after a compaction.
+async function promptContext($: EngineInterface, prompt: string) {
+  if (awaitFirst) {
+    // A slash command is not the work the person is starting.
+    if (prompt.trimStart().startsWith('/')) return ''
+    awaitFirst = false
+    return decideAfterClear($, prompt)
+  }
+  if (!inject) return ''
+  inject = false
+  return restoreFrom($)
+}
+
+// The card's switch: leave the carried chain for one of this session's own, or go back to the chain left behind. Neither file is touched beyond who it lists.
+async function flipChoice($: EngineInterface) {
+  if (!choice) return
+  const dir = await ledgerDir($)
+  if (!dir) return
+  const id = await $.session.id()
+  const carry = flip(choice.carry)
+  if (carry === 'fresh') {
+    const left = await loadLedger($, dir)
+    if (left) await saveLedger($, dir, { ...left, sessions: left.sessions.filter(item => item !== id) })
+    held = chain
+    chain = id
+    if (!(await loadLedger($, dir))) await saveLedger($, dir, emptyLedger(await $.clock.now(), id))
+    cursor = 0
+  } else {
+    if (!held) return
+    const back = await loadLedger($, dir, held)
+    if (!back) return
+    ;[chain, held] = [held, chain]
+    await saveLedger($, dir, withSession(back, id))
+    inject = true
+  }
+  runId += 1
+  epoch += 1
+  showChoice($, carry, choice.goal)
 }
 
 type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement; Text: (props: any) => RenderElement }
@@ -300,7 +502,7 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
             <Text key={`wrap-up-thread-detail-${at}`} color={THEME.muted} wrap="truncate-end">{`${MARK.sep} ${thread.detail}`}</Text>
           </Box>
         ))
-  const instructions = compactNote(picked.threads ?? [], keptThreads(picked), picked.also)
+  const instructions = compactNote(picked.threads ?? [], keptThreads(picked), picked.also, autoOn ? ledgerPath : '')
   const foot = picked.mode === 'compact' ? (
     <Box key="wrap-up-foot" flexDirection="row">
       <Text key="wrap-up-foot-command" color={THEME.accent} bold>{'/compact '}</Text>
@@ -327,6 +529,25 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
         {action('wrap-up-go', text.card.go[picked.mode], { subLead: bare(look.glyph.go) }, text.tips.go[picked.mode])}
         {action('wrap-up-cancel', text.card.cancel, {}, text.tips.cancel)}
       </Box>
+    </Box>
+  )
+}
+
+// What the first prompt after a clear did with the earlier work, and a switch that flips it.
+function choiceCard({ Box, Client, Text }: Elements, picked: Choice) {
+  const isCarried = picked.carry === 'carried'
+  const line = isCarried ? (picked.goal ? fill(text.auto.carried, { goal: shortGoal(picked.goal) }) : text.auto.carriedNoGoal) : text.auto.fresh
+  const label = isCarried ? text.auto.toFresh : text.auto.toCarry
+  const close = bare(look.glyph.close)
+  const control = (id: string, name: string, isOpen: boolean, tip: string) =>
+    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label: name, isOpen, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph: close, label: name, text: tip } } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+  return (
+    <Box key="wrap-up-choice-card" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+      <Box key="wrap-up-choice-text" flexGrow={1} flexShrink={1}>
+        <Text color={THEME.onSurface} wrap="truncate-end">{line}</Text>
+      </Box>
+      {control('wrap-up-switch', label, true, isCarried ? text.tips.toFresh : text.tips.toCarry)}
+      {control('wrap-up-switch-close', close, false, text.tips.dismissAuto)}
     </Box>
   )
 }
@@ -366,6 +587,10 @@ export const register: Register = (on, options) => {
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   maxWords = clampWords(options.max_words)
   pickThreads = options.pick_threads !== false
+  autoOn = options.auto_handoff !== false
+  every = clampEvery(options.auto_every)
+  compactOn = options.auto_compact === true
+  marks = { percent: clampCompactAt(options.compact_at), tokens: clampCompactTokens(options.compact_at_tokens) }
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
@@ -377,6 +602,7 @@ export const register: Register = (on, options) => {
     })
     await $.state.set({ plugin: 'mod-wrap-up', key: 'pane' }, await isOpen($))
     $.ui.invalidate('ui.render')
+    if (autoOn) $.clock.after(0, () => void openLedger($).catch(() => undefined))
 
     return next(e)
   })
@@ -385,6 +611,18 @@ export const register: Register = (on, options) => {
 
   // session.start does not fire on /clear, session.end does: that is the cue to fill a waiting handoff.
   on('session.end', async ($, e, next) => {
+    runId += 1
+    epoch += 1
+    turnsSince = 0
+    cursor = 0
+    inject = false
+    choice = null
+    held = null
+    if (e.reason === 'clear') {
+      clearedFrom = e.sessionId
+      awaitFirst = autoOn && !yieldsToManual(manualAt, await $.clock.now())
+      manualAt = null
+    }
     if (e.reason === 'clear' && isFresh(await $.store.get('pending'), await $.clock.now())) {
       $.clock.after(300, () => fillWithRetry($))
     }
@@ -405,9 +643,37 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       working = false
       $.ui.invalidate('ui.render')
+      turnsSince += 1
+      const isUpdate = autoOn && isDue(turnsSince, every)
+      if (isUpdate) turnsSince = 0
+      if (autoOn) $.clock.after(0, () => void (isUpdate ? runAuto($) : Promise.resolve()).then(() => compactIfFull($)))
     }
 
     return next(e)
+  })
+
+  // The handoff goes to the compaction as instructions, after what the person typed. No model call runs here.
+  on('session.compact', async ($, e, next) => {
+    if (!autoOn || e.trigger === 'precompute' || e.agentId) return next(e)
+    const dir = await ledgerDir($)
+    const ledger = dir ? await loadLedger($, dir) : null
+    const result = await next(ledger?.handoff ? { ...e, instructions: mergeInstructions(e.instructions, ledger.handoff, fileOf(dir)) } : e)
+    if ('messages' in result && result.messages) {
+      cursor = result.messages.length
+      epoch += 1
+      runId += 1
+      inject = true
+    }
+
+    return result
+  })
+
+  // classic.SessionStart never reaches a mod without a settings hook, so the next prompt carries what a restore needs.
+  on('prompt.submit', async ($, e, next) => {
+    if (!autoOn || e.origin?.kind !== 'composer' || e.turnId) return next(e)
+    const context = await promptContext($, e.text).catch(() => '')
+
+    return next(context ? { ...e, context: [...(e.context ?? []), context] } : e)
   })
 
   on('ui.close', async ($, e, next) => {
@@ -458,7 +724,7 @@ export const register: Register = (on, options) => {
         <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }] } satisfies ChoiceProps} />
       </Box>
     )
-    const cards = card ? [cardBox({ Box, Client, Text }, card)] : []
+    const cards = [...(choice ? [choiceCard({ Box, Client, Text }, choice)] : []), ...(card ? [cardBox({ Box, Client, Text }, card)] : [])]
 
     return pillRow({ Box, Client, Text }, look.nerd, group, [...row, isRunning ? pill({ Box, Text }, look.nerd, PILL.secondary, body, 'wrap-up-pill') : <Box key="wrap-up-pill" flexDirection="row">{body}</Box>], [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...cards, ...rest], bandTip?.id ? tipLine({ Box, Text }, tipText(bandTip)) : tip, e.props.bodyColumns)
   })
@@ -487,6 +753,11 @@ export const register: Register = (on, options) => {
     if (isChoice && working) $.ui.toast(text.claudeWorkingPill)
     else if (message.id === 'wrap-up-handoff') openCard($, 'handoff')
     else if (message.id === 'wrap-up-compact') openCard($, 'compact')
+    if (message.id === 'wrap-up-switch') await flipChoice($)
+    if (message.id === 'wrap-up-switch-close') {
+      choice = null
+      $.ui.invalidate('ui.render')
+    }
     if (message.id === 'wrap-up-cancel') closeCard($)
     if (message.id === 'wrap-up-go') await finishCard($)
     toggleLine($, message.id)

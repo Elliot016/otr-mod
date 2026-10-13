@@ -32,6 +32,8 @@ Continuing from a previous session. Read this, then act on "Next step".
 
 **Files touched:** absolute path, then a few words on the change.
 
+**Run state:** absolute paths of any plan, progress, ledger or checklist file this session works from, plus any id needed to resume it. When the run names this session's ledger file, list it first. `none` when there is no such file.
+
 **Open tasks:** bullets, in priority order.
 
 **Next step:** the single action to take first.

@@ -39,6 +39,7 @@ Wrap up pill.
 - **Pick what stays:** A click on Wrap up offers Handoff or Compact. Either opens a card with the session's threads, read by Haiku, and fixed items such as files in play and open tasks; a click keeps or drops each line.
 - **Compact:** The card writes the /compact instructions as you click and Fill prompt puts them in the prompt. You review them and press Enter.
 - **Handoff:** Summarizes what stays through a hidden fork with the session-handoff skill, runs /clear, and fills the handoff into the fresh prompt.
+- **Automatic handoff:** After each turn Sonnet keeps a ledger of decisions and tasks, plus a fresh handoff, in the background. /compact is given the handoff and the next prompt carries it. With Auto compact on, it compacts between turns at 400K tokens or 65% of the window, whichever comes first. After /clear, a related first prompt carries it and an unrelated one starts a new ledger; a card offers a switch. Each session keeps its own ledger, so sessions in one folder never mix.
 
 ## Settings
 
@@ -49,6 +50,11 @@ Change them with `/mod-wrap-up settings` or the gear pill.
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 | Handoff length | `400` | Most words the handoff may use. A hard cap on the message the model writes |
 | Read the threads | on | Haiku finds up to four threads. You keep or drop each one when the card opens. Off, the card shows only the fixed items and the whole session counts |
+| Automatic handoff | on | After a turn, Sonnet keeps a ledger of decisions and tasks and a fresh handoff in the background. /compact is given the handoff, and the next prompt after a compaction or a related /clear carries it. Off, only the Wrap up pill hands off |
+| Update every | `1` | Turns between automatic handoff updates, at least 1 |
+| Auto compact | off | Compacts between turns once either mark below is reached, carrying the handoff. Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on |
+| Compact at | `65` | Context percent at which the mod compacts between turns, carrying the handoff. Guards small windows; the token mark comes first on large ones. 0 turns it off. Kept between 50 and 95 |
+| Compact at tokens | `400000` | Context tokens at which the mod compacts between turns, whichever of the two marks comes first. 0 turns it off. Kept between 50000 and 1000000 |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License

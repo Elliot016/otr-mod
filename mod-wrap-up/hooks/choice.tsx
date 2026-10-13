@@ -3,6 +3,7 @@
 import type { ClientModule } from 'claude-code'
 
 import { postTip, type EntryMessage, type Tip } from './entry'
+import style from './style'
 import { CAPS, THEME } from './theme'
 
 // tips: the head's first, then one per option, shown while the pointer is on that part.
@@ -18,8 +19,8 @@ const TICK_MS = 500
 // tipId: the part whose tip was posted last, null once the pointer left.
 type Hover = { over: number; at: number; tipId?: string | null }
 
-// Each option's cells: its label padded by one, plus room for the lifted pill's caps where the font has them.
-const widthOf = (label: string, nerd: boolean) => label.length + 2 + (nerd ? 2 : 0)
+// Each option's cells: the rail before it, then its label padded by one, as the menu spaces its entries.
+const widthOf = (label: string) => 1 + label.length + 2
 
 // The stale-hover watch runs only while the pointer is on the pill, so an idle pill costs no wakeups.
 const timers = new WeakMap<object, () => void>()
@@ -52,7 +53,7 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
   const optionAt = (x: number) => {
     let start = (props.nerd ? 1 : 0) + head.length
     for (const [index, option] of props.options.entries()) {
-      const end = start + widthOf(option.label, props.nerd)
+      const end = start + widthOf(option.label)
       if (x >= start && x < end) return index
       start = end
     }
@@ -77,13 +78,10 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
     // As in the menu group: the pointer turns an option accent, and only the card's mode lifts, as an open panel's entry does.
     const isLifted = props.isIdle && id === props.mode
     const color = !props.isIdle ? THEME.muted : index === over ? THEME.accent : isLifted ? THEME.onSurface : THEME.pill
-    const body = <Text key={`${id}-label`} color={color} bold={isLifted} backgroundColor={isLifted ? THEME.lifted : props.bg}>{` ${label} `}</Text>
-    if (!props.nerd) return <Box key={id} flexDirection="row">{body}</Box>
     return (
       <Box key={id} flexDirection="row">
-        <Text key={`${id}-left`} color={THEME.lifted} backgroundColor={props.bg}>{isLifted ? CAPS.left : ' '}</Text>
-        {body}
-        <Text key={`${id}-right`} color={THEME.lifted} backgroundColor={props.bg}>{isLifted ? CAPS.right : ' '}</Text>
+        <Text key={`${id}-rail`} color={THEME.border} backgroundColor={props.bg}>{style.marks.rail}</Text>
+        <Text key={`${id}-label`} color={color} bold={isLifted} backgroundColor={isLifted ? THEME.lifted : props.bg}>{` ${label} `}</Text>
       </Box>
     )
   }

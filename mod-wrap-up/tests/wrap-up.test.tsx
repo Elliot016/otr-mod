@@ -420,6 +420,33 @@ test('the settings pane footer shows the tip of the hovered tab', { options: { i
   await pane.unmount()
 })
 
+test('the open wrap-up pill spaces its options like the menu, one rail between neighbours, and a click lands on the option drawn there', () => {
+  const posted: any[] = []
+  let pointer: (event: any) => void = () => {}
+  const surface: any = {
+    elements: { Box: (props: any) => props, Text: (props: any) => props },
+    state: undefined,
+    setState: (state: any) => (surface.state = state),
+    every: () => () => {},
+    onPointer: (handler: (event: any) => void) => (pointer = handler),
+    post: (message: any) => posted.push(message),
+  }
+  const tip = { glyph: '', label: '', text: '' }
+  const props = { id: 'wrap', label: 'Wrap up', options: [{ id: 'handoff', label: 'Handoff' }, { id: 'compact', label: 'Compact' }], mode: null, bg: THEME.surface2, nerd: true, isIdle: true, tips: [tip, tip, tip] }
+  const textOf = (node: any): string => {
+    if (typeof node === 'string') return node
+    if (Array.isArray(node)) return node.map(textOf).join('')
+    if (node && typeof node === 'object') return textOf(node.props?.children ?? node.children ?? '')
+    return ''
+  }
+  Choice(props, surface)
+  pointer({ type: 'move', x: 1, y: 0 })
+  const drawn = textOf(Choice(props, surface)).slice(1, -1)
+  expect(drawn).toBe(' Wrap up │ Handoff │ Compact ')
+  pointer({ type: 'down', button: 'left', x: 1 + drawn.indexOf('Compact'), y: 0 })
+  expect(posted.at(-1)).toEqual({ type: 'menu-entry', id: 'compact' })
+})
+
 test('the wrap-up pill at rest runs no timer; a hover watches until the pointer leaves', () => {
   const running = new Set<() => void>()
   let pointer: (event: any) => void = () => {}

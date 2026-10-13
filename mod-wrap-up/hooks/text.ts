@@ -20,7 +20,18 @@ export default {
       "compact": "fills /compact into your prompt"
     },
     "cancel": "closes this card, changes nothing",
-    "tab": "shows this mod's settings"
+    "tab": "shows this mod's settings",
+    "toFresh": "stops carrying the earlier work: its ledger stays on disk and this session starts its own",
+    "toCarry": "brings the earlier work back: this session rejoins its ledger and the next prompt carries its handoff",
+    "dismissAuto": "hides this card, keeps the choice"
+  },
+  "auto": {
+    "compacting": "Context at {tokens} ({percent}%), compacting with the handoff",
+    "carried": "Carried over: {goal}",
+    "carriedNoGoal": "Carried over the earlier handoff",
+    "fresh": "Fresh start",
+    "toFresh": "Start fresh",
+    "toCarry": "Carry in"
   },
   "writingStage": "Writing handoff…",
   "choice": {

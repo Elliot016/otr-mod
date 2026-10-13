@@ -12,8 +12,8 @@ export const clampWords = (value: unknown) => {
 // The skill file without its front matter.
 export const skillBody = (text: string) => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim()
 
-export const buildPrompt = (skillText: string, words: number) =>
-  `${skillBody(skillText)}\n\nWrite the handoff for this conversation now. The cap for this run is ${words} words, which replaces any other cap above.`
+export const buildPrompt = (skillText: string, words: number, ledgerPath = '') =>
+  `${skillBody(skillText)}\n\nWrite the handoff for this conversation now. The cap for this run is ${words} words, which replaces any other cap above.${ledgerPath ? ` This session's ledger file is ${ledgerPath}.` : ''}`
 
 // A handoff waits in the store across the clear; an old one is stale and ignored.
 export const PENDING_MAX_AGE_MS = 120_000
@@ -112,13 +112,14 @@ export function scopeNote(threads: Thread[], kept: Thread[], also: Record<AlsoId
 }
 
 // The instructions after /compact: the kept threads to focus on, what else to keep, the dropped threads to leave out.
-export function compactNote(threads: Thread[], kept: Thread[], also: Record<AlsoId, boolean>) {
+export function compactNote(threads: Thread[], kept: Thread[], also: Record<AlsoId, boolean>, ledgerPath = '') {
   const dropped = threads.filter(thread => !kept.includes(thread))
   const alsoKept = ALSO_KEEP.filter(item => also[item.id]).map(item => item.phrase)
   return [
     kept.length && dropped.length ? `Focus on ${listed(kept.map(thread => thread.label))}.` : '',
     alsoKept.length ? `Keep ${listed(alsoKept)}.` : '',
     dropped.length ? `Leave out ${listed(dropped.map(thread => thread.label))}.` : '',
+    ledgerPath ? `The full ledger is at ${ledgerPath}.` : '',
   ]
     .filter(Boolean)
     .join(' ')
