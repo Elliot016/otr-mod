@@ -988,6 +988,38 @@ test('a prompt sent mid-turn with an image takes its own place and number, and i
   expect(log.numberOf(log.turnAt('drawn-queued-row')!)).toBe(2)
 })
 
+// As Claude Code 2.1.296 writes a prompt typed while a turn ran: queue-operation rows with no uuid, then a plain user row once dequeued.
+test('a prompt drawn while queued, under one id or two, keeps one turn and its number once its plain row lands', () => {
+  const B = 'Run git --version and node --version, then reply: main-done.'
+  const log = logOf([
+    row(1, 'user', { message: { role: 'user', content: 'launch the agent' }, origin: { kind: 'human' } }),
+    said(2, [{ type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: { description: 'Write files' } }]),
+    JSON.stringify({ type: 'queue-operation', operation: 'enqueue', content: B }),
+  ].join('\n'))
+  log.claim('drawn-queued', 'prompt', Date.now(), false, B)
+  log.claim('drawn-dequeued', 'prompt', Date.now(), false, B)
+  for (const line of [
+    JSON.stringify({ type: 'queue-operation', operation: 'dequeue' }),
+    row(3, 'user', { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_agent', content: 'launched' }] } }),
+    row(4, 'user', { message: { role: 'user', content: B }, origin: { kind: 'human' } }),
+    said(5, [{ type: 'text', text: 'main-done' }]),
+  ])
+    log.feed(line)
+  expect(log.turns.filter(turn => !turn.isReport)).toHaveLength(2)
+  expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1, 2])
+  expect(log.turnAt('drawn-queued')).toBe(log.turns[1])
+  expect(log.turnAt('drawn-dequeued')).toBe(log.turns[1])
+  expect(log.turnAt(ID(4))).toBe(log.turns[1])
+  expect(log.turns[1]!.reply).toBe(rowKey(ID(5)))
+})
+
+test('the same words sent again later still open a turn of their own', () => {
+  const log = logOf(row(1, 'user', { message: { role: 'user', content: 'yes' } }))
+  log.claim('drawn-again', 'prompt', Date.now(), false, 'yes')
+  log.feed(row(2, 'user', { message: { role: 'user', content: 'yes' } }))
+  expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1, 2])
+})
+
 test('a background agent drawn before its input streams in takes its name from the launch result', () => {
   const log = new TurnLog()
   log.claim(ID(61), 'prompt')

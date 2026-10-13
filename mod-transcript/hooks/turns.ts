@@ -23,6 +23,8 @@ export type Turn = {
   isReport?: boolean
   // A prompt sent while a turn ran: Claude Code draws it under another id than the file's, so its row is matched by this text.
   queuedText?: string
+  // A prompt drawn before its row was written, maybe more than once while queued: its row and later draws are matched by this text.
+  liveText?: string
 }
 
 // The part of a session message (`$.session.messages()`) a guessed turn reads.
@@ -153,16 +155,14 @@ export class TurnLog {
       return
     }
     if (row.type === 'user' && !row.isMeta && !row.isCompactSummary && !(Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result'))) {
-      if (isPrompt(userText(content))) this.start(row.uuid, timeOf(row))
+      const said = userText(content)
+      if (isPrompt(said)) this.adoptOrStart(row.uuid, said, timeOf(row))
       return
     }
     // A meta queued command is a report delivered mid-turn, which stays in the running turn. A prompt with an image holds content blocks, not a string.
     if (row.type === 'attachment' && row.attachment?.type === 'queued_command') {
       const said = userText(row.attachment.prompt)
-      if (!row.attachment.isMeta && isPrompt(said)) {
-        this.start(row.uuid, timeOf(row))
-        this.turns[this.turns.length - 1]!.queuedText = said.trim()
-      }
+      if (!row.attachment.isMeta && isPrompt(said)) this.adoptOrStart(row.uuid, said, timeOf(row)).queuedText = said.trim()
       return
     }
     if (!current) return
@@ -211,7 +211,13 @@ export class TurnLog {
         queued.queuedText = undefined
         return
       }
+      const drawn = text.trim() && !isReport ? this.turns.find(turn => turn.liveText === text.trim()) : undefined
+      if (drawn) {
+        this.drawnAs.set(rowKey(requestId), drawn)
+        return
+      }
       this.start(requestId, at, isReport)
+      if (text.trim() && !isReport) this.turns[this.turns.length - 1]!.liveText = text.trim()
       return
     }
     const current = this.turns[this.turns.length - 1]
@@ -371,6 +377,20 @@ export class TurnLog {
     if (this.turnOf(requestId) || this.turnAt(requestId)) return
     const turn = this.turns[this.cursor]
     if (turn) this.add(turn, rowKey(requestId.replace(/^collapsed-/, '')))
+  }
+
+  // A prompt row whose words a live draw already opened a turn for takes that turn over; the draw's id still finds it.
+  private adoptOrStart(uuid: string, said: string, at: number | undefined) {
+    const drawn = this.turns.find(turn => turn.liveText === said.trim())
+    if (!drawn) {
+      this.start(uuid, at)
+      return this.turns[this.turns.length - 1]!
+    }
+    this.drawnAs.set(rowKey(drawn.prompt), drawn)
+    drawn.prompt = uuid
+    drawn.liveText = undefined
+    this.numbers = undefined
+    return drawn
   }
 
   private start(uuid: string, at: number | undefined, isReport = false) {
