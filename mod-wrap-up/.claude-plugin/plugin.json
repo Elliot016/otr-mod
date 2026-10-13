@@ -17,7 +17,7 @@
     },
     "max_words": {
       "type": "number",
-      "title": "Handoff length",
+      "title": "Handoff length (words)",
       "description": "Most words the handoff may use. A hard cap on the message the model writes",
       "default": 400
     },
@@ -35,9 +35,11 @@
     },
     "auto_every": {
       "type": "number",
-      "title": "Update every",
+      "title": "Update every (turns)",
       "description": "Turns between automatic handoff updates, at least 1",
-      "default": 1
+      "default": 1,
+      "min": 1,
+      "max": 50
     },
     "auto_compact": {
       "type": "boolean",
@@ -47,15 +49,19 @@
     },
     "compact_at": {
       "type": "number",
-      "title": "Compact at",
-      "description": "Context percent at which the mod compacts between turns, carrying the handoff. Guards small windows; the token mark comes first on large ones. 0 turns it off. Kept between 50 and 95",
-      "default": 65
+      "title": "Compact at (%)",
+      "description": "Context percent at which the mod compacts between turns, carrying the handoff. Guards small windows; the token mark comes first on large ones",
+      "default": 65,
+      "min": 50,
+      "max": 95
     },
     "compact_at_tokens": {
       "type": "number",
-      "title": "Compact at tokens",
-      "description": "Context tokens at which the mod compacts between turns, whichever of the two marks comes first. 0 turns it off. Kept between 50000 and 1000000",
-      "default": 400000
+      "title": "Compact at (tokens)",
+      "description": "Context tokens at which the mod compacts between turns, whichever of the two marks comes first",
+      "default": 400000,
+      "min": 50000,
+      "max": 1000000
     },
     "icons": {
       "type": "string",

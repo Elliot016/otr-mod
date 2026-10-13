@@ -231,10 +231,14 @@ test('on a large window the token mark fires well before the percent mark', { op
   expect(w.compacted).toHaveLength(1)
 })
 
-test('below both marks, with no figure yet, or with both marks off, a turn end never compacts', { options: { auto_compact: true, compact_at: 0, compact_at_tokens: 0 } }, async ($, on) => {
+test('below both marks, or with no figure yet, a turn end never compacts', { options: { auto_compact: true } }, async ($, on) => {
   const w = world(on, autoFiles(), () => UPDATE('X'))
-  w.flags.percent = 99
-  w.flags.tokens = 990_000
+  w.flags.percent = 64
+  w.flags.tokens = 399_000
+  await $.turn.complete(MAIN_TURN)
+  await w.clock.advance(1)
+  w.flags.percent = undefined
+  w.flags.tokens = undefined
   await $.turn.complete(MAIN_TURN)
   await w.clock.advance(1)
   expect(w.compacted).toHaveLength(0)
@@ -244,11 +248,9 @@ test('below both marks, with no figure yet, or with both marks off, a turn end n
     shouldCompact({}, marks),
     shouldCompact({ percent: 65 }, marks),
     shouldCompact({ tokens: 400_000 }, marks),
-    shouldCompact({ percent: 99, tokens: 990_000 }, { percent: 0, tokens: 0 }),
-    shouldCompact({ percent: 99, tokens: 100 }, { percent: 0, tokens: 400_000 }),
-  ]).toEqual([false, false, true, true, false, false])
-  expect([clampCompactAt(undefined), clampCompactAt(0), clampCompactAt(-5), clampCompactAt(30), clampCompactAt(99), clampCompactAt(70.4)]).toEqual([65, 0, 0, 50, 95, 70])
-  expect([clampCompactTokens(undefined), clampCompactTokens(0), clampCompactTokens(10_000), clampCompactTokens(5_000_000), clampCompactTokens(250_000)]).toEqual([400_000, 0, 50_000, 1_000_000, 250_000])
+  ]).toEqual([false, false, true, true])
+  expect([clampCompactAt(undefined), clampCompactAt(0), clampCompactAt(30), clampCompactAt(99), clampCompactAt(70.4)]).toEqual([65, 50, 50, 95, 70])
+  expect([clampCompactTokens(undefined), clampCompactTokens(0), clampCompactTokens(10_000), clampCompactTokens(5_000_000), clampCompactTokens(250_000)]).toEqual([400_000, 50_000, 50_000, 1_000_000, 250_000])
 })
 
 test('a subagent turn end runs nothing', async ($, on) => {

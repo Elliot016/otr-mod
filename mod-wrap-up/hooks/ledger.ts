@@ -152,24 +152,23 @@ export const clampEvery = (value: unknown) => {
 // Whether the turn that just ended is one the update runs on.
 export const isDue = (turnsSince: number, every: number) => turnsSince >= every
 
-// 0 turns the mark off; otherwise it stays low enough for a compaction to still have room.
+// The same range plugin.json declares, low enough for a compaction to still have room.
 export const clampCompactAt = (value: unknown) => {
   const percent = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 65
-  return percent <= 0 ? 0 : Math.min(95, Math.max(50, percent))
+  return Math.min(95, Math.max(50, percent))
 }
 
 // Accuracy falls with tokens held, not with the share of the window, so a large window needs a token mark of its own.
 export const clampCompactTokens = (value: unknown) => {
   const tokens = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 400_000
-  return tokens <= 0 ? 0 : Math.min(1_000_000, Math.max(50_000, tokens))
+  return Math.min(1_000_000, Math.max(50_000, tokens))
 }
 
 export type CompactMarks = { percent: number; tokens: number }
 
 // Whichever mark comes first fires; a fresh or just compacted window reports no figure yet, which never counts as full.
 export const shouldCompact = (usage: { percent?: number; tokens?: number }, marks: CompactMarks) =>
-  (marks.percent > 0 && typeof usage.percent === 'number' && usage.percent >= marks.percent) ||
-  (marks.tokens > 0 && typeof usage.tokens === 'number' && usage.tokens >= marks.tokens)
+  (typeof usage.percent === 'number' && usage.percent >= marks.percent) || (typeof usage.tokens === 'number' && usage.tokens >= marks.tokens)
 
 // Every shell's spelling of a drive path (C:\x, /c/x, /cygdrive/c/x, /mnt/c/x) becomes c:/x, lowercased since Windows ignores case; POSIX paths keep theirs.
 export function normalizeCwd(cwd: string) {

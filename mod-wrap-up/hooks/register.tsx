@@ -10,7 +10,7 @@ import type { ChoiceProps } from './choice'
 import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import style from './style'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { settingChoice, settingsBody, type Action, type Previews } from './settings'
+import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 
@@ -60,6 +60,7 @@ let card: Card | null = null
 let cardToken = 0
 let actions: Action[] = []
 let previews: Previews | undefined
+let fields: Record<string, Range> | undefined
 
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
@@ -134,6 +135,7 @@ async function togglePane($: EngineInterface) {
   note = ''
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
+  fields = await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`).then(text => JSON.parse(String(text)).userConfig).catch(() => undefined)
   actions = Array.isArray(showcase?.actions) ? showcase.actions : []
   const opened = await $.ui.open({ id: PANE, title: text.paneName, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
@@ -778,7 +780,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-wrap-up-settings-tab', label: `${text.label} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSettings, text: text.tips.tab } }], still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
-        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still })}
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, fields, still: still })}
         <Box key="footer-space" height={FOOTER_ROWS} />
         {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll)}
       </Box>

@@ -5,6 +5,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import { buildPrompt, clampWords, compactNote, isFresh, parseThreads, scopeNote, skillBody } from '../hooks/handoff'
 import { CAPS, THEME } from '../hooks/theme'
 import Choice from '../hooks/choice'
+import { showNumber, stepNumber, stepOf } from '../hooks/settings'
 declare const setTimeout: (run: (value: unknown) => void, ms: number) => unknown
 
 const SKILL = '---\nname: session-handoff\ndescription: x\n---\n\n# session-handoff\n\nWrite one message.'
@@ -387,6 +388,29 @@ test('the settings pane draws its title, status line and settings', { options: {
   expect(await pane.find({ type: 'Text', text: /Click a setting to change it/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'Handoff length' })).toBeDefined()
   await pane.unmount()
+})
+
+test('number settings read with their unit, and a click moves them by a useful step', { options: { icons: 'safe' } }, async ($, on) => {
+  world(on, answered)
+  // As plugin.json declares them; a test cannot import the manifest.
+  const fields = {
+    max_words: { title: 'Handoff length (words)' },
+    auto_every: { title: 'Update every (turns)', min: 1, max: 50 },
+    compact_at: { title: 'Compact at (%)', min: 50, max: 95 },
+    compact_at_tokens: { title: 'Compact at (tokens)', min: 50_000, max: 1_000_000 },
+  }
+  const row = (field: keyof typeof fields, value: number) => ({ key: `mod-wrap-up.${field}`, label: fields[field].title, value, kind: 'number', description: 'd' })
+  on('config.list', () => ({ value: [row('max_words', 400), row('auto_every', 1), row('compact_at', 65), row('compact_at_tokens', 400_000)] }) as never)
+  const pane = await $.ui.mount({ plugin: 'mod-wrap-up', surface: 'terminal', component: 'Pane', requestId: 'wrap-up', props: { scroll: { offset: 0, bodyRows: 40 }, bodyColumns: 80 } } as never)
+  for (const shown of ['Handoff length', '400 words', 'Update every', '1 turn', 'Compact at', '65%', '400K tokens']) expect(await pane.find({ type: 'Text', text: shown })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'Handoff length (words)' })).toBeUndefined()
+  await pane.unmount()
+
+  // The step comes from the range plugin.json declares, about twenty clicks end to end, and stays inside it.
+  expect([stepOf(fields.max_words), stepOf(fields.auto_every), stepOf(fields.compact_at), stepOf(fields.compact_at_tokens), stepOf()]).toEqual([1, 2, 2, 50_000, 1])
+  expect([stepNumber(400_000, 1, fields.compact_at_tokens), stepNumber(50_000, -1, fields.compact_at_tokens), stepNumber(1_000_000, 1, fields.compact_at_tokens)]).toEqual([450_000, 50_000, 1_000_000])
+  expect([stepNumber(400, 1, fields.max_words), stepNumber(400, -1, fields.max_words), stepNumber(3, -1)]).toEqual([401, 399, 2])
+  expect([showNumber(2_000_000, 'tokens'), showNumber(1, 'minutes'), showNumber(12_345, 'tokens'), showNumber(5, '')]).toEqual(['2M tokens', '1 minute', '12345 tokens', '5'])
 })
 
 test('a hovered pill part and card control show their tip in the tip row, and clear on leave', { options: { icons: 'safe' } }, async ($, on) => {
