@@ -44,6 +44,7 @@ type World = {
   surfaces?: string[]
   // Waiter programs that are not installed, by name: running one fails.
   missing?: string[]
+  failsOnce?: string[]
   rules?: { text: string; mtimeMs: number }
   noCwd?: boolean
   // What the engine's own tool.check says beneath the mod.
@@ -55,7 +56,7 @@ type World = {
 
 // Everything the engine would answer, plus a record of what the hold did.
 function world(on: (event: string, handler: (...args: any[]) => unknown) => void, setup: World = {}) {
-  const seen = { ran: 0, toasts: [] as string[], argv: [] as string[], reads: 0, stats: 0, panes: new Set<string>(), opened: [] as string[] }
+  const seen = { ran: 0, toasts: [] as string[], argv: [] as string[], reads: 0, stats: 0, panes: new Set<string>(), opened: [] as string[], failed: new Set<string>() }
   const rules = { current: setup.rules }
   const clock = mock.clock(on as never)
   on('session.cwd', () => {
@@ -91,6 +92,15 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
   on('process.run', async (_$: unknown, e: { argv: string[] }) => {
     seen.argv.push(e.argv.join(' '))
     if (setup.missing?.includes(e.argv[0]!)) throw new Error('cannot start')
+    if (setup.failsOnce?.includes(e.argv[0]!) && !seen.failed.has(e.argv[0]!)) {
+      seen.failed.add(e.argv[0]!)
+      throw new Error('timed out')
+    }
+    // Nothing answers the reserved address, so a real ping waits its timeout and exits 1.
+    if (e.argv[0] === 'ping') {
+      await sleep(5)
+      return { value: { exitCode: 1, stdout: '', stderr: '' } }
+    }
     const typed = e.argv.filter(arg => arg !== '--no-optional-locks').join(' ')
     const out = e.argv[0] === 'git' ? setup.git?.[typed] : undefined
     if (e.argv[0] === 'git') return { value: out === undefined ? { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' } : { exitCode: 0, stdout: out, stderr: '' } }
@@ -418,15 +428,36 @@ test('when sleep is missing the pause falls back to powershell', async ($, on) =
   expect(seen.argv.some(line => line.startsWith('powershell -NoProfile -NonInteractive -Command Start-Sleep -Milliseconds 250'))).toBe(true)
 })
 
-test('when sleep and powershell are both missing the pause falls back to ping', async ($, on) => {
+test('when sleep and powershell are both missing the pause falls back to ping, whose unanswered exit still counts as a wait', async ($, on) => {
   const { seen } = world(on, { missing: ['sleep', 'powershell'] })
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
   await sleep(60)
   await cancel($)
-  await call
+  const result = JSON.stringify(await call)
 
   expect(seen.argv.some(line => line.startsWith('ping -n 1 -w 250'))).toBe(true)
+  expect(result).not.toContain('hit an error')
+  expect(result).toContain('pressed Cancel')
+})
+
+test('a waiter that fails once is tried again on the next hold, so one slow moment never turns the card into a block', async ($, on) => {
+  const { seen } = world(on, { failsOnce: ['sleep'] })
+  const first = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  await sleep(60)
+  await cancel($)
+  await first
+  seen.argv.length = 0
+
+  const second = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  await sleep(60)
+  await cancel($)
+  const result = JSON.stringify(await second)
+
+  expect(seen.argv.filter(line => !line.startsWith('git'))[0]).toBe('sleep 0.25')
+  expect(result).toContain('pressed Cancel')
 })
 
 test('the entries carry no glyphs, and Run is red while Cancel and Details are not', async ($, on) => {

@@ -233,12 +233,18 @@ let isWindows: boolean | undefined
 async function pause($: EngineInterface) {
   if (isWindows === undefined) isWindows = (await $.env.get('OS')) === 'Windows_NT'
   const choices = isWindows ? PAUSES.windows : PAUSES.other
-  for (; pauseAt < choices.length; pauseAt++) {
+  // The last waiter that worked goes first, yet every one is tried before giving up, so one slow run never sticks.
+  for (let tried = 0; tried < choices.length; tried++) {
+    const at = (pauseAt + tried) % choices.length
     try {
-      const waited = await $.process.run(choices[pauseAt]!, { timeoutMs: 5000 })
-      if (waited.exitCode === 0) return
+      const waited = await $.process.run(choices[at]!, { timeoutMs: 5000 })
+      // Nothing answers ping's reserved address, so its exit 1 is the wait it was asked for.
+      if (waited.exitCode === 0 || (choices[at]![0] === 'ping' && waited.exitCode === 1)) {
+        pauseAt = at
+        return
+      }
     } catch {
-      // that waiter is not installed; try the next one
+      // that waiter is not installed or timed out; try the next one
     }
   }
   throw new Error('no way to wait')
@@ -449,6 +455,7 @@ export const register: Register = (on, options) => {
     }
     const mine: Held = { command, risk, report: null, plain: null, decision: null }
     held = mine
+    pauseAt = 0
     let isSilent = false
     try {
       mine.report = await measure(ioOf($), risk)
