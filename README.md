@@ -33,7 +33,7 @@ One mod, inside Claude Code, using any name from [the list of mods][doc-mods]:
 2. Install every mod. In bash or zsh:
 
    ```sh
-   for mod in mod-menu mod-manager mod-skill-panel mod-prompts mod-file-tree mod-transcript mod-model-effort mod-heads-up mod-progress mod-next-steps mod-wrap-up mod-blast-radius mod-collision-guard mod-desktop-status-line; do
+   for mod in mod-menu mod-manager mod-skill-panel mod-prompts mod-file-tree mod-transcript mod-model-effort mod-heads-up mod-progress mod-next-steps mod-wrap-up mod-blast-radius mod-collision-guard; do
      claude plugin install "$mod@claude-mods" --scope user
    done
    ```
@@ -41,7 +41,7 @@ One mod, inside Claude Code, using any name from [the list of mods][doc-mods]:
    In PowerShell:
 
    ```powershell
-   'mod-menu','mod-manager','mod-skill-panel','mod-prompts','mod-file-tree','mod-transcript','mod-model-effort','mod-heads-up','mod-progress','mod-next-steps','mod-wrap-up','mod-blast-radius','mod-collision-guard','mod-desktop-status-line' | ForEach-Object { claude plugin install "$_@claude-mods" --scope user }
+   'mod-menu','mod-manager','mod-skill-panel','mod-prompts','mod-file-tree','mod-transcript','mod-model-effort','mod-heads-up','mod-progress','mod-next-steps','mod-wrap-up','mod-blast-radius','mod-collision-guard' | ForEach-Object { claude plugin install "$_@claude-mods" --scope user }
    ```
 
    Each install may print how many of the mod's settings are not set yet. You can ignore that: every setting has a default.
@@ -81,7 +81,6 @@ Click a name for its screenshots, features and settings.
 | [`mod-wrap-up`][doc-mod-wrap-up] | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
 | [`mod-blast-radius`][doc-mod-blast-radius] | Holds a risky shell command until you choose Cancel or Run | Automatic |
 | [`mod-collision-guard`][doc-mod-collision-guard] | Asks before editing a file another session just changed | Automatic |
-| [`mod-desktop-status-line`][doc-mod-desktop-status-line] | A status line for the desktop app | Desktop app only |
 
 Where each mod draws on the screen:
 
@@ -434,7 +433,6 @@ sequenceDiagram
 
 [doc-mod-blast-radius]: mod-blast-radius/README.md
 [doc-mod-collision-guard]: mod-collision-guard/README.md
-[doc-mod-desktop-status-line]: mod-desktop-status-line/README.md
 [doc-mod-file-tree]: mod-file-tree/README.md
 [doc-mod-heads-up]: mod-heads-up/README.md
 [doc-mod-manager]: mod-manager/README.md

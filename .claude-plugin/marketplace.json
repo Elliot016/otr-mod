@@ -7,11 +7,6 @@
   },
   "plugins": [
     {
-      "name": "mod-desktop-status-line",
-      "source": "./mod-desktop-status-line",
-      "description": "Moonlight status line drawn above the prompt on the desktop app"
-    },
-    {
       "name": "mod-model-effort",
       "source": "./mod-model-effort",
       "description": "A clickable effort meter in the prompt footer, five squares from low to max: click one to set that level, saved for the model like Alt+P does"
