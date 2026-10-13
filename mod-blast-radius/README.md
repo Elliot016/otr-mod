@@ -36,9 +36,9 @@ Automatic.
 
 ## Features
 
-- **Hold:** A risky Bash command waits before it runs, with no timeout: every check of your block-destructive hook (rm, git reset --hard, force push, SQL DROP, production deploys, gcloud, az, databricks, chmod 777, curl into a shell, credential reads) plus mv over a file, > over a file and Windows deletes.
+- **Hold:** A risky Bash command waits before it runs, with no timeout: rm, git reset --hard, force push, SQL DROP, production deploys, gcloud, az, databricks, chmod 777, curl into a shell, credential reads, mv over a file, > over a file and Windows deletes.
 - **Your rules:** ~/.claude/mods-data/mod-blast-radius/rules.json, an array of { "pattern": "regex", "reason": "text", "flags": "i" }. Read again when the file changes. A bad entry is skipped with a note in the settings pane; the built-in checks never depend on it.
-- **One prompt:** After you press Run, the settings hook's own Destructive operation ask is answered, so you are not asked twice. Any other ask or deny passes through.
+- **One prompt:** After you press Run, a settings hook's ask with a reason starting "Destructive operation detected" is answered too, so you are not asked twice. Any other ask or deny passes through.
 - **No drawing surface:** In a VS Code chat panel, claude -p or an SDK session nothing can show the hold, so the call is not held: the permission system asks instead, with the reason.
 - **Preview:** Paths with counts and size, git status and dry runs, the commits a force push would drop. Read-only: the command itself never runs.
 - **Run or Cancel:** Cancel refuses the call with a reason Claude reads. A narrow terminal draws the same report above the prompt.

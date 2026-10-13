@@ -76,7 +76,7 @@ Click a name for its screenshots, features and settings.
 | [`mod-transcript`][doc-mod-transcript] | Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors | Automatic |
 | [`mod-model-effort`][doc-mod-model-effort] | Shows the model and effort level; a click changes either | The model pill |
 | [`mod-heads-up`][doc-mod-heads-up] | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
-| [`mod-progress`][doc-mod-progress] | The main session, every subagent and every agent of a workflow run: model, effort, context fill, tokens, time and gate progress | Progress pill |
+| [`mod-progress`][doc-mod-progress] | The main session, every subagent and every agent of a workflow run: model, effort, context fill, tokens, time, and gate progress when a skill writes a `GATES.md` under `~/.claude/gates/<repo>/<session id>` | Progress pill |
 | [`mod-next-steps`][doc-mod-next-steps] | Suggests up to three next prompts after each turn | Automatic |
 | [`mod-wrap-up`][doc-mod-wrap-up] | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
 | [`mod-blast-radius`][doc-mod-blast-radius] | Holds a risky shell command until you choose Cancel or Run | Automatic |
@@ -342,6 +342,8 @@ Made by [Vinicius Amorim][author] and released under the [MIT license][license].
 2. Check it with `claude plugin validate <clone>/<name>`.
 3. Test it with `claude plugin test <clone>/<name>`.
 4. Try it with `claude --plugin-dir <clone>/<name>`, then add its folder to `CLAUDE_CODE_PLUGIN_DIRS`.
+
+`showcase/tools/` records the videos and stills on the maintainer's Windows setup (Windows Terminal, pwsh, pywin32, Opera GX). No mod needs it, and it won't run elsewhere as is.
 
 Each mod's folder:
 
