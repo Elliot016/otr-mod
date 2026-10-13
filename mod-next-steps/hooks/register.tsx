@@ -3,7 +3,7 @@
 import type { ConfigValue, EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'
-import { settingChoice, settingsBody, type Action, type Previews } from './settings'
+import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
@@ -39,6 +39,7 @@ let working = false
 let note = ''
 let actions: Action[] = []
 let previews: Previews | undefined
+let fields: Record<string, Range> | undefined
 
 // Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
@@ -173,6 +174,7 @@ async function toggleSettings($: EngineInterface) {
   note = ''
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
+  fields = await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`).then(text => JSON.parse(String(text)).userConfig).catch(() => undefined)
   actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-next-steps' }))
   const opened = await $.ui.open({ id: PANE, title: 'mod-next-steps', closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
@@ -394,7 +396,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-next-steps-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneHeadingSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneHeadingSettings, text: text.tipTabSettings } }], still)}
         <Text key="status" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusReload}`}</Text>
-        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: still, tips: text.settingTips })}
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, fields, still: still, tips: text.settingTips })}
         <Box key="footer-space" height={FOOTER_ROWS} />
         {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
       </Box>

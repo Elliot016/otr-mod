@@ -37,7 +37,7 @@
     },
     "recent_turns": {
       "type": "number",
-      "title": "Turns in the recent view",
+      "title": "Recent view (turns)",
       "description": "How many latest turns to cover. The middle view of the tree shows them, from 2 to 20",
       "default": 5
     }

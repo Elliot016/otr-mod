@@ -50,7 +50,7 @@ Change them with `/mod-file-tree settings` or the gear pill.
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 | Show files Claude only read | on | Read files join the changed ones. Off, it lists only changed files |
 | Wrap long diff lines | on | Replay lines wrap onto the next row. Off, they are cut at the pane edge |
-| Turns in the recent view | `5` | How many latest turns to cover. The middle view of the tree shows them, from 2 to 20 |
+| Recent view (turns) | `5` | How many latest turns to cover. The middle view of the tree shows them, from 2 to 20 |
 
 ## License
 

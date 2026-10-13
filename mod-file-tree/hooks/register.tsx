@@ -7,7 +7,7 @@ import { detectNerd, FOOTER_ROWS, heading, lookFor, section, paneFooter, withIco
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { settingChoice, settingsBody, type Action, type Previews } from './settings'
+import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 import { shellPlans, TranscriptFiles } from './transcript'
@@ -38,6 +38,7 @@ let collapsed: string[] = []
 let note = ''
 let actions: Action[] = []
 let previews: Previews | undefined
+let fields: Record<string, Range> | undefined
 
 const isOpen = async ($: EngineInterface, id: string) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
@@ -249,6 +250,7 @@ async function toggleSettings($: EngineInterface) {
   note = ''
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(raw => JSON.parse(String(raw))).catch(() => null)
   previews = showcase?.previews
+  fields = await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`).then(text => JSON.parse(String(text)).userConfig).catch(() => undefined)
   actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-file-tree' }))
   const opened = await $.ui.open({ id: SETTINGS, title: text.settingsFrame, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
@@ -738,7 +740,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true, 0), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
-          <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, still })}</Box>
+          <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, fields, still })}</Box>
           <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
           {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
         </Box>

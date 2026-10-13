@@ -6,7 +6,7 @@ import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, pathOf, recordE
 import { isTipMessage, type Tip, type TipMessage } from './entry'
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'
 import { tabRow } from './pills'
-import { settingChoice, settingsBody, type Action, type Previews } from './settings'
+import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 
@@ -22,6 +22,7 @@ let look = lookFor(false)
 const PANE = 'collision-guard'
 let actions: Action[] = []
 let previews: Previews | undefined
+let fields: Record<string, Range> | undefined
 let note = ''
 
 const CHOICES = [text.choiceProceed, text.choiceWorktree, text.choiceCancel]
@@ -112,6 +113,7 @@ async function toggleSettings($: EngineInterface) {
   note = ''
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
+  fields = await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`).then(text => JSON.parse(String(text)).userConfig).catch(() => undefined)
   actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-collision-guard' }))
   const opened = await $.ui.open({ id: PANE, title: text.paneName, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
@@ -262,7 +264,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-collision-guard-settings-tab', label: `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneTitleSettings, text: text.tipTabSettings } }], false)}
         <Text key="settings-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.defaultNote} ${MARK.sep} ${text.defaultNoteTail}`}</Text>
-        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews , still: false })}
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, fields, still: false })}
         <Box key="footer-space" height={FOOTER_ROWS} />
         {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
       </Box>
