@@ -3,7 +3,7 @@
 import type { ConfigValue, EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
-import { fill, MARK, statusColor, THEME } from './theme'
+import { CAPS, fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
@@ -94,6 +94,8 @@ let page = -1
 // The mod under the pointer in the list, whose description shows in a card at the bottom of the pane.
 let hovering = -1
 let note = ''
+// The page's Features card shows every line in full.
+let featuresOpen = false
 let working = false
 
 // Toggles run in turn, as two read-edit-writes of settings.json would cross; a queued click names its mod, since a landed toggle re-sorts the rows.
@@ -375,6 +377,10 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && message.id === 'manager') await openingPane($)
+    if (message?.type === 'menu-entry' && message.id === 'manager-features') {
+      featuresOpen = !featuresOpen
+      $.ui.invalidate('ui.render')
+    }
     if (message?.type === 'menu-entry' && message.id.startsWith('icons-')) await setAllIcons($, message.id.slice('icons-'.length))
     if (message?.type === 'menu-entry' && message.id === 'manager-apply') await applyChanges($)
     // The Mods tab on a mod's page goes back to the list; the open tab does nothing.
@@ -434,14 +440,26 @@ export const register: Register = (on, options) => {
         redraw()
       }
       const hint = rows.length || actions.length ? fill(text.pageHint, { sep: MARK.sep }) : text.pageHintBack
-      const features = featuresOf(mod).map((item, index) => (
+      const listed = featuresOf(mod)
+      // The card's border and padding take two columns a side; the title, its gap and the separator come before the detail.
+      const room = e.props.bodyColumns - 4
+      const isCut = listed.some(item => item.title.length + 3 + item.detail.length > room)
+      const features = listed.map((item, index) => (
         <Box key={`feature-${index}`} flexDirection="row" columnGap={1}>
           <Box flexShrink={0}>
             <Text color={THEME.onSurface} bold>{item.title}</Text>
           </Box>
-          <Text color={THEME.muted} wrap="truncate-end">{`${MARK.sep} ${item.detail}`}</Text>
+          <Text color={THEME.muted} wrap={featuresOpen ? 'wrap' : 'truncate-end'}>{`${MARK.sep} ${item.detail}`}</Text>
         </Box>
       ))
+      const label = featuresOpen ? text.featuresLess : text.featuresAll
+      const more = isCut ? (
+        <Box key="features-more" flexDirection="row">
+          {look.nerd ? <Text color={THEME.surface3} backgroundColor={THEME.surface1}>{CAPS.left}</Text> : null}
+          <Client key="manager-features" module="./entry.tsx" height={1} props={{ id: 'manager-features', label, isOpen: false, bg: THEME.surface3, color: THEME.onSurface, idle: THEME.onSurface, still, tip: { glyph: look.glyph.title, label, text: featuresOpen ? text.tipFeaturesLess : text.tipFeaturesAll } } satisfies EntryProps} />
+          {look.nerd ? <Text color={THEME.surface3} backgroundColor={THEME.surface1}>{CAPS.right}</Text> : null}
+        </Box>
+      ) : null
 
       return frame([
         <Box key="page-head" flexDirection="row" columnGap={1}>
@@ -455,13 +473,13 @@ export const register: Register = (on, options) => {
           {mod.showcase?.tagline ? <Text color={THEME.secondary}>{mod.showcase.tagline}</Text> : null}
         </Box>,
         mod.enabled || mod.settings === 0 ? (
-          settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews: mod.showcase?.previews, still })
+          settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews: mod.showcase?.previews, fields: mod.fields, still })
         ) : (
           <Box key="page-off" marginTop={1}>
             <Text color={THEME.muted}>{fill(text.turnOnFirst, { name: shownName(mod.name) })}</Text>
           </Box>
         ),
-        section({ Box, Text }, look, 'features', 'features', text.sectionFeatures, features.length ? features : <Text color={THEME.muted}>{text.noFeatures}</Text>),
+        section({ Box, Text }, look, 'features', 'features', text.sectionFeatures, features.length ? [...features, more] : <Text color={THEME.muted}>{text.noFeatures}</Text>),
       ])
     }
 

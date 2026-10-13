@@ -1,6 +1,6 @@
 // mod-manager / hooks/registry.ts, by v-amorim
 // Discovers installed mods, reads their features and writes enabled state to settings.
-import type { Previews } from './settings'
+import type { Previews, Range } from './settings'
 import { fill } from './theme'
 import shown from './text'
 
@@ -31,6 +31,8 @@ export type ModInfo = {
   showcase: Showcase | null
   // How many settings its manifest declares (userConfig); /config lists them only while it is on.
   settings: number
+  // Its userConfig fields, for the min and max a number setting declares.
+  fields: Record<string, Range>
 }
 
 export type Outcome = { ok: true; needsRestart?: boolean } | { ok: false; reason: string }
@@ -103,6 +105,7 @@ const inspect = async (
     ...scan(text),
     showcase: (await readJson(io, `${root}/showcase.json`)) as Showcase | null,
     settings: Object.keys(manifest.userConfig ?? {}).length,
+    fields: manifest.userConfig ?? {},
   }
 }
 

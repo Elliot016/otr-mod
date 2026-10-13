@@ -3,7 +3,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { discover, featuresOf, setEnabled, type Io } from '../hooks/registry'
-import { THEME } from '../hooks/theme'
+import { MARK, THEME } from '../hooks/theme'
 
 const SETTINGS = {
   $schema: 'https://example.test/schema.json',
@@ -233,7 +233,8 @@ test('two toggles pressed at once both land in settings.json', async ($, on) => 
   const first = ui.post({ type: 'toggle', index: indexOf('beta') }, { in: 'list-dir' })
   await new Promise(resolve => setTimeout(resolve, 1))
   await Promise.all([first, ui.post({ type: 'toggle', index: indexOf('alpha') }, { in: 'list-dir' })])
-  await new Promise(resolve => setTimeout(resolve, 100))
+  // The file's tests run side by side, so the writes are awaited rather than given a fixed time.
+  for (let waited = 0; waited < 3000 && JSON.parse(files[settingsPath]!).enabledPlugins?.['alpha@inline'] === undefined; waited += 20) await new Promise(resolve => setTimeout(resolve, 20))
   const settings = JSON.parse(files[settingsPath]!)
   expect(String(settings.env.CLAUDE_CODE_PLUGIN_DIRS)).toContain('beta')
   expect(settings.enabledPlugins['alpha@inline']).toBe(false)
@@ -332,6 +333,111 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   expect(JSON.stringify(await ui.drawn({ in: 'manager-page' }))).toContain('Beta')
   await ui.pointer({ in: 'manager-tab', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' 3 on ' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a feature line too long for the page is cut until Show all wraps every line, and Show less cuts them again', async ($, on) => {
+  const long = 'Counts things in a sentence long enough that no eighty column page could ever hold it on one row of the card.'
+  const { files } = disk({
+    '/h/.claude/mods/alpha/showcase.json': JSON.stringify({ features: [{ title: 'Count', detail: long }, { title: 'Short', detail: 'Fits.' }] }),
+  })
+  on('fs.read', (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.list', () => ({ value: [{ name: 'alpha', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: [] }))
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+
+  await $.command.run({ command: 'mod-manager' } as never)
+  const ui = withPointer(await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+  } as never))
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 12, y: 0 })
+
+  const detail = async () => (await ui.find({ type: 'Text', text: `${MARK.sep} ${long}` }))?.props.wrap
+  expect(await detail()).toBe('truncate-end')
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-features' }))).toContain('Show all')
+  await ui.pointer({ in: 'manager-features', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await detail()).toBe('wrap')
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-features' }))).toContain('Show less')
+  await ui.pointer({ in: 'manager-features', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await detail()).toBe('truncate-end')
+  await ui.unmount()
+})
+
+test('a page whose feature lines all fit draws no Show all', async ($, on) => {
+  const { files } = disk()
+  on('fs.read', (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.list', () => ({ value: [{ name: 'alpha', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: [] }))
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  await $.command.run({ command: 'mod-manager' } as never)
+  const ui = withPointer(await $.ui.mount({ plugin: 'mod-manager', surface: 'terminal', component: 'Pane', requestId: 'manager', props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as never))
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 12, y: 0 })
+  expect(await ui.find({ type: 'Client', key: 'manager-features' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test("a mod page shows a number with its title's unit and steps it inside the range its plugin.json declares", async ($, on) => {
+  const { files } = disk({
+    '/h/.claude/mods/alpha/.claude-plugin/plugin.json': JSON.stringify({ name: 'alpha', description: 'alpha does a thing', version: '1.0.0', userConfig: { mark: { type: 'number', title: 'Mark (tokens)', description: 'When', default: 400_000, min: 50_000, max: 1_000_000 } } }),
+  })
+  const saved: unknown[] = []
+  on('fs.read', (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.list', () => ({ value: [{ name: 'alpha', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: [{ key: 'alpha.mark', label: 'Mark (tokens)', description: 'When', kind: 'number', value: 400_000, provider: { kind: 'plugin', name: 'alpha' }, isLocked: false }] as never }))
+  on('config.set', (_$, e) => {
+    saved.push([e.key, e.value])
+    return { value: e.value }
+  })
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+
+  await $.command.run({ command: 'mod-manager' } as never)
+  const ui = withPointer(await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  } as never))
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 12, y: 0 })
+
+  expect(await ui.find({ type: 'Text', text: /^Mark$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^400K tokens$/ })).toBeDefined()
+  await ui.pointer({ in: 'setting-0-up', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(saved).toEqual([['alpha.mark', 450_000]])
   await ui.unmount()
 })
 

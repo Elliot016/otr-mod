@@ -26,6 +26,38 @@ export type SettingsProps = {
   tips?: Record<string, string>
   // The mod's example cards, from its showcase.json, so its own panel and mod-manager draw the same ones.
   previews?: Previews
+  // The mod's plugin.json userConfig, read by its own panel and by mod-manager alike, for the min and max a number setting declares.
+  fields?: Record<string, Range>
+}
+
+export type Range = { min?: number; max?: number }
+
+// A title's trailing "(unit)" is what its number reads in; the head drops it and the value carries it.
+export function splitTitle(label: string) {
+  const match = /^(.*?)\s*\(([^()]+)\)$/.exec(label)
+  return match ? { name: match[1]!, unit: match[2]! } : { name: label, unit: '' }
+}
+
+// Large round counts read short, in thousands or millions.
+const short = (n: number) => (n >= 1_000_000 && n % 100_000 === 0 ? `${n / 1_000_000}M` : n >= 10_000 && n % 1000 === 0 ? `${n / 1000}K` : String(n))
+
+export function showNumber(value: number, unit: string) {
+  if (!unit) return String(value)
+  if (unit === '%') return `${value}%`
+  return `${short(value)} ${value === 1 ? unit.replace(/s$/, '') : unit}`
+}
+
+// About twenty clicks from one end of the range to the other, on a 1, 2 or 5 step; no range steps by one.
+export function stepOf({ min, max }: Range = {}) {
+  if (min === undefined || max === undefined || max <= min) return 1
+  const raw = (max - min) / 20
+  const power = 10 ** Math.floor(Math.log10(raw))
+  const nearest = [1, 2, 5, 10].map(factor => factor * power).reduce((best, step) => (Math.abs(step - raw) < Math.abs(best - raw) ? step : best))
+  return Math.max(1, nearest)
+}
+
+export function stepNumber(value: number, by: 1 | -1, range: Range = {}) {
+  return Math.min(range.max ?? Infinity, Math.max(range.min ?? -Infinity, value + by * stepOf(range)))
 }
 
 type ThemeColor = keyof typeof THEME
@@ -126,12 +158,12 @@ const pillOn = ({ Box, Text }: Elements, look: Look, key: string, bg: string, bo
 )
 
 // Changes the row in place: on/off is one pill that flips, a choice a bar with the chosen option as its own pill, a number steps by one; text is edited in /config.
-function control(elements: Elements, look: Look, row: ConfigRow, index: number, still: boolean, tips?: Record<string, string>) {
+function control(elements: Elements, look: Look, row: ConfigRow, index: number, still: boolean, tips?: Record<string, string>, fields?: Record<string, Range>) {
   const { Box, Client, Text } = elements
   const key = `setting-${index}`
   const text = tips?.[row.key.slice(row.key.indexOf('.') + 1)] ?? (row.description ? descriptionTip(row.description) : '')
   // Client props refuse an undefined value, so a setting with no tip text leaves the key out.
-  const tipFor = (glyph: string) => (text ? { tip: { glyph: bare(glyph), label: row.label, text } satisfies Tip } : {})
+  const tipFor = (glyph: string) => (text ? { tip: { glyph: bare(glyph), label: splitTitle(row.label).name, text } satisfies Tip } : {})
   const entry = (suffix: string, label: string, value: ConfigValue, bg: string, color: string, isOpen: boolean, glyph = look.glyph.cycle) => (
     <Client key={`${key}-${suffix}`} module="./entry.tsx" height={1} props={{ id: settingId(row, value), label, isOpen, bg, color, idle: color, still, ...tipFor(glyph) } satisfies EntryProps} />
   )
@@ -150,11 +182,12 @@ function control(elements: Elements, look: Look, row: ConfigRow, index: number, 
     return pillOn(elements, look, `${key}-bar`, THEME.surface2, <Box key={`${key}-options`} flexDirection="row" backgroundColor={THEME.surface2}>{options}</Box>)
   }
   if (row.kind === 'number' && typeof row.value === 'number') {
+    const range = fields?.[row.key.slice(row.key.indexOf('.') + 1)]
     return (
       <Box key={key} flexDirection="row" columnGap={1}>
-        <Text color={THEME.secondary}>{shown(row)}</Text>
-        {pillOn(elements, look, `${key}-down`, THEME.surface3, entry('down', bare(look.glyph.down), row.value - 1, THEME.surface3, THEME.onSurface, false, look.glyph.down))}
-        {pillOn(elements, look, `${key}-up`, THEME.surface3, entry('up', bare(look.glyph.up), row.value + 1, THEME.surface3, THEME.onSurface, false, look.glyph.up))}
+        <Text color={THEME.secondary}>{showNumber(row.value, splitTitle(row.label).unit)}</Text>
+        {pillOn(elements, look, `${key}-down`, THEME.surface3, entry('down', bare(look.glyph.down), stepNumber(row.value, -1, range), THEME.surface3, THEME.onSurface, false, look.glyph.down))}
+        {pillOn(elements, look, `${key}-up`, THEME.surface3, entry('up', bare(look.glyph.up), stepNumber(row.value, 1, range), THEME.surface3, THEME.onSurface, false, look.glyph.up))}
       </Box>
     )
   }
@@ -162,7 +195,7 @@ function control(elements: Elements, look: Look, row: ConfigRow, index: number, 
 }
 
 // The Settings and Actions sections of a mod's panel or page: one round-bordered card per setting.
-export function settingsBody(elements: Elements, look: Look, { rows, actions, working, run, previews, tips, still = false }: SettingsProps) {
+export function settingsBody(elements: Elements, look: Look, { rows, actions, working, run, previews, tips, fields, still = false }: SettingsProps) {
   const { Box, Button, Text } = elements
   const settings = [
     rows.length === 0 ? <Text key="settings-none" color={THEME.muted}>{style.text.noSettings}</Text> : null,
@@ -171,8 +204,8 @@ export function settingsBody(elements: Elements, look: Look, { rows, actions, wo
       return (
         <Box key={`setting-row-${index}`} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1} marginTop={index === 0 ? 0 : 1}>
           <Box key={`setting-head-${index}`} flexDirection="row" columnGap={2}>
-            <Text color={THEME.onSurface} bold>{row.label}</Text>
-            {control(elements, look, row, index, still, tips)}
+            <Text color={THEME.onSurface} bold>{splitTitle(row.label).name}</Text>
+            {control(elements, look, row, index, still, tips, fields)}
           </Box>
           {row.description ? (
             <Text color={THEME.muted}>{row.kind === 'text' ? `${row.description} ${MARK.sep} ${style.text.editInConfig}` : row.description}</Text>
