@@ -266,7 +266,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/4b316cb1-f289-40bc-aee4-95b6f831c437 |
+| https://github.com/user-attachments/assets/2c798c02-184a-42b9-80c4-9d67f50a186e |
 
 [Full page][doc-mod-heads-up]
 
@@ -277,7 +277,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/5d0136a3-24d8-48ec-ae47-8a8f87ea86bb |
+| https://github.com/user-attachments/assets/7716348f-373c-467f-9253-642d262fee29 |
 
 [Full page][doc-mod-progress]
 

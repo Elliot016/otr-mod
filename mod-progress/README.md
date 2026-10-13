@@ -32,7 +32,7 @@ Progress pill.
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/5d0136a3-24d8-48ec-ae47-8a8f87ea86bb |
+| https://github.com/user-attachments/assets/7716348f-373c-467f-9253-642d262fee29 |
 
 ## Settings
 

@@ -32,7 +32,7 @@ Automatic, or the Heads up pill.
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/4b316cb1-f289-40bc-aee4-95b6f831c437 |
+| https://github.com/user-attachments/assets/2c798c02-184a-42b9-80c4-9d67f50a186e |
 
 ## Features
 
