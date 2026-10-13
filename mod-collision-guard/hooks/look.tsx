@@ -119,7 +119,18 @@ function terminalFace(env: TerminalEnv, host: Host) {
   return terminal ? configFace(terminal, host) : Promise.resolve(undefined)
 }
 
-// Nerd glyphs only when the terminal this window runs in names a Nerd font; an unknown terminal or an unreadable config stays safe.
+// Every mod looks up the font at once on start, so a lookup can fail by chance; a third failure throws so the caller keeps its saved answer.
+async function retried<T>(attempt: () => Promise<T>, tries = 3): Promise<T> {
+  for (let left = tries - 1; ; left--) {
+    try {
+      return await attempt()
+    } catch (error) {
+      if (left === 0) throw error
+    }
+  }
+}
+
+// Nerd glyphs only when the terminal this window runs in names a Nerd font; an unknown terminal stays safe, and a lookup that keeps failing throws.
 export async function detectNerd(env: TerminalEnv, host: Host) {
   if (isWindowsTerminal(env)) {
     for (const path of terminalSettings(host.localAppData)) {
@@ -127,7 +138,7 @@ export async function detectNerd(env: TerminalEnv, host: Host) {
     }
     return false
   }
-  const face = await terminalFace(env, host).catch(() => undefined)
+  const face = await retried(() => terminalFace(env, host))
   return face !== undefined && isNerdName(face)
 }
 

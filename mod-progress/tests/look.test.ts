@@ -75,8 +75,17 @@ test('iTerm2 without a known profile name falls back to the default profile', as
   expect(await detectNerd({ TERM_PROGRAM: 'iTerm.app' }, iterm(guid('A')))).toBe(false)
 })
 
-test('iTerm2 with no readable plist stays safe', async () => {
-  expect(await detectNerd({ TERM_PROGRAM: 'iTerm.app' }, host())).toBe(false)
+test('iTerm2 with no readable plist throws, so the saved answer stays', async () => {
+  await expect(detectNerd({ TERM_PROGRAM: 'iTerm.app' }, host())).rejects.toThrow()
+})
+
+test('iTerm2 retries a lookup that fails by chance', async () => {
+  let calls = 0
+  const flaky = iterm({})
+  const run = flaky.run
+  flaky.run = async argv => ((calls += 1) <= 2 ? Promise.reject(new Error('busy')) : run(argv))
+
+  expect(await detectNerd({ TERM_PROGRAM: 'iTerm.app', ITERM_PROFILE: 'Fira' }, flaky)).toBe(true)
 })
 
 test('VS Code prefers the terminal font, then the editor font, across the per-OS settings paths', async () => {
