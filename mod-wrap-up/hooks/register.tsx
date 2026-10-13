@@ -564,6 +564,14 @@ const toasts = new ToastList('wrap-up')
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 
+const marksText = () => fill(text.tips.autoMarks, { tokens: `${Math.round(marks.tokens / 1000)}K`, percent: marks.percent })
+
+// What the Auto switch is set to now, since the pill shows only its on or off mark.
+function autoTip() {
+  if (!autoOn) return text.tips.autoNeedsHandoff
+  return fill(compactOn ? text.tips.autoOn : text.tips.autoOff, { marks: marksText() })
+}
+
 // A settings card's click: its row, saved through /config; a saved change reloads this mod.
 async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
   const row = (await $.config.list()).find(each => each.key === key)
@@ -711,9 +719,11 @@ export const register: Register = (on, options) => {
     const { group, row, rest, tip } = splitRow(await next(e))
     // A muted entry while Claude works; a click then explains in a toast instead of crowding the row.
     const isIdle = !(e.props.isWorking || working)
+    const autoGlyph = (compactOn ? look.glyph.on : look.glyph.off).trim()
     const options = [
       { id: 'wrap-up-handoff', label: text.choice.handoff },
       { id: 'wrap-up-compact', label: text.choice.compact },
+      { id: 'wrap-up-auto', label: `${autoGlyph} ${text.choice.auto}` },
     ]
     const body = isRunning ? (
       // Writing takes a model call; the shimmer shows it is still on its way.
@@ -723,7 +733,7 @@ export const register: Register = (on, options) => {
     ) : (
       // Like the effort pill, the pointer opens the options and lifts the one under it, all inside the Client, so nothing waits on a redraw.
       <Box key="wrap-up-choice-pad">
-        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }] } satisfies ChoiceProps} />
+        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }, { glyph: autoGlyph, label: text.choice.autoCompact, text: autoTip() }] } satisfies ChoiceProps} />
       </Box>
     )
     const cards = [...(choice ? [choiceCard({ Box, Client, Text }, choice)] : []), ...(card ? [cardBox({ Box, Client, Text }, card)] : [])]
@@ -751,10 +761,12 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type !== 'menu-entry') return next(e)
-    const isChoice = message.id === 'wrap-up-entry' || message.id === 'wrap-up-handoff' || message.id === 'wrap-up-compact'
+    const isChoice = message.id === 'wrap-up-entry' || message.id === 'wrap-up-handoff' || message.id === 'wrap-up-compact' || message.id === 'wrap-up-auto'
     if (isChoice && working) $.ui.toast(text.claudeWorkingPill)
     else if (message.id === 'wrap-up-handoff') openCard($, 'handoff')
     else if (message.id === 'wrap-up-compact') openCard($, 'compact')
+    // Saving reloads the mod, which redraws the switch with the new mark.
+    else if (message.id === 'wrap-up-auto') await $.config.set({ key: 'mod-wrap-up.auto_compact', value: !compactOn })
     if (message.id === 'wrap-up-switch') await flipChoice($)
     if (message.id === 'wrap-up-switch-close') {
       choice = null

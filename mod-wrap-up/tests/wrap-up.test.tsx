@@ -413,6 +413,33 @@ test('number settings read with their unit, and a click moves them by a useful s
   expect([showNumber(2_000_000, 'tokens'), showNumber(1, 'minutes'), showNumber(12_345, 'tokens'), showNumber(5, '')]).toEqual(['2M tokens', '1 minute', '12345 tokens', '5'])
 })
 
+test('the pill offers Auto with an off switch, its tip says what is set now, and a click turns auto compact on', { options: { icons: 'safe' } }, async ($, on) => {
+  world(on, answered)
+  const saved: unknown[] = []
+  on('config.set', (_$: unknown, e: { key: string; value: unknown }) => {
+    saved.push([e.key, e.value])
+    return { value: e.value }
+  })
+  const band = await $.ui.mount(BAND())
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-entry' } as never)
+  expect(JSON.stringify(await band.drawn({ in: 'wrap-up-entry' }))).toContain('[○] Auto')
+  await band.pointer({ type: 'move', x: 31, y: 0, in: 'wrap-up-entry' } as never)
+  expect(await band.find({ type: 'Text', text: ' off, click to compact between turns at 400K tokens or 65%' })).toBeDefined()
+  await band.pointer({ type: 'down', x: 31, y: 0, button: 'left', in: 'wrap-up-entry' } as never)
+  expect(saved).toEqual([['mod-wrap-up.auto_compact', true]])
+  await band.unmount()
+})
+
+test('with auto compact on, the switch shows on and its tip names the marks it compacts at', { options: { icons: 'safe', auto_compact: true, compact_at: 70, compact_at_tokens: 300_000 } }, async ($, on) => {
+  world(on, answered)
+  const band = await $.ui.mount(BAND())
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-entry' } as never)
+  expect(JSON.stringify(await band.drawn({ in: 'wrap-up-entry' }))).toContain('[◉] Auto')
+  await band.pointer({ type: 'move', x: 31, y: 0, in: 'wrap-up-entry' } as never)
+  expect(await band.find({ type: 'Text', text: ' on, compacts between turns at 300K tokens or 70%, click to turn off' })).toBeDefined()
+  await band.unmount()
+})
+
 test('a hovered pill part and card control show their tip in the tip row, and clear on leave', { options: { icons: 'safe' } }, async ($, on) => {
   world(on, answered)
   const band = await $.ui.mount(BAND())

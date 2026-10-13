@@ -13,6 +13,10 @@ export default {
     "head": "offers to hand off to a fresh session, or compact this one",
     "handoff": "opens the pick card to write a handoff",
     "compact": "opens the pick card to fill a /compact",
+    "autoOn": "on, compacts between turns at {marks}, click to turn off",
+    "autoOff": "off, click to compact between turns at {marks}",
+    "autoMarks": "{tokens} tokens or {percent}%",
+    "autoNeedsHandoff": "off, needs Automatic handoff on in the settings",
     "thread": "keeps or drops this thread",
     "also": "keeps or drops this item",
     "go": {
@@ -36,7 +40,9 @@ export default {
   "writingStage": "Writing handoff…",
   "choice": {
     "handoff": "Handoff",
-    "compact": "Compact"
+    "compact": "Compact",
+    "auto": "Auto",
+    "autoCompact": "Auto compact"
   },
   "card": {
     "title": "pick what stays",
