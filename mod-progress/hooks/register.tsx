@@ -6,7 +6,7 @@ import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } f
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
 import { layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
 import { menuEntry, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
-import { applyCall, applyStep, applyTask, bandSummary, buildRows, emptySnap, finishAgent, firstLine, gatesStemIn, isGatesPath, MAIN_GATES, parseGates, settle, stemOf, type AgentLite, type Gate, type Snap, type Usage, type UsageLite } from './progress'
+import { addBg, appendTail, applyCall, applyStep, applyTask, bandSummary, bgIdOf, bgOutputOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, finishAgent, findBg, firstLine, gatesStemIn, hasRunningBg, isGatesPath, MAIN_GATES, outputRoom, pageOf, parseGates, resyncBg, settle, stemOf, TAIL_LINES, wipeBg, type AgentLite, type BgTask, type Gate, type Snap, type Tail, type Usage, type UsageLite } from './progress'
 import { stopLine, stopOf } from './stop'
 import { settingChoice, settingsBody } from './settings'
 import text from './text'
@@ -83,9 +83,10 @@ const PANE = 'progress'
 const SETTINGS = 'progress-settings'
 
 let note = ''
-// The control under the pointer, from its tip post: the band's tip row and the pane footer show it.
-let hovered: TipMessage | null = null
-const hoveredTip = (): Tip | null => (hovered?.id && hovered.label ? { glyph: hovered.glyph ?? '', label: hovered.label, text: hovered.text ?? '' } : null)
+// The control under the pointer, from its tip post: the band's tip row shows a band control's, the pane footer a pane control's.
+let bandTip: TipMessage | null = null
+let paneTip: TipMessage | null = null
+const hoveredTip = (): Tip | null => (paneTip?.id && paneTip.label ? { glyph: paneTip.glyph ?? '', label: paneTip.label, text: paneTip.text ?? '' } : null)
 const toasts = new ToastList('progress')
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
@@ -116,6 +117,13 @@ async function loadSnap($: EngineInterface) {
       // An unreadable store starts the figures over.
     }
     snap = stored ?? (isSwitch ? { ...emptySnap(sid), startedAt: await $.clock.now() } : emptySnap(sid))
+    // A /clear keeps the process, so the shells and monitors it started still run: the session that ended left them in the store.
+    const carried = isSwitch && !stored ? await $.store.get('carry-bg').catch(() => undefined) : undefined
+    if (Array.isArray(carried)) {
+      snap.main.bg = JSON.parse(JSON.stringify(carried)) as BgTask[]
+      await $.store.set('carry-bg', null).catch(() => undefined)
+      await $.state.set(BOOT_KEY, true).catch(() => undefined)
+    }
     return snap
   })().finally(() => {
     snapLoad = null
@@ -195,6 +203,115 @@ function ageStop($: EngineInterface, current: Snap) {
   ageTimer = current.stop ? $.clock.every(AGE_MS, () => $.ui.invalidate('ui.render')) : null
 }
 
+// A running background task's clock keeps its seconds, so while one runs and the pane is open a timer redraws it every second.
+const TASK_TICK_MS = 1000
+let taskTimer: { cancel: () => void } | null = null
+function tickTasks($: EngineInterface, current: Snap) {
+  if (!hasRunningBg(current)) {
+    taskTimer?.cancel()
+    taskTimer = null
+    return
+  }
+  taskTimer ??= $.clock.every(TASK_TICK_MS, async () => {
+    if (snap && !hasRunningBg(snap)) return tickTasks($, snap)
+    if (await isOpen($)) $.ui.invalidate('ui.render')
+  })
+}
+
+async function saveBackground($: EngineInterface, current: Snap) {
+  tickTasks($, current)
+  // A /clear resets $.state: a task still running proves the process is the same one.
+  await $.state.set(BOOT_KEY, true)
+  await saveSnap($)
+  await syncOutput($)
+  $.ui.invalidate('ui.render')
+}
+
+// The task whose page is open, kept in $.state so a reload keeps it; empty is the list.
+const BOOT_KEY = { plugin: 'mod-progress', key: 'booted' } as const
+const TASK_KEY = { plugin: 'mod-progress', key: 'task' } as const
+const openTask = async ($: EngineInterface) => String((await $.state.get(TASK_KEY)).value ?? '')
+
+// What each task's output holds, read from its file; a reload reads it again from the start.
+const tails = new Map<string, Tail>()
+const unreadable = new Set<string>()
+const finalRead = new Set<string>()
+const OUTPUT_TICK_MS = 1000
+// fs.read takes a file up to this size.
+const WHOLE_READ_BYTES = 4 * 1024 * 1024
+let outputTimer: { cancel: () => void } | null = null
+
+// Reads what the file gained since the last read (the file's size says whether it grew); true when the tail changed.
+async function pumpOutput($: EngineInterface, id: string, path: string) {
+  let tail = tails.get(id) ?? { from: 0, lines: [], partial: '' }
+  const size = (await $.fs.stat(path).catch(() => null))?.size
+  if (size === undefined) return false
+  if (size < tail.from) tail = { from: 0, lines: [], partial: '' }
+  if (size === tail.from) return false
+  if (size > WHOLE_READ_BYTES) {
+    unreadable.add(id)
+    return false
+  }
+  const whole = await $.fs.read(path).then(String, () => null)
+  if (whole === null) return false
+  const bytes = new TextEncoder().encode(whole)
+  tails.set(id, appendTail(tail, new TextDecoder().decode(bytes.subarray(tail.from)), bytes.length))
+  return true
+}
+
+// While a task's page is open and the task runs, its output is read every second; once it ends, one last read, then the timer stops.
+async function syncOutput($: EngineInterface) {
+  try {
+    const id = await openTask($)
+    const task = id ? findBg(await loadSnap($), id) : undefined
+    if (id && !task) await $.state.set(TASK_KEY, '')
+    if (!task || !(await isOpen($))) {
+      outputTimer?.cancel()
+      outputTimer = null
+      return
+    }
+    const isRunning = task.endedAt === undefined
+    if (isRunning) outputTimer ??= $.clock.every(OUTPUT_TICK_MS, () => syncOutput($))
+    else {
+      outputTimer?.cancel()
+      outputTimer = null
+    }
+    const isFinal = !isRunning && !finalRead.has(id)
+    if (!isRunning) finalRead.add(id)
+    const isChanged = task.output && (isRunning || isFinal) ? await pumpOutput($, id, task.output) : false
+    if (isChanged || isRunning) $.ui.invalidate('ui.render')
+  } catch {
+    // The page keeps what it has read.
+  }
+}
+
+// A background Bash or Monitor adds a task once its result names the id; TaskStop and KillShell end one.
+async function watchBackground($: EngineInterface, agentId: string | undefined, tool: string, input: Record<string, unknown>, result: unknown, calledAt: number) {
+  const refused = (result as { deny?: string; isError?: boolean } | undefined)?.deny || (result as { isError?: boolean } | undefined)?.isError
+  if (refused) return
+  const current = await loadSnap($)
+  const now = await $.clock.now()
+  const isMoved = tool === 'Bash' && typeof (result as { result?: { backgroundTaskId?: unknown } } | undefined)?.result?.backgroundTaskId === 'string'
+  const start = bgStartOf(tool, input, isMoved)
+  const id = start ? bgIdOf(result) : undefined
+  const output = start?.kind === 'shell' ? bgOutputOf(String((result as { text?: unknown }).text ?? '')) : undefined
+  if (start && id && addBg(current, agentId, id, { ...start, ...(output ? { output } : {}) }, calledAt)) await saveBackground($, current)
+  if (tool === 'TaskStop' || tool === 'KillShell') {
+    const stopped = String(input.task_id ?? input.shell_id ?? input.taskId ?? input.id ?? '')
+    if (stopped && endBg(current, stopped, 'failed', now)) await saveBackground($, current)
+  }
+}
+
+async function resync($: EngineInterface, agentId: string | undefined, listed: { id: string; status: string }[] | undefined) {
+  if (!listed) return
+  try {
+    const current = await loadSnap($)
+    if (resyncBg(current, agentId, listed, await $.clock.now())) await saveBackground($, current)
+  } catch {
+    // The figures stay as they were.
+  }
+}
+
 const isOpen = async ($: EngineInterface, id = PANE) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
 // The command and the bar entry both toggle. An unplaced pane is waiting, not open.
@@ -262,11 +379,16 @@ export const register: Register = (on, options) => {
     await loadLook($)
     await $.command.register({ name: 'mod-progress', description: text.commandDescription, argumentHint: '[settings]' })
     const current = await loadSnap($)
+    // A plugin reload re-runs this hook in the same process, with a fresh module; $.state is the host's and dies with the process, so an unset marker means a new process, whose shells are gone.
+    if (!(await $.state.get(BOOT_KEY)).value) wipeBg(current)
+    await $.state.set(BOOT_KEY, true)
     const usage = await $.session.usage().catch(() => undefined)
     if (current.startedAt === undefined) current.startedAt = usage?.startedAt ?? (await $.clock.now())
     await readGates($, current)
     ageStop($, current)
+    tickTasks($, current)
     await saveSnap($)
+    await syncOutput($)
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
     await $.state.set({ plugin: 'mod-progress', key: 'pane' }, await isOpen($))
     // A hot reload leaves an open pane on its old drawing until something redraws it.
@@ -278,6 +400,13 @@ export const register: Register = (on, options) => {
   // A /resume or /clear ends this session; the next call asks for the id at once.
   on('session.end', async ($, e, next) => {
     sessionCheckedAt = 0
+    try {
+      // A /clear leaves the shells running in the same process; any other end takes them with it.
+      if (snap && e.reason === 'clear') await $.store.set('carry-bg', JSON.parse(JSON.stringify((snap.main.bg ?? []).filter(task => task.endedAt === undefined))))
+      else if (snap && wipeBg(snap)) await saveBackground($, snap)
+    } catch {
+      // The figures stay as they were.
+    }
 
     return next(e)
   })
@@ -291,6 +420,8 @@ export const register: Register = (on, options) => {
 
   on('ui.close', async ($, e, next) => {
     if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-progress', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
+    if (e.id === PANE || e.id === SETTINGS) paneTip = null
+    if (e.id === PANE) await syncOutput($)
 
     return next(e)
   })
@@ -397,6 +528,7 @@ export const register: Register = (on, options) => {
     } catch {
       // The figures stay as they were.
     }
+    const calledAt = await $.clock.now()
     const result = await next(e)
     // The observers never fail the call they watch.
     try {
@@ -411,10 +543,55 @@ export const register: Register = (on, options) => {
       }
       const touchesGates = /^(Write|Edit|MultiEdit)$/.test(tool) ? isGatesPath(String(input.file_path ?? '')) : tool === 'Bash' && /gate/i.test(String(input.command ?? ''))
       if (touchesGates) await refreshGates($)
+      await watchBackground($, e.agentId, tool, input, result, calledAt)
     } catch {
       // The figures stay as they were.
     }
     return result
+  })
+
+  // The main turn's Stop lists the background work still running; whatever it no longer lists has finished.
+  on('classic.Stop', async ($, e, next) => {
+    await resync($, undefined, e.background_tasks)
+    return next(e)
+  })
+
+  on('classic.SubagentStop', async ($, e, next) => {
+    await resync($, e.agent_id, e.background_tasks)
+    return next(e)
+  })
+
+  // A task's notification reaches the session as a prompt of its own, whether or not anything draws it.
+  on('prompt.submit', async ($, e, next) => {
+    try {
+      if (e.origin?.kind === 'task-notification') {
+        const id = /<task-id>\s*([^<\s]+)\s*<\/task-id>/.exec(e.text)?.[1]
+        const status = /<status>\s*([^<\s]+)\s*<\/status>/.exec(e.text)?.[1]
+        const current = await loadSnap($)
+        // The closing notice names the output file, which a monitor's start did not.
+        const known = id ? findBg(current, id) : undefined
+        const file = bgOutputOf(e.text)
+        if (known && file && !known.output) known.output = file
+        // A monitor's event rows carry no status; only the closing notice does.
+        if (id && status && endBg(current, id, endOfStatus(status), await $.clock.now())) await saveBackground($, current)
+      }
+    } catch {
+      // The figures stay as they were.
+    }
+    return next(e)
+  })
+
+  // A task stopped from /tasks reaches no tool call, no Stop and no prompt hook; its notification row is drawn, and that carries the status.
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    const task = (e.props as { task?: { id?: string; status?: string } }).task
+    if (task?.id && task.status) {
+      const { id, status } = task
+      $.clock.after(0, async () => {
+        const current = await loadSnap($)
+        if (endBg(current, id, endOfStatus(status), await $.clock.now())) await saveBackground($, current)
+      })
+    }
+    return next(e)
   })
 
   // The bar entry lives here, not in mod-menu: only a press in this mod counts as the person asking for this pane.
@@ -441,14 +618,20 @@ export const register: Register = (on, options) => {
     const pillTip = stop?.line ?? (summary.total > 0 ? fill(text.tipPillGates, summary) : text.tipPill)
     const entry = menuEntry({ Box, Client, Text }, nerd, 'progress', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, still, nerd, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.pillLabel, text: pillTip }, ...badge })
     // A pill tip is posted once on enter, so its text is redrawn from the figures here, the minute the stop's age ticks.
-    const shownTip = hovered?.id === 'progress' ? { ...hovered, text: pillTip } : hovered
+    const shownTip = bandTip?.id === 'progress' ? { ...bandTip, text: pillTip } : bandTip
 
     return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], shownTip?.id ? tipLine({ Box, Text }, tipText(shownTip)) : tip, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
     if (isTipMessage(e.data)) {
-      hovered = e.data
+      // The band's own controls are the pill and its toasts; every other id is a pane control. An empty id clears both.
+      const isBand = e.data.id === 'progress' || (e.data.id ? toasts.idOf(e.data.id) !== undefined : false)
+      if (!e.data.id) {
+        bandTip = null
+        paneTip = null
+      } else if (isBand) bandTip = e.data
+      else paneTip = e.data
       $.ui.invalidate('ui.render')
       return next(e)
     }
@@ -463,6 +646,11 @@ export const register: Register = (on, options) => {
     // The title line's tabs swap the list and the settings; the open tab does nothing.
     if (clicked?.type === 'menu-entry' && clicked.id === 'progress-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
     if (clicked?.type === 'menu-entry' && clicked.id === 'progress-tab' && !(await isOpen($))) await togglePane($)
+    if (clicked?.type === 'menu-entry' && clicked.id === 'progress-back') {
+      await $.state.set(TASK_KEY, '')
+      await syncOutput($)
+      $.ui.invalidate('ui.render')
+    }
     const change = settingChoice(e.data)
     if (change) await saveSetting($, change.key, change.value)
 
@@ -476,6 +664,11 @@ export const register: Register = (on, options) => {
       const current = await loadSnap($)
       current.expanded = current.expanded === message.id ? '' : message.id
       await saveSnap($)
+      $.ui.invalidate('ui.render')
+    }
+    if (message?.type === 'task') {
+      await $.state.set(TASK_KEY, message.id)
+      await syncOutput($)
       $.ui.invalidate('ui.render')
     }
 
@@ -494,13 +687,50 @@ export const register: Register = (on, options) => {
       const { rows } = await currentRows($)
       return (
         <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
-          {tabRow({ Box, Client, Text }, look.nerd, tabs('settings', rows.length - 1), still)}
+          {tabRow({ Box, Client, Text }, look.nerd, tabs('settings', bandSummary(rows).count), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows: settingRows, actions: [], working: false, run: async () => {}, still })}</Box>
           <Box key="footer-space" height={FOOTER_ROWS} />
           {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
+    }
+
+    const pageId = await openTask($)
+    if (pageId) {
+      const page = pageOf(await loadSnap($), pageId, await $.clock.now())
+      if (page) {
+        const tail = tails.get(pageId)
+        // Only as many of the held lines as the pane has room for, so the last one is never cut by the pane's edge.
+        const room = Math.min(TAIL_LINES, outputRoom(e.props.scroll.bodyRows, e.props.bodyColumns, page.command, text.commandLead, FOOTER_ROWS))
+        const shown = tail ? [...tail.lines, ...(tail.partial ? [tail.partial] : [])].slice(-room) : []
+        const status = fill(text.taskStatus, { kind: page.kind === 'shell' ? text.taskShell : text.taskMonitor, sep: MARK.sep, status: page.status === 'running' ? text.taskRunning : page.status === 'done' ? text.taskDone : text.taskFailed, elapsed: page.elapsed })
+        const back = [{ id: 'progress-back', label: text.paneTitle, icon: look.glyph.back, isOpen: false, tip: { glyph: look.glyph.back, label: text.paneTitle, text: text.tipBack } }]
+        const empty = !page.output ? text.noOutputFile : unreadable.has(pageId) ? text.outputUnreadable : text.noOutputYet
+        return (
+          <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+            <Box key="task-head" flexDirection="row" columnGap={1}>
+              {tabRow({ Box, Client, Text }, look.nerd, back, still)}
+              <Text wrap="truncate-end" color={THEME.muted}>{status}</Text>
+            </Box>
+            {section({ Box, Text }, look, 'task-command', '', '', (
+              <Box key="task-command-lines" flexDirection="column">
+                {page.command.split(/\r?\n/).map((line, at) => (
+                  <Text key={`command-${at}`} wrap="wrap" color={THEME.onSurface}>{`${at === 0 ? text.commandLead : ' '} ${line}`}</Text>
+                ))}
+              </Box>
+            ))}
+            {section({ Box, Text }, look, 'task-output', '', '', (
+              <Box key="task-output-lines" flexDirection="column">
+                {shown.length === 0 ? <Text key="output-empty" color={THEME.muted}>{empty}</Text> : shown.map((line, at) => <Text key={`output-${at}`} wrap="truncate-end" color={THEME.muted}>{line || ' '}</Text>)}
+              </Box>
+            ))}
+            <Box key="footer-space" height={FOOTER_ROWS} />
+            {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
+          </Box>
+        )
+      }
+      $.clock.after(0, () => $.state.set(TASK_KEY, ''))
     }
 
     const { current, rows, now } = await currentRows($)
@@ -511,7 +741,7 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, tabs('list', rows.length - 1), still)}
+        {tabRow({ Box, Client, Text }, look.nerd, tabs('list', bandSummary(rows).count), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || text.hint}</Text>
         {/* A blank row of the same height while no stop shows, so the list below does not move when one appears. */}
         <Text key="stop-line" wrap="truncate-end" color={stop?.tone === 'alert' ? THEME.alert : THEME.warn}>{stop ? withMark(look, `${MARK.warn} ${stop.line}`) : ' '}</Text>

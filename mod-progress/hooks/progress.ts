@@ -11,7 +11,11 @@ export type Gate = { id: string; text: string; state: GateState; file?: string }
 export type Task = { id: string; subject: string; status: string }
 // A workflow script's agent: no list entry names it, so its run, place, name and task are kept from its spawn.
 export type WorkflowAgent = { runId: string; index: number; name: string; description: string }
-export type Loop = { model?: string; effort?: string; tokens: number; context: number; spawnedAt?: number; endedAt?: number; isFailed?: true; gatesStem?: string; tasks?: Task[]; step?: string; workflow?: WorkflowAgent }
+// A background shell or monitor an agent started: it ends by TaskStop, its notification, or a Stop that no longer lists it.
+export type BgKind = 'shell' | 'monitor'
+// `output` is the file the host writes the task's output to, when its result or notification names one.
+export type BgTask = { id: string; kind: BgKind; command: string; startedAt: number; endedAt?: number; end?: 'done' | 'failed'; output?: string }
+export type Loop = { bg?: BgTask[]; model?: string; effort?: string; tokens: number; context: number; spawnedAt?: number; endedAt?: number; isFailed?: true; gatesStem?: string; tasks?: Task[]; step?: string; workflow?: WorkflowAgent }
 export type Usage = { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }
 
 // The main turn's last stop on an API error (StopFailure): its error kind, when it happened, and the reset of a full usage window.
@@ -180,9 +184,140 @@ export function formatElapsed(ms: number) {
   return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
 }
 
+// Finished tasks stay on their card, but only this many per owner.
+const KEEP_ENDED = 12
+
+const bgOwner = (snap: Snap, agentId: string | undefined) => (agentId ? snap.agents[agentId] : snap.main)
+
+const ID_KEYS = ['backgroundTaskId', 'background_task_id', 'shellId', 'shell_id', 'taskId', 'task_id', 'id']
+
+// The id a background start answers with, from its structured result or its text ("... running in background with ID: b3k9x").
+export function bgIdOf(result: unknown): string | undefined {
+  const found = (value: unknown): string | undefined => {
+    if (!value || typeof value !== 'object') return undefined
+    for (const key of ID_KEYS) {
+      const id = (value as Record<string, unknown>)[key]
+      if (typeof id === 'string' && id) return id
+    }
+    return undefined
+  }
+  const record = result as { result?: unknown; text?: unknown } | undefined
+  const direct = found(record?.result) ?? found(record)
+  if (direct) return direct
+  const body = [typeof record?.text === 'string' ? record.text : '', typeof record?.result === 'string' ? record.result : '', JSON.stringify(record?.result ?? '')].join('\n')
+  return /\bID:?\s+([A-Za-z0-9_-]+)/.exec(body)?.[1] ?? /task[_ -]?id\W+([A-Za-z0-9_-]+)/i.exec(body)?.[1]
+}
+
+// A background Bash call, or a Monitor, starts a task; its tool name and input say which and what it runs.
+// A foreground Bash the host moved to the background (ctrl+b, or its timeout) answers with a task id too: `isMoved`.
+export function bgStartOf(tool: string, input: Record<string, unknown>, isMoved = false): { kind: BgKind; command: string } | undefined {
+  if (tool === 'Bash' && (input.run_in_background === true || isMoved)) return { kind: 'shell', command: String(input.command ?? '') }
+  if (tool === 'Monitor') return { kind: 'monitor', command: String(input.command ?? input.description ?? '') }
+  return undefined
+}
+
+export function addBg(snap: Snap, agentId: string | undefined, id: string, start: { kind: BgKind; command: string; output?: string }, now: number) {
+  const owner = agentId ? (snap.agents[agentId] ??= { tokens: 0, context: 0 }) : snap.main
+  const list = (owner.bg ??= [])
+  if (list.some(task => task.id === id)) return false
+  list.push({ id, kind: start.kind, command: start.command, startedAt: now, ...(start.output ? { output: start.output } : {}) })
+  const ended = list.filter(task => task.endedAt !== undefined)
+  if (ended.length > KEEP_ENDED) owner.bg = list.filter(task => !ended.slice(0, ended.length - KEEP_ENDED).includes(task))
+  return true
+}
+
+// Marks a task ended wherever it lives; true when it was running.
+export function endBg(snap: Snap, id: string, end: 'done' | 'failed', now: number) {
+  for (const owner of [snap.main, ...Object.values(snap.agents)]) {
+    const task = owner.bg?.find(each => each.id === id)
+    if (!task || task.endedAt !== undefined) continue
+    task.endedAt = now
+    task.end = end
+    return true
+  }
+  return false
+}
+
+// The file a start's text names ("Output is being written to: <path>"), or a notification's <output-file>.
+export const bgOutputOf = (source: string) => /<output-file>\s*(.+?)\s*<\/output-file>/.exec(source)?.[1] ?? /written to:\s*(.+?\.output)(?=\.?\s|$)/.exec(source)?.[1]
+
+export const findBg = (snap: Snap, id: string) => [snap.main, ...Object.values(snap.agents)].flatMap(loop => loop.bg ?? []).find(task => task.id === id)
+
+// The lines a task's output keeps, and what it holds of a line still being written.
+export const TAIL_LINES = 20
+export type Tail = { from: number; lines: string[]; partial: string }
+
+// Output is the program's own text: escapes and control characters never reach the screen.
+export const stripControl = (value: string) =>
+  value
+    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, '')
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\u001b[@-Z\\-_]/g, '')
+    .replace(/\t/g, '  ')
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+
+// Adds what was written since the last read, keeping the last TAIL_LINES lines; `size` is the file's length in bytes.
+export function appendTail(tail: Tail, chunk: string, size: number): Tail {
+  const parts = (tail.partial + chunk.replace(/\r\n?/g, '\n')).split('\n')
+  const partial = parts.pop() ?? ''
+  const lines = [...tail.lines, ...parts.map(stripControl)].slice(-TAIL_LINES)
+  return { from: size, lines, partial: stripControl(partial) }
+}
+
+// How many output lines the page has room for: the body less the back pill row, the command card (border, a gap above, its wrapped lines), the output card's border and gap, and the rows the footer keeps free; never under one.
+export function outputRoom(bodyRows: number, bodyColumns: number, command: string, lead: string, footerRows: number) {
+  const width = Math.max(1, bodyColumns - 6)
+  const commandRows = command.split(/\r?\n/).reduce((sum, line, at) => sum + Math.max(1, Math.ceil(((at === 0 ? lead : ' ').length + 1 + line.length) / width)), 0)
+  return Math.max(1, bodyRows - (1 + 3 + commandRows + 3 + footerRows))
+}
+
+// What a task's page draws: the whole command, its status line figures, and where its output lives.
+export function pageOf(snap: Snap, id: string, now: number) {
+  const task = findBg(snap, id)
+  if (!task) return undefined
+  const status: Status = task.endedAt === undefined ? 'running' : task.end === 'failed' ? 'failed' : 'done'
+  return { kind: task.kind, command: task.command, status, elapsed: formatClock((task.endedAt ?? now) - task.startedAt), output: task.output }
+}
+
+export const endOfStatus = (status: string | undefined): 'done' | 'failed' => (status === 'failed' || status === 'killed' || status === 'stopped' ? 'failed' : 'done')
+
+// A Stop lists what still runs: every running task of that owner missing from it has finished.
+export function resyncBg(snap: Snap, agentId: string | undefined, listed: { id: string; status: string }[], now: number) {
+  let changed = false
+  for (const task of bgOwner(snap, agentId)?.bg ?? []) {
+    if (task.endedAt !== undefined) continue
+    const still = listed.find(each => each.id === task.id)
+    if (still && statusOf(still.status) === 'running') continue
+    task.endedAt = now
+    task.end = still ? endOfStatus(still.status) : 'done'
+    changed = true
+  }
+  return changed
+}
+
+// A Claude Code exit or restart kills its shells and monitors, so what survives in the store is stale.
+export function wipeBg(snap: Snap) {
+  const owners = [snap.main, ...Object.values(snap.agents)].filter(loop => loop.bg && loop.bg.length > 0)
+  owners.forEach(loop => delete loop.bg)
+  return owners.length > 0
+}
+
+export const hasRunningBg = (snap: Snap) => [snap.main, ...Object.values(snap.agents)].some(loop => loop.bg?.some(task => task.endedAt === undefined))
+
+// 4m 10s: a task's clock keeps its seconds.
+export function formatClock(ms: number) {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
+  return `${Math.floor(seconds / 3600)}h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}m`
+}
+
 export type AgentLite = { id: string; name?: string; description: string; type: string; status: string }
 export type UsageLite = { tokens?: number; window?: number; percent?: number; startedAt?: number }
 export type Status = 'running' | 'done' | 'failed'
+
+// What a card draws for one background task; a finished one keeps its final elapsed time.
+export type RowTask = { id: string; kind: BgKind; command: string; status: Status; elapsed: string }
 
 export type Row = {
   id: string
@@ -200,6 +335,7 @@ export type Row = {
   elapsed: string
   gates: Gate[]
   hasGates: boolean
+  tasks: RowTask[]
   // The main ledger reads from gates files and none is open: every written phase is finished, which says nothing about the ones not written yet.
   isPhaseDone?: boolean
 }
@@ -221,6 +357,9 @@ export function settle(snap: Snap, list: AgentLite[], now: number) {
 }
 
 export const firstLine = (text: string) => (text.split('\n')[0] ?? '').trim()
+
+const tasksOf = (loop: Loop, now: number): RowTask[] =>
+  (loop.bg ?? []).map(task => ({ id: task.id, kind: task.kind, command: firstLine(task.command), status: task.endedAt === undefined ? 'running' : task.end === 'failed' ? 'failed' : 'done', elapsed: formatClock((task.endedAt ?? now) - task.startedAt) }))
 
 // A workflow agent ends with its own turn; true when this marked it.
 export function finishAgent(snap: Snap, id: string, now: number, isFailed: boolean) {
@@ -266,6 +405,7 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
     elapsed: started === undefined ? '' : formatElapsed(now - started),
     gates: mainGates,
     hasGates: mainGates.length > 0,
+    tasks: tasksOf(main, now),
     isPhaseDone: ledger.length > 0 && !ledger.some(gate => gate.state === 'open'),
   }]
   const listed = new Set(list.map(info => info.id))
@@ -293,6 +433,7 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
       elapsed: loop.spawnedAt === undefined ? '' : formatElapsed((loop.endedAt ?? now) - loop.spawnedAt),
       gates,
       hasGates: gates.length > 0,
+      tasks: tasksOf(loop, now),
     })
   }
   return rows
@@ -300,9 +441,10 @@ export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | unde
 
 export const countGates = (gates: Gate[]) => ({ done: gates.filter(gate => gate.state === 'met').length, total: gates.length })
 
-// The band pill's badge: how many agents ran besides the main session.
+// The band pill's badge: the agents besides the main session and the background tasks of any card that are running.
 export function bandSummary(rows: Row[]) {
   // The main ledger holds the gates of every file, and an agent paired with a file lists the same objects again.
   const gates = countGates([...new Set(rows.flatMap(row => row.gates))])
-  return { count: rows.filter(row => !row.isMain && row.status === 'running').length, ...gates }
+  const running = rows.filter(row => !row.isMain && row.status === 'running').length + rows.reduce((sum, row) => sum + row.tasks.filter(task => task.status === 'running').length, 0)
+  return { count: running, ...gates }
 }
