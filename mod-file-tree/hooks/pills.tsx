@@ -46,16 +46,17 @@ export const tipLine = ({ Box, Text }: Elements, text: string) => {
   )
 }
 
-// One pill with its own caps where the font has them; `on` is what it sits on when that is another pill or a card.
-export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: unknown, key = 'menu-pill', on?: string) {
+// One pill with its own caps where the font has them; `on` is what it sits on, `hover` lights the caps with a Button scoped `key`.
+export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: unknown, key = 'menu-pill', on?: string, hover?: string) {
   const under = on ? { backgroundColor: on } : {}
+  const lit = hover ? { hover: { scope: key, color: hover } } : {}
   return (
     <Box key={key} flexDirection="row">
-      {nerd ? <Text key={`${key}-cap-left`} color={bg} {...under}>{CAPS.left}</Text> : null}
+      {nerd ? <Text key={`${key}-cap-left`} color={bg} {...under} {...lit}>{CAPS.left}</Text> : null}
       <Box key={`${key}-body`} flexDirection="row" backgroundColor={bg}>
         {body}
       </Box>
-      {nerd ? <Text key={`${key}-cap-right`} color={bg} {...under}>{CAPS.right}</Text> : null}
+      {nerd ? <Text key={`${key}-cap-right`} color={bg} {...under} {...lit}>{CAPS.right}</Text> : null}
     </Box>
   )
 }
@@ -66,7 +67,8 @@ export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: an
   const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props } satisfies EntryProps} />
   return (
     <Box key={`menu-pad-${id}`} flexDirection="row">
-      {props.isOpen ? pill({ Box, Text }, nerd, bg, entry, `menu-open-${id}`, PILL.primary) : entry}
+      {/* A closed entry gets caps in the group's own color, so opening a panel never shifts its neighbours. */}
+      {pill({ Box, Text }, nerd, bg, entry, props.isOpen ? `menu-open-${id}` : `menu-closed-${id}`, PILL.primary)}
     </Box>
   )
 }

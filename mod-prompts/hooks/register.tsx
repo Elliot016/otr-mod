@@ -219,7 +219,7 @@ async function readMore($: EngineInterface) {
   if (selected < 0 || selected >= prompts.length) selected = prompts.length - 1
 }
 
-const sameText = (text: string) => `text:${text.replace(/\s+/g, ' ').trim()}`
+const sameText = (text: string) => `text:${text.replace(/\[Image #\d+\]/g, '').replace(/\s+/g, ' ').trim()}`
 
 // A turn's length as the fold writes it: seconds, then minutes and seconds.
 const duration = (ms: number) => {
@@ -618,11 +618,11 @@ export const register: Register = (on, options) => {
                 {stats}
               </Box>
               {/* A Button, not an Entry: a transcript scroll needs the person's press, and a Client click is refused as not person-initiated. */}
-              {/* A Button takes no color prop, so the glyph lights accent under the pointer only. */}
+              {/* A Button takes no color prop; its scoped hover inverts it, so the whole pill lights with its caps. */}
               <Box key="open-jump-pill" flexShrink={0}>
                 {pill({ Box, Text }, look.nerd, THEME.surface3, (
-                  <Button key="open-jump" label={look.nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: 'open-jump-box', color: THEME.accent }} onPress={() => jump($, selected)} />
-                ), 'open-jump-box', THEME.surface1)}
+                  <Button key="open-jump" label={look.nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: 'open-jump-box', color: THEME.accent, inverse: true }} onPress={() => jump($, selected)} />
+                ), 'open-jump-box', THEME.surface1, THEME.accent)}
               </Box>
             </Box>
           ) : null,

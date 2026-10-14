@@ -216,3 +216,18 @@ test('a control tip posted to the mod reaches the pane footer, and clears on lea
   expect(await ui.find({ type: 'Text', text: /Shows this view/ })).toBeUndefined()
   await ui.unmount()
 })
+
+test('a pause raises one notification naming the file, and a refused one does not break the pause', async ($, on) => {
+  const notes: { text: string; title?: string }[] = []
+  on('ui.notify', (_$: unknown, e: { text: string; title?: string }) => {
+    notes.push(e)
+    throw new Error('refused')
+  })
+  const w = world(on, { [`${DIR}/other.json`]: edit('other', 4) })
+  await call($)
+  expect(notes).toHaveLength(1)
+  expect(notes[0]!.text).toContain('app.ts')
+  expect(notes[0]!.text).not.toContain('/work/')
+  expect(w.asked).toHaveLength(1)
+  expect(w.ran).toEqual([`Edit ${FILE}`])
+})

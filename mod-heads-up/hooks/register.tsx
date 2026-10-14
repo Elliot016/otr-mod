@@ -762,8 +762,8 @@ export const register: Register = (on, options) => {
             <Box key={`note-gap-${found.id}`} flexGrow={1} />
             <Box key={`note-jump-pill-${found.id}`} flexShrink={0}>
               {pill({ Box, Text }, nerd, THEME.surface3, (
-                <Button key={`note-jump-${found.id}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `note-jump-box-${found.id}`, color: THEME.accent }} onPress={() => jump($, found.turn, found.promptId ?? '')} />
-              ), `note-jump-box-${found.id}`, THEME.surface1)}
+                <Button key={`note-jump-${found.id}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `note-jump-box-${found.id}`, color: THEME.accent, inverse: true }} onPress={() => jump($, found.turn, found.promptId ?? '')} />
+              ), `note-jump-box-${found.id}`, THEME.surface1, THEME.accent)}
             </Box>
           </Box>,
           at < list.length - 1 ? <Text key={`note-rail-${found.id}`} color={THEME.muted}>{`${' '.repeat(time.length + 3)}${MARK.rail}`}</Text> : null,

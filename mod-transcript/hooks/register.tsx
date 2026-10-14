@@ -22,7 +22,7 @@ import { detectWedge, FILLED, OUTLINE, type Wedge } from './wedge'
 import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 import { copyChoices, copyText, type CopyChoice } from './clip'
 import { markPieces, type Piece } from './mark'
-import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
+import { callTime, commandOf, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
 import { apiErrorAction, completeLines, hexColors, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice, type Notice, type Report } from './rows'
 import { bytesOf, CHUNK_BYTES, chunkArgv, utf8Length } from './tail'
 
@@ -297,7 +297,7 @@ const HEAD_CHROME = 12
 
 // How a turn's row draws: hidden while its turn is folded, inside the card while unfolded, as is in the live turn or as the reply.
 async function placeOf($: EngineInterface, turn: Turn | undefined, requestId: string) {
-  if (!turn || !isDone(turn) || rowKey(requestId) === turn.reply) return 'plain'
+  if (!turn || !isDone(turn) || turn.command || rowKey(requestId) === turn.reply) return 'plain'
   return isTurnOpen(flips.turns, turn) ? 'card' : 'hidden'
 }
 
@@ -1067,7 +1067,15 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!(e as { agentId?: string }).agentId) working = true
+    if (!(e as { agentId?: string }).agentId) {
+      working = true
+      // A skill command's turn starts with the stored command text; its row drew before, as an id every row shares, so the turn is made here.
+      const command = commandOf(e.text)
+      if (isLoaded && command) {
+        log.claimCommand(command)
+        $.ui.invalidate('ui.render')
+      }
+    }
 
     return next(e)
   })

@@ -49,6 +49,14 @@ export const promptText = (text: string) => {
   return trimmed && !WRAPPER.test(trimmed) && !INTERRUPTED.test(trimmed) && !trimmed.startsWith('/') ? trimmed : undefined
 }
 
+// A skill command the user typed, shown as typed; a local command (/clear, /config) carries no promptId, so it stays out.
+const COMMAND = /^<command-message>[\s\S]*?<\/command-message>\s*<command-name>\s*(\/[^<\s]+)\s*<\/command-name>\s*(?:<command-args>([\s\S]*?)<\/command-args>)?/
+export const commandPrompt = (row: any, text: string) => {
+  if (typeof row?.promptId !== 'string' || !row.promptId) return undefined
+  const match = COMMAND.exec(text.trim())
+  return match ? `${match[1]} ${(match[2] ?? '').trim()}`.trim() : undefined
+}
+
 // A message's text: the string itself, or its text blocks joined.
 const textOf = (content: unknown) =>
   typeof content === 'string'
@@ -85,7 +93,8 @@ export function parseRow(line: string): Row | undefined {
   if (row.type !== 'user' || row.isMeta || row.isCompactSummary || row.message?.role !== 'user') return base
   const content = row.message.content
   if (Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result')) return { ...base, ...changedLines(row) }
-  return { ...base, prompt: promptText(textOf(content)) }
+  const typed = textOf(content)
+  return { ...base, prompt: commandPrompt(row, typed) ?? promptText(typed) }
 }
 
 // The prompts on the live branch, oldest first; a report or an abandoned prompt opens a turn that lists nothing, as turns.ts does.

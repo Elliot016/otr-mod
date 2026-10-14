@@ -25,6 +25,8 @@ export type Turn = {
   queuedText?: string
   // A prompt drawn before its row was written, maybe more than once while queued: its row and later draws are matched by this text.
   liveText?: string
+  // A skill or prompt command opens the turn: the line Claude Code shows for it, `/execute args`. Claude Code draws that row itself, which no mod can reach, so the turn has no head and its rows stay as they are.
+  command?: string
 }
 
 // The part of a session message (`$.session.messages()`) a guessed turn reads.
@@ -58,6 +60,14 @@ export const rowKey = (id: string) => (UUID.test(id) ? id.slice(0, 24) : id)
 export const isPrompt = (text: string) => {
   const trimmed = text.trim()
   return Boolean(trimmed) && !WRAPPER.test(trimmed) && !INTERRUPTED.test(trimmed) && !trimmed.startsWith('/')
+}
+
+const COMMAND = /^<command-message>[^]*?<command-name>(\/[^<]+)<\/command-name>(?:\s*<command-args>([^]*?)<\/command-args>)?/
+
+// A skill or prompt command as its row stores it, in the words the person typed: `/execute fix it`.
+export const commandOf = (said: string) => {
+  const found = COMMAND.exec(said.trim())
+  return found ? `${found[1]} ${found[2] ?? ''}`.trim() : undefined
 }
 
 const timeOf = (row: any) => {
@@ -156,7 +166,10 @@ export class TurnLog {
     }
     if (row.type === 'user' && !row.isMeta && !row.isCompactSummary && !(Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result'))) {
       const said = userText(content)
-      if (isPrompt(said)) this.adoptOrStart(row.uuid, said, timeOf(row))
+      // A local command (/clear) stores no promptId; a skill command does, and Claude answers it in a turn.
+      const command = typeof row.promptId === 'string' ? commandOf(said) : undefined
+      if (command) this.adoptOrStart(row.uuid, command, timeOf(row)).command = command
+      else if (isPrompt(said)) this.adoptOrStart(row.uuid, said, timeOf(row))
       return
     }
     // A meta queued command is a report delivered mid-turn, which stays in the running turn. A prompt with an image holds content blocks, not a string.
@@ -198,6 +211,15 @@ export class TurnLog {
       this.add(current, rowKey(row.uuid))
       if (row.subtype === 'turn_duration' && typeof row.durationMs === 'number') current.durationMs = row.durationMs
     }
+  }
+
+  // A turn started by a skill or prompt command, before the transcript holds its row; the row's text is adopted when it lands.
+  claimCommand(command: string, at = Date.now()) {
+    if (this.turns[this.turns.length - 1]?.liveText === command) return
+    this.start(`command-${this.turns.length}`, at)
+    const turn = this.turns[this.turns.length - 1]!
+    turn.command = command
+    turn.liveText = command
   }
 
   // A row drawn after the transcript was read: a new prompt opens a turn, any other row joins the latest one.

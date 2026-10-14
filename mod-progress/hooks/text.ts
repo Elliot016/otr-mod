@@ -5,6 +5,8 @@ export default {
   "tipPill": "every agent with its context, tokens and gates",
   "tipPillGates": "{count} running, gates {done}/{total}",
   "tipLoop": "shows or hides this agent's gates",
+  "openTranscript": "Open its transcript",
+  "backToMain": "Back to main",
   "paneTitle": "Progress",
   "settingsPaneTitle": "mod-progress",
   "settingsTab": "Settings",

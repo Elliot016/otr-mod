@@ -976,3 +976,20 @@ test('hovering a card button shows its tip in the band tip row, and the Details 
   await call
   await band.unmount()
 })
+
+test('a held command raises one notification naming it, and a refused notification leaves the hold intact', async ($, on) => {
+  const notes: { text: string; title?: string }[] = []
+  on('ui.notify', (_$: unknown, e: { text: string; title?: string }) => {
+    notes.push(e)
+    throw new Error('refused')
+  })
+  const command = `rm -rf build ${'x'.repeat(120)}`
+  await withCard($, on, command, {}, async band => {
+    await sleep(20)
+    expect(await labelOf(band, "blast-cancel")).toBe(" Cancel ")
+  })
+  expect(notes).toHaveLength(1)
+  expect(notes[0]!.text.length).toBeLessThanOrEqual(110)
+  expect(notes[0]!.text).toContain('rm -rf build')
+  expect(notes[0]!.title).toBe('Blast radius')
+})

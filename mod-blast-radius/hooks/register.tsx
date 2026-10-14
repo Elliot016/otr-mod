@@ -287,6 +287,11 @@ async function answer($: EngineInterface, args: string) {
   return isEnabled ? fill(text.ui.isOn, { builtIn: BUILT_IN.length, mine, bad }) : text.ui.isOff
 }
 
+const oneLine = (command: string) => {
+  const line = command.replace(/s+/g, " ").trim()
+  return line.length > 80 ? `${line.slice(0, 77)}...` : line
+}
+
 const refusal = (decision: Decision | null) =>
   ({
     cancel: 'the person pressed Cancel',
@@ -467,6 +472,8 @@ export const register: Register = (on, options) => {
         // Other band mods can read this to step aside while the card is up.
         await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, true)
         $.clock.after(0, () => describe($, mine))
+        // Fire and forget: a refused notification must never touch the hold.
+        void Promise.resolve().then(() => $.ui.notify(fill(text.ui.notifyHeld, { command: oneLine(command) }), { title: text.ui.notifyTitle })).catch(() => undefined)
         $.ui.invalidate('ui.render')
         // No timeout: the hold stays until the person answers, or the turn is interrupted.
         while (mine.decision === null) {

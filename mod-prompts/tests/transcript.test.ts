@@ -21,6 +21,51 @@ test('a prompt sent mid-turn with an image, stored as content blocks, is listed 
   expect(promptsOf(log.rows).map(prompt => prompt.text)).toEqual(['first prompt', '[Image #1] the header', 'third prompt'])
 })
 
+const command = (n: number, parent: number, name: string, args: string | undefined, promptId?: string) =>
+  JSON.stringify({
+    type: 'user',
+    uuid: ID(n),
+    parentUuid: ID(parent),
+    ...(promptId ? { promptId, turnPosition: { promptIndex: 2, turnIndex: 2 } } : {}),
+    origin: { kind: 'human' },
+    message: { role: 'user', content: `<command-message>${name.slice(1)}</command-message>\n<command-name>${name}</command-name>${args === undefined ? '' : `\n<command-args>${args}</command-args>`}` },
+  })
+const queue = (operation: string, content: string) => JSON.stringify({ type: 'queue-operation', operation, content })
+const queuedRow = (n: number, parent: number, prompt: unknown) => JSON.stringify({ type: 'attachment', uuid: ID(n), parentUuid: ID(parent), attachment: { type: 'queued_command', prompt } })
+
+test('a skill command is listed as typed with its number, and a local command stays out', () => {
+  const log = new TranscriptRows()
+  const caveat = JSON.stringify({ type: 'user', uuid: ID(3), parentUuid: ID(2), isMeta: true, message: { role: 'user', content: '<local-command-caveat>Caveat</local-command-caveat>' } })
+  log.feed([user(1, null, 'first prompt'), command(2, 1, '/execute', 'all the changes', 'p-2'), caveat, command(4, 3, '/clear', undefined), user(5, 4, 'third prompt')].join('\n') + '\n')
+  expect(promptsOf(log.rows).map(prompt => prompt.text)).toEqual(['first prompt', '/execute all the changes', 'third prompt'])
+})
+
+test('a skill command without arguments is listed by its name alone', () => {
+  const log = new TranscriptRows()
+  log.feed([user(1, null, 'first prompt'), command(2, 1, '/execute', undefined, 'p-2')].join('\n') + '\n')
+  expect(promptsOf(log.rows).map(prompt => prompt.text)).toEqual(['first prompt', '/execute'])
+})
+
+test('a prompt queued, pulled back, queued again and absorbed with an image is listed once', () => {
+  const log = new TranscriptRows()
+  const rows = [
+    user(1, null, 'first prompt'),
+    queue('enqueue', 'again'),
+    queue('popAll', 'again'),
+    queue('enqueue', 'again[Image #3]'),
+    queue('remove', 'again[Image #3]'),
+    queuedRow(2, 1, [{ type: 'text', text: 'again[Image #3]' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBOR' } }]),
+  ]
+  log.feed(rows.join('\n') + '\n')
+  expect(promptsOf(log.rows).map(prompt => prompt.text)).toEqual(['first prompt', 'again[Image #3]'])
+})
+
+test('a plain queued prompt is listed once', () => {
+  const log = new TranscriptRows()
+  log.feed([user(1, null, 'first prompt'), queue('enqueue', 'later'), queue('remove', 'later'), queuedRow(2, 1, 'later')].join('\n') + '\n')
+  expect(promptsOf(log.rows).map(prompt => prompt.text)).toEqual(['first prompt', 'later'])
+})
+
 test('a grown transcript parses only the lines past the last complete one, and a torn line waits for the next read', () => {
   const log = new TranscriptRows()
   const first = `${user(1, null, 'first prompt')}\n`

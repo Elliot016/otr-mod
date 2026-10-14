@@ -34,6 +34,7 @@ Automatic.
 
 - **Shared log:** Each session records the files it edits in its own small file under ~/.claude/mod-collision-guard, so sessions never write over each other.
 - **Pause:** Before Edit, Write, MultiEdit or NotebookEdit, a question appears when another open session edited that file inside the window.
+- **Notification:** Each pause raises one native notification naming the file, so you see it from another window.
 - **Four ways out:** Proceed, move to a worktree (Claude calls EnterWorktree and redoes the edit there), cancel, or type an instruction for Claude.
 
 ## Settings

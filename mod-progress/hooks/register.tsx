@@ -5,7 +5,7 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
 import { layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
-import { menuEntry, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { menuEntry, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { addBg, appendTail, applyCall, applyStep, applyTask, bandSummary, bgIdOf, bgOutputOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, finishAgent, findBg, firstLine, gatesStemIn, hasRunningBg, isGatesPath, MAIN_GATES, outputRoom, pageOf, parseGates, resyncBg, settle, stemOf, TAIL_LINES, wipeBg, type AgentLite, type BgTask, type Gate, type Snap, type Tail, type Usage, type UsageLite } from './progress'
 import { stopLine, stopOf } from './stop'
 import { settingChoice, settingsBody } from './settings'
@@ -737,12 +737,32 @@ export const register: Register = (on, options) => {
     const stop = stopLine(current.stop, now)
     // Pane padding, then the section's border and padding.
     const width = e.props.bodyColumns - 2 - 4
+    const viewed = e.props.view.agentId ?? ''
+    const selected = rows.find(each => each.id === current.expanded && !each.isMain)
+    const switchLabel = viewed ? text.backToMain : selected ? text.openTranscript : ''
+    const switchView = async () => {
+      const shown = await $.ui.view(viewed || !selected ? {} : { agentId: selected.id })
+      if (shown.deny) $.ui.toast(shown.deny)
+      $.ui.invalidate('ui.render')
+    }
     const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd, viewing: e.props.view.agentId ?? '' })) as LoopsProps
 
     return (
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs('list', bandSummary(rows).count), still)}
-        <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || text.hint}</Text>
+        <Box key="hint-row" flexDirection="row" columnGap={1}>
+          <Box key="hint-text" flexGrow={1} flexShrink={1}>
+            <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || text.hint}</Text>
+          </Box>
+          {switchLabel ? (
+            <Box key="view-pill" flexShrink={0}>
+              {/* A Button, not a Client: ui.view is refused unless a real press is behind it. */}
+              {pill({ Box, Text }, look.nerd, THEME.surface3, (
+                <Button key="view-switch" label={look.nerd ? `${MARK.open} ${switchLabel}` : ` ${MARK.open} ${switchLabel} `} plain hover={{ scope: 'view-pill-box', color: THEME.accent, inverse: true }} onPress={switchView} />
+              ), 'view-pill-box', THEME.surface1, THEME.accent)}
+            </Box>
+          ) : null}
+        </Box>
         {/* A blank row of the same height while no stop shows, so the list below does not move when one appears. */}
         <Text key="stop-line" wrap="truncate-end" color={stop?.tone === 'alert' ? THEME.alert : THEME.warn}>{stop ? withMark(look, `${MARK.warn} ${stop.line}`) : ' '}</Text>
         {section({ Box, Text }, look, 'loops', '', '', (

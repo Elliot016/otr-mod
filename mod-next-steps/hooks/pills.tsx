@@ -46,16 +46,17 @@ export const tipLine = ({ Box, Text }: Elements, text: string) => {
   )
 }
 
-// One pill with its own caps where the font has them; `on` is what it sits on when that is another pill or a card.
-export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: unknown, key = 'menu-pill', on?: string) {
+// One pill with its own caps where the font has them; `on` is what it sits on, `hover` lights the caps with a Button scoped `key`.
+export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: unknown, key = 'menu-pill', on?: string, hover?: string) {
   const under = on ? { backgroundColor: on } : {}
+  const lit = hover ? { hover: { scope: key, color: hover } } : {}
   return (
     <Box key={key} flexDirection="row">
-      {nerd ? <Text key={`${key}-cap-left`} color={bg} {...under}>{CAPS.left}</Text> : null}
+      {nerd ? <Text key={`${key}-cap-left`} color={bg} {...under} {...lit}>{CAPS.left}</Text> : null}
       <Box key={`${key}-body`} flexDirection="row" backgroundColor={bg}>
         {body}
       </Box>
-      {nerd ? <Text key={`${key}-cap-right`} color={bg} {...under}>{CAPS.right}</Text> : null}
+      {nerd ? <Text key={`${key}-cap-right`} color={bg} {...under} {...lit}>{CAPS.right}</Text> : null}
     </Box>
   )
 }

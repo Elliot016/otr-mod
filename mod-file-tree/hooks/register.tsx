@@ -771,7 +771,8 @@ export const register: Register = (on, options) => {
             const lead = { ...(option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}), tip: { glyph: look.glyph.icon[option.icon ?? ''] ?? look.glyph.title, label: option.label, text: option.tip } }
             return option.isOn
               ? pill({ Box, Text }, look.nerd, THEME.surface3, entry(option.id, option.label, true, THEME.surface3, { idle: THEME.muted, ...lead }), `${option.id}-chosen`, THEME.surface2)
-              : entry(option.id, option.label, false, THEME.surface2, lead)
+              // Caps in the bar's own color keep each option as wide as the chosen pill, so labels don't shift.
+              : pill({ Box, Text }, look.nerd, THEME.surface2, entry(option.id, option.label, false, THEME.surface2, lead), `${option.id}-idle`, THEME.surface2)
           })}
         </Box>
       ), `${key}-bar`, THEME.bg)

@@ -2,6 +2,8 @@
 // Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "paneTitle": "Collision guard",
+  "notifyTitle": "Collision guard",
+  "notifyPaused": "Edit paused: another session edited {file}",
   "paneTitleSettings": "Settings",
   "paneName": "Collision Guard",
   "settingsWaiting": "Settings panel waiting: {reason}",

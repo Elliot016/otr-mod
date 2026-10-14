@@ -558,3 +558,50 @@ test('the back pill\'s props and key stay the same across output ticks', async (
   expect((await pane.find({ type: 'Text', text: /^shell · running/ }))?.text).not.toBe(status)
   await pane.unmount()
 })
+
+const viewing = (agentId?: string) => ({ ...(PANE as unknown as { props: object }), props: { ...(PANE as unknown as { props: object }).props, view: agentId ? { agentId } : {} }, part: { plugin: 'mod-progress' } }) as never
+const pressOn = (mounted: unknown, key: string) => (mounted as { press: (target: { key: string }) => Promise<unknown> }).press({ key })
+
+function stubView(on: On) {
+  const views: object[] = []
+  on('ui.view', (_$, e) => {
+    views.push({ ...e })
+    return { value: {} } as never
+  })
+  return views
+}
+
+test('no switch pill while nothing is selected', async ($, on) => {
+  stubEngine(on, [AGENT])
+  stubView(on)
+  await $.session.start({ cwd: '/w' } as never)
+  const pane = await $.ui.mount(viewing())
+  expect(await pane.find({ type: 'Button' })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('with a subagent card selected, the pill presses ui.view with its agent id', async ($, on) => {
+  stubEngine(on, [AGENT])
+  const views = stubView(on)
+  await $.session.start({ cwd: '/w' } as never)
+  const pane = await $.ui.mount(viewing())
+  // Main head 0, pills 1, gap 2, then the agent's head 3.
+  await pointerOn(pane, { in: 'loops', type: 'down', x: 3, y: 3, button: 'left' })
+  await pane.redraw()
+  expect((await pane.find({ type: 'Button' }))?.text).toContain('Open its transcript')
+  await pressOn(pane, 'view-switch')
+  expect(views).toEqual([{ agentId: 'a1' }])
+  await pane.unmount()
+})
+
+test('while an agent is in view the pill reads Back to main and presses ui.view with no agent', async ($, on) => {
+  stubEngine(on, [AGENT])
+  const views = stubView(on)
+  await $.session.start({ cwd: '/w' } as never)
+  const pane = await $.ui.mount(viewing('a1'))
+  expect((await pane.find({ type: 'Button' }))?.text).not.toContain('Open')
+  expect((await pane.find({ type: 'Button' }))?.text).toBe(' ↗ Back to main ')
+  await pressOn(pane, 'view-switch')
+  expect(views).toEqual([{}])
+  await pane.unmount()
+})

@@ -139,6 +139,8 @@ const worktreeReason = (path: string) =>
 // The question, the dialog's choices and what each means for the call: undefined lets it run.
 async function decide($: EngineInterface, path: string, at: number, now: number) {
   const question = fill(text.question, { path, ago: agoText(now - at), clock: clockText(at) })
+  // Fire and forget: a refused notification must never touch the pause.
+  void Promise.resolve().then(() => $.ui.notify(fill(text.notifyPaused, { file: path.split(/[\/]/).pop() }), { title: text.notifyTitle })).catch(() => undefined)
   let picked = text.choiceCancel
   try {
     picked = await $.ui.ask(question, { options: CHOICES, header: text.askHeader })

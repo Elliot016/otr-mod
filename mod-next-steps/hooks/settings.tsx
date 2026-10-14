@@ -175,7 +175,8 @@ function control(elements: Elements, look: Look, row: ConfigRow, index: number, 
   }
   if (row.kind === 'choice' && row.options?.length) {
     const options = row.options.map((option, at) => {
-      if (option !== String(row.value)) return entry(`option-${at}`, option, option, THEME.surface2, THEME.muted, false)
+      // Idle options get caps in the bar's own color, so moving the choice never shifts a label.
+      if (option !== String(row.value)) return pillOn(elements, look, `${key}-idle-${at}`, THEME.surface2, entry(`option-${at}`, option, option, THEME.surface2, THEME.muted, false), THEME.surface2)
       // The chosen option is a pill inside the bar, so its own caps sit on the bar's color.
       return pillOn(elements, look, `${key}-chosen`, THEME.surface3, entry(`option-${at}`, option, option, THEME.surface3, THEME.onSurface, true), THEME.surface2)
     })

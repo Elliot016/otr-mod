@@ -14,6 +14,15 @@ const pointing = <T extends Mounted>(ui: T) => ui as T & Pointer
 
 const nf = (code: number) => String.fromCodePoint(code)
 
+// The text a node draws, in order; a Client's text lives in its own drawing, so each one is drawn in place.
+const drawnText = async (ui: Mounted, node: unknown): Promise<string> => {
+  if (typeof node === 'string') return node
+  if (Array.isArray(node)) return (await Promise.all(node.map(child => drawnText(ui, child)))).join('')
+  if (!node || typeof node !== 'object') return ''
+  const { type, props, children } = node as { type?: string; props?: { key?: string }; children?: unknown }
+  return type === 'Client' && props?.key ? drawnText(ui, await ui.drawn({ in: props.key })) : drawnText(ui, children)
+}
+
 const PANE = {
   plugin: 'mod-file-tree',
   surface: 'terminal',
@@ -31,7 +40,7 @@ const SHELL_DIFF = {
 const isTranscript = (path: string) => path.replace(/\\/g, '/').endsWith('/s1.jsonl')
 
 // `transcript.text` is the session's .jsonl, which a test may grow between events.
-const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }) => {
+const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }, placed: string[] = []) => {
   on('session.cwd', () => ({ value: '/w' }))
   on('session.id', () => ({ value: 's1' }))
   on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
@@ -44,7 +53,7 @@ const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = 
     if (isTranscript(e.path)) transcript.reads += 1
     return { value: isTranscript(e.path) ? transcript.text : 'one\ntwo\nthree\n' }
   })
-  on('ui.panes', () => ({ value: [] }))
+  on('ui.panes', () => ({ value: placed.map(id => ({ id, isPlaced: true })) }) as never)
   on('ui.open', (_$, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true } } as never
@@ -325,6 +334,20 @@ test('icons=nerd leads the kinds and the title with Nerd icons', { options: { ic
   await ui.unmount()
 })
 
+test("icons=nerd keeps the view bar's labels in place whichever option is chosen", { options: { icons: 'nerd' } }, async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/e.md', old_string: 'a', new_string: 'b' } as never)
+  const ui = await $.ui.mount(PANE)
+  const layout = async () => {
+    const bar = await drawnText(ui, await ui.find({ key: 'view-bar' }))
+    return { replayAt: cells(bar.slice(0, bar.indexOf('Replay'))), width: cells(bar) }
+  }
+  const onTree = await layout()
+  await pointing(ui).pointer({ in: 'tab-replay', type: 'down', button: 'left', x: 2, y: 0 })
+  expect(await layout()).toEqual(onTree)
+  await ui.unmount()
+})
+
 test('a file name takes its status color: added green, modified yellow, read blue', { options: { animations: false } }, async ($, on) => {
   stubs(on)
   await $.tool.call({ tool: 'Write', file_path: '/w/new.md', content: 'hi\n' } as never)
@@ -361,6 +384,24 @@ test('the settings pane shows the mod settings and its clear action', async ($, 
   expect(JSON.stringify(await ui.drawn({ in: 'filetree-settings' }))).toContain('Settings')
   expect(await ui.find({ type: 'Text', text: 'Show files Claude only read' })).toBeDefined()
   await ui.unmount()
+})
+
+test("icons=nerd keeps a settings choice bar's labels in place whichever option is chosen", { options: { icons: 'nerd' } }, async ($, on) => {
+  stubs(on)
+  let value = 'one'
+  on('config.list', () => ({
+    value: [{ key: 'mod-file-tree.sort', label: 'Sort', kind: 'choice', value, options: ['one', 'two', 'three'], description: 'd' }],
+  }) as never)
+  const layout = async () => {
+    const ui = await $.ui.mount({ ...(PANE as object), requestId: 'filetree-settings' } as never)
+    const bar = await drawnText(ui, await ui.find({ key: 'setting-0-bar' }))
+    await ui.unmount()
+    expect(bar).toContain(nf(0xe0b6))
+    return { twoAt: cells(bar.slice(0, bar.indexOf('two'))), width: cells(bar) }
+  }
+  const onOne = await layout()
+  value = 'three'
+  expect(await layout()).toEqual(onOne)
 })
 
 test('the title row pill swaps the panel for its settings and back', async ($, on) => {
@@ -404,6 +445,26 @@ test('the Files pill opens the pane from the band', async ($, on) => {
   await pointing(band).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-filetree' } as never)
   expect(opened).toContain('filetree')
   await band.unmount()
+})
+
+test("icons=nerd keeps the band's menu row the same width whether the pane is open or not", { options: { icons: 'nerd' } }, async ($, on) => {
+  const placed: string[] = []
+  stubs(on, [], undefined, placed)
+  on('state.get', () => ({ value: false, version: 0 }) as never)
+  const layout = async () => {
+    const band = await $.ui.mount({
+      plugin: 'mod-file-tree',
+      surface: 'terminal',
+      component: 'AbovePrompt',
+      props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+    } as never)
+    const row = await drawnText(band, await band.find({ key: 'menu-row' }))
+    await band.unmount()
+    return { filesAt: cells(row.slice(0, row.indexOf('Files'))), width: cells(row) }
+  }
+  const closed = await layout()
+  placed.push('filetree')
+  expect(await layout()).toEqual(closed)
 })
 
 // Transcript rows as Claude Code writes them: a prompt, tool uses, and their results with the stored patch.

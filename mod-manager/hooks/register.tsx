@@ -555,7 +555,8 @@ export const register: Register = (on, options) => {
       const isChosen = iconsNow === mode
       const bg = isChosen ? THEME.surface3 : THEME.surface2
       const entry = <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, isOpen: isChosen, bg, idle: THEME.muted, still, tip: { glyph: look.glyph.title, label: text.iconsLabel, text: fill(text.tipIcons, { mode: (text.iconModes as Record<string, string>)[mode]! }) } } satisfies EntryProps} />
-      return isChosen ? pill({ Box, Text }, look.nerd, bg, entry, `icons-${mode}-pill`, THEME.surface2) : <Box key={`icons-${mode}-pad`}>{entry}</Box>
+      // Idle options get caps in the bar's own color, so moving the choice never shifts a label.
+      return pill({ Box, Text }, look.nerd, bg, entry, isChosen ? `icons-${mode}-pill` : `icons-${mode}-idle`, THEME.surface2)
     }
     const iconsSwitch = iconRows.length ? (
       <Box key="icons-switch" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>

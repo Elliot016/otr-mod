@@ -264,6 +264,8 @@ export default {
     "risk": "risky part"
   },
   "ui": {
+    "notifyTitle": "Blast radius",
+    "notifyHeld": "Waiting for you: {command}",
     "paneName": "mod-blast-radius",
     "commandDescription": "Show what blast radius holds; `settings` opens its settings panel",
     "listWaiting": "List waiting: {reason}",
