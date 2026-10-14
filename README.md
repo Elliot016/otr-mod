@@ -76,7 +76,7 @@ Click a name for its screenshots, features and settings.
 | [`mod-transcript`][doc-mod-transcript] | Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors | Automatic |
 | [`mod-model-effort`][doc-mod-model-effort] | Shows the model and effort level; a click changes either | The model pill |
 | [`mod-heads-up`][doc-mod-heads-up] | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
-| [`mod-progress`][doc-mod-progress] | The main session, every subagent and every agent of a workflow run: model, effort, context fill, tokens, time, and gate progress when a skill writes a `GATES.md` under `~/.claude/gates/<repo>/<session id>` | Progress pill |
+| [`mod-progress`][doc-mod-progress] | The main session, every subagent and every agent of a workflow run: model, effort, context fill, tokens, time, and gate progress when a skill writes a `GATES.md` under `~/.claude/gates/<repo>/<session id>`, plus the background shells and monitors each one started, with their live output | Progress pill |
 | [`mod-next-steps`][doc-mod-next-steps] | Suggests up to three next prompts after each turn | Automatic |
 | [`mod-wrap-up`][doc-mod-wrap-up] | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
 | [`mod-blast-radius`][doc-mod-blast-radius] | Holds a risky shell command until you choose Cancel or Run | Automatic |
@@ -240,7 +240,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 </details>
 
 <details>
-<summary><b>mod-transcript</b>: Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge. A reply that names hex colors shows them.</summary>
+<summary><b>mod-transcript</b>: Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge, which marks what each choice takes. A reply that names hex colors shows them.</summary>
 
 | Unfolding a turn |
 | --- |
@@ -273,7 +273,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 </details>
 
 <details>
-<summary><b>mod-progress</b>: Every agent at a glance: its current step, model, effort, context, tokens, time and gates.</summary>
+<summary><b>mod-progress</b>: Every agent at a glance: its current step, model, effort, context, tokens, time and gates, with the background shells it started. A click on a shell opens its full command and live output.</summary>
 
 | Two agents running, opened from the pill |
 | --- |

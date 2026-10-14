@@ -36,7 +36,7 @@
     "copy_pill": {
       "type": "boolean",
       "title": "Copy button",
-      "description": "On each finished reply's edge. A copy button sits there: point at it to pick reply, code, text, table or links, then click one. Off, the edge stays plain",
+      "description": "On each finished reply's edge. A copy button sits there: point at it to pick reply, code, text, table or links, then click one. The reply marks what the choice under the pointer copies. Off, the edge stays plain",
       "default": true
     },
     "prompt_numbers": {

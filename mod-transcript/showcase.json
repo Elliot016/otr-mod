@@ -4,7 +4,7 @@
     { "title": "Turn line", "detail": "Under each prompt, a line names what the turn did: tool count, file changes with lines added and removed, skills, agents and time." },
     { "title": "Tool lines", "detail": "Inside an open turn, each finished tool call is one line; a click shows its full row and diff." },
     { "title": "Card", "detail": "An open turn draws as one tinted card with a bar down its left edge; the final reply stays outside it." },
-    { "title": "Copy button", "detail": "Under each finished reply, a button copies it as markdown, its code, plain text, its tables rebuilt as clean markdown, or its links." }
+    { "title": "Copy button", "detail": "Under each finished reply, a button copies it as markdown, its code, plain text, its tables rebuilt as clean markdown, or its links. Pointing at a choice marks the characters it takes." }
   ],
   "actions": [
     { "label": "Fold or unfold every turn", "command": "mod-transcript" },
