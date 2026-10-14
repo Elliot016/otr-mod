@@ -2,18 +2,24 @@
 // Draws the copy pill whose choices copy parts of a reply on click.
 import type { ClientModule } from 'claude-code'
 
-import { postTip } from './entry'
+import type { Tip, TipMessage } from './entry'
 import text from './text'
 import { CAPS, fill, THEME } from './theme'
 
 // A click on a choice: the turn and what to copy from its reply.
 export type CopyMessage = { type: 'copy'; id: string; what: string }
 
+// The choice whose characters the reply row marks while it is hovered or just copied; `what` is null when none is.
+export type CopyHoverMessage = { type: 'copy-hover'; id: string; what: string | null }
+
+// One post lands per frame, so a hover change that comes with a tip change rides on the tip message.
+export type CopyTipMessage = TipMessage & { mark?: CopyHoverMessage }
+
 // copied: the note a click leaves, {what} the choice's label; lead: what fills the cells left of the pill, the edge's line.
 export type CopyProps = { id: string; choices: { what: string; label: string }[]; icon: string; copied: string; bg: string; nerd: boolean; lead: { char: string; color: string } }
 
 // over: -2 off the pill, -1 on it but on no choice, else the choice under the pointer.
-type State = { over: number; at: number; note: string; noteAt: number }
+type State = { over: number; at: number; note: string; noteAt: number; noteWhat?: string }
 
 const TICK_MS = 250
 // A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
@@ -22,6 +28,29 @@ const NOTE_MS = 1500
 
 // The part under the pointer (a choice's `what`, 'icon', or none), per instance, so a tip posts only when it changes.
 const under = new WeakMap<object, string | null>()
+
+// The choice last announced to the reply row, so a hover message posts only when it changes.
+const marked = new WeakMap<object, string>()
+
+type Surface = Parameters<ClientModule<CopyProps, State>>[1]
+
+// The choice the reply row should mark for a state: the one under the pointer, or the one a click just copied while its note shows.
+const markOf = (props: Pick<CopyProps, 'choices'>, state: State) =>
+  state.note && Date.now() - state.noteAt < NOTE_MS ? (state.noteWhat ?? '') : state.over >= 0 ? (props.choices[state.over]?.what ?? '') : ''
+
+// The hover message for a state, or null when the reply row already has that choice.
+const markChange = (surface: Surface, props: Pick<CopyProps, 'id' | 'choices'>, state: State): CopyHoverMessage | null => {
+  const what = markOf(props, state)
+  if (what === (marked.get(surface) ?? '')) return null
+  marked.set(surface, what)
+  return { type: 'copy-hover', id: props.id, what: what || null }
+}
+
+// A tip message the pill posts, with the mark change that arrives beside it.
+const tipMessage = (id: string, tip: Tip | null, mark: CopyHoverMessage | null): CopyTipMessage => ({
+  ...(tip ? { type: 'tip', id, glyph: tip.glyph, label: tip.label, text: tip.text } : { type: 'tip', id: null }),
+  ...(mark ? { mark } : {}),
+})
 
 // The cells the open pill takes; the row gives the Client this width, since the pointer reaches only the cells laid out for it.
 export const copyWidth = (props: Pick<CopyProps, 'choices' | 'copied' | 'nerd'>) => {
@@ -33,14 +62,22 @@ export const copyWidth = (props: Pick<CopyProps, 'choices' | 'copied' | 'nerd'>)
 // Each pill's timer runs from the pointer's first event until the pill is at rest again: every reply of a long session ticking kept the process busy.
 const timers = new WeakMap<object, () => void>()
 
-const wake = (surface: Parameters<ClientModule<CopyProps, State>>[1]) => {
+const wake = (surface: Surface, props: CopyProps) => {
   if (timers.has(surface)) return
   const stop = surface.every(TICK_MS, () => {
     const now = surface.state
     if (!now) return
-    if (now.note && Date.now() - now.noteAt >= NOTE_MS) surface.setState({ ...now, note: '' })
-    else if (now.over !== -2 && Date.now() - now.at >= QUIET_MS) surface.setState({ ...now, over: -2 })
-    else if (!now.note && now.over === -2) {
+    if (now.note && Date.now() - now.noteAt >= NOTE_MS) {
+      const ended = { ...now, note: '', noteWhat: '' }
+      surface.setState(ended)
+      const change = markChange(surface, props, ended)
+      if (change) surface.post(change)
+    } else if (now.over !== -2 && Date.now() - now.at >= QUIET_MS) {
+      const quiet = { ...now, over: -2 }
+      surface.setState(quiet)
+      const change = markChange(surface, props, quiet)
+      if (change) surface.post(change)
+    } else if (!now.note && now.over === -2) {
       stop()
       timers.delete(surface)
     }
@@ -72,24 +109,31 @@ const Copy: ClientModule<CopyProps, State> = (props, surface) => {
   }
 
   surface.onPointer(event => {
-    wake(surface)
+    wake(surface, props)
     // While folded the choices are not where they will be, so the first event on the pill only opens it; the lead never does.
     const next = event.type === 'leave' || (!isExpanded && event.x < lead) ? -2 : isExpanded ? choiceAt(event.x) : -1
     if (event.type === 'down' && event.button === 'left' && next >= 0) {
       const choice = props.choices[next]!
       surface.post({ type: 'copy', id: props.id, what: choice.what } satisfies CopyMessage)
-      surface.setState({ over: -2, at: Date.now(), note: fill(props.copied, { what: choice.label }), noteAt: Date.now() })
+      const copied = { over: -2, at: Date.now(), note: fill(props.copied, { what: choice.label }), noteAt: Date.now(), noteWhat: choice.what }
+      surface.setState(copied)
+      markChange(surface, props, copied)
       return
     }
-    surface.setState({ ...state, over: next, at: Date.now() })
+    const moved = { ...state, over: next, at: Date.now() }
+    surface.setState(moved)
+    const change = markChange(surface, props, moved)
     const now = next >= 0 ? props.choices[next]!.what : next === -1 ? 'icon' : null
-    if (now === (under.get(surface) ?? null)) return
+    if (now === (under.get(surface) ?? null)) {
+      if (change) surface.post(change)
+      return
+    }
     under.set(surface, now)
     const choice = props.choices.find(each => each.what === now)
     const tip = choice
       ? { glyph: '', label: fill(text.tipCopyChoiceLabel, { what: choice.label }), text: text.tipCopyChoice[choice.what as keyof typeof text.tipCopyChoice] }
       : now === 'icon' ? { glyph: '', label: text.tipCopyLabel, text: text.tipCopyIcon } : null
-    postTip(surface, `copy-${props.id}`, tip)
+    surface.post(tipMessage(`copy-${props.id}`, tip, change))
   })
 
   const body = hasNote

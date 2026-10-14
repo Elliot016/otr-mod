@@ -8,21 +8,23 @@ export type CopyChoice = 'reply' | 'code' | 'text' | 'table' | 'links'
 const FENCE = /^ *(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^ *\1[ \t]*$/gm
 
 // The reply cut into prose and code, so inline marks are never read inside a code block.
-function pieces(markdown: string) {
-  const parts: { isCode: boolean; text: string }[] = []
+export function pieces(markdown: string) {
+  const parts: { isCode: boolean; text: string; raw: string }[] = []
   let at = 0
   for (const match of markdown.matchAll(FENCE)) {
-    parts.push({ isCode: false, text: markdown.slice(at, match.index) }, { isCode: true, text: match[2]!.replace(/\n$/, '') })
+    const before = markdown.slice(at, match.index)
+    parts.push({ isCode: false, text: before, raw: before }, { isCode: true, text: match[2]!.replace(/\n$/, ''), raw: match[0] })
     at = match.index! + match[0].length
   }
-  return [...parts, { isCode: false, text: markdown.slice(at) }]
+  const rest = markdown.slice(at)
+  return [...parts, { isCode: false, text: rest, raw: rest }]
 }
 
 // The insides of the fenced code blocks, fences left out, one blank line between blocks.
 export const codeOf = (markdown: string) =>
   pieces(markdown).filter(part => part.isCode && part.text).map(part => part.text).join('\n\n')
 
-const plainLine = (line: string) =>
+export const plainLine = (line: string) =>
   line
     .replace(/^ {0,3}#{1,6}\s+/, '')
     .replace(/^(\s*)>\s?/, '$1')
@@ -62,8 +64,8 @@ const alignOf = (cell: string): Align => {
 
 // Every table in the prose: a header row, the rule under it, then the rows that carry a pipe.
 function tablesOf(markdown: string) {
-  const tables: { aligns: Align[]; rows: string[][] }[] = []
-  for (const part of pieces(markdown)) {
+  const tables: { aligns: Align[]; rows: string[][]; part: number; from: number; to: number }[] = []
+  for (const [index, part] of pieces(markdown).entries()) {
     if (part.isCode) continue
     const lines = part.text.split('\n')
     for (let n = 0; n + 1 < lines.length; n++) {
@@ -72,7 +74,7 @@ function tablesOf(markdown: string) {
       const rows = [cellsOf(lines[n]!)]
       let next = n + 2
       while (next < lines.length && lines[next]!.includes('|') && lines[next]!.trim()) rows.push(cellsOf(lines[next++]!))
-      tables.push({ aligns: rule.map(alignOf), rows })
+      tables.push({ aligns: rule.map(alignOf), rows, part: index, from: n, to: next })
       n = next - 1
     }
   }
@@ -100,11 +102,22 @@ function formatTable({ aligns, rows }: { aligns: Align[]; rows: string[][] }) {
   return [line(rows[0]!), `| ${rule.join(' | ')} |`, ...rows.slice(1).map(line)].join('\n')
 }
 
+// Where each table sits: the piece it is in and its first line up to its last line, as the reply wrote them.
+export const tableRanges = (markdown: string) => tablesOf(markdown).map(({ part, from, to }) => ({ part, from, to }))
+
 export const tableOf = (markdown: string) => tablesOf(markdown).map(formatTable).join('\n\n')
 
 const URL_RE = /https?:\/\/[^\s<>()[\]`"']+/g
 // A path with a folder and an extension, a line number allowed: src/cart.js:1, ~/.claude/x.md, C:\repo\a.ts.
 const PATH_RE = /(?:~|\.{1,2}|[A-Za-z]:)?[\\/]?(?:[\w.@-]+[\\/])+[\w@-]+(?:\.[\w-]+)+(?::\d+(?::\d+)?)?/g
+
+// The URLs and file paths one line of prose names, where each starts and ends; a trailing stop is not part of a URL.
+export function linkSpans(line: string) {
+  const spans = [...line.matchAll(URL_RE)].map(match => ({ from: match.index!, to: match.index! + match[0].replace(/[.,;:!?]+$/, '').length }))
+  const rest = line.replace(URL_RE, url => ' '.repeat(url.length))
+  for (const match of rest.matchAll(PATH_RE)) spans.push({ from: match.index!, to: match.index! + match[0].length })
+  return spans.sort((a, b) => a.from - b.from)
+}
 
 // Each URL and file path the prose names, once, in order; code blocks are left out.
 export function linksOf(markdown: string) {

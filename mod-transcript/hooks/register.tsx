@@ -5,7 +5,7 @@ import type { ConfigValue, EngineInterface, ModelApiError, Register, RenderEleme
 import { cells, cut, fit, wrapWords } from './cells'
 import type { BarMessage, BarProps } from './bar'
 import type { Chip, ChipsMessage, ChipsProps } from './chips'
-import { copyWidth, type CopyMessage, type CopyProps } from './copy'
+import { copyWidth, type CopyHoverMessage, type CopyMessage, type CopyProps, type CopyTipMessage } from './copy'
 import type { EdgeProps } from './edge'
 import type { DotProps } from './dot'
 import type { FoldProps } from './fold'
@@ -21,6 +21,7 @@ import { tokenizeLine, type Role } from './shell'
 import { detectWedge, FILLED, OUTLINE, type Wedge } from './wedge'
 import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
 import { copyChoices, copyText, type CopyChoice } from './clip'
+import { markPieces, type Piece } from './mark'
 import { callTime, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
 import { apiErrorAction, completeLines, hexColors, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice, type Notice, type Report } from './rows'
 import { bytesOf, CHUNK_BYTES, chunkArgv, utf8Length } from './tail'
@@ -471,6 +472,39 @@ function bashRow({ Box, Client, Text }: Rows, input: any, isRunning: boolean, is
   )
 }
 
+// The reply drawn in pieces while a copy choice is hovered: its copied characters on a background, the rest as Claude Code draws markdown.
+// The gutter stands in for the bullet and the indent Claude Code gives a reply's text.
+function markedReply({ Box, Markdown, Text }: Pick<Rows, 'Box' | 'Text'> & { Markdown: (props: any) => RenderElement }, pieces: Piece[], isFirst: boolean) {
+  return (
+    <Box key="toggle-marked" flexDirection="row">
+      <Box key="toggle-marked-gutter" width={2} flexShrink={0}>
+        <Text>{isFirst ? MARK.stopOpen : ' '}</Text>
+      </Box>
+      <Box key="toggle-marked-body" flexDirection="column" flexGrow={1} flexShrink={1}>
+        {pieces.map((piece, n) =>
+          piece.kind === 'markdown' ? (
+            <Box key={`toggle-piece-${n}`} marginTop={n ? 1 : 0}>
+              <Markdown text={piece.text} />
+            </Box>
+          ) : (
+            <Box key={`toggle-piece-${n}`} marginTop={n ? 1 : 0}>
+              <Text color={THEME.onSurface}>
+                {piece.parts.map((part, at) =>
+                  part.isMarked ? (
+                    <Text key={`part-${at}`} backgroundColor={THEME.surface3} color={THEME.onSurface}>{part.text}</Text>
+                  ) : (
+                    <Text key={`part-${at}`}>{part.text}</Text>
+                  ),
+                )}
+              </Text>
+            </Box>
+          ),
+        )}
+      </Box>
+    </Box>
+  )
+}
+
 // An unfolded tool's own row and result, set in under its line.
 const nested = ({ Box, Client }: Bars, key: string, body: unknown, fold: BarProps) => (
   <Box key={key} flexDirection="row">
@@ -723,6 +757,11 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
   ]
 }
 
+// The reply row marks the characters of this turn's choice while the pill hovers or has just copied it; null clears it.
+async function markCopy($: EngineInterface, id: string, what: string | null) {
+  await $.state.set({ plugin: 'mod-transcript', key: 'copy-hover' }, what ? `${id}\n${what}` : '')
+}
+
 // What `/mod-transcript <args>` does; the panel's own actions call it directly, since $.command.run skips the calling plugin.
 async function answer($: EngineInterface, args: string) {
   if (args.trim() === 'settings') {
@@ -883,8 +922,16 @@ export const register: Register = (on, options) => {
   // A click on a card's strip folds the turn or tool it runs beside.
   on('ui.message', async ($, e, next) => {
     if (isTipMessage(e.data)) {
+      const mark = (e.data as CopyTipMessage).mark
+      if (mark) await markCopy($, mark.id, mark.what)
       hovered = e.data
       $.ui.invalidate('ui.render')
+      return next(e)
+    }
+    // The pill names the choice to mark; the reply row reads it from the state and redraws.
+    const hover = e.data as CopyHoverMessage
+    if (hover?.type === 'copy-hover') {
+      await markCopy($, hover.id, hover.what)
       return next(e)
     }
     // A click can move or remove the control under the pointer, and a leave may never come.
@@ -900,6 +947,7 @@ export const register: Register = (on, options) => {
     if (picked?.type === 'chip') await pickChip($, picked.id, picked.kind)
     const copy = e.data as CopyMessage
     if (copy?.type === 'copy') {
+      await markCopy($, copy.id, copy.what)
       const turn = log.turns.find(each => each.prompt === copy.id)
       const result = turn ? await $.ui.copy({ text: copyText(turn.replyText ?? '', copy.what as CopyChoice), surface: e.surface }) : { isCopied: false, reason: text.copyNoTurn }
       if (!result.isCopied) $.ui.toast(fill(text.copyFailed, { reason: String('reason' in result ? result.reason : '') }))
@@ -1137,10 +1185,14 @@ export const register: Register = (on, options) => {
     // A reply drawn live is newer than the transcript the log read; the copy pill hands over what it says.
     if (turn && rowKey(e.requestId) === turn.reply && e.props.text.trim()) turn.replyText = e.props.text.trim()
     const place = await placeOf($, turn, e.requestId)
-    const { Box, Client, Text } = $.ui.resolve(e)
+    const { Box, Client, Markdown, Text } = $.ui.resolve(e)
     const failure = apiFailure?.text && e.props.text.trim() === apiFailure.text ? apiFailure : null
+    // Only the reply's row reads the hover, which subscribes it: the pill's choice on this turn marks what that choice copies.
+    const hover = showCopy && !failure && turn && rowKey(e.requestId) === turn.reply ? String((await $.state.get({ plugin: 'mod-transcript', key: 'copy-hover' })).value ?? '') : ''
+    const hovered = turn && hover.startsWith(`${turn.prompt}\n`) ? hover.slice(turn.prompt.length + 1) : ''
+    const marks = hovered ? markPieces(e.props.text.trim(), hovered as CopyChoice) : null
     const colors = failure ? [] : hexColors(e.props.text, THEME.surface2)
-    const reply = async () => (failure ? apiErrorRow({ Box, Text }, failure, widthOf(e)) : next(e))
+    const reply = async () => (failure ? apiErrorRow({ Box, Text }, failure, widthOf(e)) : marks ? markedReply({ Box, Markdown, Text }, marks, e.props.isFirstOfReply) : next(e))
     // Claude Code draws the reply's markdown, which cannot color a character, so the colors it names show in a strip under it.
     const drawn = async () =>
       colors.length === 0 ? reply() : (
