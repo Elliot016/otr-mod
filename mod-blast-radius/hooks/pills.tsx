@@ -67,7 +67,8 @@ export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: an
   const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props } satisfies EntryProps} />
   return (
     <Box key={`menu-pad-${id}`} flexDirection="row">
-      {props.isOpen ? pill({ Box, Text }, nerd, bg, entry, `menu-open-${id}`, PILL.primary) : entry}
+      {/* A closed entry gets caps in the group's own color, so opening a panel never shifts its neighbours. */}
+      {pill({ Box, Text }, nerd, bg, entry, props.isOpen ? `menu-open-${id}` : `menu-closed-${id}`, PILL.primary)}
     </Box>
   )
 }
