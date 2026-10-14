@@ -64,7 +64,8 @@ export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: u
 // A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open panel's entry is a pill of its own inside the group.
 export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, props: Omit<EntryProps, 'id' | 'bg' | 'tight'>) {
   const bg = props.isOpen ? THEME.lifted : PILL.primary
-  const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props } satisfies EntryProps} />
+  // On Nerd the caps take the label's padding cells, so an entry is as wide as before the caps.
+  const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props, nerd, tight: nerd } satisfies EntryProps} />
   return (
     <Box key={`menu-pad-${id}`} flexDirection="row">
       {/* A closed entry gets caps in the group's own color, so opening a panel never shifts its neighbours. */}
