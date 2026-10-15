@@ -128,7 +128,7 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate,
     const elements = $.ui.resolve(e)
     return below ? below(elements) : <elements.Text key="base">base</elements.Text>
   })
-  return { clock, store, forks, completes, fills, states, reads, runs, panes: () => panes, setDraft: (text: string) => (draft = text) }
+  return { clock, store, forks, completes, fills, sent, states, reads, runs, panes: () => panes, setDraft: (text: string) => (draft = text) }
 }
 
 async function step($: any, index: number, extra: object = {}) {
@@ -524,7 +524,7 @@ test('a hovered pane control posts its tip into the footer, and the card and the
   await clock.settle()
   const hovered = JSON.stringify(await panel.find({ key: 'pane-footer' }))
   expect(hovered).toContain('Ask Claude')
-  expect(hovered).toContain('drafts a follow-up in your prompt')
+  expect(hovered).toContain('sends this note to Claude to check')
   await panel.pointer({ in: 'headsup-settings', type: 'move', x: 1, y: 0 })
   await clock.settle()
   expect(JSON.stringify(await panel.find({ key: 'pane-footer' }))).toContain('opens this mod')
@@ -559,9 +559,9 @@ test('the card clears after two prompts, or at once on ×, and stays in the pane
   await panel.unmount()
 })
 
-test('Open opens the panel on that note: its turn, the explanation, Chat fills the prompt, Simpler words rewrites it, ↗ scrolls', async ($, on) => {
+test('Open opens the panel on that note: its turn, the explanation, Chat sends the note, Simpler words rewrites it, ↗ scrolls', async ($, on) => {
   let rewritten = false
-  const { clock, panes, fills, forks, states } = setup(on, { reply: () => answered(rewritten ? 'title: Plainer\nexplain:\n- in short words' : FULL) })
+  const { clock, panes, fills, sent, forks, states } = setup(on, { reply: () => answered(rewritten ? 'title: Plainer\nexplain:\n- in short words' : FULL) })
   await $.ui.mount({ plugin: 'mod-heads-up', surface: 'terminal', component: 'UserMessage', requestId: 'row-1', props: { text: 'Add follow-ups to /ask', origin: { kind: 'composer' } } } as never)
   await finding($, clock)
   const ui = await band($)
@@ -582,7 +582,8 @@ test('Open opens the panel on that note: its turn, the explanation, Chat fills t
 
   const id = String(tree.match(/"id":"headsup-understood-([^"]+)"/)?.[1])
   await click(panel, `headsup-chat-${id}`)
-  expect(fills).toEqual([{ text: 'Tell me more about this: The main agent cached /ask, so one-off questions now cost more.', mode: 'replace' }])
+  expect(fills).toEqual([])
+  expect(sent.slice(1)).toEqual(['A heads-up note (a side model\'s summary, not something you said) claims: "The main agent cached /ask, so one-off questions now cost more." Check it against this session and tell me if it holds.'])
 
   rewritten = true
   await click(panel, `headsup-reword-${id}`)

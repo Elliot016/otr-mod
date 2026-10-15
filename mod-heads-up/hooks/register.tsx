@@ -305,15 +305,10 @@ async function knowIt($: EngineInterface, id: string) {
   await update($, id, { isRead: true })
 }
 
-// Appends to the prompt and skips a line already there; nothing is sent.
 async function chat($: EngineInterface, id: string) {
   const found = noteOf(id)
   if (!found) return
-  const line = fill(text.chatPrompt, { learn: found.learn })
-  const draft = await $.prompt.read()
-  if (draft.text.includes(line)) return
-  const isEmpty = draft.text.trim() === ''
-  await $.prompt.fill({ text: isEmpty ? line : ` ${line}`, mode: isEmpty ? 'replace' : 'append' })
+  await $.prompt.submit({ text: fill(text.chatPrompt, { learn: found.learn }), asUser: true })
 }
 
 async function redo($: EngineInterface, id: string, direction: Direction) {
