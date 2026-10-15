@@ -36,6 +36,8 @@ export default {
   "tipTabPage": "shows this mod's page",
   "tipIcons": "sets icons in every mod to {mode}",
   "tipSwitch": "turns this mod on or off",
+  "costTitle": "Costs",
+  "costTip": "calls a model and spends tokens, its page says how to turn it off",
   "tipOpen": "opens this mod's page and settings",
   "tipApply": "reloads plugins to apply the changes",
   "stateOn": "On",

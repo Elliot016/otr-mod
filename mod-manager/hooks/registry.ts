@@ -9,11 +9,13 @@ export type Io = {
   write: (path: string, text: string) => Promise<void>
   list: (path: string) => Promise<{ name: string; kind: string }[]>
   home: () => Promise<string>
+  // CLAUDE_CONFIG_DIR when set, else ~/.claude.
+  config: () => Promise<string>
 }
 
 export type Feature = { title: string; detail: string }
 export type ShowcaseAction = { label: string; command: string; args?: string }
-export type Showcase = { tagline?: string; features?: Feature[]; actions?: ShowcaseAction[]; previews?: Previews }
+export type Showcase = { tagline?: string; features?: Feature[]; actions?: ShowcaseAction[]; previews?: Previews; cost?: { summary: string } }
 
 export type ModInfo = {
   id: string
@@ -78,6 +80,13 @@ const scan = (source: string) => {
   return { events: [...events], calls: [...calls], commands }
 }
 
+// A cost's longer readme is for the mod's own page elsewhere; only its one-sentence summary is kept.
+const showcaseOf = (json: Json | null) => {
+  if (!json) return null
+  const { cost, ...rest } = json
+  return (typeof cost?.summary === 'string' ? { ...rest, cost: { summary: cost.summary } } : rest) as Showcase
+}
+
 const inspect = async (
   io: Io,
   root: string,
@@ -103,7 +112,7 @@ const inspect = async (
     source,
     enabled,
     ...scan(text),
-    showcase: (await readJson(io, `${root}/showcase.json`)) as Showcase | null,
+    showcase: showcaseOf(await readJson(io, `${root}/showcase.json`)),
     settings: Object.keys(manifest.userConfig ?? {}).length,
     fields: manifest.userConfig ?? {},
   }
@@ -111,7 +120,7 @@ const inspect = async (
 
 export async function discover(io: Io): Promise<ModInfo[]> {
   const home = await homeDir(io)
-  const claudeDir = `${home}/.claude`
+  const claudeDir = slashes(await io.config())
   const settings = (await readJson(io, `${claudeDir}/settings.json`)) ?? {}
   const active = splitDirs(String(settings.env?.CLAUDE_CODE_PLUGIN_DIRS ?? ''), separatorFor(home)).map(entry =>
     expand(entry, home),
@@ -180,7 +189,7 @@ export async function setEnabled(io: Io, mod: ModInfo, enabled: boolean): Promis
   if (mod.name === SELF) return refuse(shown.refuseSelf)
 
   const home = await homeDir(io)
-  const path = `${home}/.claude/settings.json`
+  const path = `${slashes(await io.config())}/settings.json`
   let text: string
   try {
     text = String(await io.read(path))

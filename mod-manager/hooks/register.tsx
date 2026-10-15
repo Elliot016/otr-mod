@@ -9,12 +9,18 @@ import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from 
 import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { cardFill, cardGap, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Reveal, withMark } from './look'
-import { actionReveals, settingChoice, settingsBody, type Action } from './settings'
+import { actionReveals, choiceBar, settingChoice, settingsBody, type Action } from './settings'
 import { cardSpace, stickyCard } from './card'
+import { costPill } from './cost'
 import { type ListMessage, type ListProps } from './list'
+
+const homeOf = async ($: EngineInterface) => ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+
+const configDir = async ($: EngineInterface) => ((await $.env.get('CLAUDE_CONFIG_DIR')) || `${await homeOf($)}/.claude`).replace(/\\/g, '/')
 
 // `$` cannot cross an import, so the registry gets plain functions instead.
 const ioOf = ($: EngineInterface): Io => ({
+  config: () => configDir($),
   read: path => $.fs.read(path),
   write: (path, text) => $.fs.write(path, text),
   list: path => $.fs.list(path),
@@ -148,8 +154,7 @@ async function applyChanges($: EngineInterface) {
 }
 
 async function settingsCaughtUp($: EngineInterface) {
-  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  const onDisk = JSON.stringify(JSON.parse(String(await $.fs.read(`${home}/.claude/settings.json`))).enabledPlugins ?? {})
+  const onDisk = JSON.stringify(JSON.parse(String(await $.fs.read(`${await configDir($)}/settings.json`))).enabledPlugins ?? {})
   for (let tries = 0; tries < 30; tries++) {
     const loaded = await $.settings.read({ source: 'user' })
     if (JSON.stringify(loaded.enabledPlugins ?? {}) === onDisk) return
@@ -472,7 +477,7 @@ export const register: Register = (on, options) => {
       return frame([
         <Box key="page-head" flexDirection="row" columnGap={1}>
           {tabRow({ Box, Client, Text }, look.nerd, [listTab(false), { id: 'manager-page', label: shownName(mod.name), icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: true, tip: { glyph: look.glyph.title, label: shownName(mod.name), text: text.tipTabPage } }], still)}
-          <Text color={mod.enabled ? THEME.good : THEME.muted}>{`${MARK.sep} ${mod.enabled ? text.stateOn : text.stateOff}`}</Text>
+          <Text color={mod.enabled ? THEME.ok : THEME.muted}>{`${MARK.sep} ${mod.enabled ? text.stateOn : text.stateOff}`}</Text>
         </Box>,
         <Text key="page-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
         <Box key="page-about" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
@@ -480,6 +485,18 @@ export const register: Register = (on, options) => {
           <Text color={THEME.muted}>{mod.description}</Text>
           {mod.showcase?.tagline ? <Text color={THEME.secondary}>{mod.showcase.tagline}</Text> : null}
         </Box>,
+        mod.showcase?.cost ? (
+          <Box key="page-cost" flexDirection="column" marginTop={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>
+            <Box key="page-cost-head" flexDirection="row" columnGap={1}>
+              {costPill({ Box, Text }, look.nerd, look.glyph.icon.cost!, THEME.surface1, 'page-cost-pill')}
+              <Text color={THEME.onSurface} bold>{text.costTitle}</Text>
+            </Box>
+            {/* A setting named in backticks stands out, so the reader knows what to look for. */}
+            <Text key="page-cost-text" color={THEME.muted} wrap="wrap">
+              {mod.showcase.cost.summary.split('`').map((part, n) => (n % 2 ? <Text key={`cost-part-${n}`} color={THEME.accent}>{part}</Text> : part))}
+            </Text>
+          </Box>
+        ) : null,
         mod.enabled || mod.settings === 0 ? (
           settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews: mod.showcase?.previews, fields: mod.fields, still })
         ) : (
@@ -516,6 +533,9 @@ export const register: Register = (on, options) => {
               // A command named after its mod repeats the folder, so only other commands show.
               commands: item.commands.filter(name => name !== item.name),
               hasSettings: item.settings > 0,
+              // A Client prop refuses undefined, so a mod without a cost leaves the key out.
+              // The footer tip is one row, so it says only that the mod costs; the page card holds the full summary.
+              ...(item.showcase?.cost ? { cost: text.costTip } : {}),
             })),
             gear: look.glyph.gear,
             still,
@@ -527,6 +547,8 @@ export const register: Register = (on, options) => {
             off: text.stateOff,
             switchTip: { glyph: bare(look.glyph.on), label: '', text: text.tipSwitch },
             openTip: text.tipOpen,
+            costGlyph: look.glyph.icon.cost!,
+            costLabel: text.costTitle,
           } satisfies ListProps}
         />,
       )
@@ -562,19 +584,17 @@ export const register: Register = (on, options) => {
     const iconRows = await iconRowsOf($)
     const iconValues = new Set(iconRows.map(row => String(row.value)))
     const iconsNow = iconValues.size === 1 ? [...iconValues][0] : ''
-    // A choice bar as the settings cards draw one: the options on surface 2, the chosen one on its own surface 3 pill.
-    const iconOption = (mode: (typeof ICON_MODES)[number]) => {
-      const isChosen = iconsNow === mode
-      const bg = isChosen ? THEME.surface3 : THEME.surface2
-      const entry = <Client key={`icons-${mode}`} module="./entry.tsx" height={1} props={{ id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, isOpen: isChosen, bg, idle: THEME.muted, still, tip: { glyph: look.glyph.title, label: text.iconsLabel, text: fill(text.tipIcons, { mode: (text.iconModes as Record<string, string>)[mode]! }) } } satisfies EntryProps} />
-      // Idle options get caps in the bar's own color, so moving the choice never shifts a label.
-      return pill({ Box, Text }, look.nerd, bg, entry, isChosen ? `icons-${mode}-pill` : `icons-${mode}-idle`, THEME.surface2)
-    }
+    // A choice bar as the settings cards draw one.
+    const iconChoices = ICON_MODES.map(mode => ({
+      key: `icons-${mode}`,
+      isOn: iconsNow === mode,
+      props: { id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, still, tip: { glyph: look.glyph.title, label: text.iconsLabel, text: fill(text.tipIcons, { mode: (text.iconModes as Record<string, string>)[mode]! }) } },
+    }))
     const iconsSwitch = iconRows.length ? (
       <Box key="icons-switch" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
         <Box key="icons-switch-row" flexDirection="row" columnGap={1}>
           <Text color={THEME.onSurface} bold>{text.iconsLabel}</Text>
-          {pill({ Box, Text }, look.nerd, THEME.surface2, ICON_MODES.map(iconOption), 'icons-bar', cardFill())}
+          {choiceBar({ Box, Client, Text, Button }, look, 'icons', cardFill(), iconChoices)}
           {iconsNow ? null : <Text color={THEME.muted}>{`${MARK.sep} ${text.iconsMixed}`}</Text>}
         </Box>
         <Text color={THEME.muted}>{text.iconsDescription}</Text>
@@ -585,7 +605,7 @@ export const register: Register = (on, options) => {
     return frame([
       <Box key="list-head" flexDirection="row" columnGap={1}>
         {tabRow({ Box, Client, Text }, look.nerd, [listTab(true)], still)}
-        {pill({ Box, Text }, look.nerd, mix(THEME.good, THEME.bg, COUNT_WASH), <Text color={THEME.good}>{look.nerd ? fill(text.onCount, { on: onCount }) : ` ${fill(text.onCount, { on: onCount })} `}</Text>, 'on-count', THEME.bg)}
+        {pill({ Box, Text }, look.nerd, mix(THEME.ok, THEME.bg, COUNT_WASH), <Text color={THEME.ok}>{look.nerd ? fill(text.onCount, { on: onCount }) : ` ${fill(text.onCount, { on: onCount })} `}</Text>, 'on-count', THEME.bg)}
       </Box>,
       <Text key="list-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { sep: MARK.sep })}</Text>,
       cardSpace({ Box }, CARD_ROWS),

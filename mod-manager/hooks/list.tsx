@@ -4,13 +4,14 @@ import type { ClientModule } from 'claude-code'
 
 import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, mix, postTip, stepToward } from './entry'
 import type { Tip } from './entry'
+import { COST_CELLS, costPill } from './cost'
 import { CAPS, MARK, THEME } from './theme'
 
 // index is the mod's place in the pane's full list; slug is its package and folder name.
-export type Row = { index: number; name: string; slug: string; version: string; enabled: boolean; commands: string[]; hasSettings: boolean }
+export type Row = { index: number; name: string; slug: string; version: string; enabled: boolean; commands: string[]; hasSettings: boolean; cost?: string }
 
 // gear marks a mod with settings, icon leads each name (empty in safe mode); the widths line the columns up; still: hover switches at once.
-export type ListProps = { rows: Row[]; gear: string; icon: string; nameWidth: number; slugWidth: number; nerd: boolean; on: string; off: string; switchTip: Tip; openTip: string; still?: boolean }
+export type ListProps = { rows: Row[]; gear: string; icon: string; nameWidth: number; slugWidth: number; nerd: boolean; on: string; off: string; switchTip: Tip; openTip: string; costGlyph: string; costLabel: string; still?: boolean }
 
 // The pointer's row and part post a tip (id manager-row-<index>), which also tells the pane which mod's card to show.
 export type ListMessage = { type: 'select'; index: number } | { type: 'toggle'; index: number }
@@ -41,11 +42,14 @@ const fades = new WeakMap<object, () => void>()
 // One row per mod: the switch pill turns it on or off, the rest of the row opens its page; the row under the pointer lights as a lifted row with accent text.
 const ModList: ClientModule<ListProps, State> = (props, surface) => {
   const { Box, Text } = surface.elements
-  const { rows, gear, icon, nameWidth, slugWidth, nerd, on, off, switchTip, openTip, still } = props
+  const { rows, gear, icon, nameWidth, slugWidth, nerd, on, off, switchTip, openTip, costGlyph, costLabel, still } = props
   // A Client takes no hover prop, so it tracks the row under the pointer itself.
   const hovered = surface.state?.row ?? -1
   const levels = surface.state?.levels ?? {}
   const toggleCells = switchWidth(on, off)
+  // Where the cost pill sits, if any row has one: after the switch, the space, the icon and the padded name; rows without one keep its blank.
+  const hasCost = rows.some(row => row.cost)
+  const costStart = toggleCells + 1 + (icon ? [...icon].length + 1 : 0) + nameWidth + 1
 
   surface.onPointer(event => {
     if (!still && !fades.has(surface)) {
@@ -61,13 +65,13 @@ const ModList: ClientModule<ListProps, State> = (props, surface) => {
       fades.set(surface, stop)
     }
     const row = event.type !== 'leave' && event.y >= 0 && event.y < rows.length ? event.y : -1
-    const zone = row >= 0 && event.x < toggleCells ? 0 : 1
+    const zone = row >= 0 && event.x < toggleCells ? 0 : row >= 0 && rows[row]!.cost && event.x >= costStart && event.x < costStart + COST_CELLS ? 2 : 1
     const isClick = event.type === 'down' && event.button === 'left' && row >= 0
     if (row !== hovered || (row >= 0 && zone !== surface.state?.zone)) {
       const next = still ? (row >= 0 ? { [row]: HOVER_STEPS } : {}) : fadeLevels(levels, row)
       surface.setState({ row, zone, levels: next })
       // One post lands per event, so a click posts its own message and the next move posts the tip.
-      if (!isClick) postTip(surface, row >= 0 ? `manager-row-${rows[row]!.index}` : 'manager-row', row >= 0 ? (zone === 0 ? { ...switchTip, label: rows[row]!.name } : { glyph: gear, label: rows[row]!.name, text: openTip }) : null)
+      if (!isClick) postTip(surface, row >= 0 ? `manager-row-${rows[row]!.index}` : 'manager-row', row >= 0 ? (zone === 0 ? { ...switchTip, label: rows[row]!.name } : zone === 2 ? { glyph: costGlyph, label: costLabel, text: rows[row]!.cost! } : { glyph: gear, label: rows[row]!.name, text: openTip }) : null)
     }
     if (!isClick) return
     surface.post({ type: zone === 0 ? 'toggle' : 'select', index: rows[row]!.index } satisfies ListMessage)
@@ -78,7 +82,7 @@ const ModList: ClientModule<ListProps, State> = (props, surface) => {
       {rows.map((row, at) => {
         const level = levels[at] ?? 0
         const bg = hoverMix(THEME.surface1, THEME.lifted, level)
-        const fill = row.enabled ? mix(THEME.good, bg, WASH) : THEME.surface3
+        const fill = row.enabled ? mix(THEME.ok, bg, WASH) : THEME.surface3
         const label = (row.enabled ? on : off).padEnd(Math.max(on.length, off.length))
         const end = (side: string, key: string) => <Text key={key} color={fill} backgroundColor={nerd ? bg : fill}>{nerd ? side : ' '}</Text>
         // An off mod's name dims too, so its state never rests on the switch alone.
@@ -86,15 +90,28 @@ const ModList: ClientModule<ListProps, State> = (props, surface) => {
         return (
           <Box key={`row-${at}`} flexDirection="row" backgroundColor={bg}>
             {end(CAPS.left, `switch-${at}-left`)}
-            <Text key={`switch-${at}`} color={row.enabled ? THEME.good : THEME.muted} backgroundColor={fill}>{`${row.enabled ? MARK.stopOpen : MARK.stop} ${label}`}</Text>
+            <Text key={`switch-${at}`} color={row.enabled ? THEME.ok : THEME.muted} backgroundColor={fill}>{`${row.enabled ? MARK.stopOpen : MARK.stop} ${label}`}</Text>
             {end(CAPS.right, `switch-${at}-right`)}
-            <Text color={nameColor}>{` ${icon ? `${icon} ` : ''}${row.name.padEnd(nameWidth)} `}</Text>
+            <Box key={`row-${at}-name`} flexShrink={0}>
+              <Text color={nameColor}>{` ${icon ? `${icon} ` : ''}${row.name.padEnd(nameWidth)} `}</Text>
+            </Box>
+            {hasCost ? (row.cost ? [costPill({ Box, Text }, nerd, costGlyph, bg, `cost-${at}`), <Text key={`cost-${at}-gap`}> </Text>] : <Text key={`cost-${at}-blank`}>{' '.repeat(COST_CELLS + 1)}</Text>) : null}
             {/* A blank as wide as the gear keeps the folders in one column for mods without settings. */}
             <Text color={THEME.secondary}>{row.hasSettings ? gear : ' '.repeat([...gear].length)}</Text>
-            <Text color={THEME.muted}>{` ${row.slug.padEnd(slugWidth)}`}</Text>
-            {row.commands.length ? <Text color={THEME.muted}>{row.commands.map(name => ` ${MARK.sep} /${name}`).join('')}</Text> : null}
+            {/* A box, not padding, holds the column: cut padding would draw … on every row. */}
+            <Box key={`row-${at}-slug`} width={slugWidth + 1} flexShrink={1}>
+              <Text color={THEME.muted} wrap="truncate-end">{` ${row.slug}`}</Text>
+            </Box>
+            {row.commands.length ? (
+              <Box key={`row-${at}-commands`} flexShrink={0}>
+                <Text color={THEME.muted}>{row.commands.map(name => ` ${MARK.sep} /${name}`).join('')}</Text>
+              </Box>
+            ) : null}
             <Box key={`row-${at}-gap`} flexGrow={1} />
-            <Text color={THEME.muted}>{row.version}</Text>
+            {/* Only the id gives way: the version keeps one cell of gap even when the cost column leaves the row no room. */}
+            <Box key={`row-${at}-version`} flexShrink={0} paddingLeft={1}>
+              <Text color={THEME.muted}>{row.version}</Text>
+            </Box>
           </Box>
         )
       })}

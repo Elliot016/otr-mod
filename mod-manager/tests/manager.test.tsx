@@ -3,7 +3,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { discover, featuresOf, setEnabled, type Io } from '../hooks/registry'
-import { MARK, THEME } from '../hooks/theme'
+import { MARK, mix, THEME } from '../hooks/theme'
 
 const SETTINGS = {
   $schema: 'https://example.test/schema.json',
@@ -59,6 +59,7 @@ const disk = (overrides: Record<string, string> = {}) => {
       ]
     },
     home: async () => '/h',
+    config: async () => '/h/.claude',
   }
   return { io, files }
 }
@@ -92,6 +93,7 @@ test('a mod folder installed from the local marketplace shows once, as the insta
     'C:/H/.claude/mods/beta/hooks/register.tsx': source,
   })
   io.home = async () => 'C:/H'
+  io.config = async () => 'C:/H/.claude'
   io.list = async path => {
     if (path !== 'C:/H/.claude/mods') throw new Error('ENOENT')
     return [{ name: 'beta', kind: 'dir' }]
@@ -113,6 +115,7 @@ test('a listed mod folder also installed, switched off, from the local marketpla
     'C:/H/.claude/mods/beta/hooks/register.tsx': source,
   })
   io.home = async () => 'C:/H'
+  io.config = async () => 'C:/H/.claude'
   io.list = async path => {
     if (path !== 'C:/H/.claude/mods') throw new Error('ENOENT')
     return [{ name: 'beta', kind: 'dir' }]
@@ -173,6 +176,77 @@ test('safety: refuses itself, invalid JSON and leaves the file alone', async () 
   expect(broken.files['/h/.claude/settings.json']).toBe('{ not json')
   expect(Object.keys(broken.files).some(path => path.endsWith('.bak'))).toBe(false)
   expect(Object.keys(files).some(path => path.endsWith('.bak'))).toBe(false)
+})
+
+test('with a config dir set, discovery and toggles stay inside it and leave ~/.claude alone', async () => {
+  const { io, files } = disk({
+    '/cfg/settings.json': JSON.stringify({ enabledPlugins: {} }, null, 2) + '\n',
+    '/cfg/plugins/installed_plugins.json': JSON.stringify({ plugins: { 'cfginst@m': [{ scope: 'user', installPath: '/cache/inst' }] } }),
+    '/cfg/mods/gamma/.claude-plugin/plugin.json': manifest('gamma'),
+    '/cfg/mods/gamma/hooks/hooks.json': hooks,
+    '/cfg/mods/gamma/hooks/register.tsx': source,
+  })
+  io.config = async () => '/cfg'
+  io.list = async path => {
+    if (path !== '/cfg/mods') throw new Error('ENOENT')
+    return [{ name: 'gamma', kind: 'dir' }]
+  }
+  const homeSettings = files['/h/.claude/settings.json']!
+
+  const found = await discover(io)
+  expect(found.map(mod => mod.name)).toEqual(['gamma', 'inst'])
+  expect(found[0]).toMatchObject({ source: 'dir', isOwn: true, root: '/cfg/mods/gamma' })
+
+  expect(await setEnabled(io, found[0]!, true)).toEqual({ ok: true, needsRestart: true })
+  expect(JSON.parse(files['/cfg/settings.json']!).env.CLAUDE_CODE_PLUGIN_DIRS).toBe('/cfg/mods/gamma')
+  expect(files['/cfg/settings.json.mod-manager.bak']).toBeDefined()
+  expect(files['/h/.claude/settings.json']).toBe(homeSettings)
+  expect(files['/h/.claude/settings.json.mod-manager.bak']).toBeUndefined()
+})
+
+test('the pane reads and writes under CLAUDE_CONFIG_DIR when it is set, else under ~/.claude', async ($, on) => {
+  const { files } = disk({
+    '/cfg/settings.json': JSON.stringify({ env: { CLAUDE_CODE_PLUGIN_DIRS: '/cfg/mods/gamma' }, enabledPlugins: {} }, null, 2) + '\n',
+    '/cfg/mods/gamma/.claude-plugin/plugin.json': manifest('gamma'),
+    '/cfg/mods/gamma/hooks/hooks.json': hooks,
+    '/cfg/mods/gamma/hooks/register.tsx': source,
+  })
+  const homeSettings = files['/h/.claude/settings.json']!
+  on('fs.read', (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.write', (_$, e) => {
+    files[neutral(e.path)] = e.text
+    return { value: undefined }
+  })
+  on('fs.list', (_$, e) => {
+    if (neutral(e.path) !== '/cfg/mods') throw new Error('ENOENT')
+    return { value: [{ name: 'gamma', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }
+  })
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: [] }))
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  await $.command.run({ command: 'mod-manager' } as never)
+  const ui = withPointer(await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: true, bodyColumns: 80, placement: 'above', scroll: { offset: 0, bodyRows: 20 }, view: {} },
+  } as never))
+
+  expect(await ui.find({ type: 'Text', text: /^Yours$/ })).toBeDefined()
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(JSON.parse(files['/cfg/settings.json']!).enabledPlugins['gamma@inline']).toBe(false)
+  expect(files['/h/.claude/settings.json']).toBe(homeSettings)
+  await ui.unmount()
 })
 
 test('showcase uses showcase.json, else derives from the hooks source', async () => {
@@ -653,6 +727,13 @@ test('the icons switch shows Mixed when mods differ, and one click sets every mo
   // The switch sits in its own setting card: the label, the bar, and what it does.
   expect(await ui.find({ type: 'Text', text: /^Sets every mod's icons at once/ })).toBeDefined()
 
+  // One bar: a rail Client between each pair of options, and every option keeps its own padded hit area.
+  expect(await ui.find({ key: 'icons-bar' })).toBeDefined()
+  expect(await ui.find({ key: 'icons-rail-1' })).toBeDefined()
+  expect(await ui.find({ key: 'icons-rail-2' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'icons-nerd' }))).toContain(' Nerd ')
+  expect(JSON.stringify(await ui.drawn({ in: 'icons-rail-1' }))).toContain('│')
+
   await ui.pointer({ in: 'icons-nerd', type: 'down', button: 'left', x: 1, y: 0 })
   await ui.redraw()
   // Only the mods not already on Nerd change, and this mod's own setting goes last since saving it reloads this mod.
@@ -684,5 +765,121 @@ test('icons=safe keeps the common Unicode glyphs and plain headings', { options:
   const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
   expect(rows).toContain('● On')
   expect(rows).not.toContain(PILL_CAP)
+  await ui.unmount()
+})
+
+const SUMMARY = 'Calls a model every sixth step. The `Check while Claude works` setting turns it off.'
+const PLAIN = SUMMARY.replace(/`/g, '')
+
+test('discovery reads only the summary of a showcase cost, and a mod without one has none', async () => {
+  const { io } = disk({
+    '/h/.claude/mods/alpha/showcase.json': JSON.stringify({ cost: { summary: SUMMARY, readme: ['More detail.'] } }),
+    '/h/.claude/mods/beta/showcase.json': JSON.stringify({ cost: { readme: ['No summary.'] } }),
+  })
+  expect((await byName(io, 'alpha')).showcase?.cost).toEqual({ summary: SUMMARY })
+  expect((await byName(io, 'beta')).showcase?.cost).toBeUndefined()
+  expect((await byName(io, 'inst')).showcase).toBeNull()
+})
+
+const costPane = async ($: any, on: any, costs = true) => {
+  const { files } = disk(costs ? { '/h/.claude/mods/alpha/showcase.json': JSON.stringify({ cost: { summary: SUMMARY } }) } : {})
+  on('fs.read', (_$: unknown, e: { path: string }) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.list', () => ({ value: ['alpha', 'beta'].map(name => ({ name, kind: 'dir', size: 0, mtimeMs: 0, isLink: false })) }))
+  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: [] }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  await $.command.run({ command: 'mod-manager' } as never)
+  return withPointer(await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+  } as never))
+}
+
+test('a row with a cost draws the cost pill after its name and a row without draws none, the columns still lined up', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await costPane($, on)
+  const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
+  expect(rows).toContain('"key":"cost-0"')
+  expect(rows).not.toContain('"key":"cost-1"')
+  expect(rows).toContain(`"color":"${THEME.ok}","backgroundColor":"${mix(THEME.ok, THEME.surface1, 0.72)}"`)
+  // The blank under it is as wide as the pill and its gap, so the folder column holds.
+  expect(rows).toContain('"children":["' + ' '.repeat(4) + '"]')
+  await ui.unmount()
+})
+
+test('a long id never runs into the version: the version keeps a gap and only the id is cut', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await costPane($, on)
+  const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
+  expect(rows).toContain('"key":"row-0-version","flexShrink":0,"paddingLeft":1')
+  expect(rows).toContain('"wrap":"truncate-end"')
+  // The id is never padded: a cut pad would draw … on rows whose id fits.
+  expect(rows).not.toMatch(/"children":\[" mod-[\w-]+ +"\]/)
+  expect(rows).toContain('"key":"row-0-slug"')
+  await ui.unmount()
+})
+
+test('with no cost in any mod the list draws no pill and no blank', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await costPane($, on, false)
+  expect(JSON.stringify(await ui.drawn({ in: 'list-dir' }))).not.toContain('cost-')
+  await ui.unmount()
+})
+
+test('hovering the cost pill shows its summary in the pane footer, and the name still shows its own tip', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await costPane($, on)
+  await ui.pointer({ in: 'list-dir', type: 'move', x: 15, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' Costs' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ` · calls a model and spends tokens, its page says how to turn it off` })).toBeDefined()
+  await ui.pointer({ in: 'list-dir', type: 'move', x: 10, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ` · calls a model and spends tokens, its page says how to turn it off` })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: / · opens this mod's page and settings$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('safe mode draws the cost pill with $ and a space each side, no caps', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await costPane($, on)
+  const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
+  expect(rows).toContain('" $ "')
+  expect(rows).not.toContain(String.fromCodePoint(0xe0b6))
+  await ui.unmount()
+})
+
+test('nerd mode draws the cost pill as a currency glyph between rounded caps', { options: { icons: 'nerd' } }, async ($, on) => {
+  const ui = await costPane($, on)
+  const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
+  expect(rows).toContain(String.fromCodePoint(0xf01c1))
+  expect(rows).toContain(String.fromCodePoint(0xe0b6))
+  await ui.unmount()
+})
+
+test('a mod page draws a Costs card under the header only when the mod has a summary', { options: { icons: 'safe' } }, async ($, on) => {
+  const ui = await costPane($, on)
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 10, y: 0 })
+  const card = await ui.find({ key: 'page-cost' })
+  expect(card?.props.borderStyle).toBe('round')
+  expect(card?.props.borderColor).toBe(THEME.border)
+  expect(card?.props.backgroundColor).toBe(THEME.surface1)
+  expect(card?.props.paddingX).toBe(1)
+  expect((await ui.find({ type: 'Text', text: 'Costs' }))?.props.bold).toBe(true)
+  const summary = await ui.find({ type: 'Text', text: PLAIN })
+  expect(summary?.props.color).toBe(THEME.muted)
+  expect(summary?.props.wrap).toBe('wrap')
+  // A setting's name, in backticks in the summary, stands out in the accent color without them.
+  expect((await ui.findAll({ type: 'Text', text: 'Check while Claude works' })).map((node: any) => node.props.color)).toContain(THEME.accent)
+  expect(await ui.find({ type: 'Text', text: /`/ })).toBeUndefined()
+  expect(await ui.find({ key: 'page-cost-pill' })).toBeDefined()
+  await ui.pointer({ in: 'manager-tab', type: 'down', button: 'left', x: 1, y: 0 })
+  await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 10, y: 1 })
+  expect(await ui.find({ key: 'page-cost' })).toBeUndefined()
   await ui.unmount()
 })
