@@ -36,10 +36,10 @@ Wrap up pill.
 
 ## Features
 
-- **Pick what stays:** A click on Wrap up offers Handoff or Compact. Either opens a card with the session's threads, read by Haiku, and fixed items such as files in play and open tasks; a click keeps or drops each line. The Auto switch beside them turns auto compact on or off, and its tip says what is set now.
+- **Pick what stays:** A click on Wrap up offers Handoff or Compact. Either opens a card with the session's threads, read by Haiku, and fixed items such as files in play and open tasks; a click keeps or drops each line. The Auto switch beside them turns the auto handoff on or off, and its tip says what is set now.
 - **Compact:** The card writes the /compact instructions as you click and Fill prompt puts them in the prompt. You review them and press Enter.
 - **Handoff:** Summarizes what stays through a hidden fork with the session-handoff skill, runs /clear, and fills the handoff into the fresh prompt.
-- **Automatic handoff:** After each turn Sonnet keeps a ledger of decisions and tasks, plus a fresh handoff, in the background. /compact is given the handoff and the next prompt carries it. With Auto compact on, it compacts between turns at 400K tokens or 65% of the window, whichever comes first. After /clear, a related first prompt carries it and an unrelated one starts a new ledger; a card offers a switch. Each session keeps its own ledger, so sessions in one folder never mix.
+- **Automatic handoff:** After each turn Sonnet keeps a ledger of decisions and tasks, plus a fresh handoff, in the background. /compact is given the handoff and the next prompt carries it. With Auto handoff at the mark on, a card counts down 5 seconds between turns at 400K tokens or 65% of the window, whichever comes first; Cancel, a typed draft or a new turn stops it. At zero the ledger is brought up to date and the chat is cleared. If the ledger has an open task, Claude continues it from the handoff; otherwise the handoff is filled into the prompt and nothing is sent. After /clear, a related first prompt carries it and an unrelated one starts a new ledger; a card offers a switch. Each session keeps its own ledger, so sessions in one folder never mix.
 
 ## Settings
 
@@ -52,9 +52,9 @@ Change them with `/mod-wrap-up settings` or the gear pill.
 | Read the threads | on | Haiku finds up to four threads. You keep or drop each one when the card opens. Off, the card shows only the fixed items and the whole session counts |
 | Automatic handoff | on | After a turn, Sonnet keeps a ledger of decisions and tasks and a fresh handoff in the background. /compact is given the handoff, and the next prompt after a compaction or a related /clear carries it. Off, only the Wrap up pill hands off |
 | Update every (turns) | `1` | Turns between automatic handoff updates, at least 1 |
-| Auto compact | off | Compacts between turns once either mark below is reached, carrying the handoff. Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on |
-| Compact at (%) | `65` | Context percent at which the mod compacts between turns, carrying the handoff. Guards small windows; the token mark comes first on large ones |
-| Compact at (tokens) | `400000` | Context tokens at which the mod compacts between turns, whichever of the two marks comes first |
+| Auto handoff at the mark | off | Once either mark below is reached, a 5 second countdown card appears between turns; unless you cancel, type a draft or start a turn, the ledger is brought up to date, the chat is cleared and Claude continues the open task from the handoff (with no open task, the handoff is filled into the prompt instead). Replaces the old auto compact. Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on |
+| Hand off at (%) | `65` | Context percent at which the auto handoff counts down between turns. Guards small windows; the token mark comes first on large ones |
+| Hand off at (tokens) | `400000` | Context tokens at which the auto handoff counts down between turns, whichever of the two marks comes first |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License

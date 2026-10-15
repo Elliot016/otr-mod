@@ -2,14 +2,15 @@
 // Draws the wrap-up pill and its option cards with hover tips and idle muting.
 import type { ClientModule } from 'claude-code'
 
-import { postTip, type EntryMessage, type Tip } from './entry'
+import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, postTip, stepToward, type EntryMessage, type Tip } from './entry'
 import style from './style'
 import { CAPS, THEME } from './theme'
 
 // tips: the head's first, then one per option, shown while the pointer is on that part.
 // mode: the id of the option the open card is in, drawn lifted and keeping the pill open; isIdle false mutes it while Claude works.
+// still: the animations setting is off, so an option's hover color switches at once.
 // The pill's own caps are drawn here too, so the pointer on a cap is still on the pill and the options stay open.
-export type ChoiceProps = { id: string; label: string; options: { id: string; label: string }[]; mode: string | null; bg: string; nerd: boolean; isIdle: boolean; tips: Tip[] }
+export type ChoiceProps = { id: string; label: string; options: { id: string; label: string }[]; mode: string | null; bg: string; nerd: boolean; isIdle: boolean; tips: Tip[]; still?: boolean }
 
 // A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
 const HOVER_QUIET_MS = 5000
@@ -17,7 +18,8 @@ const TICK_MS = 500
 
 // over: -2 off the pill, -1 on its label, else the option under the pointer.
 // tipId: the part whose tip was posted last, null once the pointer left.
-type Hover = { over: number; at: number; tipId?: string | null }
+// levels: each option's hover fade, full while the pointer is on it and one step down per tick once it left.
+type Hover = { over: number; at: number; tipId?: string | null; levels?: number[] }
 
 // Each option's cells: the rail before it, then its label padded by one, as the menu spaces its entries.
 const widthOf = (label: string) => 1 + label.length + 2
@@ -38,6 +40,25 @@ const watch = (surface: Parameters<ClientModule<ChoiceProps, Hover>>[1], id: str
     timers.delete(surface)
   })
   timers.set(surface, stop)
+}
+
+// The fade-out runs on its own ticker, started by a leave and stopped once every option rests.
+const fades = new WeakMap<object, () => void>()
+
+const startFade = (surface: Parameters<ClientModule<ChoiceProps, Hover>>[1]) => {
+  if (fades.has(surface)) return
+  const stop = surface.every(HOVER_TICK_MS, () => {
+    const state = surface.state
+    if (!state) return
+    const before = state.levels ?? []
+    const levels = before.map((level, index) => stepToward(level, index === state.over))
+    if (levels.some((level, index) => level !== before[index])) surface.setState({ ...state, levels })
+    if (levels.every((level, index) => level === 0 || index === state.over)) {
+      stop()
+      fades.delete(surface)
+    }
+  })
+  fades.set(surface, stop)
 }
 
 // Like the effort pill: at rest only the label, the pointer opens the options and lights the one under it.
@@ -68,7 +89,9 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
     const tipId = next === -2 ? null : `${props.id}-tip-${next}`
     // One post lands per event, so a click posts its own message and the next move posts the tip.
     if (tipId !== (surface.state?.tipId ?? null) && !isClick) postTip(surface, tipId ?? props.id, tipId === null ? null : props.tips[next + 1]!)
-    surface.setState({ over: next, at: Date.now(), tipId: isClick ? (surface.state?.tipId ?? null) : tipId })
+    const levels = props.options.map((_, index) => (index === next ? HOVER_STEPS : props.still ? 0 : (surface.state?.levels?.[index] ?? 0)))
+    surface.setState({ over: next, at: Date.now(), tipId: isClick ? (surface.state?.tipId ?? null) : tipId, levels })
+    if (!props.still && levels.some((level, index) => level > 0 && index !== next)) startFade(surface)
     if (!isClick) return
     surface.post({ type: 'menu-entry', id: next >= 0 ? props.options[next]!.id : props.id } satisfies EntryMessage)
   })
@@ -77,7 +100,7 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
     const { id, label } = props.options[index]!
     // As in the menu group: the pointer turns an option accent, and only the card's mode lifts, as an open panel's entry does.
     const isLifted = props.isIdle && id === props.mode
-    const color = !props.isIdle ? THEME.muted : index === over ? THEME.accent : isLifted ? THEME.onSurface : THEME.pill
+    const color = !props.isIdle ? THEME.muted : hoverMix(isLifted ? THEME.onSurface : THEME.pill, THEME.accent, surface.state?.levels?.[index] ?? 0)
     return (
       <Box key={id} flexDirection="row">
         <Text key={`${id}-rail`} color={THEME.border} backgroundColor={props.bg}>{style.marks.rail}</Text>

@@ -4,13 +4,12 @@ import type { ConfigValue, EngineInterface, ModelForkResult, Register, RenderEle
 
 import { AUTO_SYSTEM, autoPrompt, capWords, clampCompactAt, clampCompactTokens, clampEvery, emptyLedger, flip, isDue, mergeDelta, mergeInstructions, parseRelated, parseUpdate, projectSlug, readLedger, RELATED_SYSTEM, relatedPrompt, restoreContext, shortGoal, shouldCompact, yieldsToManual, type Carry, type CompactMarks, type Ledger } from './ledger'
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
-import { detectNerd, FOOTER_ROWS, heading, lookFor, paneFooter, type IconMode, withMark } from './look'
+import { cardStrip, detectNerd, FOOTER_ROWS, heading, lookFor, paneFooter, subpill, type IconMode, withMark } from './look'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import type { ChoiceProps } from './choice'
 import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
-import style from './style'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
+import { actionReveals, settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 
@@ -36,7 +35,14 @@ let cursor = 0
 let awaitFirst = false
 let inject = false
 let manualAt: number | null = null
+// When the mod's own clear at the mark ran, so the first prompt after it never asks "related?".
+let carriedAt: number | null = null
 let ledgerPath = ''
+
+// The countdown before the handoff at the mark; left is 0 while the ledger catches up.
+type Countdown = { token: number; left: number; tokens: string; percent: number }
+let countdown: Countdown | null = null
+let countToken = 0
 
 // The chain this process works on: the session id it started with, kept across /compact and a carried /clear.
 let chain = ''
@@ -136,7 +142,7 @@ async function togglePane($: EngineInterface) {
   const showcase = await $.fs.read(`${$.plugin.root}/showcase.json`).then(text => JSON.parse(String(text))).catch(() => null)
   previews = showcase?.previews
   fields = await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`).then(text => JSON.parse(String(text)).userConfig).catch(() => undefined)
-  actions = Array.isArray(showcase?.actions) ? showcase.actions : []
+  actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-wrap-up' }))
   const opened = await $.ui.open({ id: PANE, title: text.paneName, closeOnEscape: true })
   if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-wrap-up', key: 'pane' }, opened.isPlaced)
@@ -354,21 +360,80 @@ async function openLedger($: EngineInterface) {
   await ledgerFile($)
 }
 
-// Sonnet reads the ledger and the turns since the last update, never the last handoff, then the delta merges into the ledger on disk.
-// The mod's own compaction skips its session.compact hook, so it hands over the handoff and resets the cursor itself.
-async function compactIfFull($: EngineInterface) {
-  if (!autoOn || !compactOn || working) return
+const COUNTDOWN_S = 5
+
+// Between turns past the mark, a countdown card above the prompt; its end hands off. Cancel, a draft or a new turn stops it.
+async function startCountdown($: EngineInterface) {
+  if (!autoOn || !compactOn || working || countdown || isRunning) return
   const { context } = await $.session.usage()
   if (!shouldCompact(context ?? {}, marks)) return
-  const dir = await ledgerDir($)
-  const ledger = dir ? await loadLedger($, dir) : null
-  $.ui.toast(fill(text.auto.compacting, { tokens: `${Math.round((context.tokens ?? 0) / 1000)}K`, percent: Math.round(context.percent ?? 0) }))
-  const result = await $.session.compact(ledger?.handoff ? { instructions: mergeInstructions(undefined, ledger.handoff, fileOf(dir)) } : {}).catch(() => null)
-  if (result && 'messages' in result && result.messages) {
-    cursor = result.messages.length
-    epoch += 1
-    runId += 1
-    inject = true
+  if (working || countdown || (await hasDraft($))) return
+  const token = (countToken += 1)
+  countdown = { token, left: COUNTDOWN_S, tokens: `${Math.round((context.tokens ?? 0) / 1000)}K`, percent: Math.round(context.percent ?? 0) }
+  $.ui.invalidate('ui.render')
+  tickCountdown($, token)
+}
+
+function stopCountdown($: EngineInterface) {
+  countdown = null
+  countToken += 1
+  $.ui.invalidate('ui.render')
+}
+
+const hasDraft = async ($: EngineInterface) => ((await $.prompt.read().catch(() => ({ text: '' }))).text ?? '').trim() !== ''
+
+function tickCountdown($: EngineInterface, token: number) {
+  $.clock.after(1000, async () => {
+    if (countdown?.token !== token) return
+    if (await hasDraft($)) {
+      if (countdown?.token === token) stopCountdown($)
+      return
+    }
+    if (countdown?.token !== token) return
+    countdown = { ...countdown, left: countdown.left - 1 }
+    $.ui.invalidate('ui.render')
+    if (countdown.left > 0) tickCountdown($, token)
+    else await handOffAtMark($, token)
+  })
+}
+
+// The countdown ran out: bring the ledger up to date, clear keeping the chain, then continue the open task or fill the handoff.
+async function handOffAtMark($: EngineInterface, token: number) {
+  const isLive = () => countdown?.token === token
+  try {
+    const messages = await $.session.messages().catch(() => [])
+    if (Array.isArray(messages) && messages.length > cursor) await runAuto($)
+    if (!isLive()) return
+    if (working || (await hasDraft($))) {
+      stopCountdown($)
+      return
+    }
+    const dir = await ledgerDir($)
+    const ledger = dir ? await loadLedger($, dir) : null
+    if (!dir || !ledger?.handoff) {
+      stopCountdown($)
+      $.ui.toast(text.auto.noHandoff)
+      return
+    }
+    const carried = restoreContext(ledger.handoff, fileOf(dir))
+    const hasOpenTask = ledger.tasks.some(task => task.status === 'open')
+    stopCountdown($)
+    carriedAt = await $.clock.now()
+    if (!hasOpenTask) await $.store.set('pending', { text: carried, at: carriedAt })
+    try {
+      await $.command.run({ command: 'clear' })
+    } catch {
+      carriedAt = null
+      await $.store.delete('pending')
+      $.ui.toast(text.auto.clearFailed)
+      return
+    }
+    await saveLedger($, dir, withSession(ledger, await $.session.id()))
+    showChoice($, 'carried', ledger.goal)
+    if (hasOpenTask) await $.prompt.submit({ text: `${text.auto.continue}\n\n${carried}` })
+    else if (!(await fillWithRetry($))) $.ui.toast(text.clearedNotFilled)
+  } catch {
+    if (isLive()) stopCountdown($)
   }
 }
 
@@ -480,16 +545,19 @@ const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // The band card: each thread and each "also keep" item a line that keeps or drops itself on a click, then what the go does.
 function cardBox({ Box, Client, Text }: Elements, picked: Card) {
-  const line = (id: string, label: string, isKept: boolean, tip: string) => (
-    <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isKept, tip: { glyph: isKept ? MARK.stopOpen : MARK.stop, label, text: tip }, idle: THEME.muted, bg: THEME.surface1, lead: isKept ? MARK.stopOpen : MARK.stop, leadColor: isKept ? THEME.accent : style.colors.pills.separator, still }} />
-  )
+  // A kept item is a surface3 pill, a dropped one surface2 and muted; its mark leads as a subpill, so the state shows by mark and by text.
+  const line = (id: string, label: string, isKept: boolean, tip: string) => {
+    const bg = isKept ? THEME.surface3 : THEME.surface2
+    const mark = isKept ? MARK.stopOpen : MARK.stop
+    return pill({ Box, Text }, look.nerd, bg, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isKept, bg, nerd: look.nerd, still, idle: THEME.muted, subLead: mark, subLeadColor: isKept ? THEME.accent : THEME.muted, tip: { glyph: mark, label, text: tip } } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+  }
   // An action pill on surface3; the go leads with its glyph as a subpill.
   const action = (id: string, label: string, lead: Pick<EntryProps, 'subLead'>, tip: string) => (
     pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph: lead.subLead ?? bare(look.glyph.close), label, text: tip }, ...lead } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
   )
-  // Threads and Also keep each sit in a round-bordered box inside the card, its heading a pill on the first row.
+  // Threads and Also keep are flat groups in the one card, each under its heading.
   const block = (key: string, icon: string, title: string, body: unknown) => (
-    <Box key={key} flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+    <Box key={key} flexDirection="column" marginTop={1}>
       {heading({ Box, Text }, look, key, icon, title)}
       {body}
     </Box>
@@ -515,21 +583,22 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
   )
   return (
     <Box key="wrap-up-card" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+      {cardStrip({ Box, Text }, 'wrap-up-card')}
       <Box key="wrap-up-card-title" flexDirection="row">
         <Text key="wrap-up-card-mode" color={THEME.onSurface} bold>{text.choice[picked.mode]}</Text>
         <Text key="wrap-up-card-hint" color={THEME.muted}>{`: ${text.card.title} ${MARK.sep} ${text.card.hint}`}</Text>
       </Box>
       {pickThreads ? block('wrap-up-threads', 'prompt', text.card.threads, threads) : null}
       {block('wrap-up-also', 'features', text.card.also, (
-        <Box key="wrap-up-also-row" flexDirection="row" flexWrap="wrap">
-          {ALSO_KEEP.map(item => line(`wrap-up-also-${item.id}`, text.alsoKeep[item.id], picked.also[item.id], text.tips.also))}
+        <Box key="wrap-up-also-row" flexDirection="row" flexWrap="wrap" columnGap={1}>
+          {ALSO_KEEP.map(item => <Box key={`wrap-up-also-pad-${item.id}`} flexShrink={0}>{line(`wrap-up-also-${item.id}`, text.alsoKeep[item.id], picked.also[item.id], text.tips.also)}</Box>)}
         </Box>
       ))}
       <Box key="wrap-up-gap" height={1} />
       {foot}
       <Box key="wrap-up-actions" flexDirection="row" justifyContent="flex-end" columnGap={1}>
         {action('wrap-up-go', text.card.go[picked.mode], { subLead: bare(look.glyph.go) }, text.tips.go[picked.mode])}
-        {action('wrap-up-cancel', text.card.cancel, {}, text.tips.cancel)}
+        {action('wrap-up-cancel', text.card.cancel, { subLead: bare(look.glyph.close) }, text.tips.cancel)}
       </Box>
     </Box>
   )
@@ -541,15 +610,36 @@ function choiceCard({ Box, Client, Text }: Elements, picked: Choice) {
   const line = isCarried ? (picked.goal ? fill(text.auto.carried, { goal: shortGoal(picked.goal) }) : text.auto.carriedNoGoal) : text.auto.fresh
   const label = isCarried ? text.auto.toFresh : text.auto.toCarry
   const close = bare(look.glyph.close)
-  const control = (id: string, name: string, isOpen: boolean, tip: string) =>
-    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label: name, isOpen, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph: close, label: name, text: tip } } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+  const control = (id: string, name: string, isOpen: boolean, tip: string, glyph: string) =>
+    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label: name, isOpen, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph, label: name, text: tip } } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
   return (
     <Box key="wrap-up-choice-card" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+      {cardStrip({ Box, Text }, 'wrap-up-choice-card')}
       <Box key="wrap-up-choice-text" flexGrow={1} flexShrink={1}>
         <Text color={THEME.onSurface} wrap="truncate-end">{line}</Text>
       </Box>
-      {control('wrap-up-switch', label, true, isCarried ? text.tips.toFresh : text.tips.toCarry)}
-      {control('wrap-up-switch-close', close, false, text.tips.dismissAuto)}
+      {control('wrap-up-switch', label, true, isCarried ? text.tips.toFresh : text.tips.toCarry, bare(look.glyph.cycle))}
+      {control('wrap-up-switch-close', close, false, text.tips.dismissAuto, close)}
+    </Box>
+  )
+}
+
+// The countdown above the prompt: what it will do, the seconds left, and a Cancel pill that lights whole under the pointer.
+function countdownCard({ Box, Button, Text }: Elements & { Button: (props: any) => RenderElement }, shown: Countdown, onCancel: () => void) {
+  const line = shown.left > 0 ? fill(text.auto.countdown, { tokens: shown.tokens, percent: shown.percent, seconds: shown.left }) : fill(text.auto.updating, { tokens: shown.tokens, percent: shown.percent })
+  const scope = 'wrap-up-countdown-cancel-pill'
+  return (
+    <Box key="wrap-up-countdown-card" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+      {cardStrip({ Box, Text }, 'wrap-up-countdown-card')}
+      <Box key="wrap-up-countdown-text" flexGrow={1} flexShrink={1}>
+        <Text color={THEME.onSurface} wrap="truncate-end">{line}</Text>
+      </Box>
+      {pill({ Box, Text }, look.nerd, THEME.surface3, (
+        <Box key="wrap-up-countdown-body" flexDirection="row" backgroundColor={THEME.surface3}>
+          {subpill({ Box, Text }, look.nerd, THEME.surface3, bare(look.glyph.close), 'wrap-up-countdown-close')}
+          <Button key="wrap-up-countdown-cancel" label={look.nerd ? ` ${text.card.cancel}` : ` ${text.card.cancel} `} plain hover={{ scope, color: THEME.accent, inverse: true }} onPress={onCancel} />
+        </Box>
+      ), scope, THEME.surface1, THEME.accent)}
     </Box>
   )
 }
@@ -630,8 +720,10 @@ export const register: Register = (on, options) => {
     held = null
     if (e.reason === 'clear') {
       clearedFrom = e.sessionId
-      awaitFirst = autoOn && !yieldsToManual(manualAt, await $.clock.now())
+      const now = await $.clock.now()
+      awaitFirst = autoOn && !yieldsToManual(manualAt, now) && !yieldsToManual(carriedAt, now)
       manualAt = null
+      carriedAt = null
     }
     if (e.reason === 'clear' && isFresh(await $.store.get('pending'), await $.clock.now())) {
       $.clock.after(300, () => fillWithRetry($))
@@ -642,6 +734,7 @@ export const register: Register = (on, options) => {
 
   on('turn.start', async ($, e, next) => {
     if (!(e as { agentId?: string }).agentId) {
+      if (countdown) stopCountdown($)
       working = true
       $.ui.invalidate('ui.render')
     }
@@ -656,7 +749,7 @@ export const register: Register = (on, options) => {
       turnsSince += 1
       const isUpdate = autoOn && isDue(turnsSince, every)
       if (isUpdate) turnsSince = 0
-      if (autoOn) $.clock.after(0, () => void (isUpdate ? runAuto($) : Promise.resolve()).then(() => compactIfFull($)))
+      if (autoOn) $.clock.after(0, () => void (isUpdate ? runAuto($) : Promise.resolve()).then(() => startCountdown($)))
     }
 
     return next(e)
@@ -709,13 +802,15 @@ export const register: Register = (on, options) => {
     await loadLook($)
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    // @ts-expect-error The host's types omit Button from the band's elements, yet it draws one.
+    const { Box, Button, Client, Text } = $.ui.resolve(e)
+    const counting = countdown ? [countdownCard({ Box, Button, Text }, countdown, () => stopCountdown($))] : []
     if (hidden.value === true) {
-      if (toasts.items.length === 0) return next(e)
-      const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-wrap-up" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
+      const shown = [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...counting, ...(choice ? [choiceCard({ Box, Client, Text }, choice)] : []), ...(card ? [cardBox({ Box, Client, Text }, card)] : [])]
+      if (shown.length === 0) return next(e)
+      return <Box key="toasts-wrap-up" flexDirection="column">{shown}{await next(e)}</Box>
     }
 
-    const { Box, Client, Text } = $.ui.resolve(e)
     const { group, row, rest, tip } = splitRow(await next(e))
     // A muted entry while Claude works; a click then explains in a toast instead of crowding the row.
     const isIdle = !(e.props.isWorking || working)
@@ -733,10 +828,10 @@ export const register: Register = (on, options) => {
     ) : (
       // Like the effort pill, the pointer opens the options and lifts the one under it, all inside the Client, so nothing waits on a redraw.
       <Box key="wrap-up-choice-pad">
-        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }, { glyph: autoGlyph, label: text.choice.autoCompact, text: autoTip() }] } satisfies ChoiceProps} />
+        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, still, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }, { glyph: autoGlyph, label: text.choice.autoCompact, text: autoTip() }] } satisfies ChoiceProps} />
       </Box>
     )
-    const cards = [...(choice ? [choiceCard({ Box, Client, Text }, choice)] : []), ...(card ? [cardBox({ Box, Client, Text }, card)] : [])]
+    const cards = [...counting, ...(choice ? [choiceCard({ Box, Client, Text }, choice)] : []), ...(card ? [cardBox({ Box, Client, Text }, card)] : [])]
 
     return pillRow({ Box, Client, Text }, look.nerd, group, [...row, isRunning ? pill({ Box, Text }, look.nerd, PILL.secondary, body, 'wrap-up-pill') : <Box key="wrap-up-pill" flexDirection="row">{body}</Box>], [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...cards, ...rest], bandTip?.id ? tipLine({ Box, Text }, tipText(bandTip)) : tip, e.props.bodyColumns)
   })
@@ -789,12 +884,12 @@ export const register: Register = (on, options) => {
     const run = async (_action: Action) => openCard($, 'handoff')
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-wrap-up-settings-tab', label: `${text.label} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSettings, text: text.tips.tab } }], still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, fields, still: still })}
-        <Box key="footer-space" height={FOOTER_ROWS} />
-        {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll)}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll, actionReveals(actions, look, working))}
       </Box>
     )
   })

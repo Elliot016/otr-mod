@@ -43,22 +43,22 @@
     },
     "auto_compact": {
       "type": "boolean",
-      "title": "Auto compact",
-      "description": "Compacts between turns once either mark below is reached, carrying the handoff. Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on",
+      "title": "Auto handoff at the mark",
+      "description": "Once either mark below is reached, a 5 second countdown card appears between turns; unless you cancel, type a draft or start a turn, the ledger is brought up to date, the chat is cleared and Claude continues the open task from the handoff (with no open task, the handoff is filled into the prompt instead). Replaces the old auto compact. Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on",
       "default": false
     },
     "compact_at": {
       "type": "number",
-      "title": "Compact at (%)",
-      "description": "Context percent at which the mod compacts between turns, carrying the handoff. Guards small windows; the token mark comes first on large ones",
+      "title": "Hand off at (%)",
+      "description": "Context percent at which the auto handoff counts down between turns. Guards small windows; the token mark comes first on large ones",
       "default": 65,
       "min": 50,
       "max": 95
     },
     "compact_at_tokens": {
       "type": "number",
-      "title": "Compact at (tokens)",
-      "description": "Context tokens at which the mod compacts between turns, whichever of the two marks comes first",
+      "title": "Hand off at (tokens)",
+      "description": "Context tokens at which the auto handoff counts down between turns, whichever of the two marks comes first",
       "default": 400000,
       "min": 50000,
       "max": 1000000

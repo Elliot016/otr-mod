@@ -40,7 +40,11 @@ function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: 
     calls.push('complete')
     return { value: answered }
   })
-  on('fs.read', (_$: unknown, e: { path: string }) => ({ value: e.path.replace(/\\/g, '/').endsWith('skills/session-handoff/SKILL.md') ? SKILL : '' }))
+  on('fs.read', (_$: unknown, e: { path: string }) => {
+    const path = e.path.replace(/\\/g, '/')
+    if (path.endsWith('/showcase.json')) return { value: JSON.stringify({ actions: [{ label: 'Open the handoff card', command: 'mod-wrap-up' }] }) }
+    return { value: path.endsWith('skills/session-handoff/SKILL.md') ? SKILL : '' }
+  })
   on('model.fork', (_$: unknown, e: { prompt: string }) => {
     forks.push(e.prompt)
     calls.push('fork')
@@ -396,13 +400,13 @@ test('number settings read with their unit, and a click moves them by a useful s
   const fields = {
     max_words: { title: 'Handoff length (words)' },
     auto_every: { title: 'Update every (turns)', min: 1, max: 50 },
-    compact_at: { title: 'Compact at (%)', min: 50, max: 95 },
-    compact_at_tokens: { title: 'Compact at (tokens)', min: 50_000, max: 1_000_000 },
+    compact_at: { title: 'Hand off at (%)', min: 50, max: 95 },
+    compact_at_tokens: { title: 'Hand off at (tokens)', min: 50_000, max: 1_000_000 },
   }
   const row = (field: keyof typeof fields, value: number) => ({ key: `mod-wrap-up.${field}`, label: fields[field].title, value, kind: 'number', description: 'd' })
   on('config.list', () => ({ value: [row('max_words', 400), row('auto_every', 1), row('compact_at', 65), row('compact_at_tokens', 400_000)] }) as never)
   const pane = await $.ui.mount({ plugin: 'mod-wrap-up', surface: 'terminal', component: 'Pane', requestId: 'wrap-up', props: { scroll: { offset: 0, bodyRows: 40 }, bodyColumns: 80 } } as never)
-  for (const shown of ['Handoff length', '400 words', 'Update every', '1 turn', 'Compact at', '65%', '400K tokens']) expect(await pane.find({ type: 'Text', text: shown })).toBeDefined()
+  for (const shown of ['Handoff length', '400 words', 'Update every', '1 turn', 'Hand off at', '65%', '400K tokens']) expect(await pane.find({ type: 'Text', text: shown })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'Handoff length (words)' })).toBeUndefined()
   await pane.unmount()
 
@@ -424,7 +428,7 @@ test('the pill offers Auto with an off switch, its tip says what is set now, and
   await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-entry' } as never)
   expect(JSON.stringify(await band.drawn({ in: 'wrap-up-entry' }))).toContain('[○] Auto')
   await band.pointer({ type: 'move', x: 31, y: 0, in: 'wrap-up-entry' } as never)
-  expect(await band.find({ type: 'Text', text: ' off, click to compact between turns at 400K tokens or 65%' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' off, click to hand off between turns at 400K tokens or 65%' })).toBeDefined()
   await band.pointer({ type: 'down', x: 31, y: 0, button: 'left', in: 'wrap-up-entry' } as never)
   expect(saved).toEqual([['mod-wrap-up.auto_compact', true]])
   await band.unmount()
@@ -436,7 +440,7 @@ test('with auto compact on, the switch shows on and its tip names the marks it c
   await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-entry' } as never)
   expect(JSON.stringify(await band.drawn({ in: 'wrap-up-entry' }))).toContain('[◉] Auto')
   await band.pointer({ type: 'move', x: 31, y: 0, in: 'wrap-up-entry' } as never)
-  expect(await band.find({ type: 'Text', text: ' on, compacts between turns at 300K tokens or 70%, click to turn off' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' on, counts down 5 s then clears with the handoff at 300K tokens or 70%, click to turn off' })).toBeDefined()
   await band.unmount()
 })
 
@@ -521,4 +525,110 @@ test('the wrap-up pill at rest runs no timer; a hover watches until the pointer 
   pointer({ type: 'leave', x: 1, y: 0 })
   ;[...running].forEach(fn => fn())
   expect(running.size).toBe(0)
+})
+
+// A mock Client surface whose elements return their props, so a test can walk the drawn tree.
+function choiceSurface() {
+  const running = new Set<() => void>()
+  let pointer: (event: any) => void = () => {}
+  const surface: any = {
+    elements: { Box: (props: any) => props, Text: (props: any) => props },
+    state: undefined,
+    setState: (state: any) => (surface.state = state),
+    every: (_ms: number, fn: () => void) => {
+      running.add(fn)
+      return () => running.delete(fn)
+    },
+    onPointer: (handler: (event: any) => void) => (pointer = handler),
+    post: () => {},
+  }
+  const tip = { glyph: '', label: '', text: '' }
+  const props = { id: 'wrap', label: 'Wrap up', options: [{ id: 'go', label: 'Go' }], mode: null, bg: THEME.surface2, nerd: false, isIdle: true, tips: [tip, tip] }
+  const colorOf = (node: any, key: string): string | undefined => {
+    if (!node || typeof node !== 'object') return undefined
+    if (node.key === key) return node.color
+    const kids = Array.isArray(node.children) ? node.children : node.children ? [node.children] : []
+    for (const kid of kids) {
+      const found = colorOf(kid, key)
+      if (found) return found
+    }
+    return undefined
+  }
+  return { running, surface, props, send: (event: any) => pointer(event), colorOf }
+}
+
+test('an option fades out step by step after the pointer leaves it, and the ticker stops at rest', () => {
+  const { running, surface, props, send, colorOf } = choiceSurface()
+  Choice(props, surface)
+  send({ type: 'move', x: 1, y: 0 })
+  Choice(props, surface)
+  send({ type: 'move', x: 10, y: 0 })
+  expect(colorOf(Choice(props, surface), 'go-label')).toBe(THEME.accent)
+  send({ type: 'move', x: 1, y: 0 })
+  expect(running.size).toBe(2)
+  ;[...running].forEach(fn => fn())
+  const half = colorOf(Choice(props, surface), 'go-label')
+  expect(half).not.toBe(THEME.accent)
+  expect(half).not.toBe(THEME.pill)
+  ;[...running].forEach(fn => fn())
+  expect(colorOf(Choice(props, surface), 'go-label')).toBe(THEME.pill)
+  expect(running.size).toBe(1)
+})
+
+test('with animations off the option color switches at once and no fade ticker starts', () => {
+  const { running, surface, props, send, colorOf } = choiceSurface()
+  const still = { ...props, still: true }
+  Choice(still, surface)
+  send({ type: 'move', x: 1, y: 0 })
+  Choice(still, surface)
+  send({ type: 'move', x: 10, y: 0 })
+  expect(colorOf(Choice(still, surface), 'go-label')).toBe(THEME.accent)
+  send({ type: 'move', x: 1, y: 0 })
+  expect(colorOf(Choice(still, surface), 'go-label')).toBe(THEME.pill)
+  expect(running.size).toBe(1)
+})
+
+test('the card is one card: Threads and Also keep are flat groups, each toggle a pill led by its mark', { options: { icons: 'safe' } }, async ($, on) => {
+  const w = world(on, answered, undefined, SESSION, THREADS)
+  const band = await $.ui.mount(BAND())
+  await click(band, 'wrap-up-entry')
+  await choose(band, 'compact')
+  await w.clock.advance(10)
+
+  const group = (await band.find({ key: 'wrap-up-threads' })) as { props: { borderStyle?: string } }
+  expect(group.props.borderStyle).toBeUndefined()
+  expect(((await band.find({ key: 'wrap-up-also' })) as { props: { borderStyle?: string } }).props.borderStyle).toBeUndefined()
+  expect(((await band.find({ key: 'wrap-up-card' })) as { props: { borderStyle?: string } }).props.borderStyle).toBe('round')
+
+  expect(await label(band, 'wrap-up-thread-1')).toContain('●')
+  expect(await label(band, 'wrap-up-thread-1')).toContain(THEME.surface3)
+  await click(band, 'wrap-up-thread-1')
+  expect(await label(band, 'wrap-up-thread-1')).toContain('○')
+  expect(await label(band, 'wrap-up-thread-1')).toContain(THEME.surface2)
+  expect(await label(band, 'wrap-up-also-files')).toContain('●')
+  await band.unmount()
+})
+
+test('with the menu hidden the open card still draws above the rest', async ($, on) => {
+  world(on, answered)
+  on('state.get', (_$: unknown, e: { plugin: string }) => ({ value: { value: e.plugin === 'mod-menu' ? true : undefined } }))
+  await $.command.run({ command: 'mod-wrap-up', args: 'compact' } as never)
+  const band = await $.ui.mount(BAND())
+  expect(await band.find({ key: 'wrap-up-card' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'idle' })).toBeDefined()
+  await band.unmount()
+})
+
+test('the settings action is local, so it stays live while Claude works', { options: { icons: 'safe' } }, async ($, on) => {
+  world(on, answered)
+  on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
+  on('config.list', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('state.set', () => ({ value: undefined }) as never)
+  await $.command.run({ command: 'mod-wrap-up', args: 'settings' } as never)
+  await $.turn.start({ turnId: 't1' } as never)
+  const pane = await $.ui.mount({ plugin: 'mod-wrap-up', surface: 'terminal', component: 'Pane', requestId: 'wrap-up', props: { scroll: { offset: 0, bodyRows: 40 }, bodyColumns: 80 } } as never)
+  expect(await pane.find({ type: 'Button', text: /Open the handoff card/ })).toBeDefined()
+  await pane.unmount()
 })

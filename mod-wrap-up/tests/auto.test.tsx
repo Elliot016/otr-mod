@@ -124,8 +124,10 @@ function world(on: any, files: Map<string, string>, reply: (system: string, prom
   const filled: string[] = []
   const compacted: (string | undefined)[] = []
   const submitted: (readonly string[] | undefined)[] = []
+  const submittedText: string[] = []
+  const clears: string[] = []
   const forks: string[] = []
-  const flags: { messages: unknown[]; percent?: number; tokens?: number; id: string } = { messages, id: 's1' }
+  const flags: { messages: unknown[]; percent?: number; tokens?: number; id: string; draft: string; onClear?: () => Promise<unknown>; clearFails: boolean } = { messages, id: 's1', draft: '', clearFails: false }
   on('session.usage', () => ({ value: { startedAt: 0, context: { percent: flags.percent, tokens: flags.tokens }, rateLimits: {}, cost: {} } }))
   on('fs.read', (_$: unknown, e: { path: string }) => {
     const path = e.path.replace(/\\/g, '/')
@@ -153,7 +155,13 @@ function world(on: any, files: Map<string, string>, reply: (system: string, prom
     forks.push(e.prompt)
     return { value: { isAnswered: true, text: 'MANUAL HANDOFF', usage: USAGE } }
   })
-  on('command.run', () => ({ text: '' }))
+  on('command.run', async (_$: unknown, e: { command: string }) => {
+    if (flags.clearFails) throw new Error('refused')
+    clears.push(e.command)
+    await flags.onClear?.()
+    return { text: '' }
+  })
+  on('prompt.read', () => ({ value: { text: flags.draft, cursor: flags.draft.length } }))
   on('prompt.fill', (_$: unknown, e: { text: string }) => {
     filled.push(e.text)
     return { isFilled: true }
@@ -164,6 +172,7 @@ function world(on: any, files: Map<string, string>, reply: (system: string, prom
   })
   on('prompt.submit', (_$: unknown, e: { text: string; context?: readonly string[] }) => {
     submitted.push(e.context)
+    submittedText.push(e.text)
     return { text: e.text, context: e.context }
   })
   on('session.end', (_$: unknown, e: { sessionId: string }) => ({ sessionId: e.sessionId }))
@@ -179,7 +188,7 @@ function world(on: any, files: Map<string, string>, reply: (system: string, prom
   const clock = mock.clock(on)
   mock.store(on)
   mock.env(on, { USERPROFILE: 'C:/home' })
-  return { prompts, filled, compacted, submitted, forks, files, clock, flags }
+  return { prompts, filled, compacted, submitted, submittedText, clears, forks, files, clock, flags }
 }
 
 const UPDATE = (handoff: string, delta: Record<string, unknown> = {}) => ({ isAnswered: true, text: JSON.stringify({ delta, handoff }), usage: USAGE })
@@ -201,24 +210,160 @@ test('a main turn end runs one Sonnet call at low effort and the ledger and hand
   expect(saved(w).decisions.map(item => item.text)).toEqual(['Use PostgreSQL, not MySQL', 'Cache with Redis'])
 })
 
-test('past either mark a main turn end compacts once the handoff is updated, and the compaction carries the new handoff', { options: { auto_compact: true } }, async ($, on) => {
-  const w = world(on, autoFiles(), () => UPDATE('HANDOFF-TWO'))
+const FULL = { options: { auto_compact: true, icons: 'safe' } } as const
+const COUNTDOWN_LINE = 'Context at 132K (66%), handing off in 5 s'
+
+// Marks crossed, one main turn done and the countdown card drawn.
+async function atTheMark($: any, on: any, files = autoFiles(), reply: () => unknown = () => UPDATE('HANDOFF-TWO')) {
+  const w = world(on, files, reply)
   w.flags.percent = 66
   w.flags.tokens = 132_000
+  w.flags.onClear = async () => {
+    await $.session.end({ reason: 'clear', sessionId: w.flags.id, resume: {} } as never)
+    w.flags.id = 's2'
+  }
+  on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
+  const band = await $.ui.mount(BAND as never)
   await $.turn.complete(MAIN_TURN)
   await w.clock.advance(1)
-  expect(w.compacted).toHaveLength(1)
-  expect(w.compacted[0]).toContain('HANDOFF-TWO')
-  expect(w.compacted[0]).toContain(LEDGER_FILE.replace(/\/ledger\.json$/, ''))
+  return { w, band }
+}
+
+test('past a mark a countdown card with a Cancel pill draws, and Cancel stops it: nothing cleared, nothing sent', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  expect(await band.find({ type: 'Text', text: COUNTDOWN_LINE })).toBeDefined()
+  expect(await band.find({ type: 'Button', key: 'wrap-up-countdown-cancel' })).toBeDefined()
+  await w.clock.advance(2000)
+  expect(await band.find({ type: 'Text', text: 'Context at 132K (66%), handing off in 3 s' })).toBeDefined()
+  await band.press({ key: 'wrap-up-countdown-cancel' })
+  await w.clock.advance(10_000)
+  expect(w.clears).toHaveLength(0)
+  expect(w.submittedText).toHaveLength(0)
+  expect(await band.find({ key: 'wrap-up-countdown-card' })).toBeUndefined()
+  await band.unmount()
 })
 
-test('auto compact is off by default, so a full window still waits for the person', async ($, on) => {
+test('a draft typed during the countdown stops it', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  w.flags.draft = 'half a thought'
+  await w.clock.advance(10_000)
+  expect(w.clears).toHaveLength(0)
+  expect(w.submittedText).toHaveLength(0)
+  expect(await band.find({ key: 'wrap-up-countdown-card' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('a draft already in the box at the mark never starts the countdown', FULL, async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('X'))
+  w.flags.percent = 66
+  w.flags.tokens = 132_000
+  w.flags.draft = 'typing already'
+  const band = await $.ui.mount(BAND as never)
+  await $.turn.complete(MAIN_TURN)
+  await w.clock.advance(10_000)
+  expect(await band.find({ type: 'Text', text: COUNTDOWN_LINE })).toBeUndefined()
+  expect(w.clears).toHaveLength(0)
+  await band.unmount()
+})
+
+test('a new turn starting during the countdown stops it', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  await $.turn.start({ turnId: 't2' } as never)
+  await w.clock.advance(10_000)
+  expect(w.clears).toHaveLength(0)
+  expect(w.submittedText).toHaveLength(0)
+  await band.unmount()
+})
+
+test('the countdown ending updates a stale ledger first, then clears once and keeps the chain file', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  expect(w.prompts).toHaveLength(1)
+  w.flags.messages = [...w.flags.messages, { role: 'user', text: 'one more thing', toolUses: [] }]
+  await w.clock.advance(5000)
+  await w.clock.advance(1)
+  expect(w.prompts).toHaveLength(2)
+  expect(w.prompts[1].prompt).toContain('one more thing')
+  expect(w.clears).toEqual(['clear'])
+  expect([...w.files.keys()].filter(path => path.includes('/ledgers/'))).toEqual([LEDGER_FILE])
+  expect(saved(w).sessions).toEqual(['s1', 's2'])
+  await band.unmount()
+})
+
+test('a ledger already current is not updated again before the clear', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  await w.clock.advance(5000)
+  await w.clock.advance(1)
+  expect(w.prompts).toHaveLength(1)
+  expect(w.clears).toHaveLength(1)
+  await band.unmount()
+})
+
+test('after the clear, an open task submits one continue prompt carrying the handoff and the first prompt asks nothing', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  await w.clock.advance(5000)
+  await w.clock.advance(1)
+  expect(w.submittedText).toHaveLength(1)
+  expect(w.submittedText[0]).toContain('Continue the open task')
+  expect(w.submittedText[0]).toContain('HANDOFF-TWO')
+  expect(w.submittedText[0]).toContain(`The full ledger is at ${LEDGER_FILE}`)
+  expect(w.filled).toEqual([])
+  await $.prompt.submit({ text: 'and add a cache', wait: false, origin: COMPOSER } as never)
+  expect(w.prompts.filter(item => item.system.includes('compare'))).toHaveLength(0)
+  expect(await band.find({ type: 'Text', text: 'Carried over: Build the orders API' })).toBeDefined()
+  await band.unmount()
+})
+
+test('after the clear, a ledger with no open task fills the handoff and submits nothing', FULL, async ($, on) => {
+  const done = { ...seeded(), tasks: seeded().tasks.map(task => ({ ...task, status: 'done' as const })) }
+  const { w, band } = await atTheMark($, on, autoFiles(done))
+  await w.clock.advance(5000)
+  await w.clock.advance(1000)
+  expect(w.clears).toHaveLength(1)
+  expect(w.submittedText).toHaveLength(0)
+  expect(w.filled).toHaveLength(1)
+  expect(w.filled[0]).toContain('HANDOFF-TWO')
+  await band.unmount()
+})
+
+test('a refused clear at the mark sends and fills nothing', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  w.flags.clearFails = true
+  await w.clock.advance(5000)
+  await w.clock.advance(1)
+  expect(w.submittedText).toHaveLength(0)
+  expect(w.filled).toEqual([])
+  await band.unmount()
+})
+
+test('a ledger with no handoff is never cleared', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on, autoFiles(emptyLedger(1, 's1')), () => ({ isAnswered: false, reason: 'x' }))
+  await w.clock.advance(6000)
+  expect(w.clears).toHaveLength(0)
+  expect(w.submittedText).toHaveLength(0)
+  await band.unmount()
+})
+
+test('the auto path never compacts: the mark leads to a clear, not session.compact', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  await w.clock.advance(6000)
+  expect(w.compacted).toHaveLength(0)
+  expect(w.clears).toHaveLength(1)
+  await band.unmount()
+})
+
+test('the countdown card draws in nerd mode too', { options: { auto_compact: true, icons: 'nerd' } }, async ($, on) => {
+  const { band } = await atTheMark($, on)
+  expect(await band.find({ type: 'Text', text: COUNTDOWN_LINE })).toBeDefined()
+  await band.unmount()
+})
+
+test('auto handoff at the mark is off by default, so a full window still waits for the person', async ($, on) => {
   const w = world(on, autoFiles(), () => UPDATE('X'))
   w.flags.percent = 99
   w.flags.tokens = 990_000
   await $.turn.complete(MAIN_TURN)
-  await w.clock.advance(1)
-  expect(w.compacted).toHaveLength(0)
+  await w.clock.advance(10_000)
+  expect(w.clears).toHaveLength(0)
   expect(w.prompts).toHaveLength(1)
 })
 
@@ -226,13 +371,16 @@ test('on a large window the token mark fires well before the percent mark', { op
   const w = world(on, autoFiles(), () => UPDATE('X'))
   w.flags.percent = 41
   w.flags.tokens = 410_000
+  const band = await $.ui.mount(BAND as never)
   await $.turn.complete(MAIN_TURN)
   await w.clock.advance(1)
-  expect(w.compacted).toHaveLength(1)
+  expect(await band.find({ key: 'wrap-up-countdown-card' })).toBeDefined()
+  await band.unmount()
 })
 
-test('below both marks, or with no figure yet, a turn end never compacts', { options: { auto_compact: true } }, async ($, on) => {
+test('below both marks, or with no figure yet, a turn end never counts down', { options: { auto_compact: true } }, async ($, on) => {
   const w = world(on, autoFiles(), () => UPDATE('X'))
+  const band = await $.ui.mount(BAND as never)
   w.flags.percent = 64
   w.flags.tokens = 399_000
   await $.turn.complete(MAIN_TURN)
@@ -241,7 +389,8 @@ test('below both marks, or with no figure yet, a turn end never compacts', { opt
   w.flags.tokens = undefined
   await $.turn.complete(MAIN_TURN)
   await w.clock.advance(1)
-  expect(w.compacted).toHaveLength(0)
+  expect(await band.find({ key: 'wrap-up-countdown-card' })).toBeUndefined()
+  await band.unmount()
   const marks = { percent: 65, tokens: 400_000 }
   expect([
     shouldCompact({ percent: 64, tokens: 399_000 }, marks),
@@ -375,6 +524,19 @@ test('after a clear, a related first prompt carries the handoff and shows Carrie
   expect(saved(w, 's2').goal).toBe('')
   expect(saved(w).decisions[0].text).toBe('Use PostgreSQL, not MySQL')
   expect(saved(w).sessions).toEqual(['s1'])
+  await band.unmount()
+})
+
+test('the switch tip carries its own bare cycle glyph, not the close mark', { options: { icons: 'safe' } }, async ($, on) => {
+  const w = world(on, autoFiles(), (system: string) => (system.includes('compare') ? RELATED(true) : UPDATE('X')))
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+  w.flags.id = 's2'
+  await $.prompt.submit({ text: '/help', wait: false, origin: COMPOSER } as never)
+  await $.prompt.submit({ text: 'what did we decide for storage?', wait: false, origin: COMPOSER } as never)
+  const band = await $.ui.mount(BAND as never)
+  const tipOf = async (key: string) => ((await band.find({ key })) as { props: { props: { tip: { glyph: string } } } }).props.props.tip.glyph
+  expect(await tipOf('wrap-up-switch')).toBe('↻')
+  expect(await tipOf('wrap-up-switch-close')).toBe('×')
   await band.unmount()
 })
 

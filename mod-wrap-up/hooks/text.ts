@@ -13,8 +13,8 @@ export default {
     "head": "offers to hand off to a fresh session, or compact this one",
     "handoff": "opens the pick card to write a handoff",
     "compact": "opens the pick card to fill a /compact",
-    "autoOn": "on, compacts between turns at {marks}, click to turn off",
-    "autoOff": "off, click to compact between turns at {marks}",
+    "autoOn": "on, counts down 5 s then clears with the handoff at {marks}, click to turn off",
+    "autoOff": "off, click to hand off between turns at {marks}",
     "autoMarks": "{tokens} tokens or {percent}%",
     "autoNeedsHandoff": "off, needs Automatic handoff on in the settings",
     "thread": "keeps or drops this thread",
@@ -30,7 +30,11 @@ export default {
     "dismissAuto": "hides this card, keeps the choice"
   },
   "auto": {
-    "compacting": "Context at {tokens} ({percent}%), compacting with the handoff",
+    "countdown": "Context at {tokens} ({percent}%), handing off in {seconds} s",
+    "updating": "Context at {tokens} ({percent}%), updating the ledger before the handoff",
+    "continue": "The context was cleared to make room. Continue the open task from this handoff.",
+    "noHandoff": "No handoff written yet, nothing was cleared",
+    "clearFailed": "Could not run /clear at the mark, nothing was sent",
     "carried": "Carried over: {goal}",
     "carriedNoGoal": "Carried over the earlier handoff",
     "fresh": "Fresh start",
@@ -42,7 +46,7 @@ export default {
     "handoff": "Handoff",
     "compact": "Compact",
     "auto": "Auto",
-    "autoCompact": "Auto compact"
+    "autoCompact": "Auto handoff"
   },
   "card": {
     "title": "pick what stays",
