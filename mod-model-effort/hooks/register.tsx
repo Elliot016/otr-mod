@@ -14,7 +14,9 @@ import { TOAST_MS, ToastList, toastCards } from './toasts'
 
 const homeOf = async ($: EngineInterface) => ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
 
-const PANE = 'model-effort-settings'
+const configDir = async ($: EngineInterface) => ((await $.env.get('CLAUDE_CONFIG_DIR')) || `${await homeOf($)}/.claude`).replace(/\\/g, '/')
+
+const PANE ='model-effort-settings'
 
 // The icons setting (userConfig), fixed per activation: a change reloads the mod.
 let iconMode: IconMode = 'auto'
@@ -108,14 +110,16 @@ async function setEffort($: EngineInterface, effort: string) {
     $.ui.toast(text.sendFirst)
     return
   }
-  const path = `${await homeOf($)}/.claude/settings.json`
-  const raw = String(await $.fs.read(path))
+  const path = `${await configDir($)}/settings.json`
+  // A fresh machine has no settings.json yet: start from {} and create it.
+  const isMissing = !(await $.fs.exists(path).catch(() => true))
+  const raw = isMissing ? '{}' : String(await $.fs.read(path))
   const out = withEffort(raw, current.model, effort)
   if (!out) {
     $.ui.toast(fill(text.settingsNotJson, { mark: MARK.warn }))
     return
   }
-  await $.fs.write(`${path}.mod-model-effort.bak`, raw)
+  if (!isMissing) await $.fs.write(`${path}.mod-model-effort.bak`, raw)
   await $.fs.write(path, out)
   override = { effort, before: current.effort }
   await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model: current.model, effort })
@@ -242,7 +246,7 @@ function modelMenu(elements: Elements, currentId: string) {
   const live = !isWorking
   const entries = menuModels.map((id, index) =>
     id === currentId
-      ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: live, idle: THEME.muted, subLead: ok, subLeadColor: THEME.good, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } })
+      ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: live, idle: THEME.muted, subLead: ok, subLeadColor: THEME.ok, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } })
       : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: live, idle: THEME.muted, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }),
   )
   // The × closes the menu without a pick, as on a toast card; it shares the first entry's row.

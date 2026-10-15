@@ -85,6 +85,57 @@ test('the footer meter follows each request and a click saves that level', async
   await ui.unmount()
 })
 
+// Mounts the meter on a disk that throws for a missing file, clicks the fifth level and returns the files.
+async function clickMax($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], files: Record<string, string>, env: Record<string, string>) {
+  const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+  on('env.get', (_$, e) => ({ value: env[e.name] }))
+  on('fs.exists', (_$, e) => ({ value: neutral(e.path) in files }))
+  on('fs.read', (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error(`ENOENT ${path}`)
+    return { value: files[path]! }
+  })
+  on('fs.write', (_$, e) => {
+    files[neutral(e.path)] = e.text
+    return { value: undefined }
+  })
+  on('store.set', () => ({ value: undefined }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('turn.step', async function* ($$, e) {
+    yield { kind: 'text', index: 0, text: 'ok' }
+    return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>auto mode</Text>
+  })
+  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'medium', messageCount: 1 } as never)
+  while ((await stream.next()).done !== true);
+  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
+  await ui.unmount()
+}
+
+test('a click saves the level under CLAUDE_CONFIG_DIR when it is set, and leaves ~/.claude alone', async ($, on) => {
+  const files: Record<string, string> = {
+    '/cfg/settings.json': JSON.stringify(SETTINGS, null, 2) + '\n',
+    '/h/.claude/settings.json': '{}\n',
+  }
+  await clickMax($, on, files, { USERPROFILE: '/h', CLAUDE_CONFIG_DIR: '/cfg' })
+  expect(JSON.parse(files['/cfg/settings.json']!).modelSettings['claude-opus-5-5'].effortLevel).toBe('max')
+  expect(files['/cfg/settings.json.mod-model-effort.bak']).toContain('"medium"')
+  expect(files['/h/.claude/settings.json']).toBe('{}\n')
+  expect(files['/h/.claude/settings.json.mod-model-effort.bak']).toBeUndefined()
+})
+
+test('a click on a machine with no settings.json creates it from {}', async ($, on) => {
+  const files: Record<string, string> = {}
+  await clickMax($, on, files, { USERPROFILE: '/h' })
+  expect(JSON.parse(files['/h/.claude/settings.json']!)).toEqual({ modelSettings: { 'claude-opus-5-5': { effortLevel: 'max' } } })
+  expect(files['/h/.claude/settings.json.mod-model-effort.bak']).toBeUndefined()
+})
+
 test('a click on the model name lists the models used before, and a pick switches through /model', async ($, on) => {
   const ran: string[] = []
   const store: Record<string, unknown> = { models: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-newmodel-6-0'] }
@@ -118,7 +169,7 @@ test('a click on the model name lists the models used before, and a pick switche
   // Each entry is a pill: the current one on surface3 with a green ✓ subpill, the others on surface2 with a blank as wide, so names line up.
   const current = JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))
   expect(current).toContain('" ✓ "')
-  expect(current).toContain('#49EF95')
+  expect(current).toContain('#A2B0EA')
   expect(current).toContain('" Opus 5.5 "')
   expect(current).toContain('#252A42')
   const other = JSON.stringify(await ui.drawn({ in: 'effort-model-1' }))
