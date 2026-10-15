@@ -306,12 +306,20 @@ async function answer($: EngineInterface, args: string) {
   return text.cardOpened
 }
 
-// One folder per project under the mod's data dir; empty when the home folder is unknown.
+// Claude Code's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude; empty when the home folder is unknown.
+async function configDir($: EngineInterface) {
+  const set = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (set) return set
+  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+  return home ? `${home}/.claude` : ''
+}
+
+// One folder per project under the mod's data dir; empty when the config folder is unknown.
 async function ledgerDir($: EngineInterface) {
   try {
-    const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-    if (!home) return ''
-    const dir = `${home}/.claude/mods-data/mod-wrap-up/${projectSlug(await $.session.cwd())}`
+    const config = await configDir($)
+    if (!config) return ''
+    const dir = `${config}/mods-data/mod-wrap-up/${projectSlug(await $.session.cwd())}`
     // A reload mid-session forgets the chain; the ledger that lists this session or the one before a clear still names it.
     if (!chain) {
       const id = await $.session.id()

@@ -1,5 +1,22 @@
 {
   "tagline": "Hand off or compact, keeping what you pick",
+  "cost": {
+    "summary": "Calls a model: after each turn Sonnet updates the automatic handoff, and Haiku reads the threads when the card opens. The `Automatic handoff` and `Read the threads` settings turn them off.",
+    "readme": [
+      "This mod calls a model in four places, which spends tokens and counts against your plan quota.",
+      "",
+      "| When | Model | Turn it off |",
+      "| --- | --- | --- |",
+      "| After each turn (or every few turns, set by Update every (turns)), the automatic handoff updates the ledger and handoff from the turns since the last update, up to 150,000 characters | Sonnet at low effort | Automatic handoff off |",
+      "| The first prompt after a /clear that is not a slash command, a \"related?\" check against the ledger | Sonnet at low effort, a reply of at most 100 tokens | Automatic handoff off |",
+      "| Opening the Wrap up card splits the session into threads | Haiku | Read the threads off |",
+      "| Handoff in the card writes the summary | Your session's model through a fork; Sonnet when there is nothing to fork yet | Does not run unless you click it |",
+      "",
+      "With Auto handoff at the mark on, the countdown first runs one more ledger update if turns are waiting. Set Automatic handoff to off and only the Wrap up pill hands off. Change settings with `/mod-wrap-up settings`.",
+      "",
+      "The ledger holds the handoff text. It is one JSON file per session chain, written under `~/.claude/mods-data/mod-wrap-up/<project>/ledgers/`. When `CLAUDE_CONFIG_DIR` is set, the folder is `$CLAUDE_CONFIG_DIR/mods-data/mod-wrap-up/` instead. The mod never prunes these files, so delete old ones by hand."
+    ]
+  },
   "features": [
     { "title": "Pick what stays", "detail": "A click on Wrap up offers Handoff or Compact. Either opens a card with the session's threads, read by Haiku, and fixed items such as files in play and open tasks; a click keeps or drops each line. The Auto switch beside them turns the auto handoff on or off, and its tip says what is set now." },
     { "title": "Compact", "detail": "The card writes the /compact instructions as you click and Fill prompt puts them in the prompt. You review them and press Enter." },

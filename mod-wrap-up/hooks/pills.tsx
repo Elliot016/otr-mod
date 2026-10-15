@@ -69,13 +69,14 @@ export const labelsOf = (value: unknown): LabelsMode => (value === 'never' ? 'ne
 
 // A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open panel's entry is a pill of its own inside the group.
 export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, { labels, ...props }: Omit<EntryProps, 'id' | 'bg' | 'tight'> & { labels?: LabelsMode }) {
-  const bg = props.isOpen ? THEME.lifted : PILL.primary
+  // The open panel reads as selected, like an On switch: ok text on ok washed into the group fill.
+  const bg = props.isOpen ? mix(THEME.ok, PILL.primary, WASH) : PILL.primary
   const glyph = (style.glyphs.nerd.icon as Record<string, string>)[`menu-${id}`]
   const icon = nerd && !props.lead && glyph ? decodeAll(glyph) : undefined
   // The icon sits tight against the cap, so the label that follows brings its own gap.
   const shown = icon ? { lead: icon, label: labels === 'never' ? '' : ` ${props.label}` } : {}
   // On Nerd the caps take the label's padding cells, so an entry is as wide as before the caps.
-  const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props, ...shown, nerd, tight: nerd } satisfies EntryProps} />
+  const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props, ...(props.isOpen ? { color: THEME.ok } : {}), ...shown, nerd, tight: nerd } satisfies EntryProps} />
   return (
     <Box key={`menu-pad-${id}`} flexDirection="row">
       {/* A closed entry gets caps in the group's own color, so opening a panel never shifts its neighbours. */}
