@@ -5,7 +5,7 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
 import { layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
-import { menuEntry, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { labelsOf, menuEntry, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { addBg, appendTail, applyCall, applyStep, applyTask, bandSummary, bgIdOf, bgOutputOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, finishAgent, findBg, firstLine, gatesStemIn, hasRunningBg, isGatesPath, MAIN_GATES, outputRoom, pageOf, parseGates, resyncBg, settle, stemOf, TAIL_LINES, wipeBg, type AgentLite, type BgTask, type Gate, type Snap, type Tail, type Usage, type UsageLite } from './progress'
 import { stopLine, stopOf } from './stop'
 import { settingChoice, settingsBody } from './settings'
@@ -150,11 +150,13 @@ async function gatesDir($: EngineInterface) {
   const base = ((await $.env.get('GATES_HOME')) ?? `${home}/.claude/gates`).replace(/\\/g, '/')
   const where = ((await $.session.repo())?.root ?? String(await $.session.cwd())).replace(/\\/g, '/').replace(/\/+$/, '')
   const own = `${base}/${where.split('/').pop()}/${session}`
-  const exists = (dir: string) => $.fs.exists(dir).catch(() => false)
+  // A checker run from another cwd can leave an empty folder for the same session, so only a folder holding a ledger counts.
+  const holdsLedger = async (dir: string) =>
+    (await $.fs.exists(`${dir}/GATES.md`).catch(() => false)) || (await $.fs.list(`${dir}/gates`).catch(() => [])).some(entry => entry.kind === 'file' && entry.name.toLowerCase().endsWith('.md'))
   // The checker names the repo its shell is in, which drifts once the agent cds; a session id is unique, so any repo folder holding it is this session's.
   const others = async () => (await $.fs.list(base).catch(() => [])).filter(entry => entry.kind === 'dir').map(entry => `${base}/${entry.name}/${session}`)
-  for (const dir of (await exists(own)) ? [own] : await others()) {
-    if (!(await exists(dir))) continue
+  for (const dir of [own, ...(await others())]) {
+    if (!(await holdsLedger(dir))) continue
     foundGates = { session, dir }
     return dir
   }
@@ -461,6 +463,19 @@ export const register: Register = (on, options) => {
     return result
   })
 
+  // A gates file handed to a running agent by message, after a brief that named none.
+  on('session.send', async ($, e, next) => {
+    const stem = gatesStemIn(e.text)
+    const current = stem ? await loadSnap($) : undefined
+    const agent = current?.agents[e.to]
+    if (agent && !agent.gatesStem) {
+      agent.gatesStem = stem
+      await saveSnap($)
+      $.ui.invalidate('ui.render')
+    }
+    return next(e)
+  })
+
   on('turn.start', async ($, e, next) => {
     if (!(e as { agentId?: string }).agentId) {
       const current = await loadSnap($)
@@ -605,6 +620,7 @@ export const register: Register = (on, options) => {
       return <Box key="toasts-progress" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
     }
     const nerd = look.nerd
+    const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
 
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
@@ -616,7 +632,7 @@ export const register: Register = (on, options) => {
     const { group, row, rest, tip } = splitRow(await next(e))
     const badge = summary.count > 0 ? { badge: { text: String(summary.count), color: THEME.accent, bg: mix(THEME.accent, shown ? THEME.lifted : PILL.primary, WASH) } } : {}
     const pillTip = stop?.line ?? (summary.total > 0 ? fill(text.tipPillGates, summary) : text.tipPill)
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'progress', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, still, nerd, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.pillLabel, text: pillTip }, ...badge })
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'progress', { label: text.pillLabel, labels, isOpen: shown, idle: THEME.pill, still, nerd, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.pillLabel, text: pillTip }, ...badge })
     // A pill tip is posted once on enter, so its text is redrawn from the figures here, the minute the stop's age ticks.
     const shownTip = bandTip?.id === 'progress' ? { ...bandTip, text: pillTip } : bandTip
 
@@ -686,11 +702,11 @@ export const register: Register = (on, options) => {
       const settingRows = (await $.config.list()).filter(row => row.key.startsWith('mod-progress.'))
       const { rows } = await currentRows($)
       return (
-        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs('settings', bandSummary(rows).count), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows: settingRows, actions: [], working: false, run: async () => {}, still })}</Box>
-          <Box key="footer-space" height={FOOTER_ROWS} />
+          <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
           {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
@@ -708,7 +724,7 @@ export const register: Register = (on, options) => {
         const back = [{ id: 'progress-back', label: text.paneTitle, icon: look.glyph.back, isOpen: false, tip: { glyph: look.glyph.back, label: text.paneTitle, text: text.tipBack } }]
         const empty = !page.output ? text.noOutputFile : unreadable.has(pageId) ? text.outputUnreadable : text.noOutputYet
         return (
-          <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+          <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
             <Box key="task-head" flexDirection="row" columnGap={1}>
               {tabRow({ Box, Client, Text }, look.nerd, back, still)}
               <Text wrap="truncate-end" color={THEME.muted}>{status}</Text>
@@ -725,7 +741,7 @@ export const register: Register = (on, options) => {
                 {shown.length === 0 ? <Text key="output-empty" color={THEME.muted}>{empty}</Text> : shown.map((line, at) => <Text key={`output-${at}`} wrap="truncate-end" color={THEME.muted}>{line || ' '}</Text>)}
               </Box>
             ))}
-            <Box key="footer-space" height={FOOTER_ROWS} />
+            <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
             {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
           </Box>
         )
@@ -748,7 +764,7 @@ export const register: Register = (on, options) => {
     const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd, viewing: e.props.view.agentId ?? '' })) as LoopsProps
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs('list', bandSummary(rows).count), still)}
         <Box key="hint-row" flexDirection="row" columnGap={1}>
           <Box key="hint-text" flexGrow={1} flexShrink={1}>
@@ -769,8 +785,8 @@ export const register: Register = (on, options) => {
           <Client key="loops" module="./loops.tsx" height={layoutLoops(rows, current.expanded).length} props={props} />
         ))}
         {rows.length === 1 ? <Text color={THEME.muted}>{text.noAgents}</Text> : null}
-        <Box key="footer-space" height={FOOTER_ROWS} />
-        {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll, switchLabel ? [{ scope: 'view-pill-box', tip: { glyph: MARK.open, label: switchLabel, text: viewed ? text.tipBackToMain : text.tipOpenTranscript } }] : [])}
       </Box>
     )
   })

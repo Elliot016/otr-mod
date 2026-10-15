@@ -23,6 +23,8 @@ export default {
   "taskShell": "shell",
   "taskMonitor": "monitor",
   "tipTask": "opens this task's command and output",
+  "tipOpenTranscript": "shows this agent's own conversation in the transcript",
+  "tipBackToMain": "returns the transcript to the main session",
   "tipBack": "returns to the list of agents",
   "taskStatus": "{kind} {sep} {status} {sep} {elapsed}",
   "taskRunning": "running",

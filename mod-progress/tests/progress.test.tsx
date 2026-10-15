@@ -44,7 +44,7 @@ const seeded = (): Snap => {
 
 // `files` are the gates files the session's folder holds, by path under it; `repo` names the folder the checker filed them under.
 // `session.id` may change mid-test, as a /resume or /clear changes it.
-type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[]; files: Record<string, string>; repo: string; session: { id: string } }
+type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[]; files: Record<string, string>; repo: string; empty: string[]; session: { id: string } }
 
 // Everything the mod reads from the engine, with the store backed by a map and the clock moved only by the test.
 function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], world: Partial<World> = {}) {
@@ -73,10 +73,10 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
     if (path in files) return { value: files[path]! }
     throw new Error('ENOENT')
   })
-  on('fs.exists', (_$, e) => ({ value: neutral(e.path) === folder }))
+  on('fs.exists', (_$, e) => ({ value: neutral(e.path) === folder || (neutral(e.path).startsWith(`${folder}/`) && neutral(e.path).replace(`${folder}/`, '') in files) || (world.empty ?? []).some(name => neutral(e.path) === `/.claude/gates/${name}/sid-1`) }))
   on('fs.list', (_$, e) => ({
     value: neutral(e.path) === '/.claude/gates'
-      ? ['w', world.repo ?? 'w'].map(name => ({ name, kind: 'dir', size: 0, mtimeMs: 0, isLink: false }))
+      ? [...(world.empty ?? []), 'w', world.repo ?? 'w'].map(name => ({ name, kind: 'dir', size: 0, mtimeMs: 0, isLink: false }))
       : neutral(e.path) === `${folder}/gates`
         ? Object.keys(files).filter(path => path.startsWith('gates/')).map(path => ({ name: path.slice('gates/'.length), kind: 'file', size: 0, mtimeMs: 0, isLink: false }))
         : [],
@@ -232,6 +232,14 @@ test('a session that started outside the repo its checker ran in still finds its
   await ui.unmount()
 })
 
+test('an empty folder a checker left for the same session in another repo does not hide the real ledger', async ($, on) => {
+  stubEngine(on, [], [], { repo: 'mods', empty: ['C--Users-me--proj'] })
+  await $.session.start({ cwd: '/w' } as never)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'loops' }))).toContain('line-1-gates')
+  await ui.unmount()
+})
+
 test('the band pill counts agents in a badge, and a click toggles the pane', async ($, on) => {
   const opened: string[] = []
   stubEngine(on, [AGENT], opened)
@@ -310,6 +318,21 @@ test('icons=nerd draws the Nerd gauge, spinner and agent icon', { options: { ico
   for (const point of [0xf035b, 0xf0c8, 0xf096, 0xf110, 0xe0b6]) expect(list).toContain(String.fromCodePoint(point))
   expect(JSON.stringify(await ui.drawn({ in: 'progress-tab' }))).toContain(String.fromCodePoint(0xebbc))
   await ui.unmount()
+})
+
+test('mod-menu labels never leaves the band entry as its icon alone', { options: { icons: 'nerd' } }, async ($, on) => {
+  stubEngine(on)
+  on('state.get', (_$, e) => ({ value: { value: e.plugin === 'mod-menu' && e.key === 'labels' ? 'never' : undefined } }) as never)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>other mod</Text>
+  })
+  await $.session.start({ cwd: '/w' } as never)
+  const band = await $.ui.mount(BAND)
+  const entry = JSON.stringify(await band.drawn({ in: 'menu-entry-progress' }))
+  expect(entry).toContain(String.fromCodePoint(0xebbc))
+  expect(entry).not.toContain('Progress')
+  await band.unmount()
 })
 
 test('icons=safe draws only plain glyphs', { options: { icons: 'safe' } }, async ($, on) => {
@@ -627,6 +650,23 @@ test('a workflow agent is done or failed once its turn ends, and an agent the li
   const rows = buildRows(snap, [{ ...AGENT }], undefined, 9000, 'main', 'x', undefined)
   expect(rows.filter(row => row.run).map(row => [row.name, row.status, row.elapsed])).toEqual([['leaf-1.1.1', 'running', '8s'], ['finder-1', 'done', '3s'], ['editor-2', 'failed', '4s']])
   expect(buildRows(snap, [{ ...AGENT, id: 'a1' }], undefined, 9000, 'main', 'x', undefined).filter(row => row.id === 'a1')).toHaveLength(1)
+})
+
+test('a gates file sent to a running agent by message becomes its gates, and a brief\'s own file is kept', async ($, on) => {
+  const { store } = stubEngine(on, [])
+  store.set('snap', emptySnap('sid-1'))
+  on('agent.spawn', (_$, e) => ({ model: 'claude-haiku-4-5', agentId: e.description === 'bare' ? 'a1' : 'a2' }) as never)
+  on('session.send', () => ({ isDelivered: true }))
+  await $.session.start({ cwd: '/w' } as never)
+  const spawn = (description: string, prompt: string) => ({ tool_use_id: '', prompt, description, subagentType: 'general-purpose', provider: { plugin: 'x', tier: 'user' }, parentModel: 'm' }) as never
+  await $.agent.spawn(spawn('bare', 'fix the previews'))
+  await $.agent.spawn(spawn('briefed', 'your file: C:/g/gates/W.md'))
+  const send = (to: string) => $.session.send({ to, text: 'Your gates file: C:\\g\\gates\\P.md, run the checker', origin: { kind: 'model' } } as never)
+  await send('a1')
+  await send('a2')
+  const saved = store.get('snap') as Snap
+  expect(saved.agents.a1?.gatesStem).toBe('P')
+  expect(saved.agents.a2?.gatesStem).toBe('W')
 })
 
 test('a workflow agent\'s spawn keeps its run, and its own turn ending or failing settles its row', async ($, on) => {

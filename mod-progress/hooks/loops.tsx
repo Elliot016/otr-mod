@@ -67,9 +67,9 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
   // A pill on the card: rounded caps on Nerd, a space each side on safe.
   const pill = (key: string, on: string, body: RenderChildren) => (
     <Box key={key} flexDirection="row" flexShrink={0}>
-      <Text key={`${key}-left`} color={THEME.surface1} backgroundColor={on}>{nerd ? CAPS.left : ' '}</Text>
-      <Box key={`${key}-body`} flexDirection="row" backgroundColor={THEME.surface1}>{body}</Box>
-      <Text key={`${key}-right`} color={THEME.surface1} backgroundColor={on}>{nerd ? CAPS.right : ' '}</Text>
+      <Text key={`${key}-left`} color={THEME.surface3} backgroundColor={on}>{nerd ? CAPS.left : ' '}</Text>
+      <Box key={`${key}-body`} flexDirection="row" backgroundColor={THEME.surface3}>{body}</Box>
+      <Text key={`${key}-right`} color={THEME.surface3} backgroundColor={on}>{nerd ? CAPS.right : ' '}</Text>
     </Box>
   )
 
@@ -83,7 +83,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
     }
     const row = rows[line.loop]!
     const isHover = line.kind === 'task' ? hoveredAt === at : lines[hoveredAt]?.kind !== 'task' && (lines[hoveredAt]?.loop ?? -1) === line.loop
-    const on = isHover ? THEME.lifted : THEME.surface2
+    const on = isHover ? THEME.lifted : THEME.surface1
     const strip = <Text key={`${key}-strip`} color={row.hue}>{own.strip}</Text>
     const isViewed = line.kind === 'head' && row.id === viewing
     const frame = (inner: RenderChildren) => (
