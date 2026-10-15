@@ -2,7 +2,7 @@
 // Registers the mod: wires the suggestion band, settings pane, commands and toasts.
 import type { ConfigValue, EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'
+import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
 import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
@@ -358,17 +358,18 @@ export const register: Register = (on, options) => {
     // Each suggestion a numbered pill; its digit, typed alone into the empty prompt, fills it through a Button nobody sees.
     const row = (step: string, index: number) => (
       <Box key={`steps-line-${index}`} flexDirection="row">
-        {pill({ Box, Text }, look.nerd, THEME.surface2, <Client key={`steps-row-${index}`} module="./entry.tsx" height={1} props={{ id: `steps-row-${index}`, label: fit(step, room), isOpen: false, bg: THEME.surface2, idle: THEME.muted, subLead: String(index + 1), subLeadColor: THEME.muted, nerd: look.nerd, tip: { glyph: look.glyph.go, label: fill(text.tipSuggestionLabel, { n: index + 1 }), text: text.tipSuggestion }, still } satisfies EntryProps} />, `steps-pill-${index}`, THEME.surface1)}
+        {pill({ Box, Text }, look.nerd, THEME.surface2, <Client key={`steps-row-${index}`} module="./entry.tsx" height={1} props={{ id: `steps-row-${index}`, label: fit(step, room), isOpen: false, bg: THEME.surface2, idle: THEME.muted, subLead: String(index + 1), subLeadColor: THEME.muted, nerd: look.nerd, tip: { glyph: bare(look.glyph.go), label: fill(text.tipSuggestionLabel, { n: index + 1 }), text: text.tipSuggestion }, still } satisfies EntryProps} />, `steps-pill-${index}`, THEME.surface1)}
         <Box key={`steps-hotkey-${index}`} width={0} height={0} overflow="hidden">
           <Button key={`steps-hotkey-button-${index}`} label={step} hotkey={String(index + 1)} plain onPress={() => fillFrom($, index)} />
         </Box>
       </Box>
     )
-    const dismiss = pill({ Box, Text }, look.nerd, THEME.surface2, <Client key="steps-dismiss" module="./entry.tsx" height={1} props={{ id: 'steps-dismiss', label: bare(look.glyph.close), isOpen: false, bg: THEME.surface2, nerd: look.nerd, tip: { glyph: look.glyph.close, label: text.tipDismissLabel, text: text.tipDismiss }, still } satisfies EntryProps} />, 'steps-dismiss-pill', THEME.surface1)
+    const dismiss = pill({ Box, Text }, look.nerd, THEME.surface2, <Client key="steps-dismiss" module="./entry.tsx" height={1} props={{ id: 'steps-dismiss', label: bare(look.glyph.close), isOpen: false, bg: THEME.surface2, nerd: look.nerd, tip: { glyph: bare(look.glyph.close), label: text.tipDismissLabel, text: text.tipDismiss }, still } satisfies EntryProps} />, 'steps-dismiss-pill', THEME.surface1)
 
     return above(below, [
         ...cards,
         <Box key="nextsteps-rows" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+          {cardStrip({ Box, Text }, 'nextsteps-rows', THEME.border)}
           <Box key="steps-first" flexDirection="row" justifyContent="space-between" columnGap={1}>
             {row(shown[0]!, 0)}
             {dismiss}
@@ -393,11 +394,11 @@ export const register: Register = (on, options) => {
     }
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-next-steps-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneHeadingSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneHeadingSettings, text: text.tipTabSettings } }], still)}
         <Text key="status" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusReload}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, fields, still: still, tips: text.settingTips })}
-        <Box key="footer-space" height={FOOTER_ROWS} />
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
         {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
       </Box>
     )

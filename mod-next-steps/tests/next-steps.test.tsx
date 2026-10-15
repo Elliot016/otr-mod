@@ -367,3 +367,30 @@ test('hovering a suggestion or the dismiss control shows its tip in the band tip
   expect(await ui.find({ type: 'Text', text: /clears the suggestions/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('the row and dismiss tips carry bare glyphs, and the pane footer keeps its rows free', { options: { icons: 'safe' } }, async ($, on) => {
+  const { clock } = setup(on, () => answered('add a test'))
+  on('fs.read', () => {
+    throw new Error('ENOENT')
+  })
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('config.list', () => ({ value: [] }))
+  await $.turn.complete(DONE as never)
+  await clock.settle()
+  const band = await mount($)
+  await band.pointer({ type: 'enter', x: 1, y: 0, in: 'steps-row-0' })
+  await $.command.run({ command: 'mod-next-steps', args: 'settings' } as never)
+  const pane = await $.ui.mount({
+    plugin: 'mod-next-steps',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'nextsteps',
+    props: { title: 'mod-next-steps', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  } as never)
+  expect(await pane.find({ type: 'Text', text: '↵' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '[↵]' })).toBeUndefined()
+  expect(((await pane.find({ key: 'footer-space' })) as { props: { flexShrink?: number } }).props.flexShrink).toBe(0)
+  await pane.unmount()
+  await band.unmount()
+})
