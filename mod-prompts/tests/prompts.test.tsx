@@ -479,3 +479,33 @@ test('a turn that ends while the pane is open reads an unchanged transcript no m
   await clock.settle()
   expect(reads).toBe(1)
 })
+
+// The test host turns a POSIX path into a Windows one, so paths are compared without a drive letter.
+const plain = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+
+// No transcript is known, so opening the sidebar looks for the session's file and lists the projects folder.
+async function listedFolders($: any, on: any, env: Record<string, string>) {
+  const listed: string[] = []
+  on('store.get', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: '' }))
+  on('fs.list', (_$: unknown, e: { path: string }) => {
+    listed.push(plain(e.path))
+    return { value: [] }
+  })
+  on('ui.panes', () => ({ value: [] }))
+  mock.env(on, env)
+  mock.clock(on)
+  const ui = await $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'Pane', requestId: 'prompts', props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } } as never)
+  await ui.unmount()
+  return listed
+}
+
+test('the transcript is looked up under CLAUDE_CONFIG_DIR when set', async ($, on) => {
+  expect(await listedFolders($, on, { USERPROFILE: '/home/u', CLAUDE_CONFIG_DIR: '/cfg/' })).toContain('/cfg/projects')
+})
+
+test('without CLAUDE_CONFIG_DIR the transcript is looked up under ~/.claude as before', async ($, on) => {
+  expect(await listedFolders($, on, { USERPROFILE: '/home/u' })).toContain('/home/u/.claude/projects')
+})

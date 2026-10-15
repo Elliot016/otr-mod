@@ -168,7 +168,7 @@ export type Reveal = { scope: string; tip: Tip }
 const tipRow = ({ Box, Text }: Elements, key: string, tip: Tip | null, columns: number, extra: Record<string, unknown> = {}) => (
   <Box key={key} flexDirection="row" paddingX={1} width={columns} height={1} backgroundColor={THEME.bg} {...extra}>
     {tip ? <Text color={THEME.accent} backgroundColor={THEME.bg}>{tip.glyph}</Text> : null}
-    {tip ? <Text color={THEME.onSurface} backgroundColor={THEME.bg} wrap="truncate-end">{` ${tip.label}`}</Text> : null}
+    {tip ? <Box flexShrink={0}><Text color={THEME.onSurface} backgroundColor={THEME.bg}>{` ${tip.label}`}</Text></Box> : null}
     {tip ? <Text color={THEME.muted} backgroundColor={THEME.bg} wrap="truncate-end">{` ${MARK.sep} ${tip.text}`}</Text> : <Text backgroundColor={THEME.bg}> </Text>}
   </Box>
 )

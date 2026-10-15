@@ -241,10 +241,17 @@ const tabs = (isSettings: boolean) => [
   { id: 'prompts-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: isSettings, tip: { glyph: look.glyph.gear, label: text.settingsTab, text: text.settingsTabTip } },
 ]
 
-// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
-async function findTranscript($: EngineInterface) {
+// Claude Code's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude.
+async function configDir($: EngineInterface) {
+  const set = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (set) return set
   const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  const projects = `${home}/.claude/projects`
+  return `${home}/.claude`
+}
+
+// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of the config folder's projects folders.
+async function findTranscript($: EngineInterface) {
+  const projects = `${await configDir($)}/projects`
   const file = `${await $.session.id()}.jsonl`
   for (const entry of await $.fs.list(projects).catch(() => [])) {
     const path = `${projects}/${entry.name}/${file}`
@@ -475,7 +482,7 @@ export const register: Register = (on, options) => {
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-prompts', key: 'pane' })
-    const shown = await isOpen($)
+    const shown = (await isOpen($)) || (await isOpen($, SETTINGS))
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = menuEntry({ Box, Client, Text }, nerd, 'prompts', { label: text.pillLabel, labels, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
