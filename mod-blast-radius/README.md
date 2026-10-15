@@ -32,7 +32,7 @@ Automatic.
 
 | A risky command held |
 | --- |
-| https://github.com/user-attachments/assets/dede1549-47e9-46ee-8ace-d13dc594e6ff |
+| https://github.com/user-attachments/assets/a3dfb603-3060-465a-ab15-ec0aaecf6728 |
 
 ## Features
 

@@ -54,9 +54,9 @@ Each mod works alone. Add `mod-manager` too if you want the gear pill, which tur
 
 ## See them in action
 
-| Every terminal mod in 92 seconds |
+| Every terminal mod in 140 seconds |
 | --- |
-| https://github.com/user-attachments/assets/7e2c3727-83d1-4549-9c13-80e51a8bf929 |
+| https://github.com/user-attachments/assets/0463b8f7-251a-4b92-b5b9-10844ae0a226 |
 
 | Without mods | With mods |
 | --- | --- |
@@ -178,7 +178,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Hovering an entry shows its tip |
 | --- |
-| https://github.com/user-attachments/assets/7bb01973-e907-4807-b571-829e65d71659 |
+| https://github.com/user-attachments/assets/8d4c20fa-d8b9-4eda-ac52-1ad6f878dfc0 |
 
 [Full page][doc-mod-menu]
 
@@ -189,7 +189,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Hover a mod, switch the icons |
 | --- |
-| https://github.com/user-attachments/assets/9905f3f6-c708-44c6-a14d-a91845bfc4ca |
+| https://github.com/user-attachments/assets/38187e8d-4b4b-45e5-99e7-48e56db6ccc4 |
 
 [Full page][doc-mod-manager]
 
@@ -200,7 +200,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/676f590d-6596-469f-9cba-baa8e23745eb |
+| https://github.com/user-attachments/assets/14d81301-566d-430f-8f58-81f7578e2cf0 |
 
 [Full page][doc-mod-file-tree]
 
@@ -211,7 +211,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Picking one by its digit |
 | --- |
-| https://github.com/user-attachments/assets/00b218a3-db7b-45b4-a0a9-0b195198a207 |
+| https://github.com/user-attachments/assets/5dbf9ecc-a89a-4528-b09b-cb05c2fdf84e |
 
 [Full page][doc-mod-next-steps]
 
@@ -222,7 +222,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Pick a prompt to read it |
 | --- |
-| https://github.com/user-attachments/assets/6fcaf366-bf6a-4a54-8856-6e80b529f11f |
+| https://github.com/user-attachments/assets/4d5ebd99-724c-46de-8b99-a87817f42c12 |
 
 [Full page][doc-mod-prompts]
 
@@ -233,7 +233,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
-| https://github.com/user-attachments/assets/cd3fef1e-dea9-4a25-b110-e2a87366a7b1 |
+| https://github.com/user-attachments/assets/827f92d0-898c-4a47-bfee-4e3dfe490d2f |
 
 [Full page][doc-mod-skill-panel]
 
@@ -244,7 +244,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/586fba29-205c-4ea5-8ef2-7257bc629a75 |
+| https://github.com/user-attachments/assets/54d5f0e0-e018-4304-ae72-0b43830b88df |
 
 [Full page][doc-mod-transcript]
 
@@ -255,7 +255,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/043dd359-6d8a-44aa-b2d4-76d51d5ec376 |
+| https://github.com/user-attachments/assets/50bb1548-fe7b-423c-8b08-a403a1193f55 |
 
 [Full page][doc-mod-model-effort]
 
@@ -266,7 +266,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/2c798c02-184a-42b9-80c4-9d67f50a186e |
+| https://github.com/user-attachments/assets/dceda84c-cec9-419e-913c-7043256e9878 |
 
 [Full page][doc-mod-heads-up]
 
@@ -277,7 +277,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/7716348f-373c-467f-9253-642d262fee29 |
+| https://github.com/user-attachments/assets/723714a0-74d8-44e5-9564-6c620e53d4f3 |
 
 [Full page][doc-mod-progress]
 
@@ -288,7 +288,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | A risky command held |
 | --- |
-| https://github.com/user-attachments/assets/dede1549-47e9-46ee-8ace-d13dc594e6ff |
+| https://github.com/user-attachments/assets/a3dfb603-3060-465a-ab15-ec0aaecf6728 |
 
 [Full page][doc-mod-blast-radius]
 
@@ -310,7 +310,11 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/0b9c9abd-03e8-4f36-9069-ae02042a809d |
+| https://github.com/user-attachments/assets/79c3e6bd-84f0-4d55-b8a0-edc8b969f62f |
+
+| Auto handoff at the mark: countdown, clear, carry on |
+| --- |
+| https://github.com/user-attachments/assets/ab60369a-5192-4192-84a7-77be42c21fe5 |
 
 [Full page][doc-mod-wrap-up]
 

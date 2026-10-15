@@ -32,7 +32,7 @@ To install every mod at once, see [Install][doc-install]. For sharper icons, see
 
 | Hovering an entry shows its tip |
 | --- |
-| https://github.com/user-attachments/assets/7bb01973-e907-4807-b571-829e65d71659 |
+| https://github.com/user-attachments/assets/8d4c20fa-d8b9-4eda-ac52-1ad6f878dfc0 |
 
 ## Settings
 

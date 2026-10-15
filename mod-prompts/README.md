@@ -28,7 +28,7 @@ Prompts pill.
 
 | Pick a prompt to read it |
 | --- |
-| https://github.com/user-attachments/assets/6fcaf366-bf6a-4a54-8856-6e80b529f11f |
+| https://github.com/user-attachments/assets/4d5ebd99-724c-46de-8b99-a87817f42c12 |
 
 ## Settings
 
