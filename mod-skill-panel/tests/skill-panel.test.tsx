@@ -226,6 +226,35 @@ test("the agents tab adds the project's agents, which win over a same-named one 
   await ui.unmount()
 })
 
+const readPaths = async ($: Parameters<TestBody>[0], on: On, config: string | undefined) => {
+  const listed: string[] = []
+  const dir = (name: string) => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : e.name === 'CLAUDE_CONFIG_DIR' ? config : undefined }))
+  on('fs.list', (_$, e) => {
+    listed.push(neutral(e.path))
+    return { value: neutral(e.path).endsWith('/skills') ? [dir('cfgskill')] : [] }
+  })
+  on('fs.read', () => ({ value: '---\nname: cfgskill\ndescription: x\n---\nbody' }))
+  stubSession(on)
+  await $.session.start({ cwd: 'C:\\p' } as never)
+  return listed
+}
+
+test('with CLAUDE_CONFIG_DIR set, skills, agents and mods are read under it and not under ~/.claude', async ($, on) => {
+  const listed = await readPaths($, on, '/cfg')
+  expect(listed).toContain('/cfg/skills')
+  expect(listed).toContain('/cfg/agents')
+  expect(listed).toContain('/cfg/mods')
+  expect(listed.some(path => path.startsWith('/h/'))).toBe(false)
+  // The project's own agents stay where the project keeps them.
+  expect(listed).toContain('/p/.claude/agents')
+})
+
+test('without CLAUDE_CONFIG_DIR, skills, agents and mods are read under ~/.claude', async ($, on) => {
+  const listed = await readPaths($, on, undefined)
+  expect(listed).toEqual(['/h/.claude/skills', '/h/.claude/agents', '/p/.claude/agents', '/h/.claude/mods'])
+})
+
 test('the command toggles: it opens a closed pane and closes an open one', async ($, on) => {
   let open: string[] = []
   const calls: string[] = []

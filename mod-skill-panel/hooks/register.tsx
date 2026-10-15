@@ -15,6 +15,9 @@ import { labelsOf, menuEntry, pillRow, splitRow, tabRow, tipLine } from './pills
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
+const homeOf = async ($: EngineInterface) => ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+
+const configDir = async ($: EngineInterface) => ((await $.env.get('CLAUDE_CONFIG_DIR')) || `${await homeOf($)}/.claude`).replace(/\\/g, '/')
 
 // The icons setting (userConfig), fixed per activation: a change reloads the mod.
 let iconMode: IconMode = 'auto'
@@ -229,8 +232,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await loadLook($)
     await $.command.register({ name: 'mod-skill-panel', description: text.commandDescription, argumentHint: '[settings]' })
-    const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-    const root = `${home}/.claude/skills`
+    const config = await configDir($)
+    const root = `${config}/skills`
     const found: Skill[] = []
     for (const entry of await $.fs.list(root).catch(() => [])) {
       if (entry.kind !== 'dir') continue
@@ -242,7 +245,7 @@ export const register: Register = (on, options) => {
     skills = found
     // The person's agents, then the project's, which win over a same-named one as they do in Claude Code.
     const foundAgents = new Map<string, Agent>()
-    for (const agentRoot of [`${home}/.claude/agents`, `${String(e.cwd ?? '').replace(/\\/g, '/')}/.claude/agents`]) {
+    for (const agentRoot of [`${config}/agents`, `${String(e.cwd ?? '').replace(/\\/g, '/')}/.claude/agents`]) {
       for (const entry of await $.fs.list(agentRoot).catch(() => [])) {
         if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
         const agent = readAgent(String(await $.fs.read(`${agentRoot}/${entry.name}`).catch(() => '')), entry.name.slice(0, -3))
@@ -250,7 +253,7 @@ export const register: Register = (on, options) => {
       }
     }
     agents = [...foundAgents.values()]
-    const modDirs = await $.fs.list(`${home}/.claude/mods`).catch(() => [])
+    const modDirs = await $.fs.list(`${config}/mods`).catch(() => [])
     mods = new Set(modDirs.filter(entry => entry.kind === 'dir').map(entry => entry.name))
     // The typeahead caches each answer for the session, so ask it to list again.
     $.ui.invalidate('command.describe')
@@ -318,7 +321,7 @@ export const register: Register = (on, options) => {
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-skill-panel', key: 'pane' })
-    const shown = await isOpen($)
+    const shown = (await isOpen($)) || (await isOpen($, SETTINGS))
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = menuEntry({ Box, Client, Text }, nerd, 'skills', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still, labels })
