@@ -52,6 +52,8 @@ type World = {
   verdictReason?: string
   // What git prints, by the command as typed.
   git?: Record<string, string>
+  // The pane the engine opens is not placed, so the mod toasts why.
+  unplaced?: boolean
 }
 
 // Everything the engine would answer, plus a record of what the hold did.
@@ -113,6 +115,7 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
   })
   on('ui.panes', () => ({ value: [...seen.panes].map(id => ({ id, isPlaced: true })) }))
   on('ui.open', (_$: unknown, e: { id: string }) => {
+    if (setup.unplaced) return { value: { isPlaced: false, reason: 'too narrow' } }
     seen.panes.add(e.id)
     seen.opened.push(e.id)
     return { value: { isPlaced: true } }
@@ -669,7 +672,7 @@ for (const [name, command, setup] of FIT_CASES) {
     test(`fit: the ${name} card at ${columns} columns keeps every row inside the width`, async ($, on) => {
       await withCard($, on, command, setup, async (band, seen) => {
         expect(seen.ran).toBe(0)
-        const rows = (await band.findAll({ type: 'Text' })) as { text: string }[]
+        const rows = ((await band.findAll({ type: 'Text' })) as { text: string }[]).filter(row => !row.text.startsWith('▎'))
         for (const row of rows) expect(row.text.length, row.text).toBeLessThanOrEqual(width)
         const labels = [await labelOf(band, 'blast-cancel'), await labelOf(band, 'blast-details'), await labelOf(band, 'blast-run')]
         expect(labels.reduce((sum, label) => sum + label.length, 0) + 6).toBeLessThanOrEqual(width)
@@ -679,7 +682,7 @@ for (const [name, command, setup] of FIT_CASES) {
 
     test(`fit: the ${name} card at ${columns} columns and six rows keeps only the heading and the actions`, async ($, on) => {
       await withCard($, on, command, setup, async band => {
-        const rows = (await band.findAll({ type: 'Text' })) as { text: string }[]
+        const rows = ((await band.findAll({ type: 'Text' })) as { text: string }[]).filter(row => !row.text.startsWith('▎'))
         for (const row of rows) expect(row.text.length, row.text).toBeLessThanOrEqual(width)
         // The sentence, the paths and the command go to Details; the figures stay in the heading and the Run label.
         expect(rows.filter(row => !row.text.startsWith('!') && row.text.trim() !== '').map(row => row.text)).toEqual([])
@@ -983,13 +986,54 @@ test('a held command raises one notification naming it, and a refused notificati
     notes.push(e)
     throw new Error('refused')
   })
-  const command = `rm -rf build ${'x'.repeat(120)}`
+  const command = `rm -rf dist\n   build ${'x'.repeat(120)}`
   await withCard($, on, command, {}, async band => {
     await sleep(20)
     expect(await labelOf(band, "blast-cancel")).toBe(" Cancel ")
   })
   expect(notes).toHaveLength(1)
   expect(notes[0]!.text.length).toBeLessThanOrEqual(110)
-  expect(notes[0]!.text).toContain('rm -rf build')
+  expect(notes[0]!.text).toContain('rm -rf dist build')
   expect(notes[0]!.title).toBe('Blast radius')
+})
+
+test('a toast raised during a hold draws above the card', async ($, on) => {
+  const { seen } = world(on, { unplaced: true })
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await click(band, 'blast-details')
+  expect(await textOf(band, /^List waiting: too narrow/)).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^!/ })).toBeDefined()
+  await click(band, 'toast-blast-1')
+  expect(await textOf(band, /^List waiting/)).toBeUndefined()
+  await click(band, 'blast-cancel')
+  await call
+  await band.unmount()
+})
+
+test('the Settings pane draws a footer that shows the hovered tip', async ($, on) => {
+  world(on)
+  await $.command.run({ command: 'mod-blast-radius', args: 'settings' } as never)
+  const settings = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...SETTINGS })
+  expect(await settings.find({ type: 'Text', text: /^─+$/ })).toBeDefined()
+  expect(await textOf(settings, /Shows this/)).toBeUndefined()
+  await settings.post({ type: 'tip', id: 'x', glyph: '>', label: 'Guard', text: 'Shows this view' }, { in: 'mod-blast-radius-settings-tab' })
+  expect(await textOf(settings, /Shows this view/)).toContain('Shows this view')
+  await settings.unmount()
+})
+
+test('the card tips carry a bare glyph, with no brackets or padding', { options: { icons: 'safe' } }, async ($, on) => {
+  const { seen } = world(on)
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await band.pointer({ type: 'enter', x: 1, y: 0, in: 'blast-cancel' })
+  const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...DETAILS })
+  expect(await pane.find({ type: 'Text', text: '×' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '[×]' })).toBeUndefined()
+  await pane.unmount()
+  await click(band, 'blast-cancel')
+  await call
+  await band.unmount()
 })

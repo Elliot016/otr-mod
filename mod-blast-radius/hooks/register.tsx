@@ -2,7 +2,7 @@
 // Wires the mod into the engine: holds risky Bash commands, draws the card, pane and settings.
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Look } from './look'
+import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Look } from './look'
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
 import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -11,7 +11,7 @@ import { describePrompt, parseDescribed, SYSTEM, verdictOf, type Described } fro
 import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from './syntax'
 import { measure, tilde, type Io, type Report } from './preview'
 import { CHECKS, compileRules, evaluate, type Risk, type UserRule } from './risk'
-import { settingChoice, settingsBody, type Action, type Previews } from './settings'
+import { actionReveals, settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
 import { fill, MARK, mix, statusColor, SYNTAX, THEME, WASH } from './theme'
 
@@ -287,8 +287,11 @@ async function answer($: EngineInterface, args: string) {
   return isEnabled ? fill(text.ui.isOn, { builtIn: BUILT_IN.length, mine, bad }) : text.ui.isOff
 }
 
+// A control glyph without the brackets and padding it has as a standalone button, for the tip row.
+const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
+
 const oneLine = (command: string) => {
-  const line = command.replace(/s+/g, " ").trim()
+  const line = command.replace(/\s+/g, " ").trim()
   return line.length > 80 ? `${line.slice(0, 77)}...` : line
 }
 
@@ -372,11 +375,12 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
 
   return (
     <Box key="blast-card" flexDirection="column" borderStyle="round" borderColor={THEME.alert} backgroundColor={THEME.surface1} paddingX={1}>
+      {cardStrip({ Box, Text }, 'blast-card', THEME.alert)}
       {body}
       <Box key="hold-actions" flexDirection="row" columnGap={ACTION_GAP}>
-        {entry('blast-cancel', labels.cancel, HOTKEY.cancel, labels.cancel, text.tips.cancel, look.glyph.close)}
-        {entry('blast-details', labels.details, HOTKEY.details, labels.details, text.tips.details, look.glyph.mark.shell ?? '')}
-        {entry('blast-run', labels.run, HOTKEY.run, labels.run, text.tips.run, look.glyph.go, THEME.alert)}
+        {entry('blast-cancel', labels.cancel, HOTKEY.cancel, labels.cancel, text.tips.cancel, bare(look.glyph.close))}
+        {entry('blast-details', labels.details, HOTKEY.details, labels.details, text.tips.details, bare(look.glyph.mark.shell ?? ''))}
+        {entry('blast-run', labels.run, HOTKEY.run, labels.run, text.tips.run, bare(look.glyph.go), THEME.alert)}
         {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
         {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 3 * ACTION_EXTRA + 3 * ACTION_GAP + text.card.explaining.length + 2 <= width ? (
           <Box key="hold-explaining-row" flexGrow={1} justifyContent="flex-end">
@@ -628,7 +632,7 @@ export const register: Register = (on, options) => {
       if (report.isUnknown && report.note) touches.push(plainText('touch-note', report.note, THEME.muted))
 
       return (
-        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
           <Text color={THEME.muted} wrap="truncate-end">{`${text.ui.readOnly} ${MARK.sep} ${text.ui.answerOnCard}`}</Text>
           {section({ Box, Text }, look, 'does', '', '', [...does, plainText('why-source', fill(text.ui.heldBy, { source: source.replace(/\.$/, '') }), THEME.muted, { key: 'why-source' })])}
@@ -636,7 +640,7 @@ export const register: Register = (on, options) => {
           {section({ Box, Text }, look, 'undo', 'actions', text.ui.sectionUndo, [plainText('undo-text', plain.undo, THEME.onSurface)])}
           {section({ Box, Text }, look, 'full', 'prompt', text.ui.sectionFull, fullRows)}
           <Box key="legend-row" flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>{legend}</Box>
-          <Box key="footer-space" height={FOOTER_ROWS} />
+          <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
           {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
@@ -665,12 +669,14 @@ export const register: Register = (on, options) => {
     ]
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
         <Text wrap="truncate-end" color={statusColor(note || bad)}>{note || bad || `${text.ui.statusHint} ${MARK.sep} ${text.ui.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews , still: still, tips: text.settingTips })}
         {section({ Box, Text }, look, 'rules', 'Bash', text.ui.sectionRules, ruleLines)}
         {section({ Box, Text }, look, 'built-in', 'Bash', text.ui.sectionBuiltIn, patterns)}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll, actionReveals(actions, look, working))}
       </Box>
     )
   })
@@ -719,9 +725,10 @@ export const register: Register = (on, options) => {
       )
     }
     const { group, row, tip: menuTip } = splitRow(await next(e))
+    const cards = toastCards({ Box, Client, Text }, toasts, look, text.tipToast)
     const tip = hovered?.id ? tipLine({ Box, Text }, tipText(hovered)) : menuTip
 
     // While a call is held only the card and the pill row draw, so other rows cannot fill the band and cut the card off.
-    return pillRow({ Box, Client, Text }, look.nerd, group, row, [holdCard({ Box, Button, Client, Text }, held, e.props.bodyColumns, e.props.maxRows, id => choose($, id))], tip, e.props.bodyColumns)
+    return pillRow({ Box, Client, Text }, look.nerd, group, row, [...cards, holdCard({ Box, Button, Client, Text }, held, e.props.bodyColumns, e.props.maxRows, id => choose($, id))], tip, e.props.bodyColumns)
   })
 }
