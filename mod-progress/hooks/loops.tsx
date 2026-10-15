@@ -94,7 +94,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
     )
 
     if (line.kind === 'head') {
-      const mark = row.status === 'running' ? { glyph: own.running, color: THEME.accent } : row.status === 'done' ? { glyph: look.glyph.ok, color: THEME.good } : { glyph: look.glyph.warn, color: THEME.alert }
+      const mark = row.status === 'running' ? { glyph: own.running, color: THEME.accent } : row.status === 'done' ? { glyph: look.glyph.ok, color: THEME.ok } : { glyph: look.glyph.warn, color: THEME.alert }
       const right = fill(text.tokensTime, { tokens: formatTokens(row.tokens), sep: MARK.sep, time: row.elapsed || '0s' })
       return frame(
         <Box key={`${key}-body`} flexDirection="row" flexGrow={1} columnGap={1}>
@@ -119,7 +119,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
       const gates = countGates(row.gates)
       const filled = Math.round((marks.barCells * gates.done) / Math.max(1, gates.total))
       const cells = gates.done > 0 && gates.done < gates.total ? Math.min(marks.barCells - 1, Math.max(1, filled)) : filled
-      const doneColor = gates.done === gates.total ? THEME.good : THEME.secondary
+      const doneColor = gates.done === gates.total ? THEME.ok : THEME.secondary
       const gauge = row.percent === undefined ? 0 : Math.round((row.percent / 100) * marks.gaugeCells)
       return frame(
         <Box key={`${key}-body`} flexDirection="row" columnGap={1} paddingLeft={2}>
@@ -145,7 +145,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
 
     if (line.kind === 'task') {
       const task = row.tasks[line.task!]!
-      const mark = task.status === 'running' ? { glyph: own.running, color: THEME.accent } : task.status === 'done' ? { glyph: look.glyph.ok, color: THEME.good } : { glyph: look.glyph.warn, color: THEME.alert }
+      const mark = task.status === 'running' ? { glyph: own.running, color: THEME.accent } : task.status === 'done' ? { glyph: look.glyph.ok, color: THEME.ok } : { glyph: look.glyph.warn, color: THEME.alert }
       return frame(
         <Box key={`${key}-body`} flexDirection="row" flexGrow={1} columnGap={1} paddingLeft={2}>
           <Text key={`${key}-mark`} color={mark.color}>{mark.glyph}</Text>
@@ -167,7 +167,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
     }
 
     const gate = row.gates[line.gate!]!
-    const mark = gate.state === 'met' ? { glyph: look.glyph.ok, color: THEME.good } : gate.state === 'open' ? { glyph: look.glyph.expanded, color: THEME.warn } : { glyph: look.glyph.warn, color: THEME.alert }
+    const mark = gate.state === 'met' ? { glyph: look.glyph.ok, color: THEME.ok } : gate.state === 'open' ? { glyph: look.glyph.expanded, color: THEME.warn } : { glyph: look.glyph.warn, color: THEME.alert }
     return frame(
       <Box key={`${key}-body`} flexDirection="row" columnGap={1} paddingLeft={2} flexGrow={1} flexShrink={1}>
         <Text key={`${key}-mark`} color={mark.color}>{mark.glyph}</Text>

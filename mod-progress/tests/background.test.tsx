@@ -195,7 +195,7 @@ test('a finished task keeps its line, and a failed one takes the alert color', a
   for (const command of ['sleep 1', 'sleep 2', 'sleep 3']) expect(text).toContain(command)
   const markColor = (command: string) => text.split(command)[0]!.split('"color":"')[text.split(command)[0]!.split('"color":"').length - 3]!.slice(0, 7)
   expect(markColor('sleep 2')).toBe(THEME.alert)
-  expect(markColor('sleep 1')).toBe(THEME.good)
+  expect(markColor('sleep 1')).toBe(THEME.ok)
   expect(markColor('sleep 3')).toBe(THEME.accent)
   await pane.unmount()
 })

@@ -625,12 +625,12 @@ export const register: Register = (on, options) => {
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-progress', key: 'pane' })
-    const shown = await isOpen($)
+    const shown = (await isOpen($)) || (await isOpen($, SETTINGS))
     const { current, rows, now } = await currentRows($)
     const summary = bandSummary(rows)
     const stop = stopLine(current.stop, now)
     const { group, row, rest, tip } = splitRow(await next(e))
-    const badge = summary.count > 0 ? { badge: { text: String(summary.count), color: THEME.accent, bg: mix(THEME.accent, shown ? THEME.lifted : PILL.primary, WASH) } } : {}
+    const badge = summary.count > 0 ? { badge: { text: String(summary.count), color: THEME.accent, bg: mix(THEME.accent, shown ? mix(THEME.ok, PILL.primary, WASH) : PILL.primary, WASH) } } : {}
     const pillTip = stop?.line ?? (summary.total > 0 ? fill(text.tipPillGates, summary) : text.tipPill)
     const entry = menuEntry({ Box, Client, Text }, nerd, 'progress', { label: text.pillLabel, labels, isOpen: shown, idle: THEME.pill, still, nerd, tip: { glyph: look.glyph.icon.Agent ?? look.glyph.mark.agent ?? look.glyph.title, label: text.pillLabel, text: pillTip }, ...badge })
     // A pill tip is posted once on enter, so its text is redrawn from the figures here, the minute the stop's age ticks.
