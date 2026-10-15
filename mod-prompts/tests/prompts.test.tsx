@@ -3,6 +3,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { parseRow, promptsOf, targetOf } from '../hooks/prompts'
+import { THEME } from '../hooks/theme'
 
 const pointer = (ui: object, event: object) => (ui as { pointer: (event: object) => Promise<void> }).pointer(event)
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
@@ -91,7 +92,12 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   expect(JSON.stringify(await ui.drawn({ in: 'timeline-before' })).split(`${hhmm} `).length - 1).toBe(2)
 
   // A hovered stop or tab puts its tip in the pane footer; leaving clears it.
+  const lineOf = async (stop: number) => JSON.stringify(await ui.drawn({ in: 'timeline-before' })).split('"key":"stop-')[stop + 1] ?? ''
+  expect(await lineOf(2)).toContain(`"color":"${THEME.accent}","bold":true`)
+  expect(await lineOf(0)).not.toContain(THEME.lifted)
   await pointer(ui, { in: 'timeline-before', type: 'move', x: 8, y: 0 })
+  expect(await lineOf(0)).toContain(`"backgroundColor":"${THEME.lifted}"`)
+  expect(await lineOf(1)).not.toContain(THEME.lifted)
   expect(await ui.find({ type: 'Text', text: ' · shows this prompt in full' })).toBeDefined()
   await pointer(ui, { in: 'timeline-before', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' · shows this prompt in full' })).toBeUndefined()
@@ -106,6 +112,8 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   // Safe mode pads the jump glyph inside its pill, since it has no rounded caps.
   expect(await ui.find({ type: 'Button', text: ' ↗ ' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn())).toContain('open-jump-box-body')
+  expect(JSON.stringify(await ui.drawn())).toContain('scrolls the transcript to this prompt')
+  expect(((await ui.drawn()) as { props: { backgroundColor?: string } }).props.backgroundColor).toBe(THEME.bg)
   await ui.press({ key: 'open-jump' })
   // The kit answers no ui.scroll, so the press shows its refusal; targetOf is checked on its own below.
   expect(await ui.find({ type: 'Text', text: /no implementation for ui.scroll/ })).toBeDefined()
@@ -243,6 +251,22 @@ test('icons=safe draws the settings pill with the plain gear', { options: { icon
   expect(pill).toContain('⊛')
   expect(pill).not.toContain(String.fromCodePoint(0xf013))
   await ui.unmount()
+})
+
+test('mod-menu labels never leaves the band entry as its icon alone', { options: { icons: 'nerd' } }, async ($, on) => {
+  on('state.get', (_$, e) => ({ value: { value: e.plugin === 'mod-menu' && e.key === 'labels' ? 'never' : undefined } }) as never)
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>other mod</Text>
+  })
+  mock.env(on, {})
+  mock.clock(on)
+  const band = await $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  const entry = JSON.stringify(await band.drawn({ in: 'menu-entry-prompts' }))
+  expect(entry).toContain('"backgroundColor"')
+  expect(entry).not.toContain('Prompts')
+  await band.unmount()
 })
 
 const parseAll = (lines: string[]) => lines.flatMap(line => parseRow(line) ?? [])

@@ -15,6 +15,8 @@ export default {
   "settingsTabTip": "opens this mod's settings",
   "stopLabel": "Prompt #{n}",
   "stopTip": "shows this prompt in full",
+  "jumpLabel": "Jump",
+  "jumpTip": "scrolls the transcript to this prompt",
   "pagePrevTip": "shows the previous page of prompts",
   "pageNextTip": "shows the next page of prompts",
   "tools": "{count} tools",

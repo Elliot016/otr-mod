@@ -5,7 +5,7 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 import { cardSpace, stickyCard } from './card'
 import { isTipMessage, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
-import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { promptsOf, promptText, rowKey, targetOf, TranscriptRows, type Prompt } from './prompts'
@@ -470,6 +470,7 @@ export const register: Register = (on, options) => {
       return <Box key="toasts-prompts" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
     }
     const nerd = look.nerd
+    const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
 
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
@@ -477,7 +478,7 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'prompts', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'prompts', { label: text.pillLabel, labels, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
 
     return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.tip) : tip, e.props.bodyColumns)
   })
@@ -540,12 +541,12 @@ export const register: Register = (on, options) => {
     if (e.requestId === SETTINGS) {
       const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-prompts.'))
       return (
-        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
-        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
-        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
+          <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+          {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
     }
@@ -575,7 +576,7 @@ export const register: Register = (on, options) => {
       Array.from({ length: Math.ceil(list.length / STOPS_PER_CLIENT) }, (_, n) => {
         const chunk = list.slice(n * STOPS_PER_CLIENT, (n + 1) * STOPS_PER_CLIENT)
         const first = railFirst || n > 0
-        return <Client key={n === 0 ? key : `${key}-${n}`} module="./timeline.tsx" height={timelineRows(chunk.length, first)} props={{ stops: chunk, selected, railFirst: first, glyph: look.glyph.icon.prompt ?? look.glyph.title, ...marks } satisfies TimelineProps} />
+        return <Client key={n === 0 ? key : `${key}-${n}`} module="./timeline.tsx" height={timelineRows(chunk.length, first)} props={{ stops: chunk, selected, railFirst: first, glyph: look.glyph.icon.prompt ?? look.glyph.title, still, ...marks } satisfies TimelineProps} />
       })
     const stat = (key: string, body: unknown) => pill({ Box, Text }, look.nerd, THEME.surface3, body, key, THEME.surface1)
     const stats = current
@@ -601,7 +602,7 @@ export const register: Register = (on, options) => {
 
     // Mouse only: the jump is a Button, since a scroll needs the person's press behind it; a click on a stop opens it.
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(text.hint, { sep: MARK.sep })}</Text>
         {prompts.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
@@ -631,7 +632,7 @@ export const register: Register = (on, options) => {
           ) : null,
         ])}
         {current
-          ? stickyCard({ Box }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, [
+          ? stickyCard({ Box, Text }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, [
               <Box key="card-title" flexDirection="row" columnGap={1} flexShrink={0}>
                 {subpill({ Box, Text }, look.nerd, THEME.surface1, fill(text.cardNumber, { n: selected + 1 }), 'card-number')}
                 {clock(current.at) ? <Text color={THEME.onSurface} bold>{clock(current.at)}</Text> : null}
@@ -651,7 +652,7 @@ export const register: Register = (on, options) => {
             ])
           : null}
         <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
-        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
+        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll, current && hasOpen ? [{ scope: 'open-jump-box', tip: { glyph: MARK.open, label: text.jumpLabel, text: text.jumpTip } }] : [])}
       </Box>
     )
   })
