@@ -49,7 +49,7 @@ const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // The tone a toast's text opens with, so callers keep writing `✓ Saved` or `! Failed` and the card draws the mark.
 function toneOf(text: string) {
-  for (const [mark, color, bold] of [[MARK.ok, THEME.good, false], [MARK.warn, THEME.alert, true]] as const) {
+  for (const [mark, color, bold] of [[MARK.ok, THEME.ok, false], [MARK.warn, THEME.alert, true]] as const) {
     if (text.startsWith(mark)) return { mark, color, bold, text: text.slice(mark.length).trimStart() }
   }
   return { mark: MARK.bullet, color: THEME.accent, bold: false, text }

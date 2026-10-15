@@ -17,6 +17,7 @@ export default {
   "choiceWorktree": "Move to a worktree",
   "choiceCancel": "Cancel",
   "question": "Another open session edited {path} {ago} ({clock}). Edit it anyway?",
+  "questionUnchecked": "Collision guard could not check {path} for edits from other sessions. Edit it anyway?",
   "settingSaved": "{label} saved",
   "defaultNote": "Click a setting to change it",
   "defaultNoteTail": "The mod reloads",

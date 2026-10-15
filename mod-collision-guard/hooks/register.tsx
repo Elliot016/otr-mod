@@ -38,9 +38,15 @@ const ioOf = ($: EngineInterface): Io => ({
   list: path => $.fs.list(path),
 })
 
+// Claude's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude. The literal name is for the host's static scan.
+async function configDir($: EngineInterface) {
+  const custom = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').trim()
+  const dir = custom || `${(await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''}/.claude`
+  return dir.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
 async function logDir($: EngineInterface) {
-  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  return `${home}/.claude/mods-data/mod-collision-guard/sessions`
+  return `${await configDir($)}/mods-data/mod-collision-guard/sessions`
 }
 
 // Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
@@ -157,6 +163,17 @@ async function decide($: EngineInterface, path: string, at: number, now: number)
   return { deny: `Another open session is editing ${path}. The user says: ${picked}` }
 }
 
+// The check itself failed: the edit is not let through unasked, and with nobody to ask it is refused.
+async function askUnchecked($: EngineInterface, path: string) {
+  try {
+    const picked = await $.ui.ask(fill(text.questionUnchecked, { path }), { options: [text.choiceProceed, text.choiceCancel], header: text.askHeader })
+    if (picked === text.choiceProceed) return undefined
+  } catch {
+    // Dismissed or nobody to ask: refuse, the safe answer.
+  }
+  return { deny: `Collision guard could not check ${path} against other open sessions and did not run this edit. Do not retry it; ask what to do instead.` }
+}
+
 // A settings card's click: its row, saved through /config; a saved change reloads this mod.
 async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
   const row = (await $.config.list()).find(each => each.key === key)
@@ -229,23 +246,30 @@ export const register: Register = (on, options) => {
 
   // The host accepts a list of tools here, yet its types name a single one.
   on('tool.call', { tool: EDIT_TOOLS as unknown as 'Edit' }, async ($, e, next) => {
-    const path = pathOf(e as unknown as Record<string, unknown>)
-    if (!path) return next(e)
-
-    const io = ioOf($)
-    const dir = await logDir($)
-    const session = await $.session.id()
     const windowMs = windowMinutes * 60000
+    let path = ''
+    // The host lets a call through when its hook throws, so a failure before the verdict asks instead.
+    try {
+      path = pathOf(e as unknown as Record<string, unknown>)
+      if (!path) return next(e)
 
-    // A log that cannot be read must never block an edit.
-    const clash = enabled ? await findConflict(io, dir, session, path, await $.clock.now(), windowMs).catch(() => undefined) : undefined
-    if (clash) {
-      const verdict = await decide($, path, clash.at, await $.clock.now())
+      // A log that cannot be read must never block an edit.
+      const clash = enabled ? await findConflict(ioOf($), await logDir($), await $.session.id(), path, await $.clock.now(), windowMs).catch(() => undefined) : undefined
+      if (clash) {
+        const verdict = await decide($, path, clash.at, await $.clock.now())
+        if (verdict) return verdict
+      }
+    } catch {
+      const verdict = await askUnchecked($, path || 'this file')
       if (verdict) return verdict
     }
 
     const result = (await next(e)) as { deny?: string; isError?: boolean }
-    if (!result.deny && !result.isError) await recordEdit(io, dir, session, path, await $.clock.now(), windowMs).catch(() => undefined)
+    try {
+      if (path && !result.deny && !result.isError) await recordEdit(ioOf($), await logDir($), await $.session.id(), path, await $.clock.now(), windowMs)
+    } catch {
+      // The edit already ran; a log that cannot be written only costs the next check.
+    }
 
     return result as never
   })

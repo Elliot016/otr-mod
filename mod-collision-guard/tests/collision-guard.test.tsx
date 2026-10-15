@@ -13,7 +13,8 @@ const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/,
 const edit = (session: string, minutesAgo: number, path = FILE) => JSON.stringify([{ path, session, at: NOW - minutesAgo * MIN }])
 
 // An in-memory disk, the session id, the clock, and a bottom tool.call that answers the dialog and runs edits.
-function world(on: any, files: Record<string, string>, answerWith: string | (() => never) = 'Proceed') {
+// `env` sets the person's CLAUDE_CONFIG_DIR, or fails every environment read.
+function world(on: any, files: Record<string, string>, answerWith: string | (() => never) = 'Proceed', env: { configDir?: string; throws?: boolean } = {}) {
   const asked: { question: string; options: string[] }[] = []
   const ran: string[] = []
   on('fs.read', (_$: unknown, e: { path: string }) => {
@@ -26,8 +27,14 @@ function world(on: any, files: Record<string, string>, answerWith: string | (() 
     files[neutral(e.path)] = e.text
     return { value: undefined }
   })
-  on('fs.list', () => ({ value: Object.keys(files).filter(path => path.startsWith(`${DIR}/`)).map(path => ({ name: path.slice(DIR.length + 1), kind: 'file', size: 0, mtimeMs: 0, isLink: false })) }))
-  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('fs.list', (_$: unknown, e: { path: string }) => {
+    const dir = neutral(e.path).replace(/\/$/, '')
+    return { value: Object.keys(files).filter(path => path.startsWith(`${dir}/`)).map(path => ({ name: path.slice(dir.length + 1), kind: 'file', size: 0, mtimeMs: 0, isLink: false })) }
+  })
+  on('env.get', (_$: unknown, e: { name: string }) => {
+    if (env.throws) throw new Error('env is gone')
+    return { value: e.name === 'USERPROFILE' ? '/h' : e.name === 'CLAUDE_CONFIG_DIR' ? env.configDir : undefined }
+  })
   on('session.id', () => ({ value: 'mine' }))
   const clock = mock.clock(on, { now: NOW })
   on('tool.call', (_$: unknown, e: any) => {
@@ -119,7 +126,42 @@ test('Custom text goes back to Claude as the deny reason', async ($, on) => {
   expect(denied(result)).toMatch(/The user says: wait for the other session to finish/)
 })
 
-test('old entries are ignored', async ($, on) => {
+test('a failure while checking asks instead of letting the edit through, and Cancel refuses it', async ($, on) => {
+  const w = world(on, {}, 'Cancel', { throws: true })
+  const result = await call($)
+  expect(w.asked).toHaveLength(1)
+  expect(w.asked[0]!.question).toMatch(/could not check \/work\/app\.ts/)
+  expect(w.asked[0]!.options).toEqual(['Proceed', 'Cancel'])
+  expect(w.ran).toEqual([])
+  expect(denied(result)).toMatch(/did not run/)
+})
+
+test('after a failed check, Proceed runs the edit', async ($, on) => {
+  const w = world(on, {}, 'Proceed', { throws: true })
+  await call($)
+  expect(w.asked).toHaveLength(1)
+  expect(w.ran).toEqual([`Edit ${FILE}`])
+})
+
+test('with nobody to ask, a failed check refuses the edit', async ($, on) => {
+  const w = world(on, {}, (() => {
+    throw new Error('no ui')
+  }) as () => never, { throws: true })
+  const result = await call($)
+  expect(w.ran).toEqual([])
+  expect(denied(result)).toMatch(/did not run/)
+})
+
+test('the session log lives under CLAUDE_CONFIG_DIR when it is set', async ($, on) => {
+  const dir = '/cfg/mods-data/mod-collision-guard/sessions'
+  const w = world(on, { [`${dir}/other.json`]: edit('other', 4) }, 'Proceed', { configDir: '/cfg/' })
+  await call($)
+  expect(w.asked).toHaveLength(1)
+  expect(JSON.parse(w.files[`${dir}/mine.json`]!)[0]).toMatchObject({ path: FILE, session: 'mine' })
+  expect(w.files[`${DIR}/mine.json`]).toBeUndefined()
+})
+
+test('old entries are ignored',async ($, on) => {
   const w = world(on, { [`${DIR}/other.json`]: edit('other', 31) })
   await call($)
   expect(w.asked).toEqual([])
