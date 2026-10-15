@@ -4,7 +4,7 @@ import type { RenderElement } from 'claude-code'
 
 import type { Tip } from './entry'
 import style from './style'
-import { CAPS, MARK, THEME } from './theme'
+import { CAPS, MARK, mix, THEME } from './theme'
 
 type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
@@ -16,9 +16,6 @@ export const TOAST_MS = 4000
 // What the × says when the caller passes no tip of its own.
 const DISMISS_TIP = { label: 'Dismiss', text: 'hides this message' }
 const MAX_TOASTS = 3
-
-// A toast wraps to a few rows at most; the strip is clipped to its card.
-const STRIP_ROWS = 12
 
 // A mod's own toasts, newest last. A toast reaches only the hooks above its caller, so each mod catches its own.
 export class ToastList {
@@ -66,11 +63,10 @@ export const toastCards = ({ Box, Client, Text }: Elements, list: ToastList, loo
     const tone = toneOf(toast.text)
     const nerd = look?.nerd === true
     const close = bare(look?.glyph.close ?? style.glyphs.safe.close)
+    // The card's fill tinted lightly toward its tone, under a neutral border.
+    const fill = mix(THEME.surface1, tone.color, 0.06)
     return (
-      <Box key={id} flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-        <Box key={`${id}-strip`} position="absolute" top={0} bottom={0} left={0} width={1} overflow="hidden">
-          <Text color={tone.color} backgroundColor={THEME.surface1}>{Array.from({ length: STRIP_ROWS }, () => MARK.strip).join('\n')}</Text>
-        </Box>
+      <Box key={id} flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={fill}>
         <Box key={`${id}-mark`} flexShrink={0}>
           <Text color={tone.color} bold={tone.bold}>{tone.mark}</Text>
         </Box>
@@ -78,9 +74,9 @@ export const toastCards = ({ Box, Client, Text }: Elements, list: ToastList, loo
           <Text color={THEME.onSurface} wrap="wrap">{tone.text}</Text>
         </Box>
         <Box key={`${id}-close`} flexDirection="row" flexShrink={0}>
-          {nerd ? <Text key={`${id}-close-left`} color={THEME.surface3} backgroundColor={THEME.surface1}>{CAPS.left}</Text> : null}
+          {nerd ? <Text key={`${id}-close-left`} color={THEME.surface3} backgroundColor={fill}>{CAPS.left}</Text> : null}
           <Client key={id} module="./entry.tsx" height={1} props={{ id, label: close, isOpen: false, bg: THEME.surface3, still: list.isStill, tip: { glyph: close, ...closeTip } }} />
-          {nerd ? <Text key={`${id}-close-right`} color={THEME.surface3} backgroundColor={THEME.surface1}>{CAPS.right}</Text> : null}
+          {nerd ? <Text key={`${id}-close-right`} color={THEME.surface3} backgroundColor={fill}>{CAPS.right}</Text> : null}
         </Box>
       </Box>
     )

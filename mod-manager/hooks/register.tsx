@@ -8,7 +8,7 @@ import text from './text'
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { cardGap, cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Reveal, withMark } from './look'
+import { cardFill, cardGap, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Reveal, withMark } from './look'
 import { actionReveals, settingChoice, settingsBody, type Action } from './settings'
 import { cardSpace, stickyCard } from './card'
 import { type ListMessage, type ListProps } from './list'
@@ -466,7 +466,7 @@ export const register: Register = (on, options) => {
       const label = featuresOpen ? text.featuresLess : text.featuresAll
       const featuresIcon = look.nerd ? { subLead: look.glyph.icon.features ?? look.glyph.title, subLeadColor: THEME.accent } : {}
       const more = isCut
-        ? pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-features" module="./entry.tsx" height={1} props={{ id: 'manager-features', label, isOpen: true, bg: THEME.surface3, color: THEME.onSurface, nerd: look.nerd, still, ...featuresIcon, tip: { glyph: look.glyph.icon.features ?? look.glyph.title, label, text: featuresOpen ? text.tipFeaturesLess : text.tipFeaturesAll } } satisfies EntryProps} />, 'features-more', THEME.surface1)
+        ? pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-features" module="./entry.tsx" height={1} props={{ id: 'manager-features', label, isOpen: true, bg: THEME.surface3, color: THEME.onSurface, nerd: look.nerd, still, ...featuresIcon, tip: { glyph: look.glyph.icon.features ?? look.glyph.title, label, text: featuresOpen ? text.tipFeaturesLess : text.tipFeaturesAll } } satisfies EntryProps} />, 'features-more', cardFill())
         : null
 
       return frame([
@@ -475,8 +475,7 @@ export const register: Register = (on, options) => {
           <Text color={mod.enabled ? THEME.good : THEME.muted}>{`${MARK.sep} ${mod.enabled ? text.stateOn : text.stateOff}`}</Text>
         </Box>,
         <Text key="page-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
-        <Box key="page-about" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
-          {cardStrip({ Box, Text }, 'page-about')}
+        <Box key="page-about" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
           <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(mod.name), sep: MARK.sep, version: mod.version })}</Text>
           <Text color={THEME.muted}>{mod.description}</Text>
           {mod.showcase?.tagline ? <Text color={THEME.secondary}>{mod.showcase.tagline}</Text> : null}
@@ -572,11 +571,10 @@ export const register: Register = (on, options) => {
       return pill({ Box, Text }, look.nerd, bg, entry, isChosen ? `icons-${mode}-pill` : `icons-${mode}-idle`, THEME.surface2)
     }
     const iconsSwitch = iconRows.length ? (
-      <Box key="icons-switch" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
-        {cardStrip({ Box, Text }, 'icons-switch')}
+      <Box key="icons-switch" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
         <Box key="icons-switch-row" flexDirection="row" columnGap={1}>
           <Text color={THEME.onSurface} bold>{text.iconsLabel}</Text>
-          {pill({ Box, Text }, look.nerd, THEME.surface2, ICON_MODES.map(iconOption), 'icons-bar', THEME.surface1)}
+          {pill({ Box, Text }, look.nerd, THEME.surface2, ICON_MODES.map(iconOption), 'icons-bar', cardFill())}
           {iconsNow ? null : <Text color={THEME.muted}>{`${MARK.sep} ${text.iconsMixed}`}</Text>}
         </Box>
         <Text color={THEME.muted}>{text.iconsDescription}</Text>

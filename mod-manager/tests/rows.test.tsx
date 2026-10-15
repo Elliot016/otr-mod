@@ -1,7 +1,7 @@
 // mod-manager / tests/rows.test.tsx, by v-amorim: row hover, the shared card, the Apply pill and the pane frame
 import { expect, test } from 'claude-code/testing'
 
-import { THEME } from '../hooks/theme'
+import { mix, THEME } from '../hooks/theme'
 
 const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
 const manifest = (name: string) => JSON.stringify({ name, description: `${name} does a thing`, version: '1.0.0' })
@@ -49,10 +49,13 @@ test('the row under the pointer draws a lifted background with accent text, and 
   await ui.unmount()
 })
 
-test('the hover card is the shared sticky card with its strip and the painted gap row', async ($, on) => {
+test('the hover card is the shared sticky card with no strip, a neutral border, a tinted fill and the painted gap row', async ($, on) => {
   const ui = await mount($, on)
   expect(await ui.find({ key: 'card-wrap' })).toBeDefined()
-  expect(await ui.find({ key: 'card-strip' })).toBeDefined()
+  expect(await ui.find({ key: 'card-strip' })).toBeUndefined()
+  const card = await ui.find({ key: 'card' })
+  expect(card?.props.borderColor).toBe(THEME.border)
+  expect(card?.props.backgroundColor).toBe(mix(THEME.surface1, THEME.accent, 0.06))
   expect((await ui.find({ key: 'card-gap' }))?.props.backgroundColor).toBe(THEME.bg)
   expect((await ui.find({ key: 'card-space' }))?.props.height).toBe(6)
   await ui.unmount()

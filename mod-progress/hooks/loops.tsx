@@ -3,7 +3,7 @@
 import type { ClientModule, RenderChildren } from 'claude-code'
 
 import { postTip } from './entry'
-import { lookFor } from './look'
+import { cardFill, lookFor } from './look'
 import marks from './marks'
 import { countGates, gaugeColor, formatTokens, modelInfo, type Row } from './progress'
 import style from './style'
@@ -83,12 +83,11 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
     }
     const row = rows[line.loop]!
     const isHover = line.kind === 'task' ? hoveredAt === at : lines[hoveredAt]?.kind !== 'task' && (lines[hoveredAt]?.loop ?? -1) === line.loop
-    const on = isHover ? THEME.lifted : THEME.surface1
-    const strip = <Text key={`${key}-strip`} color={row.hue}>{own.strip}</Text>
+    const on = isHover ? THEME.lifted : cardFill()
     const isViewed = line.kind === 'head' && row.id === viewing
     const frame = (inner: RenderChildren) => (
       <Box key={key} height={1} width={width} flexDirection="row" backgroundColor={on}>
-        {strip}
+        <Text key={`${key}-lead`}>{' '}</Text>
         <Text key={`${key}-pad`} color={THEME.accent} bold>{isViewed ? MARK.cursor : ' '}</Text>
         {inner}
       </Box>
@@ -102,6 +101,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
           <Text key={`${key}-mark`} color={mark.color}>{mark.glyph}</Text>
           <Box key={`${key}-name`} flexGrow={1} flexShrink={1}>
             <Text wrap="truncate-end">
+              <Text color={row.hue}>{`${own.agentDot} `}</Text>
               <Text color={isHover || isViewed ? THEME.accent : THEME.onSurface} bold>{row.name}</Text>
               <Text color={THEME.muted}>{row.description ? ` ${row.description}` : ''}</Text>
             </Text>

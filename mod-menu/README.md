@@ -26,13 +26,21 @@ To install every mod at once, see [Install][doc-install]. For sharper icons, see
 
 ## See it
 
-| The pill row |
-| --- |
-| ![][img-menu-band] |
+| The pill row | Icons alone, with labels set to never |
+| --- | --- |
+| ![][img-menu-band] | ![][img-menu-icons] |
 
 | Hovering an entry shows its tip |
 | --- |
 | https://github.com/user-attachments/assets/7bb01973-e907-4807-b571-829e65d71659 |
+
+## Settings
+
+Change them with `/mod-menu settings` or the gear pill.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Menu labels | `always` | always draws each menu entry with its icon and its name. never draws the icon alone, which fits more entries in a narrow window; it applies on Nerd Font icons only, since safe mode has no icon. /mod-menu labels always\|never sets it too |
 
 ## License
 
@@ -45,3 +53,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-root]: ../README.md
 
 [img-menu-band]: ../showcase/menu-band.png
+[img-menu-icons]: ../showcase/menu-icons.png

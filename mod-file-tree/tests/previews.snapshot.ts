@@ -5,15 +5,13 @@ export const snapshot: Snapshot = {
     "true": {
       "frame": {
         "border": "border",
-        "bg": "surface1"
+        "bg": "#1a1e30"
       },
       "nerd": [
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue0b6",
@@ -50,9 +48,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue625 ",
@@ -104,9 +100,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue628 ",
@@ -139,9 +133,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "hooks",
@@ -153,9 +145,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "register.tsx",
@@ -185,9 +175,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "theme.ts",
@@ -208,15 +196,13 @@ export const snapshot: Snapshot = {
     "false": {
       "frame": {
         "border": "border",
-        "bg": "surface1"
+        "bg": "#1a1e30"
       },
       "nerd": [
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue0b6",
@@ -253,9 +239,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue625 ",
@@ -309,9 +293,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "hooks",
@@ -323,9 +305,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "register.tsx",
@@ -359,15 +339,13 @@ export const snapshot: Snapshot = {
     "true": {
       "frame": {
         "border": "border",
-        "bg": "surface1"
+        "bg": "#1a1e30"
       },
       "nerd": [
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue0b6",
@@ -478,20 +456,12 @@ export const snapshot: Snapshot = {
           ]
         },
         {
-          "spans": [
-            {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            }
-          ]
+          "spans": []
         },
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue625 hooks/register.tsx",
@@ -503,9 +473,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "Edit",
@@ -528,20 +496,12 @@ export const snapshot: Snapshot = {
           ]
         },
         {
-          "spans": [
-            {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            }
-          ]
+          "spans": []
         },
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "− ",
@@ -563,9 +523,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "+ ",
@@ -587,12 +545,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            },
-            {
-              "text": "  "
+              "text": "   "
             },
             {
               "text": "tooltip)",
@@ -613,9 +566,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "Turn · 1 edit",
@@ -661,20 +612,12 @@ export const snapshot: Snapshot = {
           ]
         },
         {
-          "spans": [
-            {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            }
-          ]
+          "spans": []
         },
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "hooks/register.tsx",
@@ -686,9 +629,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "Edit",
@@ -711,20 +652,12 @@ export const snapshot: Snapshot = {
           ]
         },
         {
-          "spans": [
-            {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            }
-          ]
+          "spans": []
         },
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "− ",
@@ -746,9 +679,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "+ ",
@@ -770,12 +701,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            },
-            {
-              "text": "  "
+              "text": "   "
             },
             {
               "text": "tooltip)",
@@ -796,15 +722,13 @@ export const snapshot: Snapshot = {
     "false": {
       "frame": {
         "border": "border",
-        "bg": "surface1"
+        "bg": "#1a1e30"
       },
       "nerd": [
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue0b6",
@@ -915,20 +839,12 @@ export const snapshot: Snapshot = {
           ]
         },
         {
-          "spans": [
-            {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            }
-          ]
+          "spans": []
         },
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue625 hooks/register.tsx",
@@ -940,9 +856,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "Edit",
@@ -965,20 +879,12 @@ export const snapshot: Snapshot = {
           ]
         },
         {
-          "spans": [
-            {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            }
-          ]
+          "spans": []
         },
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "− ",
@@ -1000,9 +906,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "+ ",
@@ -1022,9 +926,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "Turn · 1 edit",
@@ -1070,20 +972,12 @@ export const snapshot: Snapshot = {
           ]
         },
         {
-          "spans": [
-            {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            }
-          ]
+          "spans": []
         },
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "hooks/register.tsx",
@@ -1095,9 +989,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "Edit",
@@ -1120,20 +1012,12 @@ export const snapshot: Snapshot = {
           ]
         },
         {
-          "spans": [
-            {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
-            }
-          ]
+          "spans": []
         },
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "− ",
@@ -1155,9 +1039,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "+ ",

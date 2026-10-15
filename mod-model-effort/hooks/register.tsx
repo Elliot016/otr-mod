@@ -4,7 +4,7 @@ import type { ConfigValue, EngineInterface, Register, RenderElement } from 'clau
 
 import { displayName, LEVEL_LOOK, LEVELS, withEffort, withModel } from './levels'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
-import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
+import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
 import type { MeterMessage } from './meter'
 import { settingChoice, settingsBody } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
@@ -227,7 +227,7 @@ type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => Re
 
 // A model entry as its own pill on the card; `entry` holds what differs between the current model, the others and the picker.
 const menuEntry = ({ Box, Client, Text }: Elements, id: string, fill: string, entry: Omit<EntryProps, 'id' | 'bg'>) =>
-  pill({ Box, Text }, look.nerd, fill, <Client key={id} module="./entry.tsx" height={1} props={{ id, bg: fill, nerd: look.nerd, still, ...entry } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+  pill({ Box, Text }, look.nerd, fill, <Client key={id} module="./entry.tsx" height={1} props={{ id, bg: fill, nerd: look.nerd, still, ...entry } satisfies EntryProps} />, `${id}-pill`, cardFill())
 
 // A control glyph without the brackets and padding it carries as a Button label, for drawing as a subpill.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
@@ -249,8 +249,7 @@ function modelMenu(elements: Elements, currentId: string) {
   const close = menuEntry(elements, 'effort-model-close', THEME.surface3, { label: bare(look.glyph.close), isOpen: false, tip: { glyph: bare(look.glyph.close), label: text.labelClose, text: text.tipModelClose } })
   return (
     <Box key="effort-models-row" flexDirection="row" justifyContent="flex-end">
-      <Box key="effort-models" flexDirection="column" alignItems="flex-start" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-        {cardStrip(elements, 'effort-models')}
+      <Box key="effort-models" flexDirection="column" alignItems="flex-start" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
         <Box key="effort-models-head" flexDirection="row" columnGap={1}>
           {entries[0] ?? null}
           {close}

@@ -4,16 +4,14 @@ export const snapshot: Snapshot = {
   "enabled": {
     "true": {
       "frame": {
-        "border": "alert",
-        "bg": "surface1"
+        "border": "border",
+        "bg": "#1f1b2b"
       },
       "nerd": [
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "alert",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\uea6c Delete cache.db",
@@ -25,9 +23,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "alert",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "Removes the file. No undo.",
@@ -38,9 +34,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "alert",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "~/app/build/cache.db",
@@ -59,14 +53,12 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "alert",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue0b6",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1f1b2b"
             },
             {
               "text": "\ue0b6",
@@ -92,7 +84,7 @@ export const snapshot: Snapshot = {
             {
               "text": "\ue0b4",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1f1b2b"
             },
             {
               "text": "  "
@@ -100,7 +92,7 @@ export const snapshot: Snapshot = {
             {
               "text": "\ue0b6",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1f1b2b"
             },
             {
               "text": "\ue0b6",
@@ -126,7 +118,7 @@ export const snapshot: Snapshot = {
             {
               "text": "\ue0b4",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1f1b2b"
             },
             {
               "text": "  "
@@ -134,7 +126,7 @@ export const snapshot: Snapshot = {
             {
               "text": "\ue0b6",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1f1b2b"
             },
             {
               "text": "\ue0b6",
@@ -160,7 +152,7 @@ export const snapshot: Snapshot = {
             {
               "text": "\ue0b4",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1f1b2b"
             }
           ]
         }
@@ -169,9 +161,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "alert",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "! Delete cache.db",
@@ -183,9 +173,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "alert",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "Removes the file. No undo.",
@@ -196,9 +184,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "alert",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "~/app/build/cache.db",
@@ -217,9 +203,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "alert",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": " 1 ",

@@ -1,7 +1,7 @@
 // mod-model-effort / tests/model-effort.test.tsx, by v-amorim
 // Tests the footer meter: effort saving, model switching, icon modes, settings pane and tips.
 import { expect, mock, test } from 'claude-code/testing'
-import { THEME } from '../hooks/theme'
+import { mix, THEME } from '../hooks/theme'
 
 import { displayName, withEffort } from '../hooks/levels'
 import Meter from '../hooks/meter'
@@ -546,13 +546,16 @@ test('while Claude works a model pick and All models switch nothing and say why'
   await ui.unmount()
 })
 
-test('the model menu card carries the left strip, and the settings pane paints bg and keeps its footer space', { options: { icons: 'safe' } }, async ($, on) => {
+test('the model menu card has no left strip, a neutral border and an accent-tinted fill; the settings pane paints bg and keeps its footer space', { options: { icons: 'safe' } }, async ($, on) => {
   band(on as never)
   on('store.get', () => ({ value: undefined }))
   on('config.list', () => ({ value: [] }))
   const ui = await $.ui.mount(BAND)
   await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
-  expect(await ui.find({ key: 'effort-models-strip' })).toBeDefined()
+  expect(await ui.find({ key: 'effort-models-strip' })).toBeUndefined()
+  const card = await ui.find({ key: 'effort-models' })
+  expect(card?.props.borderColor).toBe(THEME.border)
+  expect(card?.props.backgroundColor).toBe(mix(THEME.surface1, THEME.accent, 0.06))
   await ui.unmount()
   const pane = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'Pane', requestId: 'model-effort-settings', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
   expect((await pane.find({ key: 'footer-space' }))?.props.flexShrink).toBe(0)

@@ -95,6 +95,14 @@ test('the normal view still folds the finished turn under its prompt', async ($,
   expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^1 tool/)
 })
 
+test('a prompt a plugin sends opens a turn of its own, so its reply leaves the earlier turn folded under its head', async ($, on) => {
+  const mount = await open($, on, EDIT_TURN.split('\n').slice(0, 5).join('\n') + '\n')
+  await mount('UserMessage', ID(6), { text: 'check this note', origin: { kind: 'plugin', name: 'mod-heads-up' }, isExpanded: false })
+  await (await mount('AssistantMessage', ID(7), { text: 'It holds.' })).unmount()
+  const head = await mount('UserMessage', ID(1), prompt('edit it'))
+  expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^1 tool/)
+})
+
 test('a call refused by a hook draws neutral with "declined", not in the failure color', { options: { expand_live: false } }, async ($, on) => {
   const mount = await open($, on)
   await $.classic.PermissionDenied({ tool_name: 'WebFetch', tool_input: {}, tool_use_id: 'toolu_web', reason: 'blocked' } as never)

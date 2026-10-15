@@ -12,7 +12,7 @@ import type { FoldProps } from './fold'
 import type { LabelPart, LabelProps } from './label'
 import { pillWidth, type NumberProps } from './number'
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
+import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
 import { pillRow, splitRow, tabRow, tipLine } from './pills'
 import { actionReveals, settingChoice, settingsBody, type Action, type Previews } from './settings'
 import style from './style'
@@ -582,7 +582,7 @@ function reportRow(parts: Rows, props: TaskProps, report: Report, width: number,
         <Text key="toggle-report-head" color={THEME.onSurface} wrap="truncate-end">{cut(label, headRoom)}</Text>
       )}
       {isOpen ? (
-        <Box key="toggle-report-card" flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>
+        <Box key="toggle-report-card" flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()} paddingX={1}>
           {fields.map((field, n) => (
             <Text key={`toggle-report-field-${n}`} color={THEME.muted} wrap="truncate-end">{field}</Text>
           ))}
@@ -1121,11 +1121,13 @@ export const register: Register = (on, options) => {
     isFullView = e.props.isExpanded
     // A subagent's report opens a turn of its own, as in the transcript, unless it lands while Claude works: the transcript keeps that one in the running turn.
     const isReport = e.props.origin.kind === 'peer'
-    if (isLoaded && (isReport ? !working : e.props.origin.kind === 'composer' && isPrompt(e.props.text))) log.claim(e.requestId, 'prompt', Date.now(), isReport, String(e.props.text ?? ''))
+    // A plugin's prompt is stored as a plain user row, so the transcript opens a turn for it like a typed one.
+    const isSent = e.props.origin.kind === 'composer' || e.props.origin.kind === 'plugin'
+    if (isLoaded && (isReport ? !working : isSent && isPrompt(e.props.text))) log.claim(e.requestId, 'prompt', Date.now(), isReport, String(e.props.text ?? ''))
     if (isFullView) return next(e)
     if (e.props.origin.kind === 'peer' || e.props.origin.kind === 'task-notification') return taskRow($.ui.resolve(e), $, e.requestId, e.props, widthOf(e))
-    if (e.props.origin.kind !== 'composer') return next(e)
-    if (!isLoaded && e.props.origin.kind === 'composer') {
+    if (!isSent) return next(e)
+    if (!isLoaded) {
       await guess($)
       log.adopt(e.requestId, 'prompt', e.props.text)
     }

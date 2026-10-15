@@ -4,7 +4,7 @@ import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { cardSpace, stickyCard } from './card'
 import { isTipMessage, type EntryMessage, type EntryProps, type Tip } from './entry'
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
+import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
 import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -634,7 +634,7 @@ export const register: Register = (on, options) => {
         {current
           ? stickyCard({ Box, Text }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, [
               <Box key="card-title" flexDirection="row" columnGap={1} flexShrink={0}>
-                {subpill({ Box, Text }, look.nerd, THEME.surface1, fill(text.cardNumber, { n: selected + 1 }), 'card-number')}
+                {subpill({ Box, Text }, look.nerd, cardFill(), fill(text.cardNumber, { n: selected + 1 }), 'card-number')}
                 {clock(current.at) ? <Text color={THEME.onSurface} bold>{clock(current.at)}</Text> : null}
               </Box>,
               <Box key="card-text" height={textShown} overflow="hidden" flexShrink={0}>
@@ -644,8 +644,8 @@ export const register: Register = (on, options) => {
               // The pager rides in the pinned card, so it stays in view however far the timeline scrolls.
               pageCount > 1 ? (
                 <Box key="pager" flexDirection="row" columnGap={1} flexShrink={0}>
-                  {pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-prev', text.pagePrev, text.pagePrevTip, shownPage === 0), 'pager-prev', THEME.surface1)}
-                  {pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-next', text.pageNext, text.pageNextTip, shownPage === pageCount - 1), 'pager-next', THEME.surface1)}
+                  {pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-prev', text.pagePrev, text.pagePrevTip, shownPage === 0), 'pager-prev', cardFill())}
+                  {pill({ Box, Text }, look.nerd, THEME.surface3, pager('prompts-page-next', text.pageNext, text.pageNextTip, shownPage === pageCount - 1), 'pager-next', cardFill())}
                   <Text color={THEME.muted}>{fill(text.page, { page: shownPage + 1, pages: pageCount, from: first + 1, to: first + onPage.length, sep: MARK.sep })}</Text>
                 </Box>
               ) : null,

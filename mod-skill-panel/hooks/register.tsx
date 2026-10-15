@@ -10,7 +10,7 @@ import { tagName } from './tags'
 import { groupAgents, modelHue, readAgent, type Agent } from './agents'
 import { cardSpace, stickyCard } from './card'
 import { isTipMessage, type EntryMessage, type Tip } from './entry'
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
+import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
 import { labelsOf, menuEntry, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -442,7 +442,7 @@ export const register: Register = (on, options) => {
           ? stickyCard({ Box, Text }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, (
               <Box key="card-body" flexDirection="column">
                 <Box flexDirection="row" columnGap={1} flexShrink={0}>
-                  {subpill({ Box, Text }, look.nerd, THEME.surface1, card.icon, 'card-icon', card.hex)}
+                  {subpill({ Box, Text }, look.nerd, cardFill(), card.icon, 'card-icon', card.hex)}
                   <Text color={THEME.onSurface} bold>{card.title}</Text>
                   <Text color={card.hex}>{card.tag}</Text>
                   {card.extra ? <Text color={THEME.muted}>{`${MARK.sep} ${card.extra}`}</Text> : null}

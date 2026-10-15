@@ -34,7 +34,6 @@ Automatic.
 
 - **Shared log:** Each session records the files it edits in its own small file under ~/.claude/mod-collision-guard, so sessions never write over each other.
 - **Pause:** Before Edit, Write, MultiEdit or NotebookEdit, a question appears when another open session edited that file inside the window.
-- **Notification:** Each pause raises one native notification naming the file, so you see it from another window.
 - **Four ways out:** Proceed, move to a worktree (Claude calls EnterWorktree and redoes the edit there), cancel, or type an instruction for Claude.
 
 ## Settings
@@ -43,6 +42,7 @@ Change them with `/mod-collision-guard settings` or the gear pill.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
+| Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 | Guard edits | on | Asks when another session edited it. Only edits inside the window count. Off, edits are still recorded for other sessions but never paused |
 | Window (minutes) | `30` | How long an edit counts as recent. Only other sessions' edits count |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |

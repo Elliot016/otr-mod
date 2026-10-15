@@ -26,9 +26,9 @@ Files pill.
 
 ## See it
 
-| The Files panel |
-| --- |
-| ![][img-file-tree-panel] |
+| The Files panel | Fold all |
+| --- | --- |
+| ![][img-file-tree-panel] | ![][img-file-tree-folded] |
 
 | Live while Claude works |
 | --- |
@@ -62,4 +62,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: ../LICENSE
 [doc-root]: ../README.md
 
+[img-file-tree-folded]: ../showcase/file-tree-folded.png
 [img-file-tree-panel]: ../showcase/file-tree-panel.png

@@ -8,7 +8,7 @@ export default {
       "gaugeFull": "■",
       "gaugeEmpty": "□",
       "barCell": "█",
-      "strip": "▎"
+      "agentDot": "●"
     },
     "nerd": {
       "running": "{U+F110}",
@@ -16,7 +16,7 @@ export default {
       "gaugeFull": "{U+F0C8}",
       "gaugeEmpty": "{U+F096}",
       "barCell": "█",
-      "strip": "▎"
+      "agentDot": "●"
     }
   },
   "gaugeCells": 5,

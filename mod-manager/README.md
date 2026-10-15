@@ -26,9 +26,9 @@ The gear pill, or `/mod-manager`.
 
 ## See it
 
-| Auto (Nerd Font) | Plain |
-| --- | --- |
-| ![][img-manager-icons-auto] | ![][img-manager-icons-plain] |
+| Auto (Nerd Font) | Plain | A mod's page and its settings |
+| --- | --- | --- |
+| ![][img-manager-icons-auto] | ![][img-manager-icons-plain] | ![][img-manager-page] |
 
 | Hover a mod, switch the icons |
 | --- |
@@ -55,3 +55,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [img-manager-icons-auto]: ../showcase/manager-icons-auto.png
 [img-manager-icons-plain]: ../showcase/manager-icons-plain.png
+[img-manager-page]: ../showcase/manager-page.png

@@ -1,9 +1,9 @@
 // mod-prompts / tests/card.test.tsx, by v-amorim
-// Tests the shared sticky card: its painted gap row, its strip and the space it holds.
+// Tests the shared sticky card: its painted gap row, its tint and the space it holds.
 import { expect, test } from 'claude-code/testing'
 
 import { cardSpace, HEAD_ROWS, stickyCard } from '../hooks/card'
-import { THEME } from '../hooks/theme'
+import { mix, THEME } from '../hooks/theme'
 
 const els: any = { Box: (props: any) => props, Text: (props: any) => props }
 
@@ -29,7 +29,10 @@ test('the card sticks at the top of the view, below the heading rows', () => {
   expect((stickyCard(els, 12, 40, 6, []) as Node).top).toBe(12)
 })
 
-test('the card draws a left strip in its hue, accent by default', () => {
-  expect(JSON.stringify(find(stickyCard(els, 0, 40, 6, []) as Node, 'card-strip'))).toContain(THEME.accent)
-  expect(JSON.stringify(find(stickyCard(els, 0, 40, 6, [], THEME.good) as Node, 'card-strip'))).toContain(THEME.good)
+test('the card has no left strip, a neutral border and a fill tinted toward its hue, accent by default', () => {
+  const plain = find(stickyCard(els, 0, 40, 6, []) as Node, 'card')!
+  expect(find(plain, 'card-strip')).toBeUndefined()
+  expect(plain.borderColor).toBe(THEME.border)
+  expect(plain.backgroundColor).toBe(mix(THEME.surface1, THEME.accent, 0.06))
+  expect(find(stickyCard(els, 0, 40, 6, [], THEME.good) as Node, 'card')!.backgroundColor).toBe(mix(THEME.surface1, THEME.good, 0.06))
 })

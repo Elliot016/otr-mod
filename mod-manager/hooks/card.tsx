@@ -2,7 +2,7 @@
 // Shared sticky card. Copy unchanged into every mod whose pane has a card.
 import type { RenderElement } from 'claude-code'
 
-import { cardStrip } from './look'
+import { cardFill } from './look'
 import { THEME } from './theme'
 
 // Rows above the card: the heading, the status line and the gap under them.
@@ -26,9 +26,8 @@ export function stickyCard(elements: Elements, offset: number, columns: number, 
         overflow="hidden"
         borderStyle="round"
         borderColor={THEME.border}
-        backgroundColor={THEME.surface1}
+        backgroundColor={cardFill(hue)}
       >
-        {cardStrip(elements, 'card', hue)}
         {body}
       </Box>
       <Box key="card-gap" height={1} backgroundColor={THEME.bg} />

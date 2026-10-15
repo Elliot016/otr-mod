@@ -26,9 +26,13 @@ Progress pill.
 
 ## See it
 
-| The pill | The panel |
-| --- | --- |
-| ![][img-progress-pill] | ![][img-progress-panel] |
+| The pill | The panel | A shell's command and output |
+| --- | --- | --- |
+| ![][img-progress-pill] | ![][img-progress-panel] | ![][img-progress-shell] |
+
+| An agent's transcript |
+| --- |
+| ![][img-progress-transcript] |
 
 | Two agents running, opened from the pill |
 | --- |
@@ -55,3 +59,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [img-progress-panel]: ../showcase/progress-panel.png
 [img-progress-pill]: ../showcase/progress-pill.png
+[img-progress-shell]: ../showcase/progress-shell.png
+[img-progress-transcript]: ../showcase/progress-transcript.png

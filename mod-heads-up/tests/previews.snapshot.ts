@@ -4,32 +4,30 @@ export const snapshot: Snapshot = {
   "enabled": {
     "true": {
       "frame": {
-        "border": "accent",
-        "bg": "surface1"
+        "border": "border",
+        "bg": "#1a1e30"
       },
       "nerd": [
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue0b6",
-              "color": "#2f3656",
-              "bg": "surface1"
+              "color": "#333b5d",
+              "bg": "#1a1e30"
             },
             {
               "text": "Heads up",
               "color": "accent",
-              "bg": "#2f3656",
+              "bg": "#333b5d",
               "bold": true
             },
             {
               "text": "\ue0b4",
-              "color": "#2f3656",
-              "bg": "surface1"
+              "color": "#333b5d",
+              "bg": "#1a1e30"
             },
             {
               "text": " "
@@ -43,21 +41,19 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": " ",
-              "bg": "surface1"
+              "bg": "#1a1e30"
             },
             {
               "text": "        ",
-              "bg": "#2f3656"
+              "bg": "#333b5d"
             },
             {
               "text": " ",
-              "bg": "surface1"
+              "bg": "#1a1e30"
             },
             {
               "text": " "
@@ -71,14 +67,12 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "\ue0b6",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1a1e30"
             },
             {
               "text": "\ue0b6",
@@ -104,7 +98,7 @@ export const snapshot: Snapshot = {
             {
               "text": "\ue0b4",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1a1e30"
             },
             {
               "text": " "
@@ -112,7 +106,7 @@ export const snapshot: Snapshot = {
             {
               "text": "\ue0b6",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1a1e30"
             },
             {
               "text": " \uf00d ",
@@ -122,7 +116,7 @@ export const snapshot: Snapshot = {
             {
               "text": "\ue0b4",
               "color": "surface3",
-              "bg": "surface1"
+              "bg": "#1a1e30"
             }
           ]
         }
@@ -131,14 +125,12 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": " Heads up ",
               "color": "accent",
-              "bg": "#2f3656",
+              "bg": "#333b5d",
               "bold": true
             },
             {
@@ -153,13 +145,11 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": "          ",
-              "bg": "#2f3656"
+              "bg": "#333b5d"
             },
             {
               "text": " "
@@ -173,9 +163,7 @@ export const snapshot: Snapshot = {
         {
           "spans": [
             {
-              "text": "▎",
-              "color": "accent",
-              "bg": "surface1"
+              "text": " "
             },
             {
               "text": " ↵ ",

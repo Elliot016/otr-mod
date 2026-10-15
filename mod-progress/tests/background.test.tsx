@@ -3,6 +3,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { addBg, appendTail, bandSummary, outputRoom, bgIdOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, formatClock, hasRunningBg, resyncBg, stripControl, type Snap } from '../hooks/progress'
+import { cardFill } from '../hooks/look'
 import { THEME } from '../hooks/theme'
 
 const norm = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
@@ -418,10 +419,10 @@ test('agent cards are flat on the section, only the card under the pointer lifts
   await $.session.start({ cwd: '/w' } as never)
   const pane = await $.ui.mount(PANE)
   const bgOf = async (line: string) => JSON.stringify(await pane.drawn({ in: 'loops' })).match(new RegExp(`"key":"${line}","height":1,"width":\\d+,"flexDirection":"row","backgroundColor":"(#\\w+)"`))?.[1]
-  expect(await bgOf('line-0')).toBe(THEME.surface1)
+  expect(await bgOf('line-0')).toBe(cardFill())
   await pointerOn(pane, { in: 'loops', type: 'move', x: 3, y: 0, button: 'left' })
   expect(await bgOf('line-0')).toBe(THEME.lifted)
-  expect(await bgOf('line-3')).toBe(THEME.surface1)
+  expect(await bgOf('line-3')).toBe(cardFill())
   await pointerOn(pane, { in: 'loops', type: 'down', x: 3, y: 3, button: 'left' })
   const drawn = JSON.stringify(await pane.drawn())
   expect(drawn).toContain(`"key":"footer-space","height":2,"flexShrink":0`)

@@ -222,31 +222,21 @@ export function heading(elements: Elements, look: Look, key: string, icon: strin
   )
 }
 
-// More rows than any card shows: the strip is clipped to its card, and an absolute Box adds no height.
-const STRIP_ROWS = 300
+// A card's fill: surface1 washed lightly toward its hue, under a neutral border (picked 2026-10-15). Pills on the card sit on it.
+export const cardFill = (hue: string = THEME.accent) => mix(THEME.surface1, hue, 0.06)
 
-// A card's left strip in its hue, down the padding cell inside the border.
-export function cardStrip({ Box, Text }: Elements, key: string, hue: string = THEME.accent, bg: string = THEME.surface1) {
-  return (
-    <Box key={`${key}-strip`} position="absolute" top={0} bottom={0} left={0} width={1} overflow="hidden">
-      <Text color={hue} backgroundColor={bg}>{Array.from({ length: STRIP_ROWS }, () => MARK.strip).join('\n')}</Text>
-    </Box>
-  )
-}
-
-// The row above a card, painted so it covers a strip glyph that a scrolled, clipped card above leaks into it.
+// The row above a card, painted on bg so a scrolled card above never shows through the gap.
 export function cardGap({ Box }: Elements, key: string, bg: string = THEME.bg) {
   return <Box key={`${key}-gap`} height={1} flexShrink={0} backgroundColor={bg} />
 }
 
-// A round-bordered card with its heading on the first row and a left strip in `hue`; an empty title draws the border alone.
+// A round-bordered card with its heading on the first row, its fill tinted toward `hue`; an empty title draws the border alone.
 export function section(elements: Elements, look: Look, key: string, icon: string, title: string, body: unknown, hue: string = THEME.accent) {
   const { Box } = elements
   return (
     <Box key={`${key}-block`} flexDirection="column">
       {cardGap(elements, key)}
-      <Box key={key} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>
-        {cardStrip(elements, key, hue)}
+      <Box key={key} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill(hue)} paddingX={1}>
         {title ? heading(elements, look, key, icon, title) : null}
         {body}
       </Box>

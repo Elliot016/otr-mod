@@ -41,7 +41,6 @@ Automatic.
 - **One prompt:** After you press Run, a settings hook's ask with a reason starting "Destructive operation detected" is answered too, so you are not asked twice. Any other ask or deny passes through.
 - **No drawing surface:** In a VS Code chat panel, claude -p or an SDK session nothing can show the hold, so the call is not held: the permission system asks instead, with the reason.
 - **Preview:** Paths with counts and size, git status and dry runs, the commits a force push would drop. Read-only: the command itself never runs.
-- **Notification:** When a command is held, one native notification names it, so you know Claude is waiting from another window.
 - **Run or Cancel:** Cancel refuses the call with a reason Claude reads. A narrow terminal draws the same report above the prompt.
 
 ## Settings

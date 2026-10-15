@@ -4,7 +4,7 @@ import type { ConfigValue, EngineInterface, ModelForkResult, Register, RenderEle
 
 import { AUTO_SYSTEM, autoPrompt, capWords, clampCompactAt, clampCompactTokens, clampEvery, emptyLedger, flip, isDue, mergeDelta, mergeInstructions, parseRelated, parseUpdate, projectSlug, readLedger, RELATED_SYSTEM, relatedPrompt, restoreContext, shortGoal, shouldCompact, yieldsToManual, type Carry, type CompactMarks, type Ledger } from './ledger'
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
-import { cardStrip, detectNerd, FOOTER_ROWS, heading, lookFor, paneFooter, subpill, type IconMode, withMark } from './look'
+import { cardFill, detectNerd, FOOTER_ROWS, heading, lookFor, paneFooter, subpill, type IconMode, withMark } from './look'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import type { ChoiceProps } from './choice'
 import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
@@ -549,11 +549,11 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
   const line = (id: string, label: string, isKept: boolean, tip: string) => {
     const bg = isKept ? THEME.surface3 : THEME.surface2
     const mark = isKept ? MARK.stopOpen : MARK.stop
-    return pill({ Box, Text }, look.nerd, bg, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isKept, bg, nerd: look.nerd, still, idle: THEME.muted, subLead: mark, subLeadColor: isKept ? THEME.accent : THEME.muted, tip: { glyph: mark, label, text: tip } } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+    return pill({ Box, Text }, look.nerd, bg, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isKept, bg, nerd: look.nerd, still, idle: THEME.muted, subLead: mark, subLeadColor: isKept ? THEME.accent : THEME.muted, tip: { glyph: mark, label, text: tip } } satisfies EntryProps} />, `${id}-pill`, cardFill())
   }
   // An action pill on surface3; the go leads with its glyph as a subpill.
   const action = (id: string, label: string, lead: Pick<EntryProps, 'subLead'>, tip: string) => (
-    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph: lead.subLead ?? bare(look.glyph.close), label, text: tip }, ...lead } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph: lead.subLead ?? bare(look.glyph.close), label, text: tip }, ...lead } satisfies EntryProps} />, `${id}-pill`, cardFill())
   )
   // Threads and Also keep are flat groups in the one card, each under its heading.
   const block = (key: string, icon: string, title: string, body: unknown) => (
@@ -582,8 +582,7 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
     <Text key="wrap-up-foot" color={THEME.muted}>{text.card.handoffFoot}</Text>
   )
   return (
-    <Box key="wrap-up-card" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-      {cardStrip({ Box, Text }, 'wrap-up-card')}
+    <Box key="wrap-up-card" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
       <Box key="wrap-up-card-title" flexDirection="row">
         <Text key="wrap-up-card-mode" color={THEME.onSurface} bold>{text.choice[picked.mode]}</Text>
         <Text key="wrap-up-card-hint" color={THEME.muted}>{`: ${text.card.title} ${MARK.sep} ${text.card.hint}`}</Text>
@@ -611,10 +610,9 @@ function choiceCard({ Box, Client, Text }: Elements, picked: Choice) {
   const label = isCarried ? text.auto.toFresh : text.auto.toCarry
   const close = bare(look.glyph.close)
   const control = (id: string, name: string, isOpen: boolean, tip: string, glyph: string) =>
-    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label: name, isOpen, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph, label: name, text: tip } } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label: name, isOpen, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph, label: name, text: tip } } satisfies EntryProps} />, `${id}-pill`, cardFill())
   return (
-    <Box key="wrap-up-choice-card" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-      {cardStrip({ Box, Text }, 'wrap-up-choice-card')}
+    <Box key="wrap-up-choice-card" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
       <Box key="wrap-up-choice-text" flexGrow={1} flexShrink={1}>
         <Text color={THEME.onSurface} wrap="truncate-end">{line}</Text>
       </Box>
@@ -629,8 +627,7 @@ function countdownCard({ Box, Button, Text }: Elements & { Button: (props: any) 
   const line = shown.left > 0 ? fill(text.auto.countdown, { tokens: shown.tokens, percent: shown.percent, seconds: shown.left }) : fill(text.auto.updating, { tokens: shown.tokens, percent: shown.percent })
   const scope = 'wrap-up-countdown-cancel-pill'
   return (
-    <Box key="wrap-up-countdown-card" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-      {cardStrip({ Box, Text }, 'wrap-up-countdown-card')}
+    <Box key="wrap-up-countdown-card" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
       <Box key="wrap-up-countdown-text" flexGrow={1} flexShrink={1}>
         <Text color={THEME.onSurface} wrap="truncate-end">{line}</Text>
       </Box>
@@ -639,7 +636,7 @@ function countdownCard({ Box, Button, Text }: Elements & { Button: (props: any) 
           {subpill({ Box, Text }, look.nerd, THEME.surface3, bare(look.glyph.close), 'wrap-up-countdown-close')}
           <Button key="wrap-up-countdown-cancel" label={look.nerd ? ` ${text.card.cancel}` : ` ${text.card.cancel} `} plain hover={{ scope, color: THEME.accent, inverse: true }} onPress={onCancel} />
         </Box>
-      ), scope, THEME.surface1, THEME.accent)}
+      ), scope, cardFill(), THEME.accent)}
     </Box>
   )
 }

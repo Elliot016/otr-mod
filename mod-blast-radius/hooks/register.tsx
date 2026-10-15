@@ -2,7 +2,7 @@
 // Wires the mod into the engine: holds risky Bash commands, draws the card, pane and settings.
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
-import { cardGap, cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Look } from './look'
+import { cardFill, cardGap, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Look } from './look'
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
 import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -362,11 +362,12 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
     if (row.kind === 'line') return <Text key={key} color={THEME.alert}>{figures(Text, row.text, key)}</Text>
     return <Text key={key} color={THEME.muted}>{row.text}</Text>
   })
+  const fill = cardFill(THEME.alert)
   // The entry draws the action; a Button nobody sees carries its digit, since only a Button takes a hotkey and a visible one inverts under the pointer.
   // Each action is a numbered pill: its digit in a subpill before the label.
   const entry = (id: string, label: string, hotkey: string, tipLabel: string, tipBody: string, tipGlyph: string, color?: string) => (
     <Box key={`${id}-pad`} flexDirection="row">
-      {pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, subLead: hotkey, nerd: look.nerd, tip: { glyph: tipGlyph, label: tipLabel, text: tipBody }, ...(color ? { color } : {}), still }} />, `${id}-pill`, THEME.surface1)}
+      {pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, subLead: hotkey, nerd: look.nerd, tip: { glyph: tipGlyph, label: tipLabel, text: tipBody }, ...(color ? { color } : {}), still }} />, `${id}-pill`, fill)}
       <Box key={`${id}-key`} width={0} height={0} overflow="hidden">
         <Button key={`${id}-hotkey`} label={label} hotkey={hotkey} plain onPress={() => onKey(id)} />
       </Box>
@@ -374,8 +375,7 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
   )
 
   return (
-    <Box key="blast-card" flexDirection="column" borderStyle="round" borderColor={THEME.alert} backgroundColor={THEME.surface1} paddingX={1}>
-      {cardStrip({ Box, Text }, 'blast-card', THEME.alert)}
+    <Box key="blast-card" flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={fill} paddingX={1}>
       {body}
       <Box key="hold-actions" flexDirection="row" columnGap={ACTION_GAP}>
         {entry('blast-cancel', labels.cancel, HOTKEY.cancel, labels.cancel, text.tips.cancel, bare(look.glyph.close))}
@@ -384,7 +384,7 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
         {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
         {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 3 * ACTION_EXTRA + 3 * ACTION_GAP + text.card.explaining.length + 2 <= width ? (
           <Box key="hold-explaining-row" flexGrow={1} justifyContent="flex-end">
-            <Client key="hold-explaining" module="./entry.tsx" height={1} props={{ id: 'hold-explaining', label: text.card.explaining, isOpen: false, bg: THEME.surface1, isBusy: true, still }} />
+            <Client key="hold-explaining" module="./entry.tsx" height={1} props={{ id: 'hold-explaining', label: text.card.explaining, isOpen: false, bg: fill, isBusy: true, still }} />
           </Box>
         ) : null}
       </Box>

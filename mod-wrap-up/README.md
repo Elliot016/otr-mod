@@ -26,9 +26,13 @@ Wrap up pill.
 
 ## See it
 
-| Pick what stays | The filled /compact |
-| --- | --- |
-| ![][img-wrap-up-card] | ![][img-wrap-up-compact] |
+| Pick what stays | The filled /compact | The countdown |
+| --- | --- | --- |
+| ![][img-wrap-up-card] | ![][img-wrap-up-compact] | ![][img-wrap-up-countdown] |
+
+| Carried over |
+| --- |
+| ![][img-wrap-up-carried] |
 
 | Compact, start to end |
 | --- |
@@ -68,4 +72,6 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-root]: ../README.md
 
 [img-wrap-up-card]: ../showcase/wrap-up-card.png
+[img-wrap-up-carried]: ../showcase/wrap-up-carried.png
 [img-wrap-up-compact]: ../showcase/wrap-up-compact.png
+[img-wrap-up-countdown]: ../showcase/wrap-up-countdown.png

@@ -4,7 +4,7 @@ import type { ConfigValue, EngineInterface, Register, SessionMessage } from 'cla
 
 import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt, type Direction } from './ask'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip } from './entry'
-import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode, type Reveal } from './look'
+import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode, type Reveal } from './look'
 import { byTurn, canFork, CLEAR_AFTER_PROMPTS, emptySaved, KNOWN_KEPT, pack, recentSessions, remember, restates, sameText, savedOf, SEEN_KEPT, shouldCheck, stringsOf, unreadCount, type Note, type Saved } from './notes'
 import { isPrompt, PLACEHOLDER, PromptNumbers } from './prompts'
 import { labelsOf, menuEntry, pill, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
@@ -650,12 +650,11 @@ export const register: Register = (on, options) => {
     const isHolding = (await $.state.get({ plugin: 'mod-blast-radius', key: 'holding' })).value === true
     const shown = saved.card && !isHolding ? noteOf(saved.card) : undefined
     const keyed = (id: string, label: string, subLead: string | undefined, tipLabel: string, tipBody: string) =>
-      pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip: { glyph: subLead ?? bare(look.glyph.close), label: tipLabel, text: tipBody }, ...(subLead ? { subLead } : {}) } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+      pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip: { glyph: subLead ?? bare(look.glyph.close), label: tipLabel, text: tipBody }, ...(subLead ? { subLead } : {}) } satisfies EntryProps} />, `${id}-pill`, cardFill())
     const card = shown ? (
-      <Box key="headsup-card" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
-        {cardStrip({ Box, Text }, 'headsup-card')}
+      <Box key="headsup-card" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
         <Box key="headsup-card-line" flexDirection="row" columnGap={1}>
-          {subpill({ Box, Text }, nerd, THEME.surface1, shown.tag, 'headsup-card-tag')}
+          {subpill({ Box, Text }, nerd, cardFill(), shown.tag, 'headsup-card-tag')}
           <Box key="headsup-card-text" flexShrink={1}>
             <Text color={THEME.onSurface}>{shown.learn}</Text>
           </Box>
@@ -717,14 +716,14 @@ export const register: Register = (on, options) => {
     // Pane padding, the section's border and padding, then the row's lead glyph and gaps.
     const inner = Math.max(20, e.props.bodyColumns - 2 - 4)
     const entryPill = (id: string, label: string, subLead: string | undefined, tip: Tip, extra: Partial<EntryProps> = {}) =>
-      pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip, ...(subLead ? { subLead } : {}), ...extra } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
+      pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip, ...(subLead ? { subLead } : {}), ...extra } satisfies EntryProps} />, `${id}-pill`, cardFill())
 
     // The Prompts look: the selected note in a card on top, with its three actions in one row at the card's foot, and every note in a timeline under it.
     const noteCard = (found: Note) => {
       const turn = fill(text.turnNumber, { n: found.turn })
       return section(elements, look, 'note-card', '', '', [
         <Box key="note-card-head" flexDirection="row" columnGap={1}>
-          {pill({ Box, Text }, nerd, THEME.surface3, <Text color={THEME.muted}>{turn}</Text>, 'note-card-turn', THEME.surface1)}
+          {pill({ Box, Text }, nerd, THEME.surface3, <Text color={THEME.muted}>{turn}</Text>, 'note-card-turn', cardFill())}
           <Text color={THEME.onSurface} bold>{clock(found.at)}</Text>
           <Text color={THEME.accent}>{found.tag}</Text>
           <Box key="note-card-gap" flexGrow={1} />
@@ -759,7 +758,7 @@ export const register: Register = (on, options) => {
             <Box key={`note-jump-pill-${found.id}`} flexShrink={0}>
               {pill({ Box, Text }, nerd, THEME.surface3, (
                 <Button key={`note-jump-${found.id}`} label={nerd ? MARK.open : ` ${MARK.open} `} plain hover={{ scope: `note-jump-box-${found.id}`, color: THEME.accent, inverse: true }} onPress={() => jump($, found.turn, found.promptId ?? '')} />
-              ), `note-jump-box-${found.id}`, THEME.surface1, THEME.accent)}
+              ), `note-jump-box-${found.id}`, cardFill(), THEME.accent)}
             </Box>
           </Box>,
           at < list.length - 1 ? <Text key={`note-rail-${found.id}`} color={THEME.border}>{`${' '.repeat(time.length + 3)}${MARK.rail}`}</Text> : null,
@@ -769,7 +768,7 @@ export const register: Register = (on, options) => {
     // One row, always: Reword swaps the other two buttons for its three choices, so no button changes place with the note's text.
     const actionsBar = (found: Note) => {
       const isRewording = wording === found.id
-      const reword = pill({ Box, Text }, nerd, THEME.surface2, <Client key={`headsup-reword-${found.id}`} module="./entry.tsx" height={1} props={{ id: `headsup-reword-${found.id}`, label: text.reword, isOpen: isRewording, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting.endsWith(`-${found.id}`), subLead: bare(look.glyph.cycle), tip: { glyph: bare(look.glyph.cycle), label: text.reword, text: text.tipReword } } satisfies EntryProps} />, `headsup-reword-${found.id}-pill`, THEME.surface1)
+      const reword = pill({ Box, Text }, nerd, THEME.surface2, <Client key={`headsup-reword-${found.id}`} module="./entry.tsx" height={1} props={{ id: `headsup-reword-${found.id}`, label: text.reword, isOpen: isRewording, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting.endsWith(`-${found.id}`), subLead: bare(look.glyph.cycle), tip: { glyph: bare(look.glyph.cycle), label: text.reword, text: text.tipReword } } satisfies EntryProps} />, `headsup-reword-${found.id}-pill`, cardFill())
       return (
         <Box key="headsup-actions" flexDirection="row" columnGap={1} flexShrink={0} marginTop={1}>
           {isRewording ? null : entryPill(`headsup-understood-${found.id}`, text.gotIt, bare(look.glyph.ok), { glyph: bare(look.glyph.ok), label: text.gotIt, text: text.tipGotIt })}
@@ -782,7 +781,7 @@ export const register: Register = (on, options) => {
                 return <Client key={id} module="./entry.tsx" height={1} props={{ id, label: ` ${label} `, isOpen: false, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting === `${direction}-${found.id}`, tip: { glyph: bare(look.glyph.cycle), label, text: tipBody } } satisfies EntryProps} />
               })}
             </Box>
-          ), `redo-${found.id}`, THEME.surface1) : null}
+          ), `redo-${found.id}`, cardFill()) : null}
         </Box>
       )
     }
