@@ -1,7 +1,6 @@
-// mod-menu / types/index.d.ts, by v-amorim
-// Declares the plugin state shape for hidden and icon mode flags.
+// mod-menu / types/index.d.ts, by v-amorim: plugin state shape
 declare module 'claude-code' {
   interface PluginState {
-    'mod-menu': { hidden: boolean; nerd: boolean }
+    'mod-menu': { hidden: boolean; labels: 'always' | 'never' }
   }
 }
