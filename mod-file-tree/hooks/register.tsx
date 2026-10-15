@@ -3,9 +3,9 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { NAME_COLOR, OPEN_CELLS, type ListMessage, type Row as ListRow } from './list'
-import { detectNerd, FOOTER_ROWS, heading, lookFor, section, paneFooter, withIcon, type IconMode, type Look, withMark } from './look'
+import { detectNerd, FOOTER_ROWS, heading, lookFor, section, paneFooter, subpill, withIcon, type IconMode, type Look, withMark } from './look'
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
-import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import text from './text'
@@ -343,9 +343,8 @@ async function openDiff($: EngineInterface, path: string) {
 }
 
 function walk($: EngineInterface, delta: number, total: number) {
-  const to = Math.max(0, Math.min(index + delta, total - 1))
-  note = to === index ? `${MARK.warn} ${delta < 0 ? text.noEarlier : text.noLater}` : ''
-  index = to
+  index = Math.max(0, Math.min(index + delta, total - 1))
+  note = ''
   $.ui.invalidate('ui.render')
 }
 
@@ -358,6 +357,15 @@ function fold($: EngineInterface, current: Log, key: string) {
   const isLiveFold = liveFolds(current, showReads)?.includes(key)
   if (isLiveFold) opened = opened.includes(key) ? opened.filter(other => other !== key) : [...opened, key]
   else collapsed = collapsed.includes(key) ? collapsed.filter(other => other !== key) : [...collapsed, key]
+  note = ''
+  $.ui.invalidate('ui.render')
+}
+
+// Every folder at once; while Claude works, `opened` is what the live folds leave open.
+function foldAll($: EngineInterface, current: Log, isShut: boolean) {
+  const folders = rowsOf(current, [], showReads).filter(row => row.isDir).map(row => row.key)
+  collapsed = isShut ? folders : []
+  opened = isShut ? [] : folders
   note = ''
   $.ui.invalidate('ui.render')
 }
@@ -644,9 +652,10 @@ export const register: Register = (on, options) => {
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-file-tree', key: 'pane' })
     const shown = await isOpen($, PANE)
+    const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'filetree', { label: text.pill, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
+    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'filetree', { label: text.pill, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still, labels })
 
     return pillRow({ Box, Client, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip, e.props.bodyColumns)
   })
@@ -690,6 +699,7 @@ export const register: Register = (on, options) => {
       note = ''
       $.ui.invalidate('ui.render')
     }
+    if (message.id === 'fold-all' || message.id === 'unfold-all') foldAll($, viewOf(await hydrate($)), message.id === 'fold-all')
     if (message.id === 'session-reveal') {
       const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
       await openFolder($, cwd, cwd.split('/').pop() || text.rootFallback)
@@ -737,7 +747,7 @@ export const register: Register = (on, options) => {
         $.ui.invalidate('ui.render')
       }
       return (
-        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(true, 0), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, fields, still })}</Box>
@@ -822,12 +832,25 @@ export const register: Register = (on, options) => {
         )
 
     // The steppers ride on the heading row, right-aligned, so they stay put whatever the diff's length.
-    const arrow = { color: THEME.accent, bg: mix(THEME.accent, THEME.surface3, LEGEND_WASH) }
+    // Colors as mod-prompts' pager: secondary, muted at the edge. An edge stepper is plain text, so it neither lights nor posts a tip.
+    const stepper = (id: string, label: string, isEdge: boolean, hue: string, place: 'lead' | 'trail', mark: string, tipText: string) => {
+      const sub = place === 'lead' ? { subLead: mark, subLeadColor: hue } : { badge: { text: mark, color: hue, bg: mix(hue, THEME.surface3, LEGEND_WASH) } }
+      const body = isEdge ? (
+        <Box key={`${id}-edge`} flexDirection="row">
+          {place === 'lead' ? subpill(elements, look.nerd, THEME.surface3, mark, `${id}-edge-mark`, THEME.muted) : null}
+          <Text color={THEME.muted} backgroundColor={THEME.surface3}>{` ${label} `}</Text>
+          {place === 'trail' ? subpill(elements, look.nerd, THEME.surface3, mark, `${id}-edge-mark`, THEME.muted) : null}
+        </Box>
+      ) : (
+        entry(id, label, false, THEME.surface3, { idle: THEME.secondary, ...sub, tip: { glyph: mark, label, text: tipText } })
+      )
+      return pill({ Box, Text }, look.nerd, THEME.surface3, body, `${id}-pill`, THEME.surface1)
+    }
     const replayNav = step ? (
       <Box key="replay-nav" flexDirection="row" columnGap={1}>
-        {pill({ Box, Text }, look.nerd, THEME.surface3, entry('replay-prev', text.prev, at > 0, THEME.surface3, { subLead: glyph.back, subLeadColor: THEME.accent, tip: { glyph: glyph.back, label: text.prev, text: text.prevTip } }), 'replay-prev-pill', THEME.surface1)}
+        {stepper('replay-prev', text.prev, at <= 0, THEME.accent, 'lead', glyph.back, text.prevTip)}
         <Text color={THEME.onSurface} bold>{fill(text.stepOf, { at: at + 1, total: steps.length })}</Text>
-        {pill({ Box, Text }, look.nerd, THEME.surface3, entry('replay-next', text.next, at < steps.length - 1, THEME.surface3, { badge: { text: glyph.title, ...arrow }, nerd: look.nerd, tip: { glyph: glyph.title, label: text.next, text: text.nextTip } }), 'replay-next-pill', THEME.surface1)}
+        {stepper('replay-next', text.next, at >= steps.length - 1, THEME.accent, 'trail', glyph.title, text.nextTip)}
       </Box>
     ) : null
     const replayTitle = fill(text.replayHeading, { sep: MARK.sep, n: steps.length, unit: steps.length === 1 ? text.editOne : text.editMany })
@@ -839,13 +862,25 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
+    // Fold all and Unfold all ride at the heading row's right end, like the replay's steppers.
+    const foldPill = (id: string, label: string, icon: string, tipText: string) =>
+      pill({ Box, Text }, look.nerd, THEME.surface3, entry(id, label, false, THEME.surface3, { idle: THEME.secondary, ...iconLead(icon, THEME.accent), tip: { glyph: look.glyph.icon[icon] ?? look.glyph.title, label, text: tipText } }), `${id}-pill`, THEME.surface1)
+    const treeHead = (
+      <Box key="tree-heading-row" flexDirection="row" columnGap={1}>
+        {heading(elements, look, 'tree', 'folder-open', rootName)}
+        <Box key="tree-heading-gap" flexGrow={1} />
+        {rows.some(row => row.isDir) ? foldPill('fold-all', text.foldAll, 'fold', text.foldAllTip) : null}
+        {rows.some(row => row.isDir) ? foldPill('unfold-all', text.unfoldAll, 'folder-open', text.unfoldAllTip) : null}
+      </Box>
+    )
+
     const hint =
       mode === 'tree'
         ? `${fill(text.hintTree, { sep: MARK.sep })}${showReads ? '' : fill(text.hintReadsHidden, { sep: MARK.sep })}`
         : fill(text.hintReplay, { sep: MARK.sep })
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
         <Box key="title-line" flexDirection="row" columnGap={1}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs(false, touched), still)}
           {current.working ? <Text color={THEME.muted}>{text.working}</Text> : null}
@@ -864,12 +899,11 @@ export const register: Register = (on, options) => {
               ])
             : null}
         </Box>
-        {mode === 'tree' ? section(elements, look, 'tree', 'folder-open', rootName, tree) : section(elements, look, 'replay', '', '', [replayHead, replay])}
+        {mode === 'tree' ? section(elements, look, 'tree', '', '', [treeHead, tree]) : section(elements, look, 'replay', '', '', [replayHead, replay])}
         {/* The footer names what each name color means, once, instead of a letter on every row. */}
         {mode === 'tree' ? <Box key="legend-push" flexGrow={1} /> : null}
         {mode === 'tree' ? (
           <Box key="legend" flexDirection="column">
-            <Text key="legend-rule" color={THEME.border}>{'─'.repeat(Math.max(1, e.props.bodyColumns - 2))}</Text>
             <Box key="legend-row" flexDirection="row" columnGap={1}>
               {(['changed', 'added', 'read'] as const).map(tone =>
                 pill({ Box, Text }, look.nerd, mix(NAME_COLOR[tone], THEME.bg, LEGEND_WASH), <Text color={NAME_COLOR[tone]}>{look.nerd ? text.legend[tone] : ` ${text.legend[tone]} `}</Text>, `legend-${tone}`, THEME.bg),

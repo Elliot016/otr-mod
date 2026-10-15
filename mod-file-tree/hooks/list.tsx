@@ -53,8 +53,8 @@ const countsPill = (Text: (props: any) => RenderElement, add: number, del: numbe
   return [<Text key="counts-left" color={THEME.surface3}>{CAPS.left}</Text>, ...parts, <Text key="counts-right" color={THEME.surface3}>{CAPS.right}</Text>]
 }
 
-// levels: each row's hover fade, kept only while it is above 0.
-type State = { hovered: number; phase: number; levels: Record<number, number>; onMark?: boolean }
+// levels: each row's hover fade, marks: the open mark's, kept only while above 0.
+type State = { hovered: number; phase: number; levels: Record<number, number>; marks?: Record<number, number>; onMark?: boolean }
 
 // Moonlight surface-3: the row Claude is on stands out from the tree's surface-1 as a band.
 const LIVE_BG = THEME.surface3
@@ -69,15 +69,19 @@ const livePill = (Text: (props: any) => RenderElement, word: string, nerd: boole
 ]
 
 // A Client draws Text only, so the open mark's pill draws its caps itself; OPEN_CELLS counts these cells.
-const openPill = (Text: (props: any) => RenderElement, glyph: string, color: string, nerd: boolean) =>
-  nerd
+// level lights it like a Button pill: the body goes accent, the glyph takes the body's old color, the caps follow the body.
+const openPill = (Text: (props: any) => RenderElement, glyph: string, color: string, nerd: boolean, level: number) => {
+  const body = hoverMix(THEME.surface3, THEME.accent, level)
+  const ink = hoverMix(color, THEME.surface3, level)
+  return nerd
     ? [
         <Text key="open-gap">{' '}</Text>,
-        <Text key="open-cap-left" color={THEME.surface3}>{CAPS.left}</Text>,
-        <Text key="open" color={color} backgroundColor={THEME.surface3}>{glyph}</Text>,
-        <Text key="open-cap-right" color={THEME.surface3}>{CAPS.right}</Text>,
+        <Text key="open-cap-left" color={body}>{CAPS.left}</Text>,
+        <Text key="open" color={ink} backgroundColor={body}>{glyph}</Text>,
+        <Text key="open-cap-right" color={body}>{CAPS.right}</Text>,
       ]
-    : [<Text key="open-gap">{' '}</Text>, <Text key="open" color={color} backgroundColor={THEME.surface3}>{` ${glyph} `}</Text>]
+    : [<Text key="open-gap">{' '}</Text>, <Text key="open" color={ink} backgroundColor={body}>{` ${glyph} `}</Text>]
+}
 
 // A file whose edit just landed starts in the live band's colors and fades to its own over this long.
 const GLOW_MS = 2500
@@ -130,6 +134,7 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
   const hovered = surface.state?.hovered ?? -1
   const phase = surface.state?.phase ?? 0
   const levels = surface.state?.levels ?? {}
+  const marks = surface.state?.marks ?? {}
 
   if (!surface.state) surface.setState({ hovered: -1, phase: 0, levels: {} })
   if (!props.still && isMoving(rows)) {
@@ -146,8 +151,10 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
     if (!props.still) {
       run(surface, 'fade', HOVER_TICK_MS, () => {
         const state = surface.state
-        if (!state || latest.get(surface)?.still || !isFading(state.levels ?? {}, state.hovered)) return false
-        surface.setState({ ...state, levels: fadeLevels(state.levels ?? {}, state.hovered) })
+        if (!state || latest.get(surface)?.still) return false
+        const markRow = state.onMark ? state.hovered : -1
+        if (!isFading(state.levels ?? {}, state.hovered) && !isFading(state.marks ?? {}, markRow)) return false
+        surface.setState({ ...state, levels: fadeLevels(state.levels ?? {}, state.hovered), marks: fadeLevels(state.marks ?? {}, markRow) })
         return true
       })
     }
@@ -156,7 +163,8 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
     const isOpenMark = row >= 0 && rows[row]!.endMark !== '' && event.x >= props.width - OPEN_CELLS
     const isClick = event.type === 'down' && event.button === 'left' && row >= 0
     if (row !== hovered || isOpenMark !== (surface.state?.onMark === true)) {
-      surface.setState({ hovered: row, phase, levels: row !== hovered ? next : levels, onMark: isOpenMark })
+      const nextMarks = props.still ? (isOpenMark ? { [row]: HOVER_STEPS } : {}) : fadeLevels(marks, isOpenMark ? row : -1)
+      surface.setState({ hovered: row, phase, levels: row !== hovered ? next : levels, marks: nextMarks, onMark: isOpenMark })
       if (!isClick) postTip(surface, 'row', row >= 0 ? { glyph: props.glyph, label: isOpenMark ? props.openLabel : rows[row]!.tipLabel, text: isOpenMark ? rows[row]!.openTip : rows[row]!.tip } : null)
     }
     if (!isClick) return
@@ -170,7 +178,10 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
         const glow = props.still ? 0 : glowOf(row, Date.now())
         const restColor = mix(NAME_COLOR[row.tone], THEME.pill, glow)
         const nameColor = hoverMix(restColor, THEME.accent, levels[index] ?? 0)
-        const background = isLive ? LIVE_BG : glow > 0 ? mix(THEME.surface1, LIVE_BG, glow) : undefined
+        const rest = isLive ? LIVE_BG : glow > 0 ? mix(THEME.surface1, LIVE_BG, glow) : undefined
+        // The row under the pointer lifts its background as its name goes accent.
+        const lift = levels[index] ?? 0
+        const background = lift > 0 ? hoverMix(rest ?? THEME.surface1, THEME.lifted, lift) : rest
         return (
           <Box key={`row-${index}`} flexDirection="row" backgroundColor={background}>
             <Text color={THEME.border}>{row.guides}</Text>
@@ -190,7 +201,7 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
             {isLive && row.status ? <Box key="live" flexDirection="row" flexShrink={0}>{livePill(Text, row.status, props.nerd === true)}</Box> : null}
             {isLive && row.status && (row.add > 0 || row.del > 0) ? <Text> </Text> : null}
             {row.add > 0 || row.del > 0 ? countsPill(Text, row.add, row.del, props.nerd === true) : null}
-            {row.endMark ? openPill(Text, row.endMark, row.endColor, props.nerd === true) : null}
+            {row.endMark ? openPill(Text, row.endMark, row.endColor, props.nerd === true, marks[index] ?? 0) : null}
           </Box>
         )
       })}

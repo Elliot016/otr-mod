@@ -146,7 +146,8 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(drawn).not.toContain('creating')
   expect(drawn).not.toContain('"A"')
-  expect(drawn).toContain('"backgroundColor":"#252a42"')
+  // The glow fades with the clock, so the band is a step short of surface-3 once the test runs slowly.
+  expect(drawn).toMatch(/"backgroundColor":"#252a4[0-2]"/)
   expect(drawn).toContain('▸')
   expect(drawn).not.toContain('a.ts')
   // The folded src/ carries a.ts's counts, so folding hides no change.
@@ -444,6 +445,21 @@ test('the Files pill opens the pane from the band', async ($, on) => {
   expect(JSON.stringify(await band.drawn({ in: 'menu-entry-filetree' }))).toContain('Files')
   await pointing(band).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'menu-entry-filetree' } as never)
   expect(opened).toContain('filetree')
+  await band.unmount()
+})
+
+test('mod-menu labels never leaves the Files entry as its icon alone', { options: { icons: 'nerd' } }, async ($, on) => {
+  stubs(on, [])
+  on('state.get', (_$, e) => ({ value: { value: e.plugin === 'mod-menu' && e.key === 'labels' ? 'never' : undefined } }) as never)
+  const band = await $.ui.mount({
+    plugin: 'mod-file-tree',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+  } as never)
+  const entry = JSON.stringify(await band.drawn({ in: 'menu-entry-filetree' }))
+  expect(entry).toContain('"backgroundColor"')
+  expect(entry).not.toContain('Files')
   await band.unmount()
 })
 
@@ -775,4 +791,140 @@ test('session.start registers the command and /mod-file-tree toggles the pane', 
   expect(registered).toEqual(['mod-file-tree'])
   await $.command.run({ command: 'mod-file-tree', args: 'settings' } as never)
   expect(opened).toEqual(['filetree-settings'])
+})
+
+const FOLDERS = async ($: Parameters<TestBody>[0]) => {
+  await $.tool.call({ tool: 'Edit', file_path: '/w/src/a.ts', old_string: 'x', new_string: 'y' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/src/deep/b.ts', old_string: 'x', new_string: 'y' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/docs/c.md', old_string: 'x', new_string: 'y' } as never)
+}
+
+test('Fold all folds every folder and Unfold all opens every folder, from the tree heading row', async ($, on) => {
+  stubs(on)
+  await FOLDERS($)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.find({ key: 'tree-heading-row' }))).toContain('unfold-all')
+  const tree = async () => JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  const click = (key: string) => pointing(ui).pointer({ in: key, type: 'down', button: 'left', x: 2, y: 0 })
+  expect(await tree()).toContain('b.ts')
+  await click('fold-all')
+  const shut = await tree()
+  expect(shut).toContain('src')
+  expect(shut).toContain('docs')
+  for (const name of ['a.ts', 'deep', 'b.ts', 'c.md']) expect(shut).not.toContain(name)
+  await click('unfold-all')
+  const open = await tree()
+  for (const name of ['a.ts', 'deep', 'b.ts', 'c.md']) expect(open).toContain(name)
+  await ui.unmount()
+})
+
+test('Fold all and Unfold all also work while the live fold holds folders shut', async ($, on) => {
+  stubs(on)
+  await $.turn.start({ turnId: 't1' } as never)
+  await FOLDERS($)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).not.toContain('a.ts')
+  await pointing(ui).pointer({ in: 'unfold-all', type: 'down', button: 'left', x: 2, y: 0 })
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('a.ts')
+  await pointing(ui).pointer({ in: 'fold-all', type: 'down', button: 'left', x: 2, y: 0 })
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).not.toContain('a.ts')
+  await ui.unmount()
+})
+
+test('Fold all and Unfold all show their tip in the pane footer and draw no Nerd glyph in safe mode', { options: { icons: 'safe' } }, async ($, on) => {
+  stubs(on)
+  await FOLDERS($)
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ in: 'fold-all', type: 'move', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · folds every folder in the tree' })).toBeDefined()
+  await pointing(ui).pointer({ in: 'unfold-all', type: 'move', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · opens every folder in the tree' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn())).not.toMatch(/[\uE000-\uF8FF\u{F0000}-\u{FFFFD}]/u)
+  await ui.unmount()
+})
+
+test('icons=nerd gives Fold all and Unfold all an icon each', { options: { icons: 'nerd' } }, async ($, on) => {
+  stubs(on)
+  await FOLDERS($)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'fold-all' }))).toContain(nf(0xf066))
+  expect(JSON.stringify(await ui.drawn({ in: 'unfold-all' }))).toContain(nf(0xeaf7))
+  await ui.unmount()
+})
+
+test('the open mark lights like a Button pill under the pointer: body accent, glyph inverted, caps accent', { options: { icons: 'nerd' } }, async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
+  const ui = await $.ui.mount(PANE)
+  const rest = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(rest).toContain(`"color":"${THEME.accent}","backgroundColor":"${THEME.surface3}"},"children":["↗"]`)
+  await pointing(ui).pointer({ in: 'list-0', type: 'move', x: 61, y: 0 })
+  const lit = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(lit).toContain(`"color":"${THEME.surface3}","backgroundColor":"${THEME.accent}"},"children":["↗"]`)
+  expect(lit).toContain(`"color":"${THEME.accent}"},"children":["${nf(0xe0b6)}"]`)
+  await ui.unmount()
+})
+
+test('the open mark stays unlit while the pointer is on the row text, and the row lifts instead', async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Read', file_path: '/w/only.md' } as never)
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ in: 'list-0', type: 'move', x: 4, y: 0 })
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).not.toContain(`"backgroundColor":"${THEME.accent}"`)
+  expect(drawn).toContain(`"backgroundColor":"${THEME.lifted}"`)
+  expect(drawn).toContain(`"color":"${THEME.accent}"},"children":["only.md"]`)
+  await ui.unmount()
+})
+
+test('the open mark fades out in steps after the pointer leaves, and at once with animations off', () => {
+  const row: ListRow = { guides: '', mark: '', name: 'a.ts', tone: 'read', add: 0, del: 0, status: '', pad: 0, endMark: '↗', endColor: THEME.accent, tip: '', tipLabel: '', openTip: 't' }
+  const props = (still: boolean) => ({ rows: [row], width: 30, glyph: '', openLabel: '', still })
+  const list = fakeSurface()
+  FileList(props(false), list.surface)
+  list.point({ type: 'move', x: 28, y: 0 })
+  FileList(props(false), list.surface)
+  expect(list.surface.state.marks[0]).toBe(2)
+  list.point({ type: 'leave', x: 28, y: 0 })
+  expect(list.surface.state.marks[0]).toBe(1)
+  list.tick()
+  expect(list.surface.state.marks[0]).toBeUndefined()
+  list.tick()
+  expect(list.running.size).toBe(0)
+
+  const still = fakeSurface()
+  FileList(props(true), still.surface)
+  still.point({ type: 'move', x: 28, y: 0 })
+  expect(still.surface.state.marks[0]).toBe(2)
+  still.point({ type: 'leave', x: 28, y: 0 })
+  expect(still.surface.state.marks[0]).toBeUndefined()
+})
+
+test('a stepper at its edge does not light or post a tip; an enabled one does, in mod-prompts colors', async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/a.ts', old_string: 'x', new_string: 'y' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/b.ts', old_string: 'x', new_string: 'y' } as never)
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ in: 'tab-replay', type: 'down', button: 'left', x: 2, y: 0 })
+  // The replay opens on the latest edit, so Next is at its edge and Prev is not.
+  expect(await ui.find({ key: 'replay-next' })).toBeUndefined()
+  expect(JSON.stringify(await ui.find({ key: 'replay-next-edge' }))).toContain(`"color":"${THEME.muted}"`)
+  expect(JSON.stringify(await ui.drawn({ in: 'replay-prev' }))).toContain(`"color":"${THEME.secondary}"`)
+  await pointing(ui).pointer({ in: 'replay-prev', type: 'move', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · goes to the previous edit' })).toBeDefined()
+  await pointing(ui).pointer({ in: 'replay-prev', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ key: 'replay-prev' })).toBeUndefined()
+  expect(await ui.find({ key: 'replay-next' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the legend draws no rule of its own above the footer, and the footer space does not shrink', async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'Edit', file_path: '/w/a.ts', old_string: 'x', new_string: 'y' } as never)
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ key: 'legend-rule' })).toBeUndefined()
+  expect(await ui.find({ key: 'legend-row' })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ key: 'footer-space' }))).toContain('"flexShrink":0')
+  expect(JSON.stringify(await ui.drawn())).toMatch(/^\{"type":"Box","props":\{[^}]*"backgroundColor":"#/)
+  await ui.unmount()
 })
