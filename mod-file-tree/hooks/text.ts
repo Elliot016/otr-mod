@@ -16,6 +16,7 @@ export default {
   "openedInCode": "Opened {path} in VS Code",
   "opened": "Opened {path} in its default app",
   "openedFolder": "Opened {path} in the file manager",
+  "openedRunnable": "{path} is a program or script, so its folder opened instead of running it",
   "openFailed": "Could not open {path}: {reason}",
   "sessionFolder": "Session folder",
   "settingSaved": "{label} saved",

@@ -7,7 +7,7 @@ import { detectNerd, FOOTER_ROWS, heading, lookFor, section, paneFooter, subpill
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
+import { choiceBar as sharedChoiceBar, settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 import { shellPlans, TranscriptFiles } from './transcript'
@@ -50,6 +50,7 @@ function startLog(session: string, path = '') {
   transcript = path
   log = undefined
   loading = null
+  loadFailed = false
   changes = []
   cleared = { seq: 0, step: 0 }
   replayTurn = null
@@ -77,6 +78,8 @@ async function followSession($: EngineInterface) {
 // The transcript read in flight, one per session; changes made meanwhile replay onto what it builds, so a live edit is never lost.
 let loading: { session: string; done: Promise<void> } | null = null
 let changes: ((current: Log) => Log)[] = []
+// A read that failed leaves the log partial, so the next hydrate reads again, keeping the changes made since.
+let loadFailed = false
 
 // A hook waits this long at most for the read, so a long session's transcript never holds up the start or the pane.
 const LOAD_WAIT_MS = 300
@@ -84,17 +87,28 @@ const LOAD_WAIT_MS = 300
 // A reload empties the module copy and $.state still holds it; only an empty state, or another session's, reads the transcript.
 async function hydrate($: EngineInterface) {
   await followSession($)
-  if (log) return log
+  if (log && !loadFailed) return log
   const session = logSession
   const owner = (await $.state.get({ plugin: 'mod-file-tree', key: 'session' })).value
   const kept = (await $.state.get({ plugin: 'mod-file-tree', key: 'log' })).value as Log | undefined
   if (session !== logSession) return log ?? emptyLog()
-  if (kept && owner === session) {
+  if (kept && owner === session && !loadFailed) {
     cleared = (await $.state.get({ plugin: 'mod-file-tree', key: 'cleared' })).value ?? cleared
     log = kept
     return log
   }
-  if (!loading) loading = { session, done: load($, session) }
+  if (!loading) {
+    loadFailed = false
+    const started: NonNullable<typeof loading> = {
+      session,
+      done: load($, session).catch(() => {
+        if (loading !== started) return
+        loading = null
+        loadFailed = true
+      }),
+    }
+    loading = started
+  }
   log = emptyLog()
   await Promise.race([loading.done, $.clock.sleep(LOAD_WAIT_MS).catch(() => {})])
   return log ?? emptyLog()
@@ -104,7 +118,7 @@ async function hydrate($: EngineInterface) {
 async function apply($: EngineInterface, change: (current: Log) => Log) {
   await hydrate($)
   log = change(log ?? emptyLog())
-  if (loading) changes.push(change)
+  if (loading || loadFailed) changes.push(change)
   await save($)
 }
 
@@ -114,10 +128,18 @@ async function save($: EngineInterface) {
   $.ui.invalidate('ui.render')
 }
 
-// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
-async function findTranscript($: EngineInterface) {
+// Claude Code's folder: CLAUDE_CONFIG_DIR when set, otherwise ~/.claude.
+async function configDir($: EngineInterface) {
+  const set = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (set) return set
   const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  const projects = `${home}/.claude/projects`
+
+  return `${home}/.claude`
+}
+
+// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of the config folder's projects folders.
+async function findTranscript($: EngineInterface) {
+  const projects = `${await configDir($)}/projects`
   const file = `${await $.session.id().catch(() => '')}.jsonl`
   for (const entry of await $.fs.list(projects).catch(() => [])) {
     const path = `${projects}/${entry.name}/${file}`
@@ -294,8 +316,8 @@ async function launch($: EngineInterface, argv: string[]) {
 
 // Explorer, Finder or the desktop's file manager on a folder, the default app on a file. Only a failed start counts as failing.
 async function openWithSystem($: EngineInterface, isWindows: boolean, native: string) {
-  // A mod's child starts with its window hidden, which Explorer honors, so `start` launches it with a normal window instead.
-  if (isWindows) return launch($, ['cmd', '/c', 'start', 'explorer', native])
+  // A mod's child starts with its window hidden, which Explorer honors, so the shell handler launches it with a normal window; no cmd, so a name's `&` or `%` is never read as a command.
+  if (isWindows) return launch($, ['rundll32.exe', 'url.dll,FileProtocolHandler', native])
   const opened = await launch($, ['open', native])
   return opened.code === 0 ? opened : launch($, ['xdg-open', native])
 }
@@ -315,11 +337,28 @@ async function openFolder($: EngineInterface, path: string, name = path) {
   $.ui.invalidate('ui.render')
 }
 
-// VS Code when its `code` command is on PATH, otherwise the system's default app for the file's type.
+// On Windows `code` is a .cmd script that needs a shell, so the installed Code.exe is run directly instead.
+async function codeExe($: EngineInterface) {
+  const local = ((await $.env.get('LOCALAPPDATA')) ?? '').replace(/\\/g, '/')
+  const files = ((await $.env.get('ProgramFiles')) ?? '').replace(/\\/g, '/')
+  const found = [local && `${local}/Programs/Microsoft VS Code/Code.exe`, files && `${files}/Microsoft VS Code/Code.exe`]
+  for (const path of found) if (path && (await $.fs.exists(path).catch(() => false))) return path.replace(/\//g, '\\')
+  return ''
+}
+
+// The default app runs these instead of showing them, and a model wrote the name.
+const RUNNABLE = /\.(exe|bat|cmd|com|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|msi|msp|lnk|scr|pif|hta|cpl|reg|jar|app|command|sh|tool)$/i
+
+// VS Code when it is installed, otherwise the system's default app for the file's type; a program or script only gets its folder opened.
 async function openFile($: EngineInterface, path: string) {
   const { isWindows, native } = await nativePath($, path)
-  if ((await launch($, isWindows ? ['cmd', '/c', 'code', native] : ['code', native])).code === 0) {
+  const editor = isWindows ? await codeExe($) : 'code'
+  if (editor && (await launch($, [editor, native])).code === 0) {
     note = `${MARK.ok} ${fill(text.openedInCode, { path })}`
+  } else if (RUNNABLE.test(native)) {
+    const folder = native.slice(0, Math.max(native.lastIndexOf('\\'), native.lastIndexOf('/'))) || native
+    const opened = await openWithSystem($, isWindows, folder)
+    note = opened.code === null ? `${MARK.warn} ${fill(text.openFailed, { path, reason: opened.reason })}` : `${MARK.ok} ${fill(text.openedRunnable, { path })}`
   } else {
     const opened = await openWithSystem($, isWindows, native)
     note = opened.code === null ? `${MARK.warn} ${fill(text.openFailed, { path, reason: opened.reason })}` : `${MARK.ok} ${fill(text.opened, { path })}`
@@ -651,7 +690,7 @@ export const register: Register = (on, options) => {
     const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-file-tree', key: 'pane' })
-    const shown = await isOpen($, PANE)
+    const shown = (await isOpen($, PANE)) || (await isOpen($, SETTINGS))
     const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
@@ -773,19 +812,13 @@ export const register: Register = (on, options) => {
     )
     // A Nerd icon as a subpill before the label; safe mode has none, so the prop stays out.
     const iconLead = (name: string, color: string) => (look.glyph.icon[name] ? { subLead: look.glyph.icon[name], subLeadColor: color } : {})
-    // A switch is a choice bar, as on a settings page: the options on one surface-2 pill, the chosen one on its own surface-3 pill.
+    // A switch is the settings page's choice bar, so both read the same.
     const choiceBar = (key: string, options: { id: string; label: string; isOn: boolean; icon?: string; tip: string }[]) =>
-      pill({ Box, Text }, look.nerd, THEME.surface2, (
-        <Box key={`${key}-options`} flexDirection="row" backgroundColor={THEME.surface2}>
-          {options.map(option => {
-            const lead = { ...(option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}), tip: { glyph: look.glyph.icon[option.icon ?? ''] ?? look.glyph.title, label: option.label, text: option.tip } }
-            return option.isOn
-              ? pill({ Box, Text }, look.nerd, THEME.surface3, entry(option.id, option.label, true, THEME.surface3, { idle: THEME.muted, ...lead }), `${option.id}-chosen`, THEME.surface2)
-              // Caps in the bar's own color keep each option as wide as the chosen pill, so labels don't shift.
-              : pill({ Box, Text }, look.nerd, THEME.surface2, entry(option.id, option.label, false, THEME.surface2, lead), `${option.id}-idle`, THEME.surface2)
-          })}
-        </Box>
-      ), `${key}-bar`, THEME.bg)
+      sharedChoiceBar({ Box, Button, Client, Text }, look, key, THEME.bg, options.map(option => ({
+        key: option.id,
+        isOn: option.isOn,
+        props: { id: option.id, label: option.label, still, ...(option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}), tip: { glyph: look.glyph.icon[option.icon ?? ''] ?? look.glyph.title, label: option.label, text: option.tip } },
+      })))
 
     // The pane pads one column on both sides, the section its border and one more column.
     const width = Math.max(20, e.props.bodyColumns - 6)

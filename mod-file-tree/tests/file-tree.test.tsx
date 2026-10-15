@@ -4,7 +4,8 @@ import { expect, mock, test, type Mounted, type TestBody } from 'claude-code/tes
 
 import { cells, cut } from '../hooks/cells'
 import FileList, { type Row as ListRow } from '../hooks/list'
-import { THEME } from '../hooks/theme'
+import { mix } from '../hooks/entry'
+import { THEME, WASH } from '../hooks/theme'
 import { TranscriptFiles } from '../hooks/transcript'
 import { diffLines, emptyLog, commit, iconOf, relPath, rootOf, rowsOf, touch, turnView } from '../hooks/tree'
 
@@ -40,14 +41,18 @@ const SHELL_DIFF = {
 const isTranscript = (path: string) => path.replace(/\\/g, '/').endsWith('/s1.jsonl')
 
 // `transcript.text` is the session's .jsonl, which a test may grow between events.
-const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }, placed: string[] = []) => {
+const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }, placed: string[] = [], seen: { env?: (name: string) => string | undefined; listed?: string[]; exists?: (path: string) => boolean } = {}) => {
   on('session.cwd', () => ({ value: '/w' }))
   on('session.id', () => ({ value: 's1' }))
-  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('env.get', (_$, e) => ({ value: seen.env ? seen.env(e.name) : e.name === 'USERPROFILE' ? '/h' : undefined }))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
-  on('fs.list', () => ({ value: transcript.text ? [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] : [] }))
-  on('fs.exists', (_$, e) => ({ value: isTranscript(e.path) && transcript.text !== '' }))
+  on('fs.list', (_$, e) => {
+    // The kit resolves a path against the drive on Windows.
+    seen.listed?.push(e.path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, ''))
+    return { value: transcript.text ? [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] : [] }
+  })
+  on('fs.exists', (_$, e) => ({ value: (isTranscript(e.path) && transcript.text !== '') || seen.exists?.(e.path.replace(/\\/g, '/')) === true }))
   on('fs.stat', (_$, e) => ({ value: { kind: 'file', size: isTranscript(e.path) ? transcript.text.length : 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', (_$, e) => {
     if (isTranscript(e.path)) transcript.reads += 1
@@ -179,9 +184,9 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
   expect(await replay()).toContain('"y"')
   expect(await replay()).toContain(THEME.addBg)
   expect(await replay()).toContain(THEME.delBg)
-  // Prev and Next ride on the section's heading row; the open view's option is its own surface-3 pill.
+  // Prev and Next ride on the section's heading row; the open view's option is a washed ok subpill, as on a settings page.
   expect(JSON.stringify(await ui.find({ key: 'replay-heading-row' }))).toContain('replay-next')
-  expect(JSON.stringify(await ui.find({ key: 'tab-replay-chosen-body' }))).toContain(THEME.surface3)
+  expect(JSON.stringify(await ui.find({ key: 'tab-replay-chosen' }))).toContain(mix(THEME.ok, THEME.surface3, WASH))
   await click('replay-next')
   expect(await ui.find({ type: 'Text', text: '2 of 2' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'docs/new.md' })).toBeDefined()
@@ -404,6 +409,32 @@ test("icons=nerd keeps a settings choice bar's labels in place whichever option 
   value = 'three'
   expect(await layout()).toEqual(onOne)
 })
+
+for (const nerd of [false, true]) {
+  test(`icons=${nerd ? 'nerd' : 'safe'} draws a settings choice as one pill with a rail between options, and every cell of an option picks it`, { options: { icons: nerd ? 'nerd' : 'safe' } }, async ($, on) => {
+    stubs(on)
+    const saved: unknown[] = []
+    on('config.list', () => ({
+      value: [{ key: 'mod-file-tree.sort', label: 'Sort', kind: 'choice', value: 'one', options: ['one', 'two', 'three'], description: 'd' }],
+    }) as never)
+    on('config.set', ((_$: unknown, e: { value: unknown }) => {
+      saved.push(e.value)
+      return { value: e.value }
+    }) as never)
+    const ui = pointing(await $.ui.mount({ ...(PANE as object), requestId: 'filetree-settings' } as never))
+    const bar = await drawnText(ui, await ui.find({ key: 'setting-0-bar' }))
+    const [left, right] = [nf(0xe0b6), nf(0xe0b4)]
+    expect(bar).toBe(nerd ? `${left}${left}one${right}│ two │ three ${right}` : '  one │ two │ three  ')
+    // The hit area of an option is the cells its own Client draws, whatever the caps and rails around it.
+    for (const [at, word] of ['one', 'two', 'three'].entries()) {
+      const width = cells(await drawnText(ui, await ui.find({ key: `setting-0-option-${at}` })))
+      expect(width).toBe(word.length + (word === 'one' && nerd ? 0 : 2))
+      for (const x of [0, width - 1]) await ui.pointer({ in: `setting-0-option-${at}`, type: 'down', button: 'left', x, y: 0 })
+    }
+    expect(saved).toEqual(['one', 'one', 'two', 'two', 'three', 'three'])
+    await ui.unmount()
+  })
+}
 
 test('the title row pill swaps the panel for its settings and back', async ($, on) => {
   const opened: string[] = []
@@ -927,4 +958,96 @@ test('the legend draws no rule of its own above the footer, and the footer space
   expect(JSON.stringify(await ui.find({ key: 'footer-space' }))).toContain('"flexShrink":0')
   expect(JSON.stringify(await ui.drawn())).toMatch(/^\{"type":"Box","props":\{[^}]*"backgroundColor":"#/)
   await ui.unmount()
+})
+
+// Records each argv the mod runs, as an array, answering with the given exit code per program.
+const recorded = (on: Parameters<TestBody>[1], codeOf: (program: string) => number = () => 0) => {
+  const ran: string[][] = []
+  on('process.run', (_$, e) => {
+    const argv = (e as unknown as { argv: string[] }).argv
+    ran.push(argv)
+    return { value: { exitCode: codeOf(argv[0]!), stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } as never
+  })
+  return ran
+}
+
+test('a Windows file name with shell characters never reaches cmd: the opener gets it as one argument', async ($, on) => {
+  stubs(on)
+  const ran = recorded(on)
+  await $.tool.call({ tool: 'Read', file_path: 'C:/w/a&calc %PATH% ^x.txt' } as never)
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 63, y: 0 })
+  expect(ran.length).toBeGreaterThan(0)
+  for (const argv of ran) expect(['cmd', 'cmd.exe'].includes(argv[0]!.toLowerCase())).toBe(false)
+  expect(ran.some(argv => argv.includes('C:\\w\\a&calc %PATH% ^x.txt'))).toBe(true)
+  await ui.unmount()
+})
+
+test('on Windows VS Code opens by its Code.exe, found by path and run without a shell', async ($, on) => {
+  const exe = 'C:/Users/me/AppData/Local/Programs/Microsoft VS Code/Code.exe'
+  stubs(on, [], undefined, [], { env: name => (name === 'LOCALAPPDATA' ? 'C:\\Users\\me\\AppData\\Local' : undefined), exists: path => path === exe })
+  const ran = recorded(on)
+  await $.tool.call({ tool: 'Read', file_path: 'C:/w/a&calc.txt' } as never)
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 63, y: 0 })
+  expect(ran).toEqual([[exe.replace(/\//g, '\\'), 'C:\\w\\a&calc.txt']])
+  await ui.unmount()
+})
+
+test('a script or program with no VS Code to open it opens its folder, so a click never runs it', async ($, on) => {
+  stubs(on)
+  const ran = recorded(on)
+  await $.tool.call({ tool: 'Read', file_path: 'C:/w/tools/build.bat' } as never)
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 63, y: 0 })
+  expect(ran).toEqual([['rundll32.exe', 'url.dll,FileProtocolHandler', 'C:\\w\\tools']])
+  await ui.unmount()
+})
+
+test('a Windows folder opens through the shell handler, never cmd', async ($, on) => {
+  stubs(on)
+  const ran = recorded(on)
+  await $.tool.call({ tool: 'Read', file_path: 'C:/w/a&b/x.ts' } as never)
+  await $.tool.call({ tool: 'Read', file_path: 'C:/w/c/y.ts' } as never)
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
+  expect(ran).toEqual([['rundll32.exe', 'url.dll,FileProtocolHandler', 'C:\\w\\a&b']])
+  await ui.unmount()
+})
+
+test('a failed load is not kept: the next tool call reads the transcript again', async ($, on) => {
+  const transcript = { text: [prompt('first'), use('t-old', 'Edit', { file_path: '/w/old.ts', old_string: 'a', new_string: 'b' }), result('t-old', PATCH), ''].join('\n'), reads: 0 }
+  const flaky = { fail: true }
+  stubs(on, [], transcript, [], {
+    env: name => {
+      if (flaky.fail) throw new Error('env unavailable')
+      return name === 'USERPROFILE' ? '/h' : undefined
+    },
+  })
+  await $.tool.call({ tool: 'Read', file_path: '/w/first.ts' } as never)
+  flaky.fail = false
+  await $.tool.call({ tool: 'Read', file_path: '/w/second.ts' } as never)
+  expect(transcript.reads).toBe(1)
+
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  for (const name of ['old.ts', 'first.ts', 'second.ts']) expect(drawn).toContain(name)
+  await ui.unmount()
+})
+
+test('CLAUDE_CONFIG_DIR moves the projects folder the transcript is searched in', async ($, on) => {
+  const transcript = { text: [prompt('first'), ''].join('\n'), reads: 0 }
+  const listed: string[] = []
+  stubs(on, [], transcript, [], { listed, env: name => (name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : name === 'USERPROFILE' ? '/h' : undefined) })
+  await $.tool.call({ tool: 'Read', file_path: '/w/a.ts' } as never)
+  expect(listed).toEqual(['/cfg/projects'])
+})
+
+test('without CLAUDE_CONFIG_DIR the projects folder is under the home folder', async ($, on) => {
+  const transcript = { text: [prompt('first'), ''].join('\n'), reads: 0 }
+  const listed: string[] = []
+  stubs(on, [], transcript, [], { listed })
+  await $.tool.call({ tool: 'Read', file_path: '/w/a.ts' } as never)
+  expect(listed).toEqual(['/h/.claude/projects'])
 })
