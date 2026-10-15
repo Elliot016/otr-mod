@@ -306,7 +306,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 </details>
 
 <details>
-<summary><b>mod-wrap-up</b>: Pick what carries over, then hand off or compact. Played at double speed.</summary>
+<summary><b>mod-wrap-up</b>: Pick what carries over, then hand off or compact; past a context mark it hands off by itself. Played at double speed.</summary>
 
 | Compact, start to end |
 | --- |
