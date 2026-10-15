@@ -40,6 +40,14 @@ Automatic, or the Heads up pill.
 - **A card above the prompt:** The note shows with its tag, You should know or Heads up, and says who decided. Open shows it in the panel, × dismisses it.
 - **The Heads up panel:** Every note of the session under its turn, opened in place, with Got it, Ask Claude and Reword (simpler words, less detail or more detail). Hover any control for what it does.
 
+## Costs
+
+This mod calls a model, which spends tokens and counts against your plan quota.
+
+- **The side check:** on every sixth step of the main agent, at most once per turn and never while a note card is showing, the mod asks a model to read the session. It forks your session when its effort is low or medium, which reuses the cached conversation. At a higher effort, or with nothing to fork yet, it sends the whole conversation to your session's model at medium effort. If a newer step may have overtaken the finding, it asks once more before showing it.
+- **Reword:** each click on simpler words, less detail or more detail makes one more call.
+- **Turn it off:** set Check while Claude works to off (`/mod-heads-up settings`). The side check then makes no request. Reword only runs when you click it.
+
 ## Settings
 
 Change them with `/mod-heads-up settings` or the gear pill.

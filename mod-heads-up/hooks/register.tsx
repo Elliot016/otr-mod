@@ -170,10 +170,17 @@ async function transcriptOf($: EngineInterface) {
   return typeof named === 'string' && named ? named : findTranscript($)
 }
 
-// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
-async function findTranscript($: EngineInterface) {
+// Claude Code's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude.
+async function configDir($: EngineInterface) {
+  const set = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (set) return set
   const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  const projects = `${home}/.claude/projects`
+  return `${home}/.claude`
+}
+
+// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of the config folder's projects folders.
+async function findTranscript($: EngineInterface) {
+  const projects = `${await configDir($)}/projects`
   const file = `${await $.session.id()}.jsonl`
   for (const entry of await $.fs.list(projects).catch(() => [])) {
     const path = `${projects}/${entry.name}/${file}`
@@ -674,11 +681,11 @@ export const register: Register = (on, options) => {
     }
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-heads-up', key: 'pane' })
-    const isShown = await isOpen($)
+    const isShown = (await isOpen($)) || (await isOpen($, SETTINGS))
     const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
     const { group, row, rest, tip } = splitRow(await next(e))
     const unread = unreadCount(saved.notes)
-    const badge = unread > 0 ? { badge: { text: String(unread), color: THEME.accent, bg: mix(THEME.accent, isShown ? THEME.lifted : PILL.primary, WASH) } } : {}
+    const badge = unread > 0 ? { badge: { text: String(unread), color: THEME.accent, bg: mix(THEME.accent, isShown ? mix(THEME.ok, PILL.primary, WASH) : PILL.primary, WASH) } } : {}
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = menuEntry({ Box, Client, Text }, nerd, 'headsup', { label: text.pillLabel, isOpen: isShown, idle: THEME.pill, isBusy: isOpening || isChecking || rewriting !== '', still, nerd, tip: { glyph: nerd ? bare(look.glyph.warn) : MARK.bullet, label: text.pillLabel, text: text.tipPill }, labels, ...badge })
 

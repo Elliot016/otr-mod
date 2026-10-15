@@ -32,8 +32,9 @@ const FULL = [
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
 
 // The transcript is what the file read returns; isBig makes it past 4 MiB, so fs.read refuses and the mod streams it.
-function setup(on: any, isBig = false) {
+function setup(on: any, isBig = false, configDir?: string) {
   const runs: string[][] = []
+  const listed: string[] = []
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 8, 9, 0) })
   const store = new Map<string, unknown>()
   on('store.get', (_$: unknown, e: { key: string }) => ({ value: store.get(e.key) }))
@@ -50,8 +51,11 @@ function setup(on: any, isBig = false) {
   on('command.register', () => ({ value: undefined }))
   on('config.list', () => ({ value: [] }))
   on('ui.panes', () => ({ value: [] }))
-  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/home/u' : undefined }))
-  on('fs.list', () => ({ value: [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/home/u' : e.name === 'CLAUDE_CONFIG_DIR' ? configDir : undefined }))
+  on('fs.list', (_$: unknown, e: { path: string }) => {
+    listed.push(e.path)
+    return { value: [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }
+  })
   on('fs.exists', () => ({ value: true }))
   const bytes = new TextEncoder().encode(TRANSCRIPT_TEXT).length
   on('fs.stat', () => ({ value: { kind: 'file', size: isBig ? bytes + 5 * 1024 * 1024 : bytes, mtimeMs: 0, isLink: false } }))
@@ -76,7 +80,7 @@ function setup(on: any, isBig = false) {
     const { Text } = $.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  return { clock, store, runs }
+  return { clock, store, runs, listed }
 }
 
 async function step($: any, index: number, extra: object = {}) {
@@ -129,4 +133,30 @@ test('the same note when the session start named the transcript', async ($, on) 
   await step($, 6)
   await clock.settle()
   expect(notesOf(store)).toEqual([[3, 'Also check the docs']])
+})
+
+// The test host turns a POSIX path into a Windows one, so paths are compared without a drive letter.
+const plain = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+
+// A step that adds a note reads the transcript, so it shows the folder the mod lists.
+test('the transcript is looked up under CLAUDE_CONFIG_DIR when set', async ($, on) => {
+  const { clock, listed } = setup(on, false, '/cfg/')
+  await $.prompt.submit({ text: 'Add tests' } as never)
+  await $.prompt.submit({ text: 'Use the other approach' } as never)
+  await $.prompt.submit({ text: 'Also check the docs' } as never)
+  await draw($, ID(7), 'Also check the docs')
+  await step($, 6)
+  await clock.settle()
+  expect(listed.map(plain)).toContain('/cfg/projects')
+})
+
+test('without CLAUDE_CONFIG_DIR the transcript is looked up under ~/.claude as before', async ($, on) => {
+  const { clock, listed } = setup(on)
+  await $.prompt.submit({ text: 'Add tests' } as never)
+  await $.prompt.submit({ text: 'Use the other approach' } as never)
+  await $.prompt.submit({ text: 'Also check the docs' } as never)
+  await draw($, ID(7), 'Also check the docs')
+  await step($, 6)
+  await clock.settle()
+  expect(listed.map(plain)).toContain('/home/u/.claude/projects')
 })
