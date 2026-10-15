@@ -4,7 +4,7 @@ import type { ConfigValue, EngineInterface, Register, RenderElement } from 'clau
 
 import { displayName, LEVEL_LOOK, LEVELS, withEffort, withModel } from './levels'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'
+import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
 import type { MeterMessage } from './meter'
 import { settingChoice, settingsBody } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
@@ -195,6 +195,9 @@ const hoveredLevel = () => (bandTip?.id?.startsWith('effort-level-') ? bandTip.i
 // The model menu above the pill, opened by a click on the model name.
 let isModelMenuOpen = false
 
+// Whether Claude is working, as the band's last draw saw it: `/model` run by a click would queue as a prompt.
+let isWorking = false
+
 // The models used here before, newest first, as the menu last drew them; an entry's id is its index.
 let menuModels: string[] = []
 
@@ -235,16 +238,19 @@ function modelMenu(elements: Elements, currentId: string) {
   const ok = bare(look.glyph.ok)
   // The others start with blanks as wide as the ✓ subpill, so every name lines up.
   const blank = ' '.repeat([...ok].length + 2)
+  // While Claude works a pick would queue as a prompt, so the entries draw muted and a click only says why.
+  const live = !isWorking
   const entries = menuModels.map((id, index) =>
     id === currentId
-      ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: true, idle: THEME.muted, subLead: ok, subLeadColor: THEME.good, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } })
-      : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: true, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }),
+      ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: live, idle: THEME.muted, subLead: ok, subLeadColor: THEME.good, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } })
+      : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: live, idle: THEME.muted, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }),
   )
   // The × closes the menu without a pick, as on a toast card; it shares the first entry's row.
   const close = menuEntry(elements, 'effort-model-close', THEME.surface3, { label: bare(look.glyph.close), isOpen: false, tip: { glyph: bare(look.glyph.close), label: text.labelClose, text: text.tipModelClose } })
   return (
     <Box key="effort-models-row" flexDirection="row" justifyContent="flex-end">
       <Box key="effort-models" flexDirection="column" alignItems="flex-start" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+        {cardStrip(elements, 'effort-models')}
         <Box key="effort-models-head" flexDirection="row" columnGap={1}>
           {entries[0] ?? null}
           {close}
@@ -392,10 +398,15 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     if (clicked?.type === 'menu-entry' && clicked.id === 'effort-model-all') {
-      await openPicker($)
+      if (isWorking) $.ui.toast(fill(text.modelBusy, { name: text.allModels }))
+      else await openPicker($)
       return next(e)
     }
     const picked = clicked?.type === 'menu-entry' && clicked.id.startsWith('effort-model-') ? menuModels[Number(clicked.id.slice('effort-model-'.length))] : undefined
+    if (picked && isWorking) {
+      $.ui.toast(fill(text.modelBusy, { name: displayName(picked) }))
+      return next(e)
+    }
     if (picked) {
       await switchModel($, picked)
       return next(e)
@@ -415,7 +426,15 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     await loadLook($)
+    const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    isWorking = e.props.isWorking
+    // With the menu hidden the pill steps aside, but a toast still needs its card.
+    if (hidden.value === true) {
+      if (toasts.items.length === 0) return next(e)
+      const { Box, Client, Text } = $.ui.resolve(e)
+      return <Box key="toasts-effort" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
+    }
 
     const { Box, Client, Text } = $.ui.resolve(e)
     const current = await $.state.get({ plugin: 'mod-model-effort', key: 'current' })
@@ -457,11 +476,11 @@ export const register: Register = (on, options) => {
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-model-effort.'))
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-model-effort-settings-tab', label: `${text.paneName} ${MARK.sep} ${text.paneSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSettings, text: text.tipTab } }], still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.statusHint} ${MARK.sep} ${text.statusHintSaved}`}</Text>
         {settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, previews: undefined, still: still })}
-        <Box key="footer-space" height={FOOTER_ROWS} />
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
         {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )

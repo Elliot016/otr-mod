@@ -487,3 +487,75 @@ test('the meter at rest runs no timer; a new effort fades its lights, then it st
   for (let n = 0; n < 6; n++) [...running].forEach(fn => fn())
   expect(running.size).toBe(0)
 })
+
+const WORKING = { plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: true, maxRows: 12, bodyColumns: 100, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never
+
+test('with the menu hidden the pill steps aside and a toast still draws its card', { options: { icons: 'safe' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', () => ({ value: undefined }))
+  let hidden = false
+  on('state.get', (_$: unknown, e: { plugin: string }) => ({ value: { value: e.plugin === 'mod-menu' ? hidden : undefined } }) as never)
+  const ui = await $.ui.mount(BAND)
+  // A level click before any request has no model to save for, which toasts.
+  await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
+  expect(await ui.find({ key: 'meter' })).toBeDefined()
+  hidden = true
+  await ui.redraw()
+  expect(await ui.find({ key: 'meter' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /send a message first/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'base' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a failed model switch draws as an alert card, its mark first', { options: { icons: 'safe' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', () => ({ value: undefined }))
+  on('command.run', () => {
+    throw new Error('no')
+  })
+  const ui = await $.ui.mount(BAND)
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  await pointer(ui, { in: 'effort-model-all', type: 'down', button: 'left', x: 1, y: 0 })
+  await ui.redraw()
+  const card = JSON.stringify(await ui.drawn())
+  expect(card).toContain('mod-model-effort: could not open /model')
+  expect(card).toContain(`"color":"${THEME.alert}"`)
+  expect(card).not.toContain('"! mod-model-effort')
+  await ui.unmount()
+})
+
+test('while Claude works a model pick and All models switch nothing and say why', { options: { icons: 'safe' } }, async ($, on) => {
+  const ran: string[] = []
+  band(on as never)
+  on('store.get', (_$: unknown, e: { key: string }) => ({ value: e.key === 'models' ? ['claude-opus-5-5', 'claude-sonnet-5-5'] : undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('command.run', (_$: unknown, e: { command: string; args: string }) => {
+    ran.push(`${e.command} ${e.args}`)
+    return { text: '' }
+  })
+  const ui = await $.ui.mount(WORKING)
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  // Busy entries draw muted, never in the open entry's onSurface.
+  expect(JSON.stringify(await ui.drawn({ in: 'effort-model-1' }))).not.toContain(THEME.onSurface)
+  await pointer(ui, { in: 'effort-model-1', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: 'Claude is working, Sonnet 5.5 is available once it is idle' })).toBeDefined()
+  await pointer(ui, { in: 'effort-model-all', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: 'Claude is working, All models… is available once it is idle' })).toBeDefined()
+  expect(ran).toEqual([])
+  await ui.unmount()
+})
+
+test('the model menu card carries the left strip, and the settings pane paints bg and keeps its footer space', { options: { icons: 'safe' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', () => ({ value: undefined }))
+  on('config.list', () => ({ value: [] }))
+  const ui = await $.ui.mount(BAND)
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  expect(await ui.find({ key: 'effort-models-strip' })).toBeDefined()
+  await ui.unmount()
+  const pane = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'Pane', requestId: 'model-effort-settings', props: { scroll: { offset: 0, bodyRows: 20 }, bodyColumns: 80 } } as never)
+  expect((await pane.find({ key: 'footer-space' }))?.props.flexShrink).toBe(0)
+  expect(JSON.stringify(await pane.drawn())).toContain(`"backgroundColor":"${THEME.bg}"`)
+  await pane.unmount()
+})

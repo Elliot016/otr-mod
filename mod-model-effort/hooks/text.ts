@@ -2,9 +2,10 @@
 // Every string this mod shows. Edit the values to reword or translate; keep the keys and the {slots}.
 export default {
   "sendFirst": "mod-model-effort: send a message first, so the meter knows the model",
-  "settingsNotJson": "mod-model-effort: {mark} settings.json left untouched, it is not valid JSON",
-  "switchFailed": "mod-model-effort: {mark} Could not switch to {model}: {error}",
-  "pickerFailed": "mod-model-effort: {mark} Could not open /model: {error}",
+  "settingsNotJson": "{mark} mod-model-effort: settings.json left untouched, it is not valid JSON",
+  "switchFailed": "{mark} mod-model-effort: could not switch to {model}: {error}",
+  "pickerFailed": "{mark} mod-model-effort: could not open /model: {error}",
+  "modelBusy": "Claude is working, {name} is available once it is idle",
   "allModels": "All models…",
   "labelModel": "Model",
   "labelClose": "Close",
