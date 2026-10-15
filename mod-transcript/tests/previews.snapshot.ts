@@ -1649,7 +1649,7 @@ export const snapshot: Snapshot = {
             },
             {
               "text": "●",
-              "color": "good",
+              "color": "ok",
               "bg": "surface1"
             },
             {
@@ -1918,7 +1918,7 @@ export const snapshot: Snapshot = {
             },
             {
               "text": "●",
-              "color": "good",
+              "color": "ok",
               "bg": "surface1"
             },
             {

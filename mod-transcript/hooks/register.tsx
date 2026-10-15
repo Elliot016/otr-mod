@@ -21,7 +21,7 @@ import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { announceView, viewing } from './view'
 import { tokenizeLine, type Role } from './shell'
 import { detectWedge, FILLED, OUTLINE, type Wedge } from './wedge'
-import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
+import { CAPS, fill, MARK, mix, statusColor, SYNTAX, THEME, WASH } from './theme'
 import { copyChoices, copyText, type CopyChoice } from './clip'
 import { markPieces, type Piece } from './mark'
 import { callTime, commandOf, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
@@ -226,10 +226,17 @@ const FEED_SLICE = 2000
 // For /mod-transcript debug: how long the last transcript read and feed took.
 let lastRead = ''
 
-// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of ~/.claude/projects' folders.
-async function findTranscript($: EngineInterface) {
+// Claude Code's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude.
+async function configDir($: EngineInterface) {
+  const set = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (set) return set
   const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  const projects = `${home}/.claude/projects`
+  return `${home}/.claude`
+}
+
+// When no SessionStart named the transcript, it is `<session id>.jsonl` in one of the config folder's projects folders.
+async function findTranscript($: EngineInterface) {
+  const projects = `${await configDir($)}/projects`
   const file = `${await $.session.id()}.jsonl`
   for (const entry of await $.fs.list(projects).catch(() => [])) {
     const path = `${projects}/${entry.name}/${file}`
@@ -441,15 +448,19 @@ function labelParts(name: string, input: any, width: number): LabelPart[] {
 function callParts(call: Turn['tools'][number], isOpen: boolean, width: number): LabelPart[] {
   const glyph = isOpen ? look.glyph.expanded : look.glyph.collapsed
   const isLifted = look.nerd && isOpen
-  return [{ text: isLifted ? `${glyph} ` : ` ${glyph} ` }, ...labelParts(call.name, call.input, width - 28), ...(isLifted ? [] : [{ text: ' ' }])]
+  const parts = [{ text: isLifted ? `${glyph} ` : ` ${glyph} ` }, ...labelParts(call.name, call.input, width - 28), ...(isLifted ? [] : [{ text: ' ' }])]
+  return isOpen ? parts.map(part => ({ ...part, color: THEME.ok })) : parts
 }
+
+// The open call's pill fill, like an On switch: ok washed into the surface.
+const OPEN_CALL = mix(THEME.ok, THEME.surface1, WASH)
 
 // Claude Code's own Bash row, drawn here so the command keeps its colors; the blank first line matches the one Claude Code starts each row with.
 function bashRow({ Box, Client, Text }: Rows, input: any, isRunning: boolean, isFailed: boolean) {
   const command = String(input?.command ?? '')
   const dot = isRunning
     ? <Client key="bash-dot" module="./dot.tsx" width={1} height={1} props={{ color: THEME.accent, dim: THEME.border, still } satisfies DotProps} />
-    : <Text key="bash-dot" color={isFailed ? THEME.alert : THEME.good}>{MARK.stopOpen}</Text>
+    : <Text key="bash-dot" color={isFailed ? THEME.alert : THEME.ok}>{MARK.stopOpen}</Text>
   return (
     <Box key="bash-row" flexDirection="column">
       <Text key="bash-blank"> </Text>
@@ -554,8 +565,8 @@ const REPORT_LINES = 6
 type TaskProps = { text: string; origin: { kind: string }; from?: { name: string }; task?: { id?: string; status?: string; type?: string; durationMs?: number; toolUseId?: string } }
 
 // A subagent's or teammate's report: a head line with its sender, status, time and first line, then a card of its fields and first lines.
-function reportRow(parts: Rows, props: TaskProps, report: Report, width: number, fold?: { id: string; isOpen: boolean }) {
-  const { Box, Text } = parts
+function reportRow(parts: Rows, props: TaskProps, report: Report, width: number, key: string, fold?: { id: string; isOpen: boolean }) {
+  const { Box, Client, Text } = parts
   const all = props.text.replace(/\s+$/, '').split('\n')
   const first = all.findIndex(line => line.trim())
   const summary = first < 0 ? '' : all[first]!.trim()
@@ -570,8 +581,15 @@ function reportRow(parts: Rows, props: TaskProps, report: Report, width: number,
     props.task?.type ? fill(text.reportType, { type: props.task.type }) : '',
     props.task?.toolUseId ? fill(text.reportTool, { id: props.task.toolUseId }) : '',
   ].filter(Boolean)
-  const shown = lines.slice(0, REPORT_LINES)
-  const more = lines.length - shown.length
+  const room = width - 4
+  // A word wider than the card (a path, a URL) breaks across rows rather than losing its end.
+  const split = (row: string) => (cells(row) <= room ? [row] : Array.from({ length: Math.ceil(row.length / room) }, (_, n) => row.slice(n * room, (n + 1) * room)))
+  const rows = lines.flatMap(line => (line.trim() ? wrapWords(line, room).flatMap(split) : [line]))
+  // Past six rows the rest opens on a click, kept with the open tool ids under this row's own id.
+  const moreId = `report:${key}`
+  const isAll = flips.tools.includes(moreId)
+  const shown = isAll ? rows : rows.slice(0, REPORT_LINES)
+  const more = rows.length - REPORT_LINES
   // With no lines past the head, a card of ids alone would repeat the head, so none draws.
   const isOpen = (fold?.isOpen ?? true) && shown.some(line => line.trim())
   return (
@@ -587,9 +605,18 @@ function reportRow(parts: Rows, props: TaskProps, report: Report, width: number,
             <Text key={`toggle-report-field-${n}`} color={THEME.muted} wrap="truncate-end">{field}</Text>
           ))}
           {shown.map((line, n) => (
-            <Text key={`toggle-report-line-${n}`} color={THEME.onSurface} wrap="truncate-end">{cut(line, width - 4) || ' '}</Text>
+            <Text key={`toggle-report-line-${n}`} color={THEME.onSurface} wrap="truncate-end">{line || ' '}</Text>
           ))}
-          {more > 0 ? <Text key="toggle-report-more" color={THEME.muted}>{fill(text.previewMore, { n: more })}</Text> : null}
+          {more > 0 ? (
+            <Box key="toggle-report-more" height={1}>
+              <Client
+                key="toggle-report-more-colored"
+                module="./label.tsx"
+                height={1}
+                props={{ kind: 'tools', id: moreId, parts: [{ text: isAll ? text.reportLess : fill(text.previewMore, { n: more }) }], isDim: true, hover: THEME.accent, tip: { label: text.tipReportLabel, text: text.tipReport } } satisfies LabelProps}
+              />
+            </Box>
+          ) : null}
         </Box>
       ) : null}
     </Box>
@@ -618,15 +645,15 @@ async function taskRow(parts: Rows, $: EngineInterface, requestId: string, props
     const id = props.task?.id
     if (id) learnNotice($, id, { status: props.task?.status, durationMs: props.task?.durationMs })
     if (id && reported.has(id)) return <Box key="toggle-hidden" />
-    return reportRow(parts, props, reportOf(props.from, props.task), width)
+    return reportRow(parts, props, reportOf(props.from, props.task), width, requestId)
   }
   const id = senderTaskOf(props.origin)
   if (id) learnReport($, id)
   const report = withNotice(reportOf(props.from, props.task), id ? notices.get(id) : undefined)
   const turn = log.turnAt(requestId)
-  if (!turn || !isDone(turn)) return reportRow(parts, props, report, width)
+  if (!turn || !isDone(turn)) return reportRow(parts, props, report, width, requestId)
   const isOpen = isTurnOpen(flips.turns, turn)
-  return reportRow(parts, props, report, width, { id: turn.prompt, isOpen })
+  return reportRow(parts, props, report, width, requestId, { id: turn.prompt, isOpen })
 }
 
 // An API error that ended the reply, as one line: red when the person must act, muted when Claude Code retries.
@@ -677,6 +704,8 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
     const more = call.preview?.more ?? 0
     // The call line cuts a long command, so the open call shows it whole first.
     const command = call.name === 'Bash' ? String(call.input?.command ?? '').split('\n').flatMap(commandLine => wrapWords(commandLine, width - 14)) : []
+    // A SendMessage's result only says it was sent, so the open call shows the message itself first.
+    const sent = call.name === 'SendMessage' ? String(call.input?.message ?? '').split('\n').flatMap(sentLine => wrapWords(sentLine, width - 12)) : []
     return (
       <Box key={`toggle-call-${n}-preview`} flexDirection="column" paddingLeft={3}>
         {command.map((commandLine, at) => (
@@ -687,6 +716,7 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
             ))}
           </Text>
         ))}
+        {sent.map((sentLine, at) => <Text key={`sent-${at}`} color={THEME.onSurface}>{sentLine || ' '}</Text>)}
         {shown.length === 0 ?<Text key="none" color={THEME.muted}>{text.previewEmpty}</Text> : null}
         {shown.map((previewLine, at) => {
           const mark = previewLine.kind === 'add' ? '+ ' : previewLine.kind === 'del' ? '- ' : previewLine.kind === 'same' ? '  ' : ''
@@ -706,10 +736,10 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
       line(
         `toggle-call-${n}`,
         [
-          // The open call is a surface3 pill whose ends take the spaces around the label, so lines keep one width; the others stay dim until the pointer lights them.
+          // The open call is a selected pill whose ends take the spaces around the label, so lines keep one width; the others stay dim until the pointer lights them.
           <Box key={`toggle-call-${n}-line`} flexDirection="row" flexShrink={1}>
-            {look.nerd && openTools.includes(call.id) ? <Text color={THEME.surface3}>{CAPS.left}</Text> : null}
-            <Box key={`toggle-call-${n}-pick`} flexShrink={1} {...(openTools.includes(call.id) ? { backgroundColor: THEME.surface3 } : {})}>
+            {look.nerd && openTools.includes(call.id) ? <Text color={OPEN_CALL}>{CAPS.left}</Text> : null}
+            <Box key={`toggle-call-${n}-pick`} flexShrink={1} {...(openTools.includes(call.id) ? { backgroundColor: OPEN_CALL } : {})}>
               <Client
                 key={`toggle-call-${n}-colored`}
                 module="./label.tsx"
@@ -718,7 +748,7 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
                 props={{ kind: 'tools', id: call.id, parts: callParts(call, openTools.includes(call.id), width), isDim: !openTools.includes(call.id), hover: THEME.accent } satisfies LabelProps}
               />
             </Box>
-            {look.nerd && openTools.includes(call.id) ? <Text color={THEME.surface3}>{CAPS.right}</Text> : null}
+            {look.nerd && openTools.includes(call.id) ? <Text color={OPEN_CALL}>{CAPS.right}</Text> : null}
           </Box>,
           countsPill({ Box, Text }, `toggle-call-${n}-counts`, call.added, call.removed),
         ],
@@ -1156,7 +1186,8 @@ export const register: Register = (on, options) => {
               // A guessed turn has no time until the transcript is read; the space keeps the prompt's wrap, so its height holds.
               <Box key="toggle-prompt-time-col" flexShrink={0} width={look.nerd ? 8 : 6} backgroundColor={THEME.surface2} />
             ) : null}
-            <Box key="toggle-prompt-lift" flexDirection="column" flexShrink={1} marginTop={-1}>{prompt}</Box>
+            {/* Claude Code puts a margin row above a typed prompt only; a plugin's prompt has its label line above instead, so lifting it would hide its first row. */}
+            <Box key="toggle-prompt-lift" flexDirection="column" flexShrink={1} marginTop={e.props.origin.kind === 'plugin' ? 0 : -1}>{prompt}</Box>
           </Box>
           <Box key="toggle-prompt-wedge" position="absolute" top={0} right={0}>
             <Text color={THEME.secondary}>{wedge.right}</Text>

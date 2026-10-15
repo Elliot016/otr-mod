@@ -51,6 +51,9 @@ export default {
   "tipCopyChoiceLabel": "Copy {what}",
   "tipCopyChoice": { "reply": "copies the whole reply", "code": "copies the code blocks", "text": "copies the reply as plain text", "table": "copies the tables", "links": "copies the links" },
   "previewMore": "+ {n} more lines",
+  "reportLess": "Show fewer lines",
+  "tipReportLabel": "Message",
+  "tipReport": "shows or hides the rest of this message",
   "previewEmpty": "No output",
   "previewBackground": "Running in the background, its report arrives as a message",
   "kind": {

@@ -103,6 +103,13 @@ test('a prompt a plugin sends opens a turn of its own, so its reply leaves the e
   expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^1 tool/)
 })
 
+test('a typed prompt is lifted over the margin Claude Code adds, and a plugin\'s prompt, drawn with none, is not', async ($, on) => {
+  const mount = await open($, on)
+  const liftOf = async (ui: any) => (await ui.find({ key: 'toggle-prompt-lift' }))?.props.marginTop
+  expect(await liftOf(await mount('UserMessage', ID(6), prompt('edit it')))).toBe(-1)
+  expect(await liftOf(await mount('UserMessage', ID(8), { text: 'check this note', origin: { kind: 'plugin', name: 'mod-heads-up' }, isExpanded: false }))).toBe(0)
+})
+
 test('a call refused by a hook draws neutral with "declined", not in the failure color', { options: { expand_live: false } }, async ($, on) => {
   const mount = await open($, on)
   await $.classic.PermissionDenied({ tool_name: 'WebFetch', tool_input: {}, tool_use_id: 'toolu_web', reason: 'blocked' } as never)
@@ -200,7 +207,19 @@ test('a subagent report draws a head line with its fields, and a card whose body
   expect(await report.find({ type: 'Text', text: /^Found it$/ })).toBeUndefined()
   expect(await report.find({ type: 'Text', text: 'l7' })).toBeDefined()
   expect(await report.find({ type: 'Text', text: 'l8' })).toBeUndefined()
-  expect(await report.find({ type: 'Text', text: '+ 2 more lines' })).toBeDefined()
+  expect(await labelText(report, 'toggle-report-more-colored')).toBe('+ 2 more lines')
+  await clickLabel(report, 'toggle-report-more-colored')
+  expect(await report.find({ type: 'Text', text: 'l9' })).toBeDefined()
+  expect(await labelText(report, 'toggle-report-more-colored')).toBe('Show fewer lines')
+})
+
+test('a message from another session wraps its long paragraphs in full instead of cutting them', async ($, on) => {
+  const mount = await open($, on)
+  const long = `Budget your time ${'so the report lands early '.repeat(12)}and say what you skipped.`
+  const message = await mount('UserMessage', ID(23), { text: `Deadline at 18:00.\n${long}`, origin: { kind: 'peer' }, isExpanded: false, from: { name: 'claude-67' } })
+  const drawn = (await message.findAll({ type: 'Text' })).map((node: any) => textOf(node)).join('\n')
+  expect(drawn).toContain('and say what you skipped.')
+  expect(drawn).not.toContain('…')
 })
 
 test('a notice its head line shows whole draws no card, so its task and tool ids alone never repeat it', async ($, on) => {
@@ -215,7 +234,8 @@ test('a summary too long for the head stays in the card', async ($, on) => {
   const mount = await open($, on)
   const long = `Background shell command ${'x'.repeat(200)}`
   const report = await mount('UserMessage', ID(21), { text: long, origin: { kind: 'task-notification' }, isExpanded: false, task: { id: 'b1', status: 'stopped' } })
-  expect(await report.find({ type: 'Text', text: /^Background shell command x/ })).toBeDefined()
+  expect(await report.find({ type: 'Text', text: /^Background shell command$/ })).toBeDefined()
+  expect(await report.find({ type: 'Text', text: /^x+$/ })).toBeDefined()
   expect(await report.find({ type: 'Text', text: /stopped · Background shell command/ })).toBeDefined()
 })
 

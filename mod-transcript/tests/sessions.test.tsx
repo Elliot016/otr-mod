@@ -54,7 +54,7 @@ const base64 = (bytes: Uint8Array) => {
 const byteLength = (text: string) => new TextEncoder().encode(text).length
 
 // held: a read of that path waits until the promise settles.
-type World = { files: Record<string, string>; store: Map<string, unknown>; session: string; readFails?: boolean; spawned?: string[][]; held?: { path: string; until: Promise<void> } }
+type World = { files: Record<string, string>; store: Map<string, unknown>; session: string; readFails?: boolean; spawned?: string[][]; configDir?: string; held?: { path: string; until: Promise<void> } }
 
 // One process that can switch sessions; files and the store are shared, as two windows share them.
 function world($: any, on: any, init: Partial<World> = {}) {
@@ -92,8 +92,8 @@ function world($: any, on: any, init: Partial<World> = {}) {
     yield { stream: 'stdout', text: fileAt(e.argv[e.argv.length - 1]!) ?? '' }
     return { value: { code: 0, signal: null } }
   })
-  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/home' : undefined }))
-  on('fs.list', (_$: unknown, e: { path: string }) => ({ value: plain(e.path) === '/home/.claude/projects' ? [{ name: 'proj', kind: 'dir' }] : [] }))
+  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/home' : e.name === 'CLAUDE_CONFIG_DIR' ? w.configDir : undefined }))
+  on('fs.list', (_$: unknown, e: { path: string }) => ({ value: plain(e.path) === `${w.configDir?.replace(/\/$/, '') ?? '/home/.claude'}/projects` ? [{ name: 'proj', kind: 'dir' }] : [] }))
   on('fs.exists', (_$: unknown, e: { path: string }) => ({ value: fileAt(e.path) !== undefined }))
   on('session.messages', () => ({ value: [] }))
   on('classic.SessionStart', () => ({}))
@@ -277,4 +277,12 @@ test('another session\'s stored transcript never draws here: a reload finds this
   await clock.settle()
   expect(await numberOf(await prompt(104, 'alpha two'))).toBe('2')
   expect(await numberOf(await prompt(109, 'alpha three'))).toBe('3')
+})
+
+// The test above is the unset case: with no CLAUDE_CONFIG_DIR the file is found under ~/.claude.
+test('a set CLAUDE_CONFIG_DIR is where a reload finds this session\'s file', async ($, on) => {
+  const { clock, prompt } = world($, on, { configDir: '/cfg/', files: { '/cfg/projects/proj/a.jsonl': A, '/home/.claude/projects/proj/a.jsonl': B } })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  await clock.settle()
+  expect(await numberOf(await prompt(104, 'alpha two'))).toBe('2')
 })

@@ -110,10 +110,15 @@ export const resultText = (content: unknown) =>
   typeof content === 'string' ? content : Array.isArray(content) ? content.filter((part: any) => part?.type === 'text').map((part: any) => String(part.text ?? '')).join('\n') : ''
 
 // The text a drawn row's output holds, for a call whose result the transcript has not given yet.
-const outputText = (output: any) =>
-  [output?.stdout, output?.stderr, output?.file?.content, typeof output?.content === 'string' ? output.content : '', Array.isArray(output?.filenames) ? output.filenames.join('\n') : '']
-    .filter((part): part is string => typeof part === 'string' && part.trim() !== '')
-    .join('\n')
+const joinText = (parts: unknown[]) => parts.filter((part): part is string => typeof part === 'string' && part.trim() !== '').join('\n')
+
+// A tool with none of the usual fields (ListAgents, SendMessage, ToolSearch, an MCP tool) still shows its text fields.
+const outputText = (output: any) => {
+  if (Array.isArray(output)) return resultText(output)
+  const usual = joinText([output?.stdout, output?.stderr, output?.file?.content, typeof output?.content === 'string' ? output.content : '', Array.isArray(output?.filenames) ? output.filenames.join('\n') : ''])
+  if (usual || !output || typeof output !== 'object') return usual
+  return joinText(Object.values(output).map(value => (Array.isArray(value) ? joinText(value) : value)))
+}
 
 // An edit shows its patch, a new file its content as added lines; any other call the start of its result.
 export function previewOf(name: string, input: any, output: any, result: string): Preview {

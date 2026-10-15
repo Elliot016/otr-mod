@@ -114,6 +114,15 @@ test('an opened call previews its diff, a new file, or the start of its result',
   expect(previewOf('Bash', {}, { stdout: 'built\n', stderr: '' }, '').lines).toEqual([{ text: 'built', kind: 'out' }])
 })
 
+test('a drawn call whose output has none of the usual fields previews its own text fields', () => {
+  const texts = (output: unknown) => previewOf('X', {}, output, '').lines.map(line => line.text)
+  expect(texts({ listing: 'This session is claude-67\n\nPeer sessions (1)' })).toEqual(['This session is claude-67', '', 'Peer sessions (1)'])
+  expect(texts({ success: true, message: 'sent to reviewer-2' })).toEqual(['sent to reviewer-2'])
+  expect(texts({ matches: ['SendMessage'], query: 'select:SendMessage', total_deferred_tools: 134 })).toEqual(['SendMessage', 'select:SendMessage'])
+  expect(texts([{ type: 'text', text: 'from an MCP tool' }])).toEqual(['from an MCP tool'])
+  expect(texts({ stdout: 'built', note: 'not shown' })).toEqual(['built'])
+})
+
 test('a failed Write counts no lines, read from the transcript or drawn', () => {
   const content = 'line one\nline two\nline three'
   const log = new TurnLog()
@@ -202,6 +211,20 @@ async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsT
     tool: await mount('ToolUse', 'toolu_bash', { tool_use_id: 'toolu_bash', tool: 'Bash', input: { command: 'claude plugin test .' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }),
   }
 }
+
+test('an opened SendMessage shows the message it sent above what came back', async ($, on) => {
+  const sent = TIMED.replace(
+    /\{"type":"tool_use","id":"toolu_bash","name":"Bash","input":\{"command":"claude plugin test \."\}\}/,
+    JSON.stringify({ type: 'tool_use', id: 'toolu_bash', name: 'SendMessage', input: { to: 'reviewer-2', message: 'Deadline at 18:00.\nSend what you have by 17:50.' } }),
+  )
+  const { prompt } = await mountTimed($, on, sent)
+  await clickLabel(prompt, 'toggle-turn-colored')
+  await pick(prompt, 1)
+  await prompt.pointer({ in: 'toggle-call-0-colored', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await prompt.find({ type: 'Text', text: 'Deadline at 18:00.' })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: 'Send what you have by 17:50.' })).toBeDefined()
+  expect(await prompt.find({ type: 'Text', text: /^ok$/ })).toBeDefined()
+})
 
 test('the prompt row shows when it was sent, the head how long the turn took, and a picked chip how long each call took', async ($, on) => {
   const { prompt, tool } = await mountTimed($, on)
@@ -299,13 +322,17 @@ test('icons=nerd draws the times as rounded pills', { options: { icons: 'nerd' }
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
 })
 
-test('an open call line is a surface3 pill and the open chip lights nothing lifted', { options: { icons: 'nerd' } }, async ($, on) => {
+test('an open call line draws like an On switch (ok text on ok washed into the surface) and the open chip lights nothing lifted', { options: { icons: 'nerd' } }, async ($, on) => {
   const { prompt } = await mountTimed($, on)
   await clickLabel(prompt, 'toggle-turn-colored')
   await pick(prompt, 1)
+  const closed = JSON.stringify(await prompt.drawn())
+  expect(closed).not.toContain(mix(THEME.ok, THEME.surface1, WASH))
   await clickLabel(prompt, 'toggle-call-0-colored')
   const drawn = JSON.stringify(await prompt.drawn())
-  expect(drawn).toMatch(/"key":"toggle-call-0-pick","flexShrink":1,"backgroundColor":"#252A42"/)
+  expect(drawn).toContain(`"key":"toggle-call-0-pick","flexShrink":1,"backgroundColor":"${mix(THEME.ok, THEME.surface1, WASH)}"`)
+  const parts = (await prompt.find({ type: 'Client', key: 'toggle-call-0-colored' }))?.props.props.parts as { color?: string }[]
+  expect(parts.every(part => part.color === THEME.ok)).toBe(true)
   expect(drawn).toMatch(/"key":"toggle-call-0-time-body","height":1,"backgroundColor":"#252A42"/)
   expect(drawn).not.toContain(THEME.lifted)
   expect(await chipsOf(prompt)).not.toContain(THEME.lifted)
