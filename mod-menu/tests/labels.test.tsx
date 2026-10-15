@@ -2,9 +2,9 @@
 // Tests the icon a menu entry leads with and the `labels` mode that can hide its text.
 import { expect, test } from 'claude-code/testing'
 
-import { labelsOf, menuEntry } from '../hooks/pills'
+import { labelsOf, menuEntry, PILL } from '../hooks/pills'
 import style from '../hooks/style'
-import { decodeAll } from '../hooks/theme'
+import { decodeAll, mix, THEME, WASH } from '../hooks/theme'
 
 const els: any = { Box: (props: any) => props, Text: (props: any) => props, Client: (props: any) => props }
 
@@ -46,6 +46,15 @@ test('safe mode has no icon, so labels never still shows the label', () => {
 test('an entry with no icon of its own, or a lead the caller set, is left as it was', () => {
   expect(entryProps(menuEntry(els, true, 'manager', { label: 'X', isOpen: false })).lead).toBeUndefined()
   expect(entryProps(menuEntry(els, true, 'skills', { label: 'Skills', isOpen: false, lead: '*' })).label).toBe('Skills')
+})
+
+test('the open pane draws like an On switch, text in ok on ok washed into the group fill; closed entries stay as they were', () => {
+  const open = entryProps(menuEntry(els, true, 'skills', { label: 'Skills', isOpen: true }))
+  expect(open.bg).toBe(mix(THEME.ok, PILL.primary, WASH))
+  expect(open.color).toBe(THEME.ok)
+  const closed = entryProps(menuEntry(els, true, 'skills', { label: 'Skills', isOpen: false }))
+  expect(closed.bg).toBe(PILL.primary)
+  expect(closed.color).toBeUndefined()
 })
 
 test('every menu icon is one private-use code point, so it takes one cell', () => {

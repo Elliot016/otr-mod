@@ -14,6 +14,7 @@ export default {
       "accent": "#7386D0",
       "secondary": "#B9C6F5",
       "good": "#49EF95",
+      "ok": "#A2B0EA",
       "alert": "#CA5F71",
       "warn": "#FFCB6B",
       "folder": "#86E1FC",

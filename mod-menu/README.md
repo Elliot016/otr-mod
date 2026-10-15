@@ -36,7 +36,7 @@ To install every mod at once, see [Install][doc-install]. For sharper icons, see
 
 ## Settings
 
-Change them with `/mod-menu settings` or the gear pill.
+Change them in the plugin's settings.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
