@@ -3,7 +3,7 @@
 declare module 'claude-code' {
   interface PluginState {
     'mod-heads-up': { pane: boolean; open: string[] }
-    'mod-menu': { hidden: boolean; nerd: boolean }
+    'mod-menu': { hidden: boolean; nerd: boolean; labels: 'always' | 'never' }
     // Read only: true while mod-blast-radius holds a command on its card.
     'mod-blast-radius': { holding: boolean }
   }

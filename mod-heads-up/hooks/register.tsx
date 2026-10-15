@@ -4,13 +4,14 @@ import type { ConfigValue, EngineInterface, Register, SessionMessage } from 'cla
 
 import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt, type Direction } from './ask'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip } from './entry'
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
+import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode, type Reveal } from './look'
 import { byTurn, canFork, CLEAR_AFTER_PROMPTS, emptySaved, KNOWN_KEPT, pack, recentSessions, remember, restates, sameText, savedOf, SEEN_KEPT, shouldCheck, stringsOf, unreadCount, type Note, type Saved } from './notes'
 import { isPrompt, PLACEHOLDER, PromptNumbers } from './prompts'
-import { menuEntry, pill, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
-import { settingChoice, settingsBody, type Action, type Previews } from './settings'
+import { labelsOf, menuEntry, pill, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { actionReveals, settingChoice, settingsBody, type Action, type Previews } from './settings'
 import text from './text'
 import { fill, MARK, mix, statusColor, THEME, WASH } from './theme'
+import type { RowProps } from './timeline'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { bytesOf, CHUNK_BYTES, chunkArgv, feedLines, utf8Length, WHOLE_READ_BYTES } from './transcript'
 
@@ -473,6 +474,9 @@ const toasts = new ToastList('headsup')
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 
+// Rows of the card's text box; a longer note is cut at its foot.
+const NOTE_TEXT_ROWS = 8
+
 const DIRECTIONS: [Direction, string, string][] = [['simpler', text.simpler, text.tipSimpler], ['less', text.lessDetail, text.tipLess], ['more', text.moreDetail, text.tipMore]]
 
 export const register: Register = (on, options) => {
@@ -654,6 +658,7 @@ export const register: Register = (on, options) => {
       pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip: { glyph: subLead ?? bare(look.glyph.close), label: tipLabel, text: tipBody }, ...(subLead ? { subLead } : {}) } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
     const card = shown ? (
       <Box key="headsup-card" flexDirection="column" paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+        {cardStrip({ Box, Text }, 'headsup-card')}
         <Box key="headsup-card-line" flexDirection="row" columnGap={1}>
           {subpill({ Box, Text }, nerd, THEME.surface1, shown.tag, 'headsup-card-tag')}
           <Box key="headsup-card-text" flexShrink={1}>
@@ -676,11 +681,12 @@ export const register: Register = (on, options) => {
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-heads-up', key: 'pane' })
     const isShown = await isOpen($)
+    const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
     const { group, row, rest, tip } = splitRow(await next(e))
     const unread = unreadCount(saved.notes)
     const badge = unread > 0 ? { badge: { text: String(unread), color: THEME.accent, bg: mix(THEME.accent, isShown ? THEME.lifted : PILL.primary, WASH) } } : {}
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'headsup', { label: text.pillLabel, isOpen: isShown, idle: THEME.pill, isBusy: isOpening || isChecking || rewriting !== '', still, nerd, tip: { glyph: nerd ? bare(look.glyph.warn) : MARK.bullet, label: text.pillLabel, text: text.tipPill }, ...badge })
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'headsup', { label: text.pillLabel, isOpen: isShown, idle: THEME.pill, isBusy: isOpening || isChecking || rewriting !== '', still, nerd, tip: { glyph: nerd ? bare(look.glyph.warn) : MARK.bullet, label: text.pillLabel, text: text.tipPill }, labels, ...badge })
 
     return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...items, ...rest], bandTip ? tipLine({ Box, Text }, bandTip) : tip, e.props.bodyColumns)
   })
@@ -703,12 +709,12 @@ export const register: Register = (on, options) => {
         $.ui.invalidate('ui.render')
       }
       return (
-        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, nerd, tabs(true), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, tips: text.settingTips, still })}
           <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
-          {paneFooter(elements, paneTip, e.props.bodyColumns, e.props.scroll)}
+          {paneFooter(elements, paneTip, e.props.bodyColumns, e.props.scroll, actionReveals(actions, look, false))}
         </Box>
       )
     }
@@ -719,12 +725,6 @@ export const register: Register = (on, options) => {
       pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip, ...(subLead ? { subLead } : {}), ...extra } satisfies EntryProps} />, `${id}-pill`, THEME.surface1)
 
     // The Prompts look: the selected note in a card on top, with its three actions in one row at the card's foot, and every note in a timeline under it.
-    // A part of a timeline row: every part posts the row's one id, so a click anywhere on the row selects the note.
-    const rowPart = (found: Note, key: string, label: string, extra: Partial<EntryProps>) => {
-      const tip = { glyph: bare(look.glyph.expanded), label: text.noteLabel, text: text.tipNote }
-      return <Client key={key} module="./entry.tsx" height={1} props={{ id: `headsup-note-${found.id}`, label, isOpen: !found.isRead, bg: THEME.surface1, idle: THEME.muted, nerd, still, tip, ...extra } satisfies EntryProps} />
-    }
-
     const noteCard = (found: Note) => {
       const turn = fill(text.turnNumber, { n: found.turn })
       return section(elements, look, 'note-card', '', '', [
@@ -735,15 +735,18 @@ export const register: Register = (on, options) => {
           <Box key="note-card-gap" flexGrow={1} />
           {entryPill('headsup-close', bare(look.glyph.close), undefined, { glyph: bare(look.glyph.close), label: text.close, text: text.tipClose })}
         </Box>,
-        <Box key={`summary-${found.id}`} marginTop={1}>
-          <Text color={THEME.onSurface} bold>{found.learn}</Text>
-        </Box>,
-        found.title ? (
-          <Box key={`title-${found.id}`} marginTop={1}>
-            <Text color={THEME.onSurface} bold>{found.title}</Text>
+        // A fixed height, so the actions and the timeline never move as the note's text changes.
+        <Box key="note-card-text" flexDirection="column" flexShrink={0} height={NOTE_TEXT_ROWS} overflow="hidden">
+          <Box key={`summary-${found.id}`} marginTop={1}>
+            <Text color={THEME.onSurface} bold>{found.learn}</Text>
           </Box>
-        ) : null,
-        ...found.body.map((line, at) => <Text key={`body-${found.id}-${at}`} color={THEME.onSurface}>{`${MARK.bullet} ${line}`}</Text>),
+          {found.title ? (
+            <Box key={`title-${found.id}`} marginTop={1}>
+              <Text color={THEME.onSurface} bold>{found.title}</Text>
+            </Box>
+          ) : null}
+          {found.body.map((line, at) => <Text key={`body-${found.id}-${at}`} color={THEME.onSurface}>{`${MARK.bullet} ${line}`}</Text>)}
+        </Box>,
         actionsBar(found),
       ])
     }
@@ -753,12 +756,10 @@ export const register: Register = (on, options) => {
         const isSelected = found.id === selected?.id
         const time = clock(found.at)
         // Pane padding, section border and padding, the time, the dot, gaps, and the ↗ pill.
-        const room = Math.max(8, inner - time.length - 12)
+        const room = Math.max(8, inner - time.length - 11)
         return [
           <Box key={`note-row-${found.id}`} flexDirection="row">
-            {rowPart(found, `headsup-note-${found.id}`, time, { isOpen: false })}
-            {rowPart(found, `note-dot-${found.id}`, '', { lead: isSelected || !found.isRead ? MARK.stopOpen : MARK.stop, leadColor: !found.isRead ? THEME.accent : isSelected ? THEME.pill : THEME.muted })}
-            <Box key={`note-summary-${found.id}`} flexShrink={1}>{rowPart(found, `note-summary-text-${found.id}`, fit(found.learn, room), { isOpen: isSelected })}</Box>
+            <Client key={`headsup-note-${found.id}`} module="./timeline.tsx" height={1} props={{ id: `headsup-note-${found.id}`, time: ` ${time} `, mark: ` ${found.isRead && !isSelected ? MARK.stop : MARK.stopOpen}`, summary: ` ${fit(found.learn, room).padEnd(room)} `, isSelected, isUnread: !found.isRead, still, tip: { glyph: bare(look.glyph.expanded), label: text.noteLabel, text: text.tipNote } } satisfies RowProps} />
             <Box key={`note-gap-${found.id}`} flexGrow={1} />
             <Box key={`note-jump-pill-${found.id}`} flexShrink={0}>
               {pill({ Box, Text }, nerd, THEME.surface3, (
@@ -766,7 +767,7 @@ export const register: Register = (on, options) => {
               ), `note-jump-box-${found.id}`, THEME.surface1, THEME.accent)}
             </Box>
           </Box>,
-          at < list.length - 1 ? <Text key={`note-rail-${found.id}`} color={THEME.muted}>{`${' '.repeat(time.length + 3)}${MARK.rail}`}</Text> : null,
+          at < list.length - 1 ? <Text key={`note-rail-${found.id}`} color={THEME.border}>{`${' '.repeat(time.length + 3)}${MARK.rail}`}</Text> : null,
         ]
       }))
 
@@ -797,15 +798,17 @@ export const register: Register = (on, options) => {
     const chronological = [...ordered].sort((a, b) => a.at - b.at)
     const selected = isCardClosed ? undefined : ([...opened].reverse().map(id => ordered.find(found => found.id === id)).find(Boolean) ?? chronological[chronological.length - 1])
     const checkedLine = await lastCheckLine($)
+    // A Button posts no tip, so each jump pill's tip rides in the footer, shown through the pill's hover group.
+    const jumpReveals: Reveal[] = chronological.map(found => ({ scope: `note-jump-box-${found.id}`, tip: { glyph: MARK.open, label: text.jumpLabel, text: text.tipJump } }))
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.hint, { sep: MARK.sep })}</Text>
         <Text wrap="truncate-end" color={THEME.muted}>{checkedLine}</Text>
         {selected ? noteCard(selected) : chronological.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
         {chronological.length > 0 ? timeline(chronological, selected) : null}
         <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
-        {paneFooter(elements, paneTip, e.props.bodyColumns, e.props.scroll)}
+        {paneFooter(elements, paneTip, e.props.bodyColumns, e.props.scroll, jumpReveals)}
       </Box>
     )
   })

@@ -2,6 +2,8 @@
 // Tests the panel above the prompt: rendering, pill, pane and note cards.
 import { expect, mock, test } from 'claude-code/testing'
 
+import Row from '../hooks/timeline'
+
 // The host test types ship no DOM or node globals.
 declare const setTimeout: (handler: (value: unknown) => void, ms: number) => unknown
 
@@ -361,16 +363,17 @@ test('the timeline dot marks what is unread: a filled badge-blue dot, and a read
   store.set('notes:s1', { notes: [note(1, true), note(2, false), note(3, false)], card: null, since: 0, checked: null })
   const panel = await pane($)
   const dot = async (n: number) => {
-    const props = JSON.stringify(await panel.find({ key: `note-dot-n${n}-${n}` }))
-    return [props.match(/"lead":"([^"]*)"/)?.[1], props.match(/"leadColor":"([^"]*)"/)?.[1]]
+    const row = (await panel.find({ key: `headsup-note-n${n}-${n}` })) as { props: { props: { mark: string; isUnread: boolean; isSelected: boolean } } }
+    const { mark, isUnread, isSelected } = row.props.props
+    return [mark.trim(), isUnread, isSelected]
   }
-  // Muted and hollow when read, the menu badge's blue and filled when unread, whether or not the note is the one open in the card.
-  expect(await dot(1)).toEqual(['○', '#9BA3C4'])
-  expect(await dot(2)).toEqual(['●', '#7386D0'])
-  expect(await dot(3)).toEqual(['●', '#7386D0'])
-  await click(panel, 'headsup-note-n3-3')
-  expect(await dot(3)).toEqual(['●', '#CED9FF'])
-  expect(await dot(2)).toEqual(['●', '#7386D0'])
+  // Hollow when read and filled when unread or selected, and the row says unread and selected apart from the mark.
+  expect(await dot(1)).toEqual(['○', false, false])
+  expect(await dot(2)).toEqual(['●', true, false])
+  expect(await dot(3)).toEqual(['●', true, true])
+  await click(panel, 'headsup-note-n2-2')
+  expect(await dot(2)).toEqual(['●', false, true])
+  expect(await dot(3)).toEqual(['●', true, false])
   await panel.unmount()
 })
 
@@ -700,5 +703,105 @@ test('hovering a toast × shows its tip in the band tip row', async ($, on) => {
   await click(ui, 'menu-entry-headsup')
   await ui.pointer({ in: 'toast-headsup-1', type: 'move', x: 0, y: 0 })
   expect(JSON.stringify(await ui.drawn())).toContain('Dismiss:')
+  await ui.unmount()
+})
+
+const LIFTED = '#3D4258'
+const SURFACE1 = '#141726'
+const ACCENT = '#7386D0'
+const border = '#3A3F5C'
+
+const seedNotes = (store: Map<string, unknown>, count = 3) => {
+  const note = (n: number, isRead: boolean) => ({ id: `n${n}-${n}`, turn: n, prompt: `prompt ${n}`, at: n, isRead, learn: `learn ${n}`, tag: 'Heads up', title: `title ${n}`, body: [`body ${n}`] })
+  store.set('notes:s1', { notes: Array.from({ length: count }, (_, at) => note(at + 1, at === 0)), card: null, since: 0, checked: null })
+}
+
+// A mock Client surface whose elements return their props, so a test reads the colors a row drew.
+function rowSurface() {
+  const running = new Set<() => void>()
+  let pointer: (event: any) => void = () => {}
+  const surface: any = {
+    elements: { Box: (props: any) => props, Text: (props: any) => props },
+    state: undefined,
+    setState: (state: any) => (surface.state = state),
+    every: (_ms: number, fn: () => void) => {
+      running.add(fn)
+      return () => running.delete(fn)
+    },
+    onPointer: (handler: (event: any) => void) => (pointer = handler),
+    post: () => {},
+  }
+  const props = { id: 'headsup-note-a', time: ' 10:00 ', mark: ' ●', summary: ' learn ', isSelected: false, isUnread: true, tip: { glyph: '>', label: 'Open note', text: 't' } }
+  return { running, surface, props, send: (event: any) => pointer(event), bg: (row: any) => row.backgroundColor as string }
+}
+
+test('the pointer lights a whole timeline row, lifted with accent text, and the light fades out in steps', () => {
+  const { running, surface, props, send, bg } = rowSurface()
+  expect(bg(Row(props, surface))).toBe(SURFACE1)
+  send({ type: 'enter', x: 3, y: 0 })
+  const lit: any = Row(props, surface)
+  expect(bg(lit)).toBe(LIFTED)
+  expect(lit.children.map((part: any) => part.color)).toEqual([ACCENT, ACCENT, ACCENT])
+  send({ type: 'leave', x: 0, y: 0 })
+  expect(bg(Row(props, surface))).toBe(LIFTED)
+  ;[...running].forEach(fn => fn())
+  const mid = bg(Row(props, surface))
+  expect([LIFTED, SURFACE1]).not.toContain(mid)
+  ;[...running].forEach(fn => fn())
+  expect(bg(Row(props, surface))).toBe(SURFACE1)
+  expect(running.size).toBe(0)
+})
+
+test('with animations off a timeline row goes back to rest at once', { options: { animations: false } }, async ($, on) => {
+  const { store } = setup(on)
+  seedNotes(store)
+  const panel = await pane($)
+  const row = 'headsup-note-n1-1'
+  await panel.pointer({ in: row, type: 'enter', x: 3, y: 0 })
+  expect(await drawn(panel, row)).toContain(LIFTED)
+  await panel.pointer({ in: row, type: 'leave', x: 0, y: 0 })
+  expect(await drawn(panel, row)).not.toContain(LIFTED)
+  await panel.unmount()
+})
+
+test('the selected timeline row is accent and bold, the others are not bold', async ($, on) => {
+  const { store } = setup(on)
+  seedNotes(store)
+  const panel = await pane($)
+  const selected = await drawn(panel, 'headsup-note-n3-3')
+  expect(selected).toContain('"bold":true')
+  expect(selected).toContain(ACCENT)
+  expect(await drawn(panel, 'headsup-note-n1-1')).not.toContain('"bold":true')
+  await panel.unmount()
+})
+
+test('the note card keeps a fixed text height with hidden overflow, and the timeline rail is the border color', async ($, on) => {
+  const { store } = setup(on)
+  seedNotes(store)
+  const panel = await pane($)
+  const text = (await panel.find({ key: 'note-card-text' })) as { props: { height?: number; overflow?: string } }
+  expect(text.props.height).toBeGreaterThan(0)
+  expect(text.props.overflow).toBe('hidden')
+  const rail = (await panel.find({ type: 'Text', text: /^ +│$/ })) as { props: { color?: string } }
+  expect(rail.props.color).toBe(border)
+  await panel.unmount()
+})
+
+test('each jump pill has its tip as a footer reveal tied to its hover group', async ($, on) => {
+  const { store } = setup(on)
+  seedNotes(store, 2)
+  const panel = await pane($)
+  expect(JSON.stringify(await panel.drawn())).toContain('"scope":"note-jump-box-n1-1"')
+  expect(await panel.find({ type: 'Text', text: /scrolls the chat to this turn/ })).toBeDefined()
+  expect(await panel.find({ type: 'Text', text: /Jump to turn/ })).toBeDefined()
+  await panel.unmount()
+})
+
+test('mod-menu labels never hides the pill label on Nerd and keeps the icon', { options: { icons: 'nerd' } }, async ($, on) => {
+  const { states } = setup(on)
+  states.set('mod-menu.labels', 'never')
+  const ui = await band($)
+  const entry = await drawn(ui, 'menu-entry-headsup')
+  expect(entry).not.toContain('Heads up')
   await ui.unmount()
 })
