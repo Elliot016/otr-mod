@@ -3,7 +3,7 @@
 import type { ConfigRow, ConfigValue, RenderElement } from 'claude-code'
 
 import type { EntryProps, Tip } from './entry'
-import { section, subpill, type Look, type Reveal } from './look'
+import { cardGap, section, subpill, type Look, type Reveal } from './look'
 import style from './style'
 import { CAPS, fill, MARK, mix, THEME, WASH } from './theme'
 
@@ -220,7 +220,8 @@ export function settingsBody(elements: Elements, look: Look, { rows, actions, wo
   return (
     <Box key="settings" flexDirection="column">
       {/* The cards carry their own border, and the panel's open Settings tab already names them. */}
-      <Box key="settings-cards" flexDirection="column" marginTop={1}>
+      <Box key="settings-cards" flexDirection="column">
+        {cardGap(elements, 'settings')}
         {settings}
       </Box>
       {actions.length > 0 ? section(elements, look, 'actions', 'actions', style.text.actions, buttons) : null}

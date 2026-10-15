@@ -2,7 +2,7 @@
 // Wires the mod into the engine: holds risky Bash commands, draws the card, pane and settings.
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
-import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Look } from './look'
+import { cardGap, cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Look } from './look'
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
 import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
@@ -639,7 +639,8 @@ export const register: Register = (on, options) => {
           {section({ Box, Text }, look, 'touches', 'tool', text.ui.sectionTouches, touches)}
           {section({ Box, Text }, look, 'undo', 'actions', text.ui.sectionUndo, [plainText('undo-text', plain.undo, THEME.onSurface)])}
           {section({ Box, Text }, look, 'full', 'prompt', text.ui.sectionFull, fullRows)}
-          <Box key="legend-row" flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>{legend}</Box>
+          {cardGap({ Box, Text }, 'legend')}
+          <Box key="legend-row" flexDirection="row" flexWrap="wrap" columnGap={1}>{legend}</Box>
           <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
           {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
         </Box>

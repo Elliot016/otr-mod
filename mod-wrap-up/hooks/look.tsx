@@ -234,14 +234,22 @@ export function cardStrip({ Box, Text }: Elements, key: string, hue: string = TH
   )
 }
 
+// The row above a card, painted so it covers a strip glyph that a scrolled, clipped card above leaks into it.
+export function cardGap({ Box }: Elements, key: string, bg: string = THEME.bg) {
+  return <Box key={`${key}-gap`} height={1} flexShrink={0} backgroundColor={bg} />
+}
+
 // A round-bordered card with its heading on the first row and a left strip in `hue`; an empty title draws the border alone.
 export function section(elements: Elements, look: Look, key: string, icon: string, title: string, body: unknown, hue: string = THEME.accent) {
   const { Box } = elements
   return (
-    <Box key={key} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} marginTop={1} paddingX={1}>
-      {cardStrip(elements, key, hue)}
-      {title ? heading(elements, look, key, icon, title) : null}
-      {body}
+    <Box key={`${key}-block`} flexDirection="column">
+      {cardGap(elements, key)}
+      <Box key={key} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>
+        {cardStrip(elements, key, hue)}
+        {title ? heading(elements, look, key, icon, title) : null}
+        {body}
+      </Box>
     </Box>
   )
 }

@@ -8,7 +8,7 @@ import text from './text'
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Reveal, withMark } from './look'
+import { cardGap, cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Reveal, withMark } from './look'
 import { actionReveals, settingChoice, settingsBody, type Action } from './settings'
 import { cardSpace, stickyCard } from './card'
 import { type ListMessage, type ListProps } from './list'
@@ -484,7 +484,8 @@ export const register: Register = (on, options) => {
         mod.enabled || mod.settings === 0 ? (
           settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews: mod.showcase?.previews, fields: mod.fields, still })
         ) : (
-          <Box key="page-off" marginTop={1}>
+          <Box key="page-off" flexDirection="column">
+            {cardGap({ Box }, 'page-off')}
             <Text color={THEME.muted}>{fill(text.turnOnFirst, { name: shownName(mod.name) })}</Text>
           </Box>
         ),
@@ -594,7 +595,8 @@ export const register: Register = (on, options) => {
       mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>{text.noMods}</Text> : null,
       group('dir', text.sectionYours, 'mod'),
       group('installed', text.sectionInstalled, 'installed'),
-      <Box key="list-apply" flexDirection="row" marginTop={1}>
+      cardGap({ Box }, 'list-apply'),
+      <Box key="list-apply" flexDirection="row">
         {/* Nothing pending means nothing to reload; while Claude works, a reload would only queue as a prompt. */}
         {pending === 0 ? (
           <Text color={THEME.muted}>{text.noChanges}</Text>
