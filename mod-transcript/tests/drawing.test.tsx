@@ -2,9 +2,11 @@
 // Tests how finished turns, edits and diffs are drawn from transcript rows.
 import { expect, mock, test } from 'claude-code/testing'
 
+import Chips from '../hooks/chips'
 import Copy from '../hooks/copy'
+import Dot from '../hooks/dot'
 import Fold from '../hooks/fold'
-import { THEME } from '../hooks/theme'
+import { mix, THEME } from '../hooks/theme'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
@@ -59,11 +61,19 @@ async function open($: any, on: any, text = '', reads: () => string = () => text
 
 const prompt = (text: string, isExpanded = false) => ({ text, origin: { kind: 'composer' }, isExpanded })
 
+const textOf = (node: any): string => (typeof node === 'string' ? node : Array.isArray(node) ? node.map(textOf).join('') : node ? textOf(node.children) : '')
+
+// The words a label Client drew; a row's fold labels are Clients, since a Button posts no tip.
+const labelText = async (ui: any, key: string) => textOf(await ui.drawn({ in: key }))
+
+// A click on a fold label, which posts the fold the hooks module answers.
+const clickLabel = (ui: any, key: string) => ui.pointer({ in: key, type: 'down', button: 'left', x: 1, y: 0 })
+
 test('the ctrl+o view draws every row as the engine does, so the mod steps aside', { options: { expand_live: false } }, async ($, on) => {
   const mount = await open($, on, EDIT_TURN)
   const head = await mount('UserMessage', ID(1), prompt('edit it', true))
   expect(await head.find({ type: 'Text', text: 'base UserMessage' })).toBeDefined()
-  expect(await head.find({ type: 'Button', text: /tool/ })).toBeUndefined()
+  expect(await head.find({ key: 'toggle-turn-colored' })).toBeUndefined()
 })
 
 test('while a subagent transcript is on screen its rows draw as the engine draws them and join no main turn', async ($, on) => {
@@ -76,42 +86,42 @@ test('while a subagent transcript is on screen its rows draw as the engine draws
   expect(await subCall.find({ type: 'Text', text: 'base ToolUse' })).toBeDefined()
   await (await band()).unmount()
   const head = await mount('UserMessage', ID(1), prompt('edit it'))
-  expect(await head.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+  expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^1 tool/)
 })
 
 test('the normal view still folds the finished turn under its prompt', async ($, on) => {
   const mount = await open($, on, EDIT_TURN)
   const head = await mount('UserMessage', ID(1), prompt('edit it'))
-  expect(await head.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+  expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^1 tool/)
 })
 
 test('a call refused by a hook draws neutral with "declined", not in the failure color', { options: { expand_live: false } }, async ($, on) => {
   const mount = await open($, on)
   await $.classic.PermissionDenied({ tool_name: 'WebFetch', tool_input: {}, tool_use_id: 'toolu_web', reason: 'blocked' } as never)
   const tool = await mount('ToolUse', 'toolu_web', { tool_use_id: 'toolu_web', tool: 'WebFetch', input: { url: 'https://example.com' }, isRunning: false, isErrored: true, isInterrupted: false, output: 'blocked' })
-  expect((await tool.find({ type: 'Client', key: 'toggle-tool-chip' }))?.props.props.color).toBe(THEME.border)
-  expect(await tool.find({ type: 'Button', text: /declined/ })).toBeDefined()
+  expect((await tool.find({ type: 'Client', key: 'toggle-tool-chip' }))?.props.props.color).toBe(THEME.muted)
+  expect(await labelText(tool, 'toggle-tool-colored')).toMatch(/declined/)
 })
 
 test('a failed call that no hook refused stays in the failure color', { options: { expand_live: false } }, async ($, on) => {
   const mount = await open($, on)
   const tool = await mount('ToolUse', 'toolu_web', { tool_use_id: 'toolu_web', tool: 'WebFetch', input: { url: 'https://example.com' }, isRunning: false, isErrored: true, isInterrupted: false, output: 'boom' })
   expect((await tool.find({ type: 'Client', key: 'toggle-tool-chip' }))?.props.props.color).toBe(THEME.alert)
-  expect(await tool.find({ type: 'Button', text: /declined/ })).toBeUndefined()
+  expect(await labelText(tool, 'toggle-tool-colored')).not.toMatch(/declined/)
 })
 
 test('a timed-out call says so after its name, and its name is cut to leave the words room', { options: { expand_live: false } }, async ($, on) => {
   const mount = await open($, on)
   const tool = await mount('ToolUse', 'toolu_web', { tool_use_id: 'toolu_web', tool: 'WebFetch', input: { url: 'https://example.com/a/very/long/path/that/goes/on/and/on/and/on' }, isRunning: false, isErrored: false, isInterrupted: false, output: { timedOutAfterMs: 120000 } }, 60)
-  expect(await tool.find({ type: 'Button', text: /^WebFetch\(https.*… · timed out$/ })).toBeDefined()
+  expect(await labelText(tool, 'toggle-tool-colored')).toMatch(/^WebFetch\(https.*… · timed out$/)
 })
 
 test('a call that ran in the background says so, and an interrupted one says interrupted', { options: { expand_live: false } }, async ($, on) => {
   const mount = await open($, on)
   const background = await mount('ToolUse', 'toolu_bg', { tool_use_id: 'toolu_bg', tool: 'WebFetch', input: { url: 'https://example.com' }, isRunning: false, isErrored: false, isInterrupted: false, output: { backgroundTaskId: 'b1' } })
-  expect(await background.find({ type: 'Button', text: /· background/ })).toBeDefined()
+  expect(await labelText(background, 'toggle-tool-colored')).toMatch(/· background/)
   const cut = await mount('ToolUse', 'toolu_cut', { tool_use_id: 'toolu_cut', tool: 'WebFetch', input: { url: 'https://example.com' }, isRunning: false, isErrored: true, isInterrupted: true, output: 'cut' })
-  expect(await cut.find({ type: 'Button', text: /· interrupted/ })).toBeDefined()
+  expect(await labelText(cut, 'toggle-tool-colored')).toMatch(/· interrupted/)
 })
 
 test('AskUserQuestion folds to one line per question: its answer, or that it asked', { options: { expand_live: false } }, async ($, on) => {
@@ -141,23 +151,23 @@ test('AskUserQuestion draws its question lines with the Nerd search glyph in Ner
   expect(JSON.stringify(await ask.drawn())).toContain(String.fromCodePoint(0xf002))
 })
 
-test('an API error the engine retries ends the reply as one warning line', async ($, on) => {
+test('an API error the engine retries ends the reply as one muted line, not a warning', async ($, on) => {
   const mount = await open($, on)
   await $.classic.StopFailure({ error: 'rate_limit', error_details: 'retry in 20s', last_assistant_message: 'API Error: Rate limit reached' } as never)
   const reply = await mount('AssistantMessage', ID(7), { text: 'API Error: Rate limit reached', isFirstOfReply: true })
   expect(await reply.find({ type: 'Text', text: /rate limit reached · Claude Code retries · retry in 20s/ })).toBeDefined()
-  expect((await reply.find({ type: 'Text', text: /rate limit reached/ }))?.props.color).toBe(THEME.warn)
+  expect((await reply.find({ type: 'Text', text: /rate limit reached/ }))?.props.color).toBe(THEME.muted)
 })
 
 test('a reply naming hex colors gets a strip of colored squares under it, and one naming none stays as drawn', async ($, on) => {
   const mount = await open($, on)
   const reply = await mount('AssistantMessage', ID(7), { text: 'Low is `#ACB9E6` and max is #FF6F7A.', isFirstOfReply: true })
   expect(await reply.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
-  const squares = await reply.findAll({ type: 'Text', text: '■' })
+  const squares = await reply.findAll({ type: 'Text', text: '●' })
   expect(squares.map((square: any) => square.props.color).filter(Boolean)).toEqual(['#ACB9E6', '#FF6F7A'])
   expect(await reply.find({ type: 'Text', text: ' #FF6F7A' })).toBeDefined()
   const plain = await mount('AssistantMessage', ID(8), { text: 'See prompt #229.', isFirstOfReply: true })
-  expect(await plain.find({ type: 'Text', text: '■' })).toBeUndefined()
+  expect(await plain.find({ type: 'Text', text: '●' })).toBeUndefined()
 })
 
 test('an API error that needs the person is one red line that says so', async ($, on) => {
@@ -240,16 +250,16 @@ test('a notice with no report keeps its line', async ($, on) => {
 test('an old report draws only its head line', async ($, on) => {
   const mount = await open($, on, OLD_REPORT)
   const report = await mount('UserMessage', ID(2), HANDBACK)
-  expect(await report.find({ type: 'Button', text: /general-purpose · Spike and checks/ })).toBeDefined()
+  expect(await labelText(report, 'toggle-report-fold-colored')).toMatch(/general-purpose · Spike and checks/)
   expect(await report.find({ type: 'Text', text: /l2/ })).toBeUndefined()
 })
 
 test('a click on an old report head opens its body, and a second click folds it again', async ($, on) => {
   const mount = await open($, on, OLD_REPORT)
   const report = await mount('UserMessage', ID(2), HANDBACK)
-  await report.press({ key: 'toggle-report-fold-button' })
+  await clickLabel(report, 'toggle-report-fold-colored')
   expect(await report.find({ type: 'Text', text: /l2/ })).toBeDefined()
-  await report.press({ key: 'toggle-report-fold-button' })
+  await clickLabel(report, 'toggle-report-fold-colored')
   expect(await report.find({ type: 'Text', text: /l2/ })).toBeUndefined()
 })
 
@@ -269,15 +279,15 @@ test('a notice that comes after a folded report shows its status and time in the
   const mount = await open($, on, OLD_REPORT)
   const report = await mount('UserMessage', ID(2), HANDBACK)
   await mount('UserMessage', ID(21), NOTICE)
-  expect(await report.find({ type: 'Button', text: /general-purpose · completed · 15m 52s/ })).toBeDefined()
+  expect(await labelText(report, 'toggle-report-fold-colored')).toMatch(/general-purpose · completed · 15m 52s/)
 })
 
 test('a diff preview keeps the indentation of its lines', async ($, on) => {
   const mount = await open($, on, EDIT_TURN)
   const head = await mount('UserMessage', ID(1), prompt('edit it'))
-  await head.press({ key: 'toggle-turn-button' })
+  await clickLabel(head, 'toggle-turn-colored')
   await head.pointer({ in: 'toggle-chips-line', type: 'down', button: 'left', x: 1, y: 0 })
-  await head.press({ key: 'toggle-call-0-button' })
+  await clickLabel(head, 'toggle-call-0-colored')
   expect(await head.find({ type: 'Text', text: /\+ {5}indented\(\)/ })).toBeDefined()
 })
 
@@ -320,14 +330,14 @@ test('a turn cancelled before any reply still closes its card under the head', a
     row(5, 'user', { message: { role: 'user', content: 'after' } }),
   ].join('\n') + '\n')
   const head = await mount('UserMessage', ID(1), prompt('run it'))
-  expect(await head.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+  expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^1 tool/)
   expect(await head.find({ key: 'toggle-head-frame-bottom' })).toBeDefined()
 })
 
 test('a turn with a reply leaves the closing to the reply row', async ($, on) => {
   const mount = await open($, on, EDIT_TURN)
   const head = await mount('UserMessage', ID(1), prompt('edit it'))
-  expect(await head.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+  expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^1 tool/)
   expect(await head.find({ key: 'toggle-head-frame-bottom' })).toBeUndefined()
 })
 
@@ -352,7 +362,7 @@ function fakeSurface() {
 
 test('a pill at rest runs no timer: fold and copy pills tick only while hovered or fading', () => {
   const fold = fakeSurface()
-  const foldProps = { kind: 'turns', id: 't', color: THEME.surface2, isOpen: false, nerd: false, still: false } as never
+  const foldProps = { kind: 'turns', id: 't', color: THEME.muted, isOpen: false, nerd: false, still: false, glyphs: { open: '−', closed: '+' } } as never
   Fold(foldProps, fold.surface)
   expect(fold.running.size).toBe(0)
   fold.point({ type: 'move', x: 0, y: 0 })
@@ -374,11 +384,83 @@ test('a pill at rest runs no timer: fold and copy pills tick only while hovered 
   expect(copy.running.size).toBe(0)
 })
 
+const kindChips = (still: boolean) => ({
+  id: 't',
+  nerd: false,
+  still,
+  chips: [
+    { kind: 'edit', mark: '±', label: 'Edited', count: 1, added: 0, removed: 0, isOpen: true },
+    { kind: 'read', mark: '≡', label: 'Read', count: 2, added: 0, removed: 0, isOpen: false },
+  ],
+}) as never
+
+test('a kind chip lights its label under the pointer, keeps its tip, and fades back; the open chip is surface3, never lifted', () => {
+  const line = fakeSurface()
+  const posts: any[] = []
+  line.surface.post = (data: any) => posts.push(data)
+  const props = kindChips(false)
+  const drawn = () => JSON.stringify(Chips(props, line.surface))
+  const rest = drawn()
+  expect(rest).not.toContain(THEME.lifted)
+  expect(rest).toContain(`"backgroundColor":"${THEME.surface3}"`)
+  expect(rest).toContain(`"backgroundColor":"${THEME.surface2}"`)
+  expect(rest).not.toContain(`"color":"${THEME.accent}"`)
+
+  line.point({ type: 'move', x: 20, y: 0 })
+  expect(drawn()).toContain(`"color":"${THEME.accent}"`)
+  expect(posts).toEqual([{ type: 'tip', id: 'chip-t', glyph: '', label: 'Read', text: 'shows the files Claude read' }])
+
+  line.point({ type: 'leave', x: 20, y: 0 })
+  line.tick()
+  expect(drawn()).toContain(`"color":"${mix(THEME.muted, THEME.accent, 0.5)}"`)
+  line.tick()
+  expect(drawn()).not.toContain(`"color":"${THEME.accent}"`)
+  line.tick()
+  expect(line.running.size).toBe(0)
+  expect(posts.at(-1)).toEqual({ type: 'tip', id: null })
+})
+
+test('with animations off a kind chip, the fold chip and the running dot switch at once and never blink', () => {
+  const line = fakeSurface()
+  const props = kindChips(true)
+  Chips(props, line.surface)
+  line.point({ type: 'move', x: 20, y: 0 })
+  expect(JSON.stringify(Chips(props, line.surface))).toContain(`"color":"${THEME.accent}"`)
+  line.point({ type: 'leave', x: 20, y: 0 })
+  expect(JSON.stringify(Chips(props, line.surface))).not.toContain(`"color":"${THEME.accent}"`)
+
+  const fold = fakeSurface()
+  const foldProps = { kind: 'turns', id: 't', color: THEME.muted, isOpen: false, nerd: false, still: true, glyphs: { open: '−', closed: '+' } } as never
+  Fold(foldProps, fold.surface)
+  fold.point({ type: 'move', x: 0, y: 0 })
+  expect(JSON.stringify(Fold(foldProps, fold.surface))).toContain(`"color":"${THEME.accent}"`)
+  fold.point({ type: 'leave', x: 0, y: 0 })
+  expect(JSON.stringify(Fold(foldProps, fold.surface))).not.toContain(`"color":"${THEME.accent}"`)
+
+  const dot = fakeSurface()
+  Dot({ color: THEME.accent, dim: THEME.border, still: true }, dot.surface)
+  expect(dot.running.size).toBe(0)
+  const blinking = fakeSurface()
+  Dot({ color: THEME.accent, dim: THEME.border, still: false }, blinking.surface)
+  expect(blinking.running.size).toBe(1)
+})
+
+test('the fold chip is a surface3 pill whose mark takes its color at rest and accent under the pointer', () => {
+  const chip = fakeSurface()
+  const props = { kind: 'tools', id: 't', color: THEME.alert, isOpen: true, nerd: false, still: false, glyphs: { open: '−', closed: '+' } } as never
+  const rest = JSON.stringify(Fold(props, chip.surface))
+  expect(rest).toContain(`"backgroundColor":"${THEME.surface3}"`)
+  expect(rest).toContain(`"color":"${THEME.alert}"`)
+  expect(rest).toContain('−')
+  chip.point({ type: 'move', x: 0, y: 0 })
+  expect(JSON.stringify(Fold(props, chip.surface))).toContain(`"color":"${THEME.accent}"`)
+})
+
 test('two turns opened at once both stay open', async ($, on) => {
   const mount = await open($, on, TWO_TURNS)
   const first = await mount('UserMessage', ID(1), prompt('first'))
   const second = await mount('UserMessage', ID(6), prompt('second'))
-  await Promise.all([first.press({ key: 'toggle-turn-button' }), second.press({ key: 'toggle-turn-button' })])
+  await Promise.all([clickLabel(first, 'toggle-turn-colored'), clickLabel(second, 'toggle-turn-colored')])
   expect((await first.find({ type: 'Client', key: 'toggle-turn-chip' }))?.props.props.isOpen).toBe(true)
   expect((await second.find({ type: 'Client', key: 'toggle-turn-chip' }))?.props.props.isOpen).toBe(true)
 })

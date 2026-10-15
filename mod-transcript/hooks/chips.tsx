@@ -3,16 +3,22 @@
 import type { ClientModule } from 'claude-code'
 
 import { cells } from './cells'
-import { postTip } from './entry'
+import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, postTip, stepToward } from './entry'
 import style from './style'
 import text from './text'
-import { CAPS, THEME } from './theme'
+import { CAPS, mix, THEME, WASH } from './theme'
 
 export type Chip = { kind: keyof typeof style.colors.kinds; mark: string; label: string; count: number; added: number; removed: number; isOpen: boolean }
 
-export type ChipsProps = { id: string; chips: Chip[]; nerd: boolean }
+export type ChipsProps = { id: string; chips: Chip[]; nerd: boolean; still: boolean }
 
 export type ChipsMessage = { type: 'chip'; id: string; kind: Chip['kind'] }
+
+// over: the chip under the pointer; levels: each chip's hover fade, 0 at rest.
+type State = { over: Chip['kind'] | null; at: number; levels: Partial<Record<Chip['kind'], number>> }
+
+// A pointer that left without a leave event stops lighting the chip after this long.
+const QUIET_MS = 5000
 
 const stat = (chip: Chip) => [chip.added ? `+${chip.added}` : '', chip.removed ? `−${chip.removed}` : ''].filter(Boolean).join(' ')
 
@@ -22,15 +28,48 @@ const widthOf = (chip: Chip) => 1 + cells(chip.mark) + 1 + cells(chip.label) + 1
 // The chip under the pointer, per instance, so a tip posts only when it changes.
 const under = new WeakMap<object, string | null>()
 
+const latest = new WeakMap<object, ChipsProps>()
+
+// Each line's timer runs from the pointer's first event until every chip is at rest again.
+const timers = new WeakMap<object, () => void>()
+
+type Surface = Parameters<ClientModule<ChipsProps, State>>[1]
+
+const wake = (surface: Surface) => {
+  if (timers.has(surface)) return
+  const stop = surface.every(HOVER_TICK_MS, () => {
+    const state = surface.state
+    if (!state) return
+    const levels = { ...state.levels }
+    let isMoving = false
+    for (const kind of Object.keys(levels) as Chip['kind'][]) {
+      const next = stepToward(levels[kind] ?? 0, state.over === kind)
+      if (next !== levels[kind]) isMoving = true
+      levels[kind] = next
+    }
+    if (isMoving) surface.setState({ ...state, levels })
+    else if (state.over && Date.now() - state.at >= QUIET_MS) surface.setState({ ...state, over: null })
+    else if (!state.over) {
+      stop()
+      timers.delete(surface)
+    }
+  })
+  timers.set(surface, stop)
+}
+
 // The open turn's kinds as one line of pills; a click on one asks the hooks module to show its calls below.
-const Chips: ClientModule<ChipsProps> = (props, surface) => {
+const Chips: ClientModule<ChipsProps, State> = (props, surface) => {
   const { Box, Text } = surface.elements
   const { chips, nerd } = props
+  latest.set(surface, props)
+  const state = surface.state ?? { over: null, at: 0, levels: {} }
+  if (!surface.state) surface.setState(state)
   // Without a Nerd Font the pill ends are plain spaces in the pill's color.
   const left = nerd ? CAPS.left : ' '
   const right = nerd ? CAPS.right : ' '
 
   surface.onPointer(event => {
+    wake(surface)
     let hit: Chip | undefined
     let x = 0
     for (const chip of chips) {
@@ -38,28 +77,37 @@ const Chips: ClientModule<ChipsProps> = (props, surface) => {
       if (event.x >= x && event.x < x + width) hit = chip
       x += width + 1
     }
+    const base = surface.state ?? state
+    const over = event.type === 'leave' ? null : (hit?.kind ?? null)
+    if (over !== base.over) {
+      const levels = { ...base.levels }
+      if (over) levels[over] = HOVER_STEPS
+      if (base.over && latest.get(surface)?.still) levels[base.over] = 0
+      surface.setState({ over, at: Date.now(), levels })
+    }
     if (event.type === 'down' && event.button === 'left') {
       if (hit) surface.post({ type: 'chip', id: props.id, kind: hit.kind } satisfies ChipsMessage)
       return
     }
-    const now = event.type === 'leave' ? null : (hit?.kind ?? null)
-    if (now === (under.get(surface) ?? null)) return
-    under.set(surface, now)
-    postTip(surface, `chip-${props.id}`, hit && now ? { glyph: '', label: hit.label, text: text.tipChip[hit.kind] } : null)
+    if (over === (under.get(surface) ?? null)) return
+    under.set(surface, over)
+    postTip(surface, `chip-${props.id}`, hit && over ? { glyph: '', label: hit.label, text: text.tipChip[hit.kind] } : null)
   })
 
   return (
     <Box flexDirection="row" columnGap={1}>
       {chips.map(chip => {
-        const fill = chip.isOpen ? THEME.lifted : THEME.surface3
-        const { hue, wash } = style.colors.kinds[chip.kind]
+        const fill = chip.isOpen ? THEME.surface3 : THEME.surface2
+        const { hue } = style.colors.kinds[chip.kind]
+        const wash = mix(hue, fill, WASH)
+        const label = hoverMix(chip.isOpen ? THEME.onSurface : THEME.muted, THEME.accent, state.levels[chip.kind] ?? 0)
         const cap = (side: string, key: string, color: string) => nerd ? <Text key={key} color={color}>{side}</Text> : <Box key={key} backgroundColor={color}><Text> </Text></Box>
         return (
           <Box key={chip.kind} flexDirection="row" flexShrink={0}>
             {cap(left, `${chip.kind}-left`, fill)}
             <Box key={`${chip.kind}-body`} flexDirection="row" backgroundColor={fill}>
               <Text color={hue}>{`${chip.mark} `}</Text>
-              <Text color={chip.isOpen ? THEME.onSurface : THEME.muted} bold={chip.isOpen}>{`${chip.label} `}</Text>
+              <Text color={label} bold={chip.isOpen}>{`${chip.label} `}</Text>
               {cap(left, `${chip.kind}-badge-left`, wash)}
               <Box key={`${chip.kind}-badge`} backgroundColor={wash}><Text color={hue} bold>{String(chip.count)}</Text></Box>
               {cap(right, `${chip.kind}-badge-right`, wash)}

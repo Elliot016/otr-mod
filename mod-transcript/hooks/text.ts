@@ -66,6 +66,7 @@ export default {
   "tipPromptLabel": "Prompt #{n}",
   "tipPrompt": "this is prompt {n} of the session",
   "tipTabSettings": "shows this mod's settings",
+  "tipToast": { "label": "Dismiss", "text": "hides this message" },
   "status": {
     "timedOut": "timed out",
     "interrupted": "interrupted",

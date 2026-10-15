@@ -3,6 +3,7 @@
 import type { ClientModule } from 'claude-code'
 
 import type { Tip, TipMessage } from './entry'
+import { subpill } from './look'
 import text from './text'
 import { CAPS, fill, THEME } from './theme'
 
@@ -148,7 +149,7 @@ const Copy: ClientModule<CopyProps, State> = (props, surface) => {
       {lead ? <Text key="lead" color={props.lead.color}>{props.lead.char.repeat(lead)}</Text> : null}
       {props.nerd ? <Text key="cap-left" color={props.bg}>{CAPS.left}</Text> : null}
       {body}
-      <Text key="icon" color={isExpanded || hasNote ? THEME.muted : THEME.onSurface} backgroundColor={props.bg}>{` ${props.icon} `}</Text>
+      {subpill({ Box, Text }, props.nerd, props.bg, props.icon, 'copy-icon', isExpanded || hasNote ? THEME.muted : THEME.accent)}
       {props.nerd ? <Text key="cap-right" color={props.bg}>{CAPS.right}</Text> : null}
     </Box>
   )

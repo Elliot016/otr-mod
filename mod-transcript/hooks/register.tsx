@@ -11,12 +11,14 @@ import type { DotProps } from './dot'
 import type { FoldProps } from './fold'
 import type { LabelPart, LabelProps } from './label'
 import { pillWidth, type NumberProps } from './number'
-import { isTipMessage, tipText, type Tip, type TipMessage } from './entry'
+import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
 import { pillRow, splitRow, tabRow, tipLine } from './pills'
-import { settingChoice, settingsBody, type Action, type Previews } from './settings'
+import { actionReveals, settingChoice, settingsBody, type Action, type Previews } from './settings'
 import style from './style'
 import text from './text'
+import { TOAST_MS, ToastList, toastCards } from './toasts'
+import { announceView, viewing } from './view'
 import { tokenizeLine, type Role } from './shell'
 import { detectWedge, FILLED, OUTLINE, type Wedge } from './wedge'
 import { CAPS, fill, MARK, statusColor, SYNTAX, THEME } from './theme'
@@ -45,8 +47,6 @@ const guess = ($: EngineInterface) => {
   }))
 }
 let working = false
-// The agent whose transcript is on screen (the band's view); its rows are not the main conversation's turns.
-let viewedAgent: string | undefined
 // The engine's expanded view (ctrl+o, --verbose) draws every row in full, so the rows pass through there.
 let isFullView = false
 // Calls a hook or the person refused (PermissionDenied): an error the person chose, drawn neutral.
@@ -61,6 +61,8 @@ let showTimes = true
 let expandLive = true
 let showCopy = true
 let showNumbers = true
+// The animations setting, off: chips switch hover colors at once and the running dot stays lit.
+let still = false
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 let wedge: Wedge = FILLED
@@ -78,6 +80,7 @@ let note = ''
 
 // The control under the pointer, from its tip post: the band's tip row and the Settings footer show it.
 let hovered: TipMessage | null = null
+const toasts = new ToastList('transcript')
 const hoveredTip = (): Tip | null => (hovered?.id && hovered.label ? { glyph: hovered.glyph ?? '', label: hovered.label, text: hovered.text ?? '' } : null)
 
 const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
@@ -368,7 +371,7 @@ const hasEnded = (turn: Turn) => turn !== log.turns[log.turns.length - 1] || tur
 function copyPill({ Box, Client }: Bars, turn: Turn) {
   const choices = copyChoices(turn.replyText)
   if (!showCopy || !hasEnded(turn) || !choices.length) return null
-  const props: CopyProps = { id: turn.prompt, choices: choices.map(what => ({ what, label: text.copyChoice[what] })), icon: look.glyph.copy, copied: text.copied, bg: style.colors.pills.secondary, nerd: look.nerd, lead: { char: '─', color: THEME.accent } }
+  const props: CopyProps = { id: turn.prompt, choices: choices.map(what => ({ what, label: text.copyChoice[what] })), icon: look.glyph.copy, copied: text.copied, bg: THEME.surface3, nerd: look.nerd, lead: { char: MARK.rule, color: THEME.accent } }
   return (
     <Box key="toggle-copy" flexShrink={0}>
       <Client key="toggle-copy-pill" module="./copy.tsx" width={copyWidth(props)} height={1} props={props} />
@@ -393,26 +396,24 @@ function closing(parts: Bars, key: string, turn: Turn | undefined) {
   )
 }
 
-type Controls = Elements & { Button: (props: any) => RenderElement }
+// A control glyph without the brackets and padding it has as a standalone button.
+const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
-// A fold control: a colored pill showing + or the minus sign, then the line's text; a click on either toggles.
-// Without a Nerd Font the pill's ends are a space each, so the chip takes three cells either way.
-// A label given as colored `parts` is a Client that folds on click; a plain one stays a Button.
-const toggleLine = ({ Box, Button, Client }: Controls & { Client: (props: any) => RenderElement }, key: string, chip: string, isOpen: boolean, label: string, fold: BarProps, onPress: () => unknown, extra: unknown = null, parts?: LabelPart[]) => (
-  <Box key={key} flexDirection="row" columnGap={1}>
-    <Box key={`${key}-chip-pill`} flexShrink={0}>
-      <Client key={`${key}-chip`} module="./fold.tsx" width={3} height={1} props={{ ...fold, color: chip, isOpen, nerd: look.nerd, still: false } satisfies FoldProps} />
+// Chip and label are both Clients, since a Button posts no tip; without caps the chip's ends are a space each, so it takes three cells either way.
+const toggleLine = ({ Box, Client }: Elements & { Client: (props: any) => RenderElement }, key: string, chip: string, isOpen: boolean, label: string, fold: BarProps, extra: unknown = null, parts?: LabelPart[]) => {
+  const shown = parts ?? [{ text: label }]
+  return (
+    <Box key={key} flexDirection="row" columnGap={1}>
+      <Box key={`${key}-chip-pill`} flexShrink={0}>
+        <Client key={`${key}-chip`} module="./fold.tsx" width={3} height={1} props={{ ...fold, color: chip, isOpen, nerd: look.nerd, still, glyphs: { open: bare(look.glyph.down), closed: bare(look.glyph.up) } } satisfies FoldProps} />
+      </Box>
+      <Box key={`${key}-label`} flexShrink={1}>
+        <Client key={`${key}-colored`} module="./label.tsx" width={partsWidth(shown)} height={1} props={{ ...fold, parts: shown, isDim: !isOpen, hover: THEME.accent } satisfies LabelProps} />
+      </Box>
+      {extra}
     </Box>
-    <Box key={`${key}-label`} flexShrink={1}>
-      {parts ? (
-        <Client key={`${key}-colored`} module="./label.tsx" width={partsWidth(parts)} height={1} props={{ ...fold, parts, isDim: !isOpen, hover: THEME.accent } satisfies LabelProps} />
-      ) : (
-        <Button key={`${key}-button`} label={label} plain dimColor={!isOpen} hover={{ scope: `${key}-label`, color: THEME.accent }} onPress={onPress} />
-      )}
-    </Box>
-    {extra}
-  </Box>
-)
+  )
+}
 
 // Blast-radius's Moonlight roles for a shell command: the command word bold, then options, quoted text, variables, numbers and operators.
 const ROLE_LOOK: Partial<Record<Role, Omit<LabelPart, 'text'>>> = {
@@ -447,8 +448,8 @@ function callParts(call: Turn['tools'][number], isOpen: boolean, width: number):
 function bashRow({ Box, Client, Text }: Rows, input: any, isRunning: boolean, isFailed: boolean) {
   const command = String(input?.command ?? '')
   const dot = isRunning
-    ? <Client key="bash-dot" module="./dot.tsx" width={1} height={1} props={{ color: THEME.accent, dim: THEME.border, still: false } satisfies DotProps} />
-    : <Text key="bash-dot" color={isFailed ? THEME.alert : THEME.good}>●</Text>
+    ? <Client key="bash-dot" module="./dot.tsx" width={1} height={1} props={{ color: THEME.accent, dim: THEME.border, still } satisfies DotProps} />
+    : <Text key="bash-dot" color={isFailed ? THEME.alert : THEME.good}>{MARK.stopOpen}</Text>
   return (
     <Box key="bash-row" flexDirection="column">
       <Text key="bash-blank"> </Text>
@@ -553,7 +554,7 @@ const REPORT_LINES = 6
 type TaskProps = { text: string; origin: { kind: string }; from?: { name: string }; task?: { id?: string; status?: string; type?: string; durationMs?: number; toolUseId?: string } }
 
 // A subagent's or teammate's report: a head line with its sender, status, time and first line, then a card of its fields and first lines.
-function reportRow(parts: Controls & Rows, props: TaskProps, report: Report, width: number, fold?: { id: string; isOpen: boolean; onPress: () => unknown }) {
+function reportRow(parts: Rows, props: TaskProps, report: Report, width: number, fold?: { id: string; isOpen: boolean }) {
   const { Box, Text } = parts
   const all = props.text.replace(/\s+$/, '').split('\n')
   const first = all.findIndex(line => line.trim())
@@ -576,7 +577,7 @@ function reportRow(parts: Controls & Rows, props: TaskProps, report: Report, wid
   return (
     <Box key="toggle-report" flexDirection="column">
       {fold ? (
-        toggleLine(parts, 'toggle-report-fold', THEME.accent, fold.isOpen, cut(label, headRoom), { kind: 'turns', id: fold.id }, fold.onPress)
+        toggleLine(parts, 'toggle-report-fold', THEME.onSurface, fold.isOpen, cut(label, headRoom), { kind: 'turns', id: fold.id })
       ) : (
         <Text key="toggle-report-head" color={THEME.onSurface} wrap="truncate-end">{cut(label, headRoom)}</Text>
       )}
@@ -611,7 +612,7 @@ function learnReport($: EngineInterface, id: string) {
 }
 
 // A notice draws nothing once its report draws; a report takes the notice's status and time.
-async function taskRow(parts: Controls & Rows, $: EngineInterface, requestId: string, props: TaskProps, width: number) {
+async function taskRow(parts: Rows, $: EngineInterface, requestId: string, props: TaskProps, width: number) {
   const { Box } = parts
   if (props.origin.kind === 'task-notification') {
     const id = props.task?.id
@@ -625,16 +626,16 @@ async function taskRow(parts: Controls & Rows, $: EngineInterface, requestId: st
   const turn = log.turnAt(requestId)
   if (!turn || !isDone(turn)) return reportRow(parts, props, report, width)
   const isOpen = isTurnOpen(flips.turns, turn)
-  return reportRow(parts, props, report, width, { id: turn.prompt, isOpen, onPress: () => flip($, 'turns', turn.prompt) })
+  return reportRow(parts, props, report, width, { id: turn.prompt, isOpen })
 }
 
-// An API error that ended the reply, as one line: red when the person must act, warn when Claude Code retries.
+// An API error that ended the reply, as one line: red when the person must act, muted when Claude Code retries.
 function apiErrorRow({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, failure: ApiFailure, width: number) {
   const action = apiErrorAction(failure.error)
   const detail = failure.details ? ` ${MARK.sep} ${failure.details}` : ''
   return (
     <Box key="toggle-api-error" flexDirection="row">
-      <Text color={action === 'act' ? THEME.alert : THEME.warn} bold={action === 'act'} wrap="truncate-end">
+      <Text color={action === 'act' ? THEME.alert : THEME.muted} bold={action === 'act'} wrap="truncate-end">
         {fit(`${MARK.warn} ${text.apiWhat[failure.error]} ${MARK.sep} ${text.apiAction[action]}${detail}`, width)}
       </Text>
     </Box>
@@ -651,8 +652,8 @@ async function pickChip($: EngineInterface, turnId: string, kind: string) {
 }
 
 // An open turn's work under its head: a line of kind chips (Thought first, then each kind in order of first use) and, under the picked one, its calls or its thinking.
-// onCall opens or closes one call: its own row then shows under the list, in the turn's order.
-function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any) => RenderElement }, turn: Turn, openTools: string[], width: number, onCall: (id: string) => unknown) {
+// A click on a call's line opens or closes it: its own row then shows under the list, in the turn's order.
+function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[], width: number) {
   // Claude Code's drawing reaches a mod sealed, so the thinking comes from the session's messages, without its time.
   const thoughts = turnThoughts(turn)
   const kinds = turnKinds(turn)
@@ -666,7 +667,7 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
   const line = (key: string, body: unknown, time = '') => (
     <Box key={key} flexDirection="row">
       <Box key={`${key}-line`} flexDirection="row" columnGap={1} flexGrow={1} flexShrink={1}>{body}</Box>
-      {showTimes && time ? timePill({ Box, Text }, `${key}-time`, time, THEME.surface3) : null}
+      {showTimes && time ? timePill({ Box, Text }, `${key}-time`, time) : null}
     </Box>
   )
   const thoughtLines = thoughts.filter(Boolean).join('\n\n').split('\n').flatMap(paragraph => wrapWords(paragraph, width - 8))
@@ -705,31 +706,19 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
       line(
         `toggle-call-${n}`,
         [
-          // The open call lifts, as a picked chip does; the others stay dim until the pointer lights them.
-          // The open call is a lifted pill whose ends take the spaces around the label, so lines keep one width.
+          // The open call is a surface3 pill whose ends take the spaces around the label, so lines keep one width; the others stay dim until the pointer lights them.
           <Box key={`toggle-call-${n}-line`} flexDirection="row" flexShrink={1}>
-            {look.nerd && openTools.includes(call.id) ? <Text color={THEME.lifted}>{CAPS.left}</Text> : null}
-            <Box key={`toggle-call-${n}-pick`} flexShrink={1} {...(openTools.includes(call.id) ? { backgroundColor: THEME.lifted } : {})}>
-              {call.name === 'Bash' ? (
-                <Client
-                  key={`toggle-call-${n}-colored`}
-                  module="./label.tsx"
-                  height={1}
-                  width={partsWidth(callParts(call, openTools.includes(call.id), width))}
-                  props={{ kind: 'tools', id: call.id, parts: callParts(call, openTools.includes(call.id), width), isDim: !openTools.includes(call.id), hover: THEME.accent } satisfies LabelProps}
-                />
-              ) : (
-                <Button
-                  key={`toggle-call-${n}-button`}
-                  label={look.nerd && openTools.includes(call.id) ? `${look.glyph.expanded} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)}` : ` ${openTools.includes(call.id) ? look.glyph.expanded : look.glyph.collapsed} ${fit(toolLabel(call.name, call.input, 0, 0), width - 28)} `}
-                  plain
-                  dimColor={!openTools.includes(call.id)}
-                  hover={{ scope: `toggle-call-${n}-pick`, color: THEME.accent }}
-                  onPress={() => onCall(call.id)}
-                />
-              )}
+            {look.nerd && openTools.includes(call.id) ? <Text color={THEME.surface3}>{CAPS.left}</Text> : null}
+            <Box key={`toggle-call-${n}-pick`} flexShrink={1} {...(openTools.includes(call.id) ? { backgroundColor: THEME.surface3 } : {})}>
+              <Client
+                key={`toggle-call-${n}-colored`}
+                module="./label.tsx"
+                height={1}
+                width={partsWidth(callParts(call, openTools.includes(call.id), width))}
+                props={{ kind: 'tools', id: call.id, parts: callParts(call, openTools.includes(call.id), width), isDim: !openTools.includes(call.id), hover: THEME.accent } satisfies LabelProps}
+              />
             </Box>
-            {look.nerd && openTools.includes(call.id) ? <Text color={THEME.lifted}>{CAPS.right}</Text> : null}
+            {look.nerd && openTools.includes(call.id) ? <Text color={THEME.surface3}>{CAPS.right}</Text> : null}
           </Box>,
           countsPill({ Box, Text }, `toggle-call-${n}-counts`, call.added, call.removed),
         ],
@@ -746,7 +735,7 @@ function chipSection({ Box, Button, Client, Text }: Rows & { Button: (props: any
       : calls(picked.kind)
   return [
     <Box key="toggle-chips" height={1}>
-      <Client key="toggle-chips-line" module="./chips.tsx" height={1} props={{ id: turn.prompt, chips, nerd: look.nerd } satisfies ChipsProps} />
+      <Client key="toggle-chips-line" module="./chips.tsx" height={1} props={{ id: turn.prompt, chips, nerd: look.nerd, still } satisfies ChipsProps} />
     </Box>,
     body ? (
       <Box key="toggle-picked" flexDirection="row">
@@ -874,14 +863,14 @@ function loadLook($: EngineInterface) {
 }
 
 // A time as a rounded pill, like the omp transient prompt; plain muted text where the font has no caps.
-function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }, key: string, time: string, fill: string = THEME.surface2) {
+function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }, key: string, time: string) {
   if (!look.nerd) return <Box key={key} flexShrink={0} height={1} alignSelf="flex-start"><Text color={THEME.muted}>{`${time} `}</Text></Box>
   // One row tall whatever the line's height: a filled body stretched by a taller row painted the row below.
   return (
     <Box key={key} flexDirection="row" flexShrink={0} height={1} alignSelf="flex-start">
-      <Text color={fill}>{CAPS.left}</Text>
-      <Box key={`${key}-body`} height={1} backgroundColor={fill}><Text color={THEME.muted}>{time}</Text></Box>
-      <Text color={fill}>{`${CAPS.right} `}</Text>
+      <Text color={THEME.surface3}>{CAPS.left}</Text>
+      <Box key={`${key}-body`} height={1} backgroundColor={THEME.surface3}><Text color={THEME.muted}>{time}</Text></Box>
+      <Text color={THEME.surface3}>{`${CAPS.right} `}</Text>
     </Box>
   )
 }
@@ -904,6 +893,19 @@ export const register: Register = (on, options) => {
   expandLive = options.expand_live !== false
   showCopy = options.copy_pill !== false
   showNumbers = options.prompt_numbers !== false
+  still = options.animations === false
+  toasts.isStill = still
+
+  // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
+  on('ui.toast', async ($, e) => {
+    const id = toasts.add(e.text)
+    $.ui.invalidate('ui.render')
+    $.clock.after(e.timeoutMs ?? TOAST_MS, () => {
+      toasts.drop(id)
+      $.ui.invalidate('ui.render')
+    })
+    return { value: undefined }
+  })
 
   on('session.start', async ($, e, next) => {
     await loadLook($)
@@ -921,6 +923,14 @@ export const register: Register = (on, options) => {
 
   // A click on a card's strip folds the turn or tool it runs beside.
   on('ui.message', async ($, e, next) => {
+    const clicked = e.data as EntryMessage
+    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+    if (dismissed !== undefined) {
+      toasts.drop(dismissed)
+      hovered = null
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     if (isTipMessage(e.data)) {
       const mark = (e.data as CopyTipMessage).mark
       if (mark) await markCopy($, mark.id, mark.what)
@@ -999,28 +1009,32 @@ export const register: Register = (on, options) => {
     }
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-transcript-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSubheading, text: text.tipTabSettings } }], false)}
+      <Box flexDirection="column" paddingX={1} backgroundColor={THEME.bg} minHeight={e.props.scroll.bodyRows}>
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-transcript-settings-tab', label: `${text.paneHeading} ${MARK.sep} ${text.paneSubheading}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneSubheading, text: text.tipTabSettings } }], still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.paneHintClick} ${MARK.sep} ${text.paneHintSaved}`}</Text>
-        <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still: false, tips: text.settingTips })}</Box>
+        <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews, still, tips: text.settingTips })}</Box>
         <Box key="footer-space" height={FOOTER_ROWS} />
-        {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
+        {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll, actionReveals(actions, look, working))}
       </Box>
     )
   })
 
-  // The chat rows' controls have no tip row of their own, so their tip shows in the band's, on the shared pill row another mod drew.
+  // The chat rows' controls have no tip row of their own, so their tip shows in the band's, on the shared pill row another mod drew; this mod's toasts draw here as cards.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     // Read once: a leave posted while next(e) runs clears `hovered`.
     const tip = tipText(hovered)
-    if (e.surface === 'terminal') viewedAgent = e.props.view.agentId
-    if (e.surface !== 'terminal' || e.props.hasSurvey || !tip) return next(e)
+    if (e.surface === 'terminal') viewing.agent = e.props.view.agentId
+    if (e.surface !== 'terminal' || e.props.hasSurvey || (!tip && toasts.items.length === 0)) return next(e)
     const { Box, Client, Text } = $.ui.resolve(e)
     const others = await next(e)
-    const { group, row, rest } = splitRow(others)
-    if (group.length === 0 && row.length === 0) return others
-    return pillRow({ Box, Client, Text }, look.nerd, group, row, rest, tipLine({ Box, Text }, tip), e.props.bodyColumns)
+    const cards = toastCards({ Box, Client, Text }, toasts, look, text.tipToast)
+    const { group, row, rest, tip: otherTip } = splitRow(others)
+    if (group.length === 0 && row.length === 0) return cards.length ? <Box key="toasts-transcript" flexDirection="column">{cards}{others}</Box> : others
+    return pillRow({ Box, Client, Text }, look.nerd, group, row, [...cards, ...rest], tip ? tipLine({ Box, Text }, tip) : otherTip, e.props.bodyColumns)
   })
+
+  // A plugin's switch to an agent's transcript is heard before it lands, so rows never draw the main turns' bubbles first.
+  on('ui.view', async ($, e, next) => announceView(e, next))
 
   // Only the settings hook event names the transcript; kept per session so a reload finds it again.
   on('classic.SessionStart', async ($, e, next) => {
@@ -1102,7 +1116,7 @@ export const register: Register = (on, options) => {
   // The prompt row carries the card's head: one line naming what the turn did, which a click folds or unfolds.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    if (e.surface !== 'terminal' || viewing.agent) return next(e)
     await followSession($)
     isFullView = e.props.isExpanded
     // A subagent's report opens a turn of its own, as in the transcript, unless it lands while Claude works: the transcript keeps that one in the running turn.
@@ -1117,7 +1131,7 @@ export const register: Register = (on, options) => {
     }
     const turn = log.turnAt(e.requestId)
     seen.set(`UserMessage ${e.requestId}`, Boolean(turn))
-    const { Box, Button, Client, Text } = $.ui.resolve(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
     // Read before next(e) draws, since a row drawn meanwhile can renumber the prompts.
     const n = showNumbers && turn ? log.numberOf(turn) : undefined
     const prompt = await next(e)
@@ -1134,7 +1148,7 @@ export const register: Register = (on, options) => {
             {showTimes && turn?.at !== undefined ? (
               // The column takes the prompt's background (Moonlight userMessageBackground) down every wrapped line; the pill stays one row tall.
               <Box key="toggle-prompt-time-col" flexShrink={0} alignItems="flex-start" backgroundColor={THEME.surface2}>
-                {timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at), THEME.surface3)}
+                {timePill({ Box, Text }, 'toggle-prompt-time', timeOfDay(turn.at))}
               </Box>
             ) : showTimes && turn ? (
               // A guessed turn has no time until the transcript is read; the space keeps the prompt's wrap, so its height holds.
@@ -1161,12 +1175,12 @@ export const register: Register = (on, options) => {
     const tookWidth = took ? cells(took) + (look.nerd ? 3 : 1) + 1 : 0
     const head = (
       <Box key="toggle-head-line" flexDirection="row" columnGap={1}>
-        {toggleLine({ Box, Button, Client }, 'toggle-turn', THEME.accent, isOpen, fit(turnLine(turn), widthOf(e) - HEAD_CHROME - countsWidth - tookWidth), { kind: 'turns', id: turn.prompt }, () => flip($, 'turns', turn.prompt))}
+        {toggleLine({ Box, Client }, 'toggle-turn', THEME.onSurface, isOpen, fit(turnLine(turn), widthOf(e) - HEAD_CHROME - countsWidth - tookWidth), { kind: 'turns', id: turn.prompt })}
         {countsPill({ Box, Text }, 'toggle-head-counts', added, removed)}
-        {took ? timePill({ Box, Text }, 'toggle-head-time', took, THEME.surface3) : null}
+        {took ? timePill({ Box, Text }, 'toggle-head-time', took) : null}
       </Box>
     )
-    const kinds = isOpen && foldTools ? chipSection({ Box, Button, Client, Text }, turn, flips.tools, widthOf(e), id => flip($, 'tools', id)) : null
+    const kinds = isOpen && foldTools ? chipSection({ Box, Client, Text }, turn, flips.tools, widthOf(e)) : null
     // The reply closes the card; a turn cancelled before any reply has none, so its head closes it whenever no tool row draws below.
     const isClosed = !turn.reply && (foldTools || !isOpen)
     return (
@@ -1179,7 +1193,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    if (e.surface !== 'terminal' || viewing.agent) return next(e)
     await followSession($)
     if (isLoaded) log.claim(e.requestId, 'reply')
     if (isFullView) return next(e)
@@ -1212,7 +1226,7 @@ export const register: Register = (on, options) => {
                 {look.nerd ? <Text color={THEME.surface2}>{CAPS.left}</Text> : null}
                 <Box key={`toggle-color-${n}-body`} backgroundColor={THEME.surface2} paddingX={look.nerd ? 0 : 1}>
                   <Text>
-                    <Text color={color.rgb}>■</Text>
+                    <Text color={color.rgb}>{MARK.stopOpen}</Text>
                     <Text color={THEME.muted}>{` ${color.code}`}</Text>
                   </Text>
                 </Box>
@@ -1230,7 +1244,7 @@ export const register: Register = (on, options) => {
   // A finished tool row folds to one line of its own; a click shows Claude Code's full row and result under it.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    if (e.surface !== 'terminal' || viewing.agent) return next(e)
     await followSession($)
     if (isLoaded) log.claimCall(e.props.tool_use_id, e.props.tool, e.props.input, e.props.isRunning, e.props.output, e.props.isErrored || e.props.isInterrupted)
     else {
@@ -1240,7 +1254,7 @@ export const register: Register = (on, options) => {
     const turn = log.turnOf(e.requestId)
     seen.set(`ToolUse ${e.requestId}`, Boolean(turn))
     if (isFullView) return next(e)
-    const { Box, Button, Client, Text } = $.ui.resolve(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
     const place = await placeOf($, turn, e.requestId)
     // In an open turn the head's kind rows list every call, so the row itself draws nothing.
     if (place === 'hidden' || (place === 'card' && foldTools)) return <Box key="toggle-hidden" />
@@ -1266,13 +1280,12 @@ export const register: Register = (on, options) => {
       removed ? <Box key="toggle-tool-removed"><Text color={THEME.alert}>{`−${removed}`}</Text></Box> : null,
     ]
     const line = toggleLine(
-      { Box, Button, Client },
+      { Box, Client },
       'toggle-tool',
-      isRed ? THEME.alert : THEME.border,
+      isRed ? THEME.alert : THEME.muted,
       isOpen,
       fit(toolLabel(e.props.tool, e.props.input, 0, 0), room) + suffix,
       { kind: 'tools', id: e.props.tool_use_id },
-      () => flip($, 'tools', e.props.tool_use_id),
       stats,
       e.props.tool === 'Bash' ? [...labelParts('Bash', e.props.input, room), ...(suffix ? [{ text: suffix }] : [])] : undefined,
     )
@@ -1289,7 +1302,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    if (e.surface !== 'terminal' || viewing.agent) return next(e)
     await followSession($)
     if (isLoaded) log.claim(e.requestId, 'row')
     if (isFullView) return next(e)
@@ -1310,7 +1323,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    if (e.surface !== 'terminal' || viewing.agent) return next(e)
     await followSession($)
     // A folded group's calls never draw rows of their own, so the group claims them for the turn.
     if (isLoaded) for (const call of e.props.calls) if (call.tool_use_id) log.claimCall(call.tool_use_id, call.tool, call.input, call.isRunning, call.output, call.isErrored || call.isInterrupted)
@@ -1339,7 +1352,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
     await loadLook($)
-    if (e.surface !== 'terminal' || viewedAgent) return next(e)
+    if (e.surface !== 'terminal' || viewing.agent) return next(e)
     await followSession($)
     if (isLoaded) log.claim(e.requestId, 'row')
     if (isFullView) return next(e)

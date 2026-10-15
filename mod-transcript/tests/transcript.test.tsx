@@ -4,6 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { cells } from '../hooks/cells'
 import { copyChoices, copyText } from '../hooks/clip'
+import { mix, THEME, WASH } from '../hooks/theme'
 import { callTime, commandOf, elapsed, previewOf, rowKey, timeOfDay, turnLine, TurnLog } from '../hooks/turns'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
@@ -33,6 +34,11 @@ const pick = (ui: any, x: number) => ui.pointer({ in: 'toggle-chips-line', type:
 const pointerOn = <T extends object>(ui: T, event: object) => (ui as T & { pointer: (e: object) => Promise<unknown> }).pointer(event)
 // The head's fold pill is a Client, so its + or − is the isOpen it was handed.
 const isChipOpen = async (ui: any) => (await ui.find({ type: 'Client', key: 'toggle-turn-chip' }))?.props.props?.isOpen
+
+const textOf = (node: any): string => (typeof node === 'string' ? node : Array.isArray(node) ? node.map(textOf).join('') : node ? textOf(node.children) : '')
+// The words a fold label Client drew, and a click on one: a Button posts no tip, so the labels are Clients.
+const labelText = async (ui: any, key: string) => textOf(await ui.drawn({ in: key }))
+const clickLabel = (ui: any, key: string) => ui.pointer({ in: key, type: 'down', button: 'left', x: 1, y: 0 })
 
 const logOf = (text: string) => {
   const log = new TurnLog()
@@ -191,6 +197,7 @@ async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsT
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   return {
+    mount,
     prompt: await mount('UserMessage', ID(1), { text: 'run the tests', origin: { kind: 'composer' }, isExpanded: false }),
     tool: await mount('ToolUse', 'toolu_bash', { tool_use_id: 'toolu_bash', tool: 'Bash', input: { command: 'claude plugin test .' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }),
   }
@@ -201,7 +208,7 @@ test('the prompt row shows when it was sent, the head how long the turn took, an
   expect(await prompt.find({ type: 'Text', text: `${timeOfDay(Date.parse('2026-10-03T14:32:00.000Z'))} ` })).toBeDefined()
   expect(await prompt.find({ type: 'Text', text: 'took 47s ' })).toBeDefined()
   // The finished turn starts folded; its chip line shows under the head once it opens, and the tool row itself draws nothing.
-  await prompt.press({ key: 'toggle-turn-button' })
+  await clickLabel(prompt, 'toggle-turn-colored')
   expect(await chipsOf(prompt)).toContain('Ran')
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
   expect(await prompt.find({ type: 'Text', text: '41s ' })).toBeUndefined()
@@ -269,7 +276,7 @@ test('a head with wide count and time pills cuts its label to the room left, so 
     row(28, 'user', { message: { role: 'user', content: 'next' } }),
   ].join('\n') + '\n'
   const { prompt } = await mountTimed($, on, many)
-  const label = String((await prompt.find({ key: 'toggle-turn-button' }))?.props.label ?? '')
+  const label = await labelText(prompt, 'toggle-turn-colored')
   const pills = cells('+960 −180') + 2 + 1 + cells('took 40m 42s') + 3 + 1
   // The row's columns, less what widthOf keeps back and the head's chrome around the label.
   expect(cells(label)).toBeLessThanOrEqual(120 - 6 - 12 - pills)
@@ -286,10 +293,40 @@ test('icons=nerd draws the times as rounded pills', { options: { icons: 'nerd' }
   // Pills stay one row whatever the line's height, so a taller line never paints their fill on the row below.
   expect(drawn).toMatch(/"key":"toggle-head-time","flexDirection":"row","flexShrink":0,"height":1,"alignSelf":"flex-start"/)
   expect(await prompt.find({ type: 'Text', text: timeOfDay(Date.parse('2026-10-03T14:32:00.000Z')) })).toBeDefined()
-  await prompt.press({ key: 'toggle-turn-button' })
+  await clickLabel(prompt, 'toggle-turn-colored')
   await pick(prompt, 1)
   expect(await prompt.find({ type: 'Text', text: '41s' })).toBeDefined()
   expect(await tool.find({ type: 'Text' })).toBeUndefined()
+})
+
+test('an open call line is a surface3 pill and the open chip lights nothing lifted', { options: { icons: 'nerd' } }, async ($, on) => {
+  const { prompt } = await mountTimed($, on)
+  await clickLabel(prompt, 'toggle-turn-colored')
+  await pick(prompt, 1)
+  await clickLabel(prompt, 'toggle-call-0-colored')
+  const drawn = JSON.stringify(await prompt.drawn())
+  expect(drawn).toMatch(/"key":"toggle-call-0-pick","flexShrink":1,"backgroundColor":"#252A42"/)
+  expect(drawn).toMatch(/"key":"toggle-call-0-time-body","height":1,"backgroundColor":"#252A42"/)
+  expect(drawn).not.toContain(THEME.lifted)
+  expect(await chipsOf(prompt)).not.toContain(THEME.lifted)
+})
+
+test('with animations off every animated Client is drawn still, and by default none is', { options: { animations: false } }, async ($, on) => {
+  const { mount, prompt } = await mountTimed($, on)
+  const running = await mount('ToolUse', 'toolu_run', { tool_use_id: 'toolu_run', tool: 'Bash', input: { command: 'sleep 5' }, isRunning: true, isErrored: false, isInterrupted: false, output: {} })
+  expect((await prompt.find({ type: 'Client', key: 'toggle-turn-chip' }))?.props.props.still).toBe(true)
+  expect((await running.find({ type: 'Client', key: 'bash-dot' }))?.props.props.still).toBe(true)
+  await clickLabel(prompt, 'toggle-turn-colored')
+  expect((await prompt.find({ type: 'Client', key: 'toggle-chips-line' }))?.props.props.still).toBe(true)
+})
+
+test('with animations on, the fold chip, the kind chips and the running dot animate', async ($, on) => {
+  const { mount, prompt } = await mountTimed($, on)
+  const running = await mount('ToolUse', 'toolu_run', { tool_use_id: 'toolu_run', tool: 'Bash', input: { command: 'sleep 5' }, isRunning: true, isErrored: false, isInterrupted: false, output: {} })
+  expect((await prompt.find({ type: 'Client', key: 'toggle-turn-chip' }))?.props.props.still).toBe(false)
+  expect((await running.find({ type: 'Client', key: 'bash-dot' }))?.props.props.still).toBe(false)
+  await clickLabel(prompt, 'toggle-turn-colored')
+  expect((await prompt.find({ type: 'Client', key: 'toggle-chips-line' }))?.props.props.still).toBe(false)
 })
 
 test('icons=safe draws the times as plain muted text, with no Nerd caps', { options: { icons: 'safe' } }, async ($, on) => {
@@ -302,7 +339,7 @@ test('icons=safe draws the times as plain muted text, with no Nerd caps', { opti
 test('with timestamps off, rows show no times', { options: { timestamps: false } }, async ($, on) => {
   const { prompt, tool } = await mountTimed($, on)
   expect(await prompt.find({ type: 'Text', text: /^\d\d:\d\d $/ })).toBeUndefined()
-  await prompt.press({ key: 'toggle-turn-button' })
+  await clickLabel(prompt, 'toggle-turn-colored')
   await pick(prompt, 1)
   expect(await prompt.find({ key: 'toggle-call-0-colored' })).toBeDefined()
   expect(await prompt.find({ type: 'Text', text: /41s/ })).toBeUndefined()
@@ -393,9 +430,9 @@ test('rows drawn before the transcript is read already fold, so none changes hei
   await mount('UserMessage', ID(10), { text: 'now the docs', origin: { kind: 'composer' }, isExpanded: false })
 
   // The messages already hold the next prompt, so even the first draw folds the finished turn and keeps its reply.
-  expect(await prompt.find({ type: 'Button', text: /^1 tool/ })).toBeDefined()
+  expect(await labelText(prompt, 'toggle-turn-colored')).toMatch(/^1 tool/)
   expect(await step.find({ type: 'Text' })).toBeUndefined()
-  expect(await edit.find({ type: 'Button' })).toBeUndefined()
+  expect(await edit.find({ key: 'toggle-tool-colored' })).toBeUndefined()
   expect(await reply.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
   // No time yet, but its space is kept, so the prompt wraps the same once the time arrives.
   expect(await prompt.find({ key: 'toggle-prompt-time-col' })).toBeDefined()
@@ -446,7 +483,7 @@ test('the transcript is read once, and once more for its unfinished last line; r
   const folded = await mount('ToolUse', 'toolu_new', toolProps)
   expect(await folded.find({ type: 'Text' })).toBeUndefined()
   const head = await mount('UserMessage', ID(20), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: false })
-  expect(await head.find({ type: 'Button', text: /^1 tool$/ })).toBeDefined()
+  expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^1 tool$/)
   // The torn last line of the file is read again at the turn's end, then dropped as it is not JSON.
   expect(reads).toBe(2)
 })
@@ -481,14 +518,14 @@ test('a new session, whose transcript is not written yet, folds its turns; a gro
   await mount('UserMessage', ID(31), { text: 'and the docs', origin: { kind: 'composer' }, isExpanded: false })
   const head = await mount('UserMessage', ID(30), { text: 'list the files', origin: { kind: 'composer' }, isExpanded: false })
   const group = await mount('ToolGroup', 'collapsed-toolu_a', { calls: [shell('toolu_a'), shell('toolu_b')], isActive: false, isExpanded: false })
-  expect(await head.find({ type: 'Button', text: /^2 tools$/ })).toBeDefined()
+  expect(await labelText(head, 'toggle-turn-colored')).toMatch(/^2 tools$/)
   // The live turn's duration comes from its own duration line, since the transcript was never read for it.
   expect(await head.find({ type: 'Text', text: '12s ' })).toBeDefined()
   expect(await group.find({ type: 'Text' })).toBeUndefined()
   // A group of thinking alone belongs to the turn too: it never draws outside the card, folded or open.
   const thinking = await mount('ToolGroup', `collapsed-${ID(32)}`, { calls: [], isActive: false, isExpanded: false })
   expect(await thinking.find({ type: 'Text' })).toBeUndefined()
-  await head.press({ key: 'toggle-turn-button' })
+  await clickLabel(head, 'toggle-turn-colored')
   expect(await chipsOf(head)).toMatch(/Ran .*"2"/)
   expect(await thinking.find({ type: 'Text' })).toBeUndefined()
   expect(await group.find({ type: 'Text' })).toBeUndefined()
@@ -519,7 +556,7 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
 
   // Folded: the prompt and its summary line, the reply; the step, the tool row and its result draw nothing.
   expect(await prompt.find({ type: 'Text', text: 'base UserMessage' })).toBeDefined()
-  expect(await prompt.find({ type: 'Button', text: '2 tools · Edit(hooks/a.ts) · Skill(tidy)' })).toBeDefined()
+  expect(await labelText(prompt, 'toggle-turn-colored')).toBe('2 tools · Edit(hooks/a.ts) · Skill(tidy)')
   expect(await isChipOpen(prompt)).toBe(false)
   expect(await reply.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
   // One bubble: the head under the prompt opens it, the reply closes it.
@@ -527,11 +564,11 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   expect(await reply.find({ key: 'toggle-bubble-top-edge' })).toBeUndefined()
   expect(await reply.find({ key: 'toggle-bubble-bottom-edge' })).toBeDefined()
   expect(await step.find({ type: 'Text' })).toBeUndefined()
-  expect(await edit.find({ type: 'Button' })).toBeUndefined()
+  expect(await edit.find({ key: 'toggle-tool-colored' })).toBeUndefined()
   expect(await result.find({ type: 'Text' })).toBeUndefined()
 
   // Unfolded: the step draws again in the card; the head lists the work by kind, so the tool row and result draw nothing.
-  await prompt.press({ key: 'toggle-turn-button' })
+  await clickLabel(prompt, 'toggle-turn-colored')
   expect(await isChipOpen(prompt)).toBe(true)
   expect(await step.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
   // Unfolded rows sit in the turn's card; the reply stays outside it.
@@ -547,9 +584,9 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
   expect(await result.find({ type: 'Text' })).toBeUndefined()
 
   // A click on a chip lists its calls under the line; Thought comes first, so Edited starts at cell 16.
-  expect(await prompt.find({ type: 'Button', text: / Edit\(hooks\/a\.ts\) $/ })).toBeUndefined()
+  expect(await prompt.find({ key: 'toggle-call-0-colored' })).toBeUndefined()
   await pick(prompt, 17)
-  expect(await prompt.find({ type: 'Button', text: / Edit\(hooks\/a\.ts\) $/ })).toBeDefined()
+  expect(await labelText(prompt, 'toggle-call-0-colored')).toMatch(/ Edit\(hooks\/a\.ts\) $/)
 
   // A click on the card's strip folds the turn back.
   await pointerOn(step, { in: 'toggle-card-strip', type: 'down', button: 'left', x: 0, y: 0 })
@@ -584,7 +621,7 @@ test('an open turn shows a chip per kind in order of first use, Thought first, o
 
   // Folded or open, the group itself draws nothing: the head lists the turn's work.
   expect(await group.find({ type: 'Text' })).toBeUndefined()
-  await prompt.press({ key: 'toggle-turn-button' })
+  await clickLabel(prompt, 'toggle-turn-colored')
   expect(await group.find({ type: 'Text' })).toBeUndefined()
   // Thought first, then each kind in the order the turn first used it: the edit came before the skill.
   const line = await chipsOf(prompt)
@@ -597,8 +634,8 @@ test('an open turn shows a chip per kind in order of first use, Thought first, o
   // One chip open at a time: picking Edited closes Thought.
   await pick(prompt, 17)
   expect(await prompt.find({ type: 'Text', text: 'which file?' })).toBeUndefined()
-  expect(await prompt.find({ type: 'Button', text: / Edit\(hooks\/a\.ts\) $/ })).toBeDefined()
-  expect(await prompt.find({ type: 'Button', text: /^ \S Skill\(/ })).toBeUndefined()
+  expect(await labelText(prompt, 'toggle-call-0-colored')).toMatch(/ Edit\(hooks\/a\.ts\) $/)
+  expect(await prompt.find({ key: 'toggle-call-1-colored' })).toBeUndefined()
   for (const ui of [prompt, group]) await ui.unmount()
 })
 
@@ -625,7 +662,7 @@ test('with fold_turns off, finished turns start open and the line folds them', {
   expect(await isChipOpen(prompt)).toBe(true)
   expect(await step.find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
 
-  await prompt.press({ key: 'toggle-turn-button' })
+  await clickLabel(prompt, 'toggle-turn-colored')
   expect(await isChipOpen(prompt)).toBe(false)
   expect(await step.find({ type: 'Text' })).toBeUndefined()
 
@@ -644,7 +681,7 @@ test('/mod-transcript settings opens its own panel: a click saves a setting, an 
   on('fs.read', (_$, e) =>
     String(e.path).endsWith('showcase.json') ? { value: JSON.stringify({
             actions: [{ label: 'Say hi', command: 'other', args: 'hi' }, { label: 'Fold all', command: 'mod-transcript' }],
-            previews: { fold_turns: { true: [{ bar: 'border', spans: [{ text: ' + ', bg: 'accent' }, { text: ' 2 tools · Edit', color: 'muted' }] }, { spans: [{ text: '● Fixed.' }] }] } },
+            previews: { fold_turns: { true: { nerd: [{ spans: [{ text: ' 2 tools · Edit', color: 'muted' }] }, { spans: [{ text: '● Fixed.' }] }], safe: [{ spans: [{ text: ' 2 tools · Edit', color: 'muted' }] }, { spans: [{ text: '● Fixed.' }] }] } } },
           }) } : { value: '' },
   )
   on('fs.list', () => ({ value: [] }))
@@ -672,6 +709,10 @@ test('/mod-transcript settings opens its own panel: a click saves a setting, an 
     props: { title: 'mod-transcript', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} },
   } as never)
   expect(await ui.find({ type: 'Text', text: /^Fold finished turns$/ })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn())).toMatch(/"flexDirection":"column","paddingX":1,"backgroundColor":"#0D0E17","minHeight":20/)
+  // A Button posts no tip, so each action's tip waits hidden in the footer for its pill's hover.
+  expect(await ui.find({ key: 'footer-reveal-0' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn())).toContain('"still":false')
   expect(JSON.stringify(await ui.drawn({ in: 'setting-0-flip' }))).toContain('On')
   // The example card shows the folded turn this value draws: the prompt, its + line, the reply.
   expect(await ui.find({ key: 'setting-preview-0' })).toBeDefined()
@@ -814,6 +855,27 @@ test('icons=nerd draws the copy pill with the Nerd copy glyph and rounded caps',
   for (const ui of [prompt, reply, thanks, welcome, took]) await ui.unmount()
 })
 
+test('the copy pill sits on surface3 with its icon as a washed subpill, in Nerd and in safe mode', async ($, on) => {
+  const wash = mix(THEME.accent, THEME.surface3, WASH)
+  const { prompt, reply, thanks, welcome, took } = await mountCopying($, on, [])
+  expect((await reply.find({ key: 'toggle-copy-pill' }))?.props.props.bg).toBe(THEME.surface3)
+  const safe = JSON.stringify(await reply.drawn({ in: 'toggle-copy-pill' }))
+  expect(safe).toContain(`"backgroundColor":"${wash}"`)
+  expect(safe).toContain(' ⧉ ')
+  expect(safe).not.toContain(THEME.surface2)
+  for (const ui of [prompt, reply, thanks, welcome, took]) await ui.unmount()
+})
+
+test('icons=nerd draws the copy icon as a rounded subpill washed from accent', { options: { icons: 'nerd' } }, async ($, on) => {
+  const wash = mix(THEME.accent, THEME.surface3, WASH)
+  const { prompt, reply, thanks, welcome, took } = await mountCopying($, on, [])
+  const nerd = JSON.stringify(await reply.drawn({ in: 'toggle-copy-pill' }))
+  expect(nerd).toContain(`"color":"${wash}","backgroundColor":"${THEME.surface3}"`)
+  expect(nerd).toContain('\u{F018F}')
+  expect(nerd).not.toContain(' \u{F018F} ')
+  for (const ui of [prompt, reply, thanks, welcome, took]) await ui.unmount()
+})
+
 test('with copy_pill off, the reply keeps a plain bottom edge', { options: { copy_pill: false } }, async ($, on) => {
   const { prompt, reply, thanks, welcome, took } = await mountCopying($, on, [])
   expect(await reply.find({ key: 'toggle-copy-pill' })).toBeUndefined()
@@ -856,6 +918,36 @@ test('hovering a copy choice or the fold chip shows its tip in the band tip row,
   await pointerOn(prompt, { in: 'toggle-turn-chip', type: 'leave', button: 'left', x: 1, y: 0 })
   expect(await tip()).toBeUndefined()
   for (const ui of [band, prompt, reply]) await ui.unmount()
+})
+
+test('this mod draws its own toasts as cards in the band, the × shows its tip, and a click on it dismisses the card', async ($, on) => {
+  on('store.get', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: '' }))
+  on('fs.list', () => ({ value: [] }))
+  on('env.get', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: false, reason: 'too narrow' } }))
+  mock.clock(on)
+  on('ui.render', ($$: any, e: any) => {
+    const { Box, Text } = $$.ui.resolve(e)
+    if (e.component === 'AbovePrompt') return <Box key="menu-rows" flexDirection="column"><Box key="menu-row" flexDirection="row"><Text key="pill">Files</Text></Box></Box>
+    return <Text>{`base ${e.component}`}</Text>
+  })
+  const band = await $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
+  const toast = () => band.find({ type: 'Text', text: /Settings panel waiting: too narrow/ })
+  expect(await toast()).toBeUndefined()
+
+  await $.command.run({ command: 'mod-transcript', args: 'settings' } as never)
+  expect(await toast()).toBeDefined()
+  expect(await band.find({ key: 'toast-transcript-1' })).toBeDefined()
+
+  await pointerOn(band, { in: 'toast-transcript-1', type: 'enter', button: 'left', x: 1, y: 0 })
+  expect((await band.find({ type: 'Text', text: /hides this message/ }))?.text).toBe(' hides this message')
+  await pointerOn(band, { in: 'toast-transcript-1', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await toast()).toBeUndefined()
+  await band.unmount()
 })
 
 // Prompts 1 and 2, a subagent report that opens a turn without being a prompt, a rewound branch, then prompt 3 on the live branch.

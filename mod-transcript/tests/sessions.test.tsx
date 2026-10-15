@@ -148,7 +148,7 @@ test('a resume to another session and back draws the shown session\'s own number
   const head = await prompt(104, 'alpha two')
   expect(await numberOf(head)).toBe('2')
   // A's one edit, not B's two calls.
-  expect(await head.find({ type: 'Button', text: /^1 tool · Edit/ })).toBeDefined()
+  expect(JSON.stringify(await head.drawn({ in: 'toggle-turn-colored' }))).toMatch(/1 tool · Edit/)
   expect(await (await reply(107, 'A two.')).find({ type: 'Text', text: 'base AssistantMessage' })).toBeDefined()
 })
 

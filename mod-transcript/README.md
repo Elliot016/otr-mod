@@ -57,6 +57,7 @@ Change them with `/mod-transcript settings` or the gear pill.
 | Show the latest turn in full | on | Stays open until your next prompt. The latest turn shows every tool row and result as Claude Code draws them. Off, finished tool calls fold right away |
 | Copy button | on | On each finished reply's edge. A copy button sits there: point at it to pick reply, code, text, table or links, then click one. The reply marks what the choice under the pointer copies. Off, the edge stays plain |
 | Prompt numbers | on | #N before each of your prompts. It matches the number the Prompts and Heads up panels show |
+| Animations | on | The fold chip and the kind chips fade when the pointer leaves them, a running command's dot blinks, and the tabs and settings fade. Off, they switch at once and the dot stays lit |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License

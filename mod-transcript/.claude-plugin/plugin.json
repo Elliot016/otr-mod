@@ -45,6 +45,12 @@
       "description": "#N before each of your prompts. It matches the number the Prompts and Heads up panels show",
       "default": true
     },
+    "animations": {
+      "type": "boolean",
+      "title": "Animations",
+      "description": "The fold chip and the kind chips fade when the pointer leaves them, a running command's dot blinks, and the tabs and settings fade. Off, they switch at once and the dot stays lit",
+      "default": true
+    },
     "icons": {
       "type": "string",
       "title": "Icons",

@@ -96,7 +96,7 @@ for (const icons of ['safe', 'nerd']) {
     const { prompt, reply, next } = await mountReply($, on)
     // At rest the row is what Claude Code draws, and no mark is in it.
     expect(await drawnOf(reply)).toContain('base AssistantMessage')
-    expect(await drawnOf(reply)).not.toContain(THEME.surface3)
+    expect(await drawnOf(reply)).not.toContain(`"backgroundColor":"${THEME.surface3}"`)
     await point(reply, 'move', (await leadOf(reply)) + 1)
     await point(reply, 'move', await cellOf(reply, 1))
     for (const [at, what] of CHOICES.entries()) {
@@ -110,7 +110,7 @@ for (const icons of ['safe', 'nerd']) {
     expect(await drawnOf(reply)).toContain('Nothing else to say.')
     await point(reply, 'leave', 0)
     expect(await drawnOf(reply)).toContain('base AssistantMessage')
-    expect(await drawnOf(reply)).not.toContain(THEME.surface3)
+    expect(await drawnOf(reply)).not.toContain(`"backgroundColor":"${THEME.surface3}"`)
     for (const ui of [prompt, reply, next]) await ui.unmount()
   })
 }

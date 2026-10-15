@@ -2,6 +2,8 @@
 // Draws a running command's dot, blinking between two colors until it finishes.
 import type { ClientModule } from 'claude-code'
 
+import { MARK } from './theme'
+
 export type DotProps = { color: string; dim: string; still: boolean }
 
 // How often a running command's dot swaps between its two colors.
@@ -14,7 +16,7 @@ const Dot: ClientModule<DotProps, boolean> = (props, surface) => {
     surface.setState(true)
     if (!props.still) surface.every(BLINK_MS, () => surface.setState(!surface.state))
   }
-  return <Text color={surface.state === false ? props.dim : props.color}>●</Text>
+  return <Text color={surface.state === false ? props.dim : props.color}>{MARK.stopOpen}</Text>
 }
 
 export default Dot

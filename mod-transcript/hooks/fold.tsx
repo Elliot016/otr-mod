@@ -1,14 +1,14 @@
 // mod-transcript / hooks/fold.tsx, by v-amorim
-// Draws the fold pill that lightens under the pointer and folds on click.
+// Draws the fold pill whose mark lights under the pointer and folds on click.
 import type { ClientModule } from 'claude-code'
 
 import type { BarMessage, BarProps } from './bar'
-import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, mix, postTip, stepToward } from './entry'
+import { HOVER_STEPS, HOVER_TICK_MS, hoverMix, postTip, stepToward } from './entry'
 import text from './text'
 import { CAPS, THEME } from './theme'
 
-// color: the pill's fill at rest; the whole pill, ends included, lightens under the pointer.
-export type FoldProps = BarProps & { color: string; isOpen: boolean; nerd: boolean; still: boolean }
+// color: the mark's color at rest; glyphs: the marks of an open and a closed line, from the look.
+export type FoldProps = BarProps & { color: string; isOpen: boolean; nerd: boolean; still: boolean; glyphs: { open: string; closed: string } }
 
 type State = { isOver: boolean; at: number; level: number }
 
@@ -35,7 +35,7 @@ const wake = (surface: Parameters<ClientModule<FoldProps, State>>[1]) => {
   timers.set(surface, stop)
 }
 
-// The + / − fold chip: a Button would invert only its own cell under the pointer, never the caps.
+// The fold chip on a surface3 pill: a Button would invert only its own cell under the pointer, never the caps.
 const Fold: ClientModule<FoldProps, State> = (props, surface) => {
   const { Box, Text } = surface.elements
   latest.set(surface, props)
@@ -52,13 +52,13 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
     else if (over !== base.isOver) postTip(surface, `fold-${props.id}`, over ? { glyph: '', label: text.tipLabel[props.kind], text: text.tipFold[props.kind] } : null)
   })
 
-  const fill = hoverMix(props.color, mix(props.color, THEME.onSurface, 0.35), surface.state?.level ?? 0)
-  const mark = props.isOpen ? '−' : '+'
+  const mark = hoverMix(props.color, THEME.accent, surface.state?.level ?? 0)
+  const glyph = props.isOpen ? props.glyphs.open : props.glyphs.closed
   return (
     <Box flexDirection="row">
-      {props.nerd ? <Text color={fill}>{CAPS.left}</Text> : null}
-      <Text color={THEME.onSurface} backgroundColor={fill}>{props.nerd ? mark : ` ${mark} `}</Text>
-      {props.nerd ? <Text color={fill}>{CAPS.right}</Text> : null}
+      {props.nerd ? <Text color={THEME.surface3}>{CAPS.left}</Text> : null}
+      <Text color={mark} backgroundColor={THEME.surface3} bold>{props.nerd ? glyph : ` ${glyph} `}</Text>
+      {props.nerd ? <Text color={THEME.surface3}>{CAPS.right}</Text> : null}
     </Box>
   )
 }
