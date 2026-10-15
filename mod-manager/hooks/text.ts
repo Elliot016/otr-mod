@@ -48,7 +48,7 @@ export default {
   "featuresAll": "Show all",
   "featuresLess": "Show less",
   "tipFeaturesAll": "shows every feature line in full",
-  "tipFeaturesLess": "cuts the feature lines back to one row each",
+  "tipFeaturesLess": "cuts each feature to one row",
   "reactsTo": "Reacts to {event}.",
   "blurbs": {
     "session.start": "Runs once when a session starts, usually to register commands or start timers.",

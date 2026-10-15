@@ -3,6 +3,6 @@
 declare module 'claude-code' {
   interface PluginState {
     'mod-manager': { pane: boolean }
-    'mod-menu': { hidden: boolean }
+    'mod-menu': { hidden: boolean; labels: 'always' | 'never' }
   }
 }

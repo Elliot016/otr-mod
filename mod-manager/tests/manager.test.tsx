@@ -366,14 +366,24 @@ test('a feature line too long for the page is cut until Show all wraps every lin
   } as never))
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 12, y: 0 })
 
-  const detail = async () => (await ui.find({ type: 'Text', text: `${MARK.sep} ${long}` }))?.props.wrap
-  expect(await detail()).toBe('truncate-end')
+  // Closed, a feature is one cut row, "Name · text".
+  const cut = async () => (await ui.find({ type: 'Text', text: `${MARK.sep} ${long}` }))?.props.wrap
+  expect(await cut()).toBe('truncate-end')
   expect(JSON.stringify(await ui.drawn({ in: 'manager-features' }))).toContain('Show all')
   await ui.pointer({ in: 'manager-features', type: 'down', button: 'left', x: 1, y: 0 })
-  expect(await detail()).toBe('wrap')
+  // Open, the name has its own row, its text sits under it two cells in and wraps there, and a blank row parts the features.
+  expect((await ui.find({ type: 'Text', text: long }))?.props.wrap).toBe('wrap')
+  expect(await ui.find({ type: 'Text', text: `${MARK.sep} ${long}` })).toBeUndefined()
+  const name = await ui.find({ type: 'Text', text: 'Count' })
+  expect(name?.props.bold).toBe(true)
+  expect(name?.props.color).toBe(THEME.onSurface)
+  expect((await ui.find({ key: 'feature-0-detail' }))?.props.paddingLeft).toBe(2)
+  expect((await ui.find({ key: 'feature-1-detail' }))?.props.paddingLeft).toBe(2)
+  expect((await ui.find({ key: 'feature-0' }))?.props.marginTop).toBe(0)
+  expect((await ui.find({ key: 'feature-1' }))?.props.marginTop).toBe(1)
   expect(JSON.stringify(await ui.drawn({ in: 'manager-features' }))).toContain('Show less')
   await ui.pointer({ in: 'manager-features', type: 'down', button: 'left', x: 1, y: 0 })
-  expect(await detail()).toBe('truncate-end')
+  expect(await cut()).toBe('truncate-end')
   await ui.unmount()
 })
 
@@ -446,7 +456,7 @@ test('a mod page changes its settings, runs its actions, and holds them while Cl
     '/h/.claude/mods/alpha/showcase.json': JSON.stringify({
       tagline: 'Alpha tagline',
       actions: [{ label: 'Say hi', command: 'alpha', args: 'hi' }],
-      previews: { loud: { false: [{ bar: 'border', spans: [{ text: 'quiet example' }] }] } },
+      previews: { loud: { false: { nerd: [{ spans: [{ text: 'quiet example' }] }], safe: [{ spans: [{ text: 'quiet example' }] }] } } },
     }),
     '/h/.claude/mods/alpha/.claude-plugin/plugin.json': JSON.stringify({ name: 'alpha', description: 'alpha does a thing', version: '1.0.0', userConfig: { loud: { type: 'boolean', title: 'Loud', description: 'Shouts', default: false } } }),
   })

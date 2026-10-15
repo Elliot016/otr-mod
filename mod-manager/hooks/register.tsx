@@ -6,10 +6,11 @@ import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './regis
 import { CAPS, fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
-import { menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, withMark } from './look'
-import { settingChoice, settingsBody, type Action } from './settings'
+import { cardStrip, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Reveal, withMark } from './look'
+import { actionReveals, settingChoice, settingsBody, type Action } from './settings'
+import { cardSpace, stickyCard } from './card'
 import { type ListMessage, type ListProps } from './list'
 
 // `$` cannot cross an import, so the registry gets plain functions instead.
@@ -227,8 +228,7 @@ async function openingPane($: EngineInterface) {
 // The icons switch: every mod keeps its own icons setting, and this writes the same value into each, as a person would in its panel.
 const ICON_MODES = ['auto', 'nerd', 'safe'] as const
 
-// Rows above the hover card (the tabs, the status line and the gap under them), and the card's own rows.
-const HEAD_ROWS = 3
+// The hover card's own rows, border included.
 const CARD_ROWS = 5
 
 // The share of green left in the on count's pill, as the legend pills tint theirs.
@@ -335,6 +335,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     await loadLook($)
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
+    const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
@@ -347,7 +348,7 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'manager', { label: look.glyph.gear, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
+    const entry = menuEntry({ Box, Client, Text }, look.nerd, 'manager', { label: look.glyph.gear, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still, labels })
 
     return pillRow({ Box, Client, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip, e.props.bodyColumns)
   })
@@ -419,11 +420,11 @@ export const register: Register = (on, options) => {
     // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const redraw = () => $.ui.invalidate('ui.render')
-    const frame = (children: RenderChildren) => (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+    const frame = (children: RenderChildren, reveals: Reveal[] = []) => (
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {children}
-        <Box key="footer-space" height={FOOTER_ROWS} />
-        {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll)}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, paneTip, e.props.bodyColumns, e.props.scroll, reveals)}
       </Box>
     )
 
@@ -444,22 +445,29 @@ export const register: Register = (on, options) => {
       // The card's border and padding take two columns a side; the title, its gap and the separator come before the detail.
       const room = e.props.bodyColumns - 4
       const isCut = listed.some(item => item.title.length + 3 + item.detail.length > room)
-      const features = listed.map((item, index) => (
-        <Box key={`feature-${index}`} flexDirection="row" columnGap={1}>
-          <Box flexShrink={0}>
-            <Text color={THEME.onSurface} bold>{item.title}</Text>
+      // Closed, one cut row each; open, the name on its own row with its text two cells in, so every wrapped line hangs at one indent.
+      const features = listed.map((item, index) =>
+        featuresOpen ? (
+          <Box key={`feature-${index}`} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
+            <Text key={`feature-${index}-name`} color={THEME.onSurface} bold>{item.title}</Text>
+            <Box key={`feature-${index}-detail`} paddingLeft={2}>
+              <Text color={THEME.muted} wrap="wrap">{item.detail}</Text>
+            </Box>
           </Box>
-          <Text color={THEME.muted} wrap={featuresOpen ? 'wrap' : 'truncate-end'}>{`${MARK.sep} ${item.detail}`}</Text>
-        </Box>
-      ))
+        ) : (
+          <Box key={`feature-${index}`} flexDirection="row" columnGap={1}>
+            <Box flexShrink={0}>
+              <Text color={THEME.onSurface} bold>{item.title}</Text>
+            </Box>
+            <Text color={THEME.muted} wrap="truncate-end">{`${MARK.sep} ${item.detail}`}</Text>
+          </Box>
+        ),
+      )
       const label = featuresOpen ? text.featuresLess : text.featuresAll
-      const more = isCut ? (
-        <Box key="features-more" flexDirection="row">
-          {look.nerd ? <Text color={THEME.surface3} backgroundColor={THEME.surface1}>{CAPS.left}</Text> : null}
-          <Client key="manager-features" module="./entry.tsx" height={1} props={{ id: 'manager-features', label, isOpen: false, bg: THEME.surface3, color: THEME.onSurface, idle: THEME.onSurface, still, tip: { glyph: look.glyph.title, label, text: featuresOpen ? text.tipFeaturesLess : text.tipFeaturesAll } } satisfies EntryProps} />
-          {look.nerd ? <Text color={THEME.surface3} backgroundColor={THEME.surface1}>{CAPS.right}</Text> : null}
-        </Box>
-      ) : null
+      const featuresIcon = look.nerd ? { subLead: look.glyph.icon.features ?? look.glyph.title, subLeadColor: THEME.accent } : {}
+      const more = isCut
+        ? pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-features" module="./entry.tsx" height={1} props={{ id: 'manager-features', label, isOpen: true, bg: THEME.surface3, color: THEME.onSurface, nerd: look.nerd, still, ...featuresIcon, tip: { glyph: look.glyph.icon.features ?? look.glyph.title, label, text: featuresOpen ? text.tipFeaturesLess : text.tipFeaturesAll } } satisfies EntryProps} />, 'features-more', THEME.surface1)
+        : null
 
       return frame([
         <Box key="page-head" flexDirection="row" columnGap={1}>
@@ -468,6 +476,7 @@ export const register: Register = (on, options) => {
         </Box>,
         <Text key="page-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || hint}</Text>,
         <Box key="page-about" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+          {cardStrip({ Box, Text }, 'page-about')}
           <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(mod.name), sep: MARK.sep, version: mod.version })}</Text>
           <Text color={THEME.muted}>{mod.description}</Text>
           {mod.showcase?.tagline ? <Text color={THEME.secondary}>{mod.showcase.tagline}</Text> : null}
@@ -479,8 +488,8 @@ export const register: Register = (on, options) => {
             <Text color={THEME.muted}>{fill(text.turnOnFirst, { name: shownName(mod.name) })}</Text>
           </Box>
         ),
-        section({ Box, Text }, look, 'features', 'features', text.sectionFeatures, features.length ? [...features, more] : <Text color={THEME.muted}>{text.noFeatures}</Text>),
-      ])
+        section({ Box, Text }, look, 'features', 'features', text.sectionFeatures, features.length ? [...features, more && <Box key="features-more-row" marginTop={featuresOpen ? 1 : 0}>{more}</Box>] : <Text color={THEME.muted}>{text.noFeatures}</Text>),
+      ], actionReveals(actions, look, working))
     }
 
     // One section per source, so a row needs no "yours" or "installed" label of its own.
@@ -509,6 +518,7 @@ export const register: Register = (on, options) => {
               hasSettings: item.settings > 0,
             })),
             gear: look.glyph.gear,
+            still,
             nameWidth: Math.max(...members.map(({ item }) => shownName(item.name).length)),
             slugWidth: Math.max(...members.map(({ item }) => item.name.length)),
             icon: look.glyph.icon[icon] ?? '',
@@ -528,21 +538,23 @@ export const register: Register = (on, options) => {
     // The sticky card above the list keeps its space while nothing is hovered, so the list never jumps.
     const hoverCard = () => {
       const hovered = mods[hovering]
-      return (
-        <Box key="card" position="absolute" top={Math.max(HEAD_ROWS, e.props.scroll.offset)} left={1} width={Math.max(10, e.props.bodyColumns - 2)} height={CARD_ROWS} flexDirection="column" paddingX={1} overflow="hidden" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
-          {hovered ? (
-            <Box key="hover-card" flexDirection="column">
-              <Box key="hover-card-title" flexShrink={0}>
-                <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(hovered.name), sep: MARK.sep, version: hovered.version })}</Text>
-              </Box>
-              <Box key="hover-card-text" height={CARD_ROWS - 3} overflow="hidden" flexShrink={0}>
-                <Text color={THEME.muted}>{hovered.description || text.noDescription}</Text>
-              </Box>
+      return stickyCard(
+        { Box, Text },
+        e.props.scroll.offset,
+        e.props.bodyColumns,
+        CARD_ROWS,
+        hovered ? (
+          <Box key="hover-card" flexDirection="column">
+            <Box key="hover-card-title" flexShrink={0}>
+              <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(hovered.name), sep: MARK.sep, version: hovered.version })}</Text>
             </Box>
-          ) : (
-            <Text key="hover-card-empty" color={THEME.muted}>{text.cardEmpty}</Text>
-          )}
-        </Box>
+            <Box key="hover-card-text" height={CARD_ROWS - 3} overflow="hidden" flexShrink={0}>
+              <Text color={THEME.muted}>{hovered.description || text.noDescription}</Text>
+            </Box>
+          </Box>
+        ) : (
+          <Text key="hover-card-empty" color={THEME.muted}>{text.cardEmpty}</Text>
+        ),
       )
     }
 
@@ -560,6 +572,7 @@ export const register: Register = (on, options) => {
     }
     const iconsSwitch = iconRows.length ? (
       <Box key="icons-switch" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1}>
+        {cardStrip({ Box, Text }, 'icons-switch')}
         <Box key="icons-switch-row" flexDirection="row" columnGap={1}>
           <Text color={THEME.onSurface} bold>{text.iconsLabel}</Text>
           {pill({ Box, Text }, look.nerd, THEME.surface2, ICON_MODES.map(iconOption), 'icons-bar', THEME.surface1)}
@@ -569,14 +582,14 @@ export const register: Register = (on, options) => {
       </Box>
     ) : null
 
-    const goLead = { subLead: look.glyph.title, subLeadColor: THEME.accent }
+    const goLead = { subLead: bare(look.glyph.go), subLeadColor: THEME.accent }
     return frame([
       <Box key="list-head" flexDirection="row" columnGap={1}>
         {tabRow({ Box, Client, Text }, look.nerd, [listTab(true)], still)}
         {pill({ Box, Text }, look.nerd, mix(THEME.good, THEME.bg, COUNT_WASH), <Text color={THEME.good}>{look.nerd ? fill(text.onCount, { on: onCount }) : ` ${fill(text.onCount, { on: onCount })} `}</Text>, 'on-count', THEME.bg)}
       </Box>,
       <Text key="list-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { sep: MARK.sep })}</Text>,
-      <Box key="card-space" height={CARD_ROWS} marginTop={1} flexShrink={0} />,
+      cardSpace({ Box }, CARD_ROWS),
       iconsSwitch,
       mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>{text.noMods}</Text> : null,
       group('dir', text.sectionYours, 'mod'),
