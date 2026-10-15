@@ -40,6 +40,14 @@ Automatic.
 - **Click to fill:** A click puts the suggestion in the input for you to edit; nothing is sent.
 - **Stays out of the way:** They clear when you send a prompt or a new turn starts, and a failed or interrupted turn shows nothing.
 
+## Costs
+
+This mod calls a model, which spends tokens and counts against your plan quota.
+
+After each finished turn of the main agent (not an interrupted one, not a subagent's), it forks your session to ask for the suggestions. The fork runs on your session's model and reuses the cached conversation, so a long session still makes a sizable request every turn.
+
+To turn it off, set Suggest next steps to off (`/mod-next-steps settings`). Then no request is made.
+
 ## Settings
 
 Change them with `/mod-next-steps settings` or the gear pill.

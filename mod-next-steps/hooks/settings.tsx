@@ -131,6 +131,25 @@ const pillOn = ({ Box, Text }: Elements, look: Look, key: string, bg: string, bo
   )
 }
 
+export type Choice = { key: string; isOn: boolean; props: Pick<EntryProps, 'id' | 'label' | 'still' | 'tip' | 'subLead' | 'subLeadColor'> }
+
+// A choice as one surface-3 pill: the pick a washed ok subpill, the rest muted, a rail between; `on` is what the bar sits on.
+export function choiceBar(elements: Elements, look: Look, key: string, on: string, choices: Choice[]) {
+  const { Box, Client, Text } = elements
+  const wash = mix(THEME.ok, THEME.surface3, WASH)
+  const entry = (choice: Choice, shape: Partial<EntryProps>) => (
+    <Client key={choice.key} module="./entry.tsx" height={1} props={{ ...choice.props, isOpen: choice.isOn, bg: THEME.surface3, ...shape } satisfies EntryProps} />
+  )
+  const options = choices.flatMap((choice, at) => {
+    const rail = at === 0 ? [] : [<Client key={`${key}-rail-${at}`} module="./entry.tsx" height={1} props={{ id: `${key}-rail-${at}`, label: '', isOpen: false, bg: THEME.surface3, rail: true } satisfies EntryProps} />]
+    if (!choice.isOn) return [...rail, entry(choice, { idle: THEME.muted })]
+    // Tight, so the subpill is as wide as an idle option: the caps (Nerd) or a space (safe) stand where its padding was.
+    return [...rail, pillOn(elements, look, `${choice.key}-chosen`, wash, entry(choice, { bg: wash, color: THEME.ok, idle: THEME.muted, nerd: look.nerd, tight: true }), THEME.surface3)]
+  })
+  const space = (side: string) => (look.nerd ? null : <Text key={`${key}-space-${side}`} backgroundColor={THEME.surface3}> </Text>)
+  return pillOn(elements, look, `${key}-bar`, THEME.surface3, <Box key={`${key}-options`} flexDirection="row" backgroundColor={THEME.surface3}>{[space('left'), ...options, space('right')]}</Box>, on)
+}
+
 const actionScope = (index: number) => `action-row-${index}`
 
 // The tip each live action shows in the pane footer on hover; a Button cannot post one, so paneFooter reveals it by the pill's hover group.
@@ -151,18 +170,13 @@ function control(elements: Elements, look: Look, row: ConfigRow, index: number, 
   )
   if (row.isLocked) return <Text color={THEME.muted}>{`${shown(row)} ${bare(look.glyph.locked)} ${style.text.locked}`}</Text>
   if (row.kind === 'boolean') {
-    const color = row.value === true ? THEME.good : THEME.muted
-    const bg = row.value === true ? mix(THEME.good, THEME.surface1, WASH) : THEME.surface3
+    const color = row.value === true ? THEME.ok : THEME.muted
+    const bg = row.value === true ? mix(THEME.ok, THEME.surface1, WASH) : THEME.surface3
     return pillOn(elements, look, `${key}-flip`, bg, entry('flip', `${shown(row)} ${bare(look.glyph.cycle)}`, row.value !== true, bg, color, false))
   }
   if (row.kind === 'choice' && row.options?.length) {
-    const options = row.options.map((option, at) => {
-      // Idle options get caps in the bar's own color, so moving the choice never shifts a label.
-      if (option !== String(row.value)) return pillOn(elements, look, `${key}-idle-${at}`, THEME.surface2, entry(`option-${at}`, option, option, THEME.surface2, THEME.muted, false), THEME.surface2)
-      // The chosen option is a pill inside the bar, so its own caps sit on the bar's color.
-      return pillOn(elements, look, `${key}-chosen`, THEME.surface3, entry(`option-${at}`, option, option, THEME.surface3, THEME.onSurface, true), THEME.surface2)
-    })
-    return pillOn(elements, look, `${key}-bar`, THEME.surface2, <Box key={`${key}-options`} flexDirection="row" backgroundColor={THEME.surface2}>{options}</Box>)
+    const choices = row.options.map((option, at) => ({ key: `${key}-option-${at}`, isOn: option === String(row.value), props: { id: settingId(row, option), label: option, still, ...tipFor(look.glyph.cycle) } }))
+    return choiceBar(elements, look, key, THEME.surface1, choices)
   }
   if (row.kind === 'number' && typeof row.value === 'number') {
     const range = fields?.[row.key.slice(row.key.indexOf('.') + 1)]
