@@ -23,5 +23,6 @@ export default {
   "agoLessThanMinute": "less than a minute ago",
   "agoMinutes": "{minutes} min ago",
   "agoHoursMinutes": "{hours} h {minutes} min ago",
-  "tipTabSettings": "shows this mod's settings"
+  "tipTabSettings": "shows this mod's settings",
+  "tipToast": {"label":"Dismiss","text":"hides this message"}
 }

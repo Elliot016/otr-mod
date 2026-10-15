@@ -3,11 +3,12 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, pathOf, recordEdit, type Io } from './guard'
-import { isTipMessage, type Tip, type TipMessage } from './entry'
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, paneTitle, type IconMode, withMark } from './look'
-import { tabRow } from './pills'
+import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
+import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
+import { pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import text from './text'
+import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { fill, MARK, statusColor, THEME } from './theme'
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
@@ -16,6 +17,9 @@ let enabled = true
 let hovered: TipMessage | null = null
 const hoveredTip = (): Tip | null => (hovered?.id && hovered.label ? { glyph: hovered.glyph ?? '', label: hovered.label, text: hovered.text ?? '' } : null)
 let windowMinutes = 30
+// The animations setting, fixed per activation: off, every entry draws still.
+let still = false
+const toasts = new ToastList('collisionguard')
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 
@@ -163,10 +167,30 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
 }
 
 export const register: Register = (on, options) => {
+  still = options.animations === false
+  toasts.isStill = still
+  // Cards in the band; Claude Code's own toast box is narrow and cuts long text.
+  on('ui.toast', async ($, e) => {
+    const id = toasts.add(e.text)
+    $.ui.invalidate('ui.render')
+    $.clock.after(e.timeoutMs ?? TOAST_MS, () => {
+      toasts.drop(id)
+      $.ui.invalidate('ui.render')
+    })
+    return { value: undefined }
+  })
+
   // A settings card's click arrives as a message.
   on('ui.message', async ($, e, next) => {
     if (isTipMessage(e.data)) {
       hovered = e.data
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
+    const clicked = e.data as EntryMessage
+    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+    if (dismissed !== undefined) {
+      toasts.drop(dismissed)
       $.ui.invalidate('ui.render')
       return next(e)
     }
@@ -247,6 +271,19 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // Only toasts draw here; the pill row below is other mods', joined through splitRow so load order cannot start a second row.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await loadLook($)
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
+    const cards = toastCards({ Box, Client, Text }, toasts, look, text.tipToast)
+    if (cards.length === 0) return next(e)
+    const { group, row, rest, tip: menuTip } = splitRow(await next(e))
+    const tip = hovered?.id ? tipLine({ Box, Text }, tipText(hovered)) : menuTip
+    if (group.length || row.length || tip) return pillRow({ Box, Client, Text }, look.nerd, group, row, [...cards, ...rest], tip, e.props.bodyColumns)
+    return <Box key="collisionguard" flexDirection="column">{cards}{rest}</Box>
+  })
+
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     await loadLook($)
     if (e.requestId !== PANE) return next(e)
@@ -263,11 +300,11 @@ export const register: Register = (on, options) => {
     }
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
-        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-collision-guard-settings-tab', label: `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneTitleSettings, text: text.tipTabSettings } }], false)}
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        {tabRow({ Box, Client, Text }, look.nerd, [{ id: 'mod-collision-guard-settings-tab', label: `${text.paneTitle} ${MARK.sep} ${text.paneTitleSettings}`, icon: look.glyph.gear, isOpen: true, tip: { glyph: look.glyph.gear, label: text.paneTitleSettings, text: text.tipTabSettings } }], still)}
         <Text key="settings-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || `${text.defaultNote} ${MARK.sep} ${text.defaultNoteTail}`}</Text>
-        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, fields, still: false })}
-        <Box key="footer-space" height={FOOTER_ROWS} />
+        {settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working: false, run, previews, fields, still })}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
         {paneFooter({ Box, Text }, hoveredTip(), e.props.bodyColumns, e.props.scroll)}
       </Box>
     )

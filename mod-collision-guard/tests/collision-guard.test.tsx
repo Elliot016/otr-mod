@@ -29,7 +29,7 @@ function world(on: any, files: Record<string, string>, answerWith: string | (() 
   on('fs.list', () => ({ value: Object.keys(files).filter(path => path.startsWith(`${DIR}/`)).map(path => ({ name: path.slice(DIR.length + 1), kind: 'file', size: 0, mtimeMs: 0, isLink: false })) }))
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
   on('session.id', () => ({ value: 'mine' }))
-  mock.clock(on, { now: NOW })
+  const clock = mock.clock(on, { now: NOW })
   on('tool.call', (_$: unknown, e: any) => {
     if (e.tool === 'AskUserQuestion') {
       const [q] = e.questions
@@ -40,7 +40,7 @@ function world(on: any, files: Record<string, string>, answerWith: string | (() 
     ran.push(`${e.tool} ${e.file_path ?? e.notebook_path}`)
     return { result: { text: 'ok' } }
   })
-  return { files, asked, ran }
+  return { files, asked, ran, clock }
 }
 
 const call = ($: any, tool = 'Edit', path = FILE) => $.tool.call(tool === 'NotebookEdit' ? { tool, notebook_path: path, new_source: 'x' } : { tool, file_path: path, old_string: 'a', new_string: 'b', content: 'b' })
@@ -230,4 +230,51 @@ test('a pause raises one notification naming the file, and a refused one does no
   expect(notes[0]!.text).not.toContain('/work/')
   expect(w.asked).toHaveLength(1)
   expect(w.ran).toEqual([`Edit ${FILE}`])
+})
+
+type Pointer = { pointer: (event: object) => Promise<unknown> }
+const pointing = <T extends object>(ui: T) => ui as T & Pointer
+
+const bandOf = async ($: any, on: any) => {
+  const { clock } = world(on, {})
+  on('ui.open', () => ({ value: { isPlaced: false, reason: 'too narrow' } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>other mod</Text>
+  })
+  const ui = await $.ui.mount({
+    plugin: 'mod-collision-guard',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  } as never)
+  return { ui, clock }
+}
+
+test('a toast draws as a band card, shows its dismiss tip, and a click removes it', async ($, on) => {
+  const { ui, clock } = await bandOf($, on)
+  await $.command.run({ command: 'mod-collision-guard', args: 'settings' })
+  expect(await ui.find({ type: 'Text', text: /^Settings panel waiting/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'other mod' })).toBeDefined()
+  await pointing(ui).pointer({ type: 'move', x: 0, y: 0, in: 'toast-collisionguard-1' })
+  expect(await ui.find({ type: 'Text', text: 'Dismiss:' })).toBeDefined()
+  await pointing(ui).pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'toast-collisionguard-1' })
+  expect(await ui.find({ type: 'Text', text: /^Settings panel waiting/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a toast leaves on its own after the timeout', async ($, on) => {
+  const { ui, clock } = await bandOf($, on)
+  await $.command.run({ command: 'mod-collision-guard', args: 'settings' })
+  expect(await ui.find({ type: 'Text', text: /^Settings panel waiting/ })).toBeDefined()
+  await clock.advance(4000)
+  expect(await ui.find({ type: 'Text', text: /^Settings panel waiting/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('animations off still draws the settings pane', { options: { animations: false } }, async ($, on) => {
+  const ui = await paneOf($, on)
+  expect(JSON.stringify(await ui.drawn({ in: 'mod-collision-guard-settings-tab' }))).toContain('Settings')
+  await ui.unmount()
 })
