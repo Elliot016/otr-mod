@@ -3,9 +3,9 @@
 import type { ConfigRow, ConfigValue, RenderElement } from 'claude-code'
 
 import type { EntryProps, Tip } from './entry'
-import { section, subpill, type Look } from './look'
+import { section, subpill, type Look, type Reveal } from './look'
 import style from './style'
-import { CAPS, MARK, mix, THEME, WASH } from './theme'
+import { CAPS, fill, MARK, mix, THEME, WASH } from './theme'
 
 // A button a mod offers beside its settings: runs `/<command> <args>`, declared in its showcase.json.
 // isLocal marks the drawing mod's own command, which it calls directly, so Claude working does not hold it.
@@ -62,60 +62,31 @@ export function stepNumber(value: number, by: 1 | -1, range: Range = {}) {
 
 type ThemeColor = keyof typeof THEME
 
-// An example card line: colored spans (`pill` caps one on its bg, `sub` adds a subpill, `parts` colors pieces inside), `bar` the transcript tint and strip.
-type PreviewPart = { text: string; color?: ThemeColor }
-export type PreviewSpan = PreviewPart & { bg?: ThemeColor; pill?: boolean; sub?: string; subColor?: ThemeColor; parts?: PreviewPart[] }
-export type PreviewLine = { bar?: ThemeColor; spans: PreviewSpan[] }
+// A literal run of an example line, as the mod's previews test drew it from its real tree; a color is a theme name or a #hex.
+export type PreviewSpan = { text: string; color?: string; bg?: string; bold?: boolean }
+export type PreviewLine = { spans: PreviewSpan[] }
+export type Preview = { frame?: { border: string; bg: string }; nerd: PreviewLine[]; safe: PreviewLine[] }
 
-// showcase.json's "previews": per setting field, per value as text ("true", "false", an option), the card's lines.
-export type Previews = Record<string, Record<string, PreviewLine[]>>
+// showcase.json's "previews", written by `just previews`: per setting field, per value as text ("true", "false", an option), the card in each icon mode.
+export type Previews = Record<string, Record<string, Preview>>
+
+const shade = (color: string | undefined) => (color === undefined ? undefined : color in THEME ? THEME[color as ThemeColor] : color)
 
 // What the row's current value looks like, as a card under it; null when the mod drew none for that value.
-function exampleOf(elements: Elements, look: Look, previews: Previews | undefined, row: ConfigRow) {
-  const { Box, Text } = elements
-  const lines = previews?.[row.key.slice(row.key.indexOf('.') + 1)]?.[String(row.value)]
-  if (!lines?.length) return null
-  return lines.map((line, index) => {
-    const on = line.bar ? THEME.surface1 : THEME.bg
-    const spans = line.spans.map((span, at) => {
-      const key = `span-${at}`
-      if (!span.pill) {
-        return (
-          <Box key={key} flexShrink={span.bg ? 0 : 1} {...(span.bg ? { backgroundColor: THEME[span.bg] } : {})}>
-            <Text color={THEME[span.color ?? 'onSurface']}>{span.text}</Text>
-          </Box>
-        )
-      }
-      const fill = THEME[span.bg ?? 'surface3']
-      const body = (
-        <Box key={`${key}-body`} flexDirection="row" backgroundColor={fill}>
-          {look.nerd ? null : <Text key={`${key}-pad-left`}>{' '}</Text>}
-          {span.sub ? subpill(elements, look.nerd, fill, span.sub, `${key}-sub`, THEME[span.subColor ?? 'accent']) : null}
-          <Text key={`${key}-text`} color={THEME[span.color ?? 'onSurface']}>
-            {span.sub ? ' ' : ''}
-            {span.parts ? span.parts.map((part, at) => <Text key={`${key}-part-${at}`} color={THEME[part.color ?? 'onSurface']}>{part.text}</Text>) : span.text}
-            {look.nerd ? '' : ' '}
-          </Text>
-        </Box>
-      )
-      return pillOn(elements, look, key, fill, body, on)
-    })
-    if (!line.bar) {
-      return (
-        <Box key={`line-${index}`} flexDirection="row">
-          {spans}
-        </Box>
-      )
-    }
-    return (
-      <Box key={`line-${index}`} flexDirection="row" backgroundColor={THEME.surface1}>
-        <Box key={`line-${index}-bar`} width={1} flexShrink={0} backgroundColor={THEME[line.bar]} />
-        <Box key={`line-${index}-body`} flexDirection="row" flexGrow={1} paddingX={1}>
-          {spans}
-        </Box>
-      </Box>
-    )
-  })
+function exampleOf({ Box, Text }: Elements, look: Look, previews: Previews | undefined, row: ConfigRow, index: number) {
+  const entry = previews?.[row.key.slice(row.key.indexOf('.') + 1)]?.[String(row.value)]
+  const lines = look.nerd ? entry?.nerd : entry?.safe
+  if (!entry || !lines?.length) return null
+  // The lines carry their own padding and strip, so the frame adds none.
+  return (
+    <Box key={`setting-preview-${index}`} flexDirection="column" borderStyle="round" borderColor={shade(entry.frame?.border) ?? THEME.border} backgroundColor={shade(entry.frame?.bg) ?? THEME.bg} marginTop={1}>
+      {lines.map((line, index) => (
+        <Text key={`line-${index}`} wrap="truncate-end">
+          {line.spans.length === 0 ? ' ' : line.spans.map((span, at) => <Text key={`span-${at}`} color={shade(span.color) ?? THEME.onSurface} {...(span.bg ? { backgroundColor: shade(span.bg) } : {})} {...(span.bold ? { bold: true } : {})}>{span.text}</Text>)}
+        </Text>
+      ))}
+    </Box>
+  )
 }
 
 // The value as the panel shows it: on/off as words, a list as its items.
@@ -148,14 +119,25 @@ export function settingChoice(data: unknown): { key: string; value: ConfigValue 
 // A control glyph without the brackets and padding it has as a standalone button (safe `[↻]`), since a pill already frames it.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
-// A pill on the card's tint, capped where the font has the caps.
-const pillOn = ({ Box, Text }: Elements, look: Look, key: string, bg: string, body: unknown, on = THEME.surface1) => (
-  <Box key={key} flexDirection="row" flexShrink={0}>
-    {look.nerd ? <Text key={`${key}-left`} color={bg} backgroundColor={on}>{CAPS.left}</Text> : null}
-    {body}
-    {look.nerd ? <Text key={`${key}-right`} color={bg} backgroundColor={on}>{CAPS.right}</Text> : null}
-  </Box>
-)
+// A pill on the card's tint, capped where the font has the caps; `hover` lights the caps with a Button scoped to the pill's key.
+const pillOn = ({ Box, Text }: Elements, look: Look, key: string, bg: string, body: unknown, on = THEME.surface1, hover?: string) => {
+  const lit = hover ? { hover: { scope: key, color: hover } } : {}
+  return (
+    <Box key={key} flexDirection="row" flexShrink={0}>
+      {look.nerd ? <Text key={`${key}-left`} color={bg} backgroundColor={on} {...lit}>{CAPS.left}</Text> : null}
+      {body}
+      {look.nerd ? <Text key={`${key}-right`} color={bg} backgroundColor={on} {...lit}>{CAPS.right}</Text> : null}
+    </Box>
+  )
+}
+
+const actionScope = (index: number) => `action-row-${index}`
+
+// The tip each live action shows in the pane footer on hover; a Button cannot post one, so paneFooter reveals it by the pill's hover group.
+export const actionReveals = (actions: Action[], look: Look, working: boolean): Reveal[] =>
+  actions.flatMap((action, index) =>
+    working && !action.isLocal ? [] : [{ scope: actionScope(index), tip: { glyph: bare(look.glyph.go), label: action.label, text: fill(style.text.runsCommand, { command: [action.command, action.args].filter(Boolean).join(' ') }) } }],
+  )
 
 // Changes the row in place: on/off is one pill that flips, a choice a bar with the chosen option as its own pill, a number steps by one; text is edited in /config.
 function control(elements: Elements, look: Look, row: ConfigRow, index: number, still: boolean, tips?: Record<string, string>, fields?: Record<string, Range>) {
@@ -201,7 +183,7 @@ export function settingsBody(elements: Elements, look: Look, { rows, actions, wo
   const settings = [
     rows.length === 0 ? <Text key="settings-none" color={THEME.muted}>{style.text.noSettings}</Text> : null,
     ...rows.map((row, index) => {
-      const example = exampleOf(elements, look, previews, row)
+      const example = exampleOf(elements, look, previews, row, index)
       return (
         <Box key={`setting-row-${index}`} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1} marginTop={index === 0 ? 0 : 1}>
           <Box key={`setting-head-${index}`} flexDirection="row" columnGap={2}>
@@ -211,12 +193,7 @@ export function settingsBody(elements: Elements, look: Look, { rows, actions, wo
           {row.description ? (
             <Text color={THEME.muted}>{row.kind === 'text' ? `${row.description} ${MARK.sep} ${style.text.editInConfig}` : row.description}</Text>
           ) : null}
-          {/* The page's own background sets the example apart from the card around it. */}
-          {example ? (
-            <Box key={`setting-preview-${index}`} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.bg} paddingX={1} marginTop={1}>
-              {example}
-            </Box>
-          ) : null}
+          {example}
         </Box>
       )
     }),
@@ -229,12 +206,14 @@ export function settingsBody(elements: Elements, look: Look, { rows, actions, wo
       pillOn(
         elements,
         look,
-        `action-row-${index}`,
+        actionScope(index),
         THEME.surface3,
         <Box key={`action-body-${index}`} flexDirection="row" backgroundColor={THEME.surface3}>
           {subpill(elements, look.nerd, THEME.surface3, bare(look.glyph.go), `action-go-${index}`)}
-          <Button key={`action-${index}`} label={look.nerd ? ` ${action.label}` : ` ${action.label} `} plain hover={{ scope: `action-row-${index}`, color: THEME.accent }} onPress={() => run(action)} />
+          <Button key={`action-${index}`} label={look.nerd ? ` ${action.label}` : ` ${action.label} `} plain hover={{ scope: actionScope(index), color: THEME.accent, inverse: true }} onPress={() => run(action)} />
         </Box>,
+        THEME.surface1,
+        THEME.accent,
       )
     ),
   )

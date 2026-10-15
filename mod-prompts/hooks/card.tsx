@@ -2,34 +2,36 @@
 // Shared sticky card. Copy unchanged into every mod whose pane has a card.
 import type { RenderElement } from 'claude-code'
 
+import { cardStrip } from './look'
 import { THEME } from './theme'
 
 // Rows above the card: the heading, the status line and the gap under them.
 export const HEAD_ROWS = 3
 
-type Elements = { Box: (props: any) => RenderElement }
+type Elements = { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
-// The space the card holds in the pane's flow, so the list starts under it.
-export const cardSpace = ({ Box }: Elements, rows: number) => <Box key="card-space" height={rows} marginTop={1} flexShrink={0} />
+// The space the card holds in the pane's flow, and the one blank row under it, so the list starts clear of the border.
+export const cardSpace = ({ Box }: Pick<Elements, 'Box'>, rows: number) => <Box key="card-space" height={rows + 1} marginTop={1} flexShrink={0} />
 
-// The card itself, drawn over the list at the top of the view however far the pane has scrolled; draw it last so it covers the rows.
-export function stickyCard({ Box }: Elements, offset: number, columns: number, rows: number, body: unknown) {
+// Drawn last over the list at the top of the view; the painted row under it keeps a scrolled row off the border.
+export function stickyCard(elements: Elements, offset: number, columns: number, rows: number, body: unknown, hue: string = THEME.accent) {
+  const { Box } = elements
   return (
-    <Box
-      key="card"
-      position="absolute"
-      top={Math.max(HEAD_ROWS, offset)}
-      left={1}
-      width={Math.max(10, columns - 2)}
-      height={rows}
-      flexDirection="column"
-      paddingX={1}
-      overflow="hidden"
-      borderStyle="round"
-      borderColor={THEME.border}
-      backgroundColor={THEME.surface1}
-    >
-      {body}
+    <Box key="card-wrap" position="absolute" top={Math.max(HEAD_ROWS, offset)} left={1} width={Math.max(10, columns - 2)} height={rows + 1} flexDirection="column">
+      <Box
+        key="card"
+        height={rows}
+        flexDirection="column"
+        paddingX={1}
+        overflow="hidden"
+        borderStyle="round"
+        borderColor={THEME.border}
+        backgroundColor={THEME.surface1}
+      >
+        {cardStrip(elements, 'card', hue)}
+        {body}
+      </Box>
+      <Box key="card-gap" height={1} backgroundColor={THEME.bg} />
     </Box>
   )
 }

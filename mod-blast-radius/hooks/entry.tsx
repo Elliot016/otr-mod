@@ -7,7 +7,7 @@ import { CAPS, mix, THEME, WASH } from './theme'
 
 // color: open text (a red Run); idle: closed text, muted unless set; isBusy shimmers the label until the click's result lands.
 // still: the mod's animations setting is off, so nothing shimmers and the hover color switches at once.
-// lead: a bare glyph before the label in leadColor; subLead: an icon before it as a rounded subpill in subLeadColor;
+// lead: a bare glyph before the label in leadColor (after a space, none when tight: the cap is the gap); subLead: an icon before it as a rounded subpill in subLeadColor;
 // badge: a count after it in its own pill. Subpills are capped where `nerd` has the caps.
 // tight: no label padding; tip: posts `tip` instead of `menu-hover`; rail: a divider (a Text between Clients squeezes them).
 export type EntryProps = {
@@ -188,7 +188,7 @@ const Entry: ClientModule<EntryProps, State> = (props, surface) => {
   const { badge } = props
   return (
     <Box flexDirection="row">
-      {props.lead ? <Text key="lead" color={props.leadColor ?? THEME.accent} backgroundColor={props.bg}>{` ${props.lead}`}</Text> : null}
+      {props.lead ? <Text key="lead" color={props.leadColor ?? THEME.accent} backgroundColor={props.bg}>{props.tight ? props.lead : ` ${props.lead}`}</Text> : null}
       {props.subLead ? sub('sub-lead', props.subLead, subHue, mix(subHue, props.bg, WASH)) : null}
       {label}
       {badge ? sub('badge', badge.text, badge.color, badge.bg) : null}

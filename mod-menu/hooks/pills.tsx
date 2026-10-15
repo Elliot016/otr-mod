@@ -4,7 +4,7 @@ import type { RenderElement } from 'claude-code'
 
 import { mix, type EntryProps, type Tip } from './entry'
 import style from './style'
-import { CAPS, THEME, WASH } from './theme'
+import { CAPS, decodeAll, THEME, WASH } from './theme'
 
 // The menu group on Moonlight surface-3, readouts on surface-2.
 export const PILL = { primary: style.colors.pills.primary, secondary: style.colors.pills.secondary }
@@ -61,11 +61,21 @@ export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: u
   )
 }
 
+// mod-menu's `labels` state: `always` draws icon and label, `never` the icon alone (Nerd only; safe mode has no icon, so it keeps the label).
+export type LabelsMode = 'always' | 'never'
+
+// The value of `{ plugin: 'mod-menu', key: 'labels' }` as a mode; a missing or unknown value is `always`, so a mod works without mod-menu.
+export const labelsOf = (value: unknown): LabelsMode => (value === 'never' ? 'never' : 'always')
+
 // A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open panel's entry is a pill of its own inside the group.
-export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, props: Omit<EntryProps, 'id' | 'bg' | 'tight'>) {
+export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, { labels, ...props }: Omit<EntryProps, 'id' | 'bg' | 'tight'> & { labels?: LabelsMode }) {
   const bg = props.isOpen ? THEME.lifted : PILL.primary
+  const glyph = (style.glyphs.nerd.icon as Record<string, string>)[`menu-${id}`]
+  const icon = nerd && !props.lead && glyph ? decodeAll(glyph) : undefined
+  // The icon sits tight against the cap, so the label that follows brings its own gap.
+  const shown = icon ? { lead: icon, label: labels === 'never' ? '' : ` ${props.label}` } : {}
   // On Nerd the caps take the label's padding cells, so an entry is as wide as before the caps.
-  const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props, nerd, tight: nerd } satisfies EntryProps} />
+  const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props, ...shown, nerd, tight: nerd } satisfies EntryProps} />
   return (
     <Box key={`menu-pad-${id}`} flexDirection="row">
       {/* A closed entry gets caps in the group's own color, so opening a panel never shifts its neighbours. */}

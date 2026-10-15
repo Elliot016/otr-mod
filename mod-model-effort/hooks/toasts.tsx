@@ -17,6 +17,9 @@ export const TOAST_MS = 4000
 const DISMISS_TIP = { label: 'Dismiss', text: 'hides this message' }
 const MAX_TOASTS = 3
 
+// A toast wraps to a few rows at most; the strip is clipped to its card.
+const STRIP_ROWS = 12
+
 // A mod's own toasts, newest last. A toast reaches only the hooks above its caller, so each mod catches its own.
 export class ToastList {
   items: { id: number; text: string }[] = []
@@ -65,6 +68,9 @@ export const toastCards = ({ Box, Client, Text }: Elements, list: ToastList, loo
     const close = bare(look?.glyph.close ?? style.glyphs.safe.close)
     return (
       <Box key={id} flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.accent} backgroundColor={THEME.surface1}>
+        <Box key={`${id}-strip`} position="absolute" top={0} bottom={0} left={0} width={1} overflow="hidden">
+          <Text color={tone.color} backgroundColor={THEME.surface1}>{Array.from({ length: STRIP_ROWS }, () => MARK.strip).join('\n')}</Text>
+        </Box>
         <Box key={`${id}-mark`} flexShrink={0}>
           <Text color={tone.color} bold={tone.bold}>{tone.mark}</Text>
         </Box>

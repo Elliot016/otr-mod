@@ -134,7 +134,8 @@ export default {
     "off": "Off",
     "locked": "locked",
     "editInConfig": "edit it in /config",
-    "idleOnly": "available once Claude is idle"
+    "idleOnly": "available once Claude is idle",
+    "runsCommand": "runs /{command}"
   },
   "marks": {
     "stage": "▸",
@@ -147,7 +148,8 @@ export default {
     "stopOpen": "●",
     "rail": "│",
     "rule": "─",
-    "open": "↗"
+    "open": "↗",
+    "strip": "▎"
   },
   "caps": {
     "left": "{U+E0B6}",
@@ -238,7 +240,12 @@ export default {
         "WebFetch": "{U+F0AC}",
         "WebSearch": "{U+F0AC}",
         "TodoWrite": "{U+F0AE}",
-        "tool": "{U+F0AD}"
+        "tool": "{U+F0AD}",
+        "menu-skills": "{U+F0D0}",
+        "menu-prompts": "{U+F075}",
+        "menu-filetree": "{U+EB86}",
+        "menu-progress": "{U+EBBC}",
+        "menu-headsup": "{U+EA6C}"
       },
       "mark": {
         "thinking": "{U+F09D1}",

@@ -162,19 +162,26 @@ export const paneTitle = ({ Text }: Elements, look: Look, icon: string, text: st
 // The footer rows every pane reserves at its bottom: a rule, then the hovered control's glyph, label and what it does.
 export const FOOTER_ROWS = 2
 
-// Pinned at the pane bottom (scroll offset plus body rows); the row under the rule stays blank with no tip, so nothing jumps.
-export function paneFooter({ Box, Text }: Elements, tip: Tip | null, columns: number, scroll: { offset: number; bodyRows: number }) {
+// A Button cannot post a tip, so its tip is drawn hidden and shown by the hover group the Button's pill shares.
+export type Reveal = { scope: string; tip: Tip }
+
+const tipRow = ({ Box, Text }: Elements, key: string, tip: Tip | null, columns: number, extra: Record<string, unknown> = {}) => (
+  <Box key={key} flexDirection="row" paddingX={1} width={columns} height={1} backgroundColor={THEME.bg} {...extra}>
+    {tip ? <Text color={THEME.accent} backgroundColor={THEME.bg}>{tip.glyph}</Text> : null}
+    {tip ? <Text color={THEME.onSurface} backgroundColor={THEME.bg} wrap="truncate-end">{` ${tip.label}`}</Text> : null}
+    {tip ? <Text color={THEME.muted} backgroundColor={THEME.bg} wrap="truncate-end">{` ${MARK.sep} ${tip.text}`}</Text> : <Text backgroundColor={THEME.bg}> </Text>}
+  </Box>
+)
+
+// Pinned at the pane bottom (scroll offset plus body rows) on its own background, so no row shows through; the row under the rule stays blank with no tip, so nothing jumps.
+export function paneFooter(elements: Elements, tip: Tip | null, columns: number, scroll: { offset: number; bodyRows: number }, reveals: Reveal[] = []) {
+  const { Box, Text } = elements
   return (
-    <Box key="pane-footer" position="absolute" top={Math.max(0, scroll.offset + scroll.bodyRows - FOOTER_ROWS)} left={0} width={columns} height={FOOTER_ROWS} flexDirection="column">
-      <Text key="footer-rule" color={THEME.border}>{MARK.rule.repeat(Math.max(1, columns))}</Text>
-      {tip ? (
-        <Box key="footer-tip" flexDirection="row" paddingX={1}>
-          <Text color={THEME.accent}>{tip.glyph}</Text>
-          <Text color={THEME.onSurface} wrap="truncate-end">{` ${tip.label}`}</Text>
-          <Text color={THEME.muted} wrap="truncate-end">{` ${MARK.sep} ${tip.text}`}</Text>
-        </Box>
-      ) : (
-        <Text key="footer-tip"> </Text>
+    <Box key="pane-footer" position="absolute" top={Math.max(0, scroll.offset + scroll.bodyRows - FOOTER_ROWS)} left={0} width={columns} height={FOOTER_ROWS} flexDirection="column" backgroundColor={THEME.bg}>
+      <Text key="footer-rule" color={THEME.border} backgroundColor={THEME.bg}>{MARK.rule.repeat(Math.max(1, columns))}</Text>
+      {tipRow(elements, 'footer-tip', tip, columns)}
+      {reveals.map((reveal, at) =>
+        tipRow(elements, `footer-reveal-${at}`, reveal.tip, columns, { position: 'absolute', top: 1, left: 0, display: 'none', hover: { scope: reveal.scope, display: 'flex' } }),
       )}
     </Box>
   )
@@ -215,11 +222,24 @@ export function heading(elements: Elements, look: Look, key: string, icon: strin
   )
 }
 
-// A round-bordered card with its heading on the first row; an empty title draws the border alone.
-export function section(elements: Elements, look: Look, key: string, icon: string, title: string, body: unknown) {
+// More rows than any card shows: the strip is clipped to its card, and an absolute Box adds no height.
+const STRIP_ROWS = 300
+
+// A card's left strip in its hue, down the padding cell inside the border.
+export function cardStrip({ Box, Text }: Elements, key: string, hue: string = THEME.accent, bg: string = THEME.surface1) {
+  return (
+    <Box key={`${key}-strip`} position="absolute" top={0} bottom={0} left={0} width={1} overflow="hidden">
+      <Text color={hue} backgroundColor={bg}>{Array.from({ length: STRIP_ROWS }, () => MARK.strip).join('\n')}</Text>
+    </Box>
+  )
+}
+
+// A round-bordered card with its heading on the first row and a left strip in `hue`; an empty title draws the border alone.
+export function section(elements: Elements, look: Look, key: string, icon: string, title: string, body: unknown, hue: string = THEME.accent) {
   const { Box } = elements
   return (
     <Box key={key} flexDirection="column" borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} marginTop={1} paddingX={1}>
+      {cardStrip(elements, key, hue)}
       {title ? heading(elements, look, key, icon, title) : null}
       {body}
     </Box>
