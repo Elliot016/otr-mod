@@ -275,6 +275,7 @@ export default {
     "mine": ", {n} of yours",
     "bad": ", {n} problem(s) in rules.json",
     "running": "Blast radius: running it",
+    "checkFailed": "Blast radius: the check failed for this command, so it ran unchecked",
     "askReason": "Blast radius: {reason}",
     "readOnly": "Read only",
     "answerOnCard": "answer on the card above the prompt",
@@ -300,5 +301,5 @@ export default {
   "tipTabDetails": "shows the command held right now",
   "tipTabSettings": "shows this mod's settings",
   "tipToast": {"label":"Dismiss","text":"hides this message"},
-  "settingTips": {"enabled":"risky Bash waits for your choice"}
+  "settingTips": {"enabled":"risky Bash waits for your choice","explain":"Haiku words the card; off, no model call is made"}
 }

@@ -32,6 +32,8 @@ type Held = { command: string; risk: Risk; report: Report | null; plain: Plain |
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let isEnabled = true
+// Off, no held command is sent to Haiku: the card keeps the rule's words and the preview.
+let isExplaining = true
 let iconMode: IconMode = 'auto'
 let look: Look = lookFor(false)
 
@@ -46,10 +48,13 @@ const hoveredTip = (): Tip | null => (hovered?.id && hovered.label ? { glyph: ho
 let actions: Action[] = []
 let previews: Previews | undefined
 
+// A repo's own config can run code (fsmonitor, hooks), and the preview runs before the person answers; git reads /dev/null as NUL on Windows.
+const GIT_SAFETY = ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null']
+
 const ioOf = ($: EngineInterface): Io => ({
   cwd: () => $.session.cwd(),
   home: async () => (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '',
-  run: (argv, cwd) => $.process.run(argv[0] === 'git' ? ['git', '--no-optional-locks', ...argv.slice(1)] : argv, { cwd, timeoutMs: 15000 }),
+  run: (argv, cwd) => $.process.run(argv[0] === 'git' ? ['git', ...GIT_SAFETY, ...argv.slice(1)] : argv, { cwd, timeoutMs: 15000 }),
   list: path => $.fs.list(path),
   stat: path => $.fs.stat(path),
   env: name => folderVar($, name),
@@ -134,10 +139,16 @@ function loadLook($: EngineInterface) {
 type Rules = { path: string; mtimeMs: number; rules: UserRule[]; notes: string[] }
 let rulesCache: Rules | null = null
 
+// Claude's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude. The literal name is for the host's static scan.
+async function configDir($: EngineInterface) {
+  const custom = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').trim()
+  const dir = custom || `${(await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''}/.claude`
+  return dir.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
 // rules.json, re-read only when its mtime moves; a missing or broken file never disables the built-in checks.
 async function loadRules($: EngineInterface): Promise<Rules> {
-  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  const path = `${home}/${RULES_FILE}`
+  const path = `${await configDir($)}/${RULES_FILE.replace('.claude/', '')}`
   try {
     const stat = await $.fs.stat(path).catch(() => null)
     if (!stat) return (rulesCache = { path, mtimeMs: -1, rules: [], notes: [] })
@@ -156,6 +167,7 @@ const judge = async ($: EngineInterface, value: unknown) => evaluate(value, (awa
 const describedCache = new Map<string, Described>()
 
 async function describe($: EngineInterface, mine: Held) {
+  if (!isExplaining) return
   const rules = (await loadRules($)).rules
   const risky = segmentsOf(mine.command, rules).filter(step => step.risk)
   let found = describedCache.get(mine.command)
@@ -350,7 +362,7 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
         </Text>
       )
     }
-    if (row.kind === 'verdict' && row.isOk) return <Text key={key} color={THEME.good}>{`${MARK.ok} ${row.text}`}</Text>
+    if (row.kind === 'verdict' && row.isOk) return <Text key={key} color={THEME.ok}>{`${MARK.ok} ${row.text}`}</Text>
     if (row.kind === 'verdict') {
       return (
         <Text key={key}>
@@ -414,6 +426,78 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
   $.ui.invalidate('ui.render')
 }
 
+// Judged risky: everything from here to the verdict fails closed. Returns 'run' or a deny.
+async function holdRisky($: EngineInterface, e: { tool_use_id?: unknown }, next: { signal: AbortSignal }, risk: Risk, command: string): Promise<'run' | { deny: string }> {
+  // Without a surface that draws, nothing could answer a hold: tool.check puts the call to the permission system instead.
+  if (!(await canDraw($))) return 'run'
+
+  // `held` is claimed with no await between the check and the claim, so two waiting calls cannot both pass.
+  while (held !== null) {
+    if (next.signal.aborted) return { deny: `Blast radius held this command and did not run it: ${refusal('interrupted')}. Do not retry it unless the person asks you to.` }
+    try {
+      await pause($)
+    } catch {
+      return { deny: `Blast radius held this command and did not run it: ${refusal('error')}. Do not retry it unless the person asks you to.` }
+    }
+  }
+  const mine: Held = { command, risk, report: null, plain: null, decision: null }
+  held = mine
+  pauseAt = 0
+  let isSilent = false
+  try {
+    mine.report = await measure(ioOf($), risk)
+    mine.plain = plainFor(risk, mine.report)
+    if (mine.report.isHarmless) {
+      isSilent = true
+      mine.decision = 'run'
+    } else {
+      // Other band mods can read this to step aside while the card is up.
+      await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, true)
+      $.clock.after(0, () => describe($, mine))
+      // Fire and forget: a refused notification must never touch the hold.
+      void Promise.resolve().then(() => $.ui.notify(fill(text.ui.notifyHeld, { command: oneLine(command) }), { title: text.ui.notifyTitle })).catch(() => undefined)
+      $.ui.invalidate('ui.render')
+      // No timeout: the hold stays until the person answers, or the turn is interrupted.
+      while (mine.decision === null) {
+        if (next.signal.aborted) mine.decision = 'interrupted'
+        else await pause($)
+      }
+    }
+  } catch {
+    mine.decision = 'error'
+  } finally {
+    if (held === mine) held = null
+    hovered = null
+    await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, false).catch(() => undefined)
+    // The list pane belongs to the hold: when the hold ends it goes too.
+    if (await isPaneOpen($, LIST_PANE).catch(() => false)) {
+      await $.ui.close({ id: LIST_PANE }).catch(() => undefined)
+      await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false).catch(() => undefined)
+    }
+    $.ui.invalidate('ui.render')
+  }
+
+  if (mine.decision === 'run') {
+    if (!isSilent) {
+      approved.add(String(e.tool_use_id))
+      approvedCommands.add(command)
+      if (approved.size > 100) approved.delete(approved.values().next().value as string)
+      $.ui.toast(text.ui.running)
+    }
+    return 'run'
+  }
+  return { deny: `Blast radius held this command and did not run it: ${refusal(mine.decision)}. Reason: ${mine.risk.reason}. It would have: ${mine.report?.summary ?? mine.risk.label}. Do not retry it unless the person asks you to.` }
+}
+
+// Checks that failed, by message: a burst of commands toasts each distinct failure once.
+const warned = new Set<string>()
+function warnOnce($: EngineInterface, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (warned.has(message)) return
+  warned.add(message)
+  void Promise.resolve().then(() => $.ui.toast(text.ui.checkFailed)).catch(() => undefined)
+}
+
 export const register: Register = (on, options) => {
   still = options.animations === false
   toasts.isStill = still
@@ -429,6 +513,7 @@ export const register: Register = (on, options) => {
   })
 
   isEnabled = options.enabled !== false
+  isExplaining = options.explain !== false
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
@@ -448,67 +533,23 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     if (!isEnabled) return next(e)
-    const { risk, command } = await judge($, e.command)
-    if (!risk) return next(e)
-    // Without a surface that draws, nothing could answer a hold: tool.check puts the call to the permission system instead.
-    if (!(await canDraw($))) return next(e)
-
-    // `held` is claimed with no await between the check and the claim, so two waiting calls cannot both pass.
-    while (held !== null) {
-      if (next.signal.aborted) return { deny: `Blast radius held this command and did not run it: ${refusal('interrupted')}. Do not retry it unless the person asks you to.` }
-      try {
-        await pause($)
-      } catch {
-        return { deny: `Blast radius held this command and did not run it: ${refusal('error')}. Do not retry it unless the person asks you to.` }
-      }
-    }
-    const mine: Held = { command, risk, report: null, plain: null, decision: null }
-    held = mine
-    pauseAt = 0
-    let isSilent = false
+    let judged: Awaited<ReturnType<typeof judge>>
     try {
-      mine.report = await measure(ioOf($), risk)
-      mine.plain = plainFor(risk, mine.report)
-      if (mine.report.isHarmless) {
-        isSilent = true
-        mine.decision = 'run'
-      } else {
-        // Other band mods can read this to step aside while the card is up.
-        await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, true)
-        $.clock.after(0, () => describe($, mine))
-        // Fire and forget: a refused notification must never touch the hold.
-        void Promise.resolve().then(() => $.ui.notify(fill(text.ui.notifyHeld, { command: oneLine(command) }), { title: text.ui.notifyTitle })).catch(() => undefined)
-        $.ui.invalidate('ui.render')
-        // No timeout: the hold stays until the person answers, or the turn is interrupted.
-        while (mine.decision === null) {
-          if (next.signal.aborted) mine.decision = 'interrupted'
-          else await pause($)
-        }
-      }
-    } catch {
-      mine.decision = 'error'
-    } finally {
-      if (held === mine) held = null
-      hovered = null
-      await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, false).catch(() => undefined)
-      // The list pane belongs to the hold: when the hold ends it goes too.
-      if (await isPaneOpen($, LIST_PANE).catch(() => false)) {
-        await $.ui.close({ id: LIST_PANE }).catch(() => undefined)
-        await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false).catch(() => undefined)
-      }
-      $.ui.invalidate('ui.render')
-    }
-
-    if (mine.decision === 'run') {
-      if (!isSilent) {
-        approved.add(String(e.tool_use_id))
-        approvedCommands.add(command)
-        if (approved.size > 100) approved.delete(approved.values().next().value as string)
-        $.ui.toast(text.ui.running)
-      }
+      judged = await judge($, e.command)
+    } catch (error) {
+      // A broken check must not block every command; only a command judged risky fails closed.
+      warnOnce($, error)
       return next(e)
     }
-    return { deny: `Blast radius held this command and did not run it: ${refusal(mine.decision)}. Reason: ${mine.risk.reason}. It would have: ${mine.report?.summary ?? mine.risk.label}. Do not retry it unless the person asks you to.` }
+    if (!judged.risk) return next(e)
+    let outcome: 'run' | { deny: string }
+    try {
+      outcome = await holdRisky($, e, next, judged.risk, judged.command)
+    } catch {
+      outcome = { deny: 'Blast radius hit an error while checking this command and did not run it. Do not retry it unless the person asks you to.' }
+    }
+    // next runs outside the try, so an error from the command itself passes through unchanged.
+    return outcome === 'run' ? next(e) : outcome
   })
 
   // The settings hook's ask arrives here as the verdict; with no surface that draws, a hold cannot be answered, so the permission system asks.

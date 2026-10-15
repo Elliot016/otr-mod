@@ -16,6 +16,9 @@ const bandOf = (maxRows = 24, bodyColumns = 80) =>
   ({ component: 'AbovePrompt', props: { hasSurvey: false, isWorking: true, maxRows, bodyColumns, scroll: { offset: 0, bodyRows: 6 }, view: {} } }) as const
 const BAND = bandOf()
 
+// What every preview git call must carry, so a repo's own config cannot run code.
+const GIT_SAFETY = '--no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null'
+
 const ASK = '\u26a0\ufe0f Destructive operation detected: Recursive deletion (rm -r/rm -rf)\n\nCommand:\nrm -rf build'
 const RULES_PATH = 'C:/Users/me/.claude/mods-data/mod-blast-radius/rules.json'
 const LONG = 'C:/Users/me/blast-radius-demonstration-folder/drafts-of-the-quarterly-report/archive'
@@ -54,6 +57,12 @@ type World = {
   git?: Record<string, string>
   // The pane the engine opens is not placed, so the mod toasts why.
   unplaced?: boolean
+  // The person's CLAUDE_CONFIG_DIR, as the engine would hand it over.
+  configDir?: string
+  // Reading the environment fails, as when the engine is busy shutting down.
+  envThrows?: boolean
+  // The command itself fails when it runs.
+  callThrows?: boolean
 }
 
 // Everything the engine would answer, plus a record of what the hold did.
@@ -66,10 +75,14 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
     return { value: 'C:/w' }
   })
   on('session.surfaces', () => ({ value: setup.surfaces ?? ['terminal'] }))
-  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'OS' ? 'Windows_NT' : e.name === 'USERPROFILE' ? 'C:\\Users\\me' : undefined }))
+  on('env.get', (_$: unknown, e: { name: string }) => {
+    if (setup.envThrows) throw new Error('env is gone')
+    return { value: e.name === 'OS' ? 'Windows_NT' : e.name === 'USERPROFILE' ? 'C:\\Users\\me' : e.name === 'CLAUDE_CONFIG_DIR' ? setup.configDir : undefined }
+  })
+  const rulesPath = setup.configDir ? `${setup.configDir.replace(/\\/g, '/').replace(/\/$/, '')}/mods-data/mod-blast-radius/rules.json` : RULES_PATH
   on('fs.stat', (_$: unknown, e: { path: string }) => {
     const path = asGiven(e.path)
-    if (path === RULES_PATH) {
+    if (path === rulesPath) {
       seen.stats++
       if (!rules.current) throw new Error('ENOENT')
       return { value: { kind: 'file', size: 1, mtimeMs: rules.current.mtimeMs, isLink: false } }
@@ -80,7 +93,7 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
   })
   on('fs.read', (_$: unknown, e: { path: string }) => {
     const path = asGiven(e.path)
-    if (path === RULES_PATH && rules.current) {
+    if (path === rulesPath && rules.current) {
       seen.reads++
       return { value: rules.current.text }
     }
@@ -103,7 +116,7 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
       await sleep(5)
       return { value: { exitCode: 1, stdout: '', stderr: '' } }
     }
-    const typed = e.argv.filter(arg => arg !== '--no-optional-locks').join(' ')
+    const typed = e.argv.join(' ').replace(GIT_SAFETY, '').replace('git  ', 'git ')
     const out = e.argv[0] === 'git' ? setup.git?.[typed] : undefined
     if (e.argv[0] === 'git') return { value: out === undefined ? { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' } : { exitCode: 0, stdout: out, stderr: '' } }
     await sleep(5)
@@ -129,6 +142,7 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
   on('tool.check', () => ({ decision: setup.verdict ?? 'allow', ...(setup.verdictReason ? { reason: setup.verdictReason } : {}) }))
   on('tool.call', () => {
     seen.ran++
+    if (setup.callThrows) throw new Error('disk full')
     return { result: { text: 'ran' } }
   })
   on('ui.render', ($$: any, e: any) => {
@@ -1021,6 +1035,109 @@ test('the Settings pane draws a footer that shows the hovered tip', async ($, on
   await settings.post({ type: 'tip', id: 'x', glyph: '>', label: 'Guard', text: 'Shows this view' }, { in: 'mod-blast-radius-settings-tab' })
   expect(await textOf(settings, /Shows this view/)).toContain('Shows this view')
   await settings.unmount()
+})
+
+test('every git call of the preview turns off the repo\u2019s fsmonitor and hooks, so a held command never runs repo code', async ($, on) => {
+  const git = { 'git status --porcelain': ' M a.ts\n', 'git diff --shortstat HEAD': ' 1 file changed\n' }
+  await withCard($, on, 'git reset --hard main', { git }, async (_band, seen) => {
+    const calls = (seen.argv as string[]).filter(line => line.startsWith('git '))
+    expect(calls.length).toBeGreaterThanOrEqual(3)
+    for (const line of calls) expect(line.startsWith(`git ${GIT_SAFETY} `), line).toBe(true)
+  })
+})
+
+test('a check that throws lets the command run and toasts once, so one broken rule never blocks every command', async ($, on) => {
+  const { seen } = world(on, { envThrows: true })
+  const first = JSON.stringify(await $.tool.call({ tool: 'Bash', command: 'ls' }))
+  await sleep(20)
+  await $.tool.call({ tool: 'Bash', command: 'pwd' })
+  await sleep(20)
+
+  expect(seen.ran).toBe(2)
+  expect(first).not.toContain('did not run it')
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  expect(await band.find({ type: 'Text', text: /the check failed for this command/ })).toBeDefined()
+  await band.unmount()
+})
+
+test('a throw while holding a risky command still stops it: it is refused, never run unheld', async ($, on) => {
+  const { seen } = world(on, { missing: ['sleep', 'powershell', 'ping'] })
+  const result = JSON.stringify(await $.tool.call({ tool: 'Bash', command: 'rm -rf build' }))
+
+  expect(seen.ran).toBe(0)
+  expect(result).toContain('did not run it')
+})
+
+test('an error from an allowed command passes through, never relabeled as a refusal', async ($, on) => {
+  world(on, { callThrows: true })
+  let message = ''
+  try {
+    message = JSON.stringify(await $.tool.call({ tool: 'Bash', command: 'ls' }))
+  } catch (error) {
+    message = String((error as Error).message)
+  }
+
+  // A throwing test hook is skipped, so the error that comes back is the engine's own.
+  expect(message).toContain('no implementation for tool.call')
+  expect(message).not.toContain('did not run it')
+})
+
+test('Haiku explains the held command by default, and the card waits for it', async ($, on) => {
+  const { seen, clock } = world(on)
+  const asked: string[] = []
+  on('model.complete', ((_$: unknown, e: { model: string }) => {
+    asked.push(e.model)
+    return { value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } }
+  }) as never)
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  await clock.advance(1)
+  await cancel($)
+  await call
+  expect(asked).toEqual(['haiku'])
+})
+
+test('with explain off, no model is called and the card keeps the rule wording and the preview', { options: { explain: false } }, async ($, on) => {
+  const { seen, clock } = world(on)
+  const asked: string[] = []
+  on('model.complete', ((_$: unknown, e: { model: string }) => {
+    asked.push(e.model)
+    return { value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } }
+  }) as never)
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await clock.advance(1)
+  await band.redraw()
+  expect(asked).toEqual([])
+  expect(await textOf(band, /Delete 2 files/)).toBeDefined()
+  expect(await textOf(band, /Removes the folder/)).toBeDefined()
+  expect(await band.find({ key: 'hold-explaining' })).toBeUndefined()
+  expect(await textOf(band, /no explanation came back/)).toBeUndefined()
+  await cancel($)
+  await call
+  await band.unmount()
+})
+
+test('rules.json is read from CLAUDE_CONFIG_DIR when it is set', async ($, on) => {
+  const text = JSON.stringify([{ pattern: 'terraform\\s+destroy', reason: 'Destroys infrastructure', flags: 'i' }])
+  const { seen } = world(on, { configDir: 'C:\\cfg\\', rules: { text, mtimeMs: 1 } })
+  const call = $.tool.call({ tool: 'Bash', command: 'terraform destroy -auto-approve' })
+  await holding(seen)
+  expect(seen.reads).toBe(1)
+  await cancel($)
+  await call
+  expect(seen.ran).toBe(0)
+})
+
+test('rules.json stays under the home folder when CLAUDE_CONFIG_DIR is not set', async ($, on) => {
+  const text = JSON.stringify([{ pattern: 'terraform\\s+destroy', reason: 'Destroys infrastructure', flags: 'i' }])
+  const { seen } = world(on, { rules: { text, mtimeMs: 1 } })
+  const call = $.tool.call({ tool: 'Bash', command: 'terraform destroy -auto-approve' })
+  await holding(seen)
+  expect(seen.reads).toBe(1)
+  await cancel($)
+  await call
 })
 
 test('the card tips carry a bare glyph, with no brackets or padding', { options: { icons: 'safe' } }, async ($, on) => {

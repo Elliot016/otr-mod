@@ -1,5 +1,13 @@
 {
   "tagline": "See what a command will change before it runs",
+  "cost": {
+    "summary": "Calls a model: each held command goes to Haiku for a plain-language explanation. The `Explain with Haiku` setting turns it off.",
+    "readme": [
+      "This mod calls a model, which spends tokens and counts against your plan quota.",
+      "",
+      "Each held command is sent to Haiku for a plain-language explanation, so the command text leaves your machine like any prompt. Set Explain with Haiku to off (`/mod-blast-radius settings`) and the card keeps only the rule's reason and the preview, with no request."
+    ]
+  },
   "features": [
     { "title": "Hold", "detail": "A risky Bash command waits before it runs, with no timeout: rm, git reset --hard, force push, SQL DROP, production deploys, gcloud, az, databricks, chmod 777, curl into a shell, credential reads, mv over a file, > over a file and Windows deletes." },
     { "title": "Your rules", "detail": "~/.claude/mods-data/mod-blast-radius/rules.json, an array of { \"pattern\": \"regex\", \"reason\": \"text\", \"flags\": \"i\" }. Read again when the file changes. A bad entry is skipped with a note in the settings pane; the built-in checks never depend on it." },

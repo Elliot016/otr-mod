@@ -43,6 +43,12 @@ Automatic.
 - **Preview:** Paths with counts and size, git status and dry runs, the commits a force push would drop. Read-only: the command itself never runs.
 - **Run or Cancel:** Cancel refuses the call with a reason Claude reads. A narrow terminal draws the same report above the prompt.
 
+## Costs
+
+This mod calls a model, which spends tokens and counts against your plan quota.
+
+Each held command is sent to Haiku for a plain-language explanation, so the command text leaves your machine like any prompt. Set Explain with Haiku to off (`/mod-blast-radius settings`) and the card keeps only the rule's reason and the preview, with no request.
+
 ## Settings
 
 Change them with `/mod-blast-radius settings` or the gear pill.
@@ -51,6 +57,7 @@ Change them with `/mod-blast-radius settings` or the gear pill.
 | --- | --- | --- |
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 | Hold risky commands | on | Risky Bash waits for your choice. You pick Run or Cancel. Off, every command runs as usual |
+| Explain with Haiku | on | Each held command is sent to Haiku for a plain-language explanation on the card. It spends tokens. Off, no model is called and the card shows the rule's reason and the preview |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License
