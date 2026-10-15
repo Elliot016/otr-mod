@@ -2,6 +2,9 @@
 // Tests skill tags and grouping, agents tab, command toggle, settings pill, tips and waiting card.
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 
+import { lookFor } from '../hooks/look'
+import style from '../hooks/style'
+import { decodeAll, MARK, THEME } from '../hooks/theme'
 import { groupSkills, markDescription, readFrontmatter, stripBadges, swatchFor } from '../hooks/tags'
 
 type Pointer = { pointer: (event: object) => Promise<unknown> }
@@ -133,30 +136,30 @@ test('panel lists skill groups and a press fills the prompt', async ($, on) => {
   expect(tab).toContain(' Skills ')
   expect(tab).toContain('2')
 
-  // The cloud: one row per tag, the tag pill (" ∴ review ", 10 cells, plus a gap) then its chips; the card shows the first skill.
+  // The cloud: one row per tag, the tag pill (the icon as a subpill, then the name) then its chips; the card shows the first skill.
   const cloud = JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))
-  expect(cloud).toContain('∴ review')
+  expect(cloud).toContain(' ∴ ')
   expect(cloud).toContain('rev')
   expect(cloud).toContain('plain')
   expect(await ui.find({ type: 'Text', text: '/rev' })).toBeDefined()
 
   // Row 1 is the rule between the groups; nothing on it reacts.
-  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 1 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 16, y: 1 })
   expect(box).toBe('please ')
   expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain('─')
 
   // The card's title leads with the tag's icon as a subpill.
   expect(await ui.find({ key: 'card-icon' })).toBeDefined()
   // Pointing at a chip shows it in the card and adds nothing.
-  await pointing(ui).pointer({ in: 'skills-cloud', type: 'move', x: 14, y: 2 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'move', x: 16, y: 2 })
   expect(await ui.find({ type: 'Text', text: '/plain' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'x' })).toBeDefined()
   expect(box).toBe('please ')
 
   // A click on a chip adds it; a repeat is skipped.
-  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 0 })
-  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 2 })
-  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 14, y: 0 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 16, y: 0 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 16, y: 2 })
+  await pointing(ui).pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 16, y: 0 })
   expect(box).toBe('please /rev /plain ')
   await ui.unmount()
 })
@@ -184,7 +187,7 @@ test('the agents tab groups agents by model and a click mentions one in the prom
   expect(await ui.find({ type: 'Text', text: '@agent-finder' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '· 2 tools' })).toBeDefined()
 
-  await pointing(ui).pointer({ in: 'agents-cloud', type: 'down', button: 'left', x: 14, y: 2 })
+  await pointing(ui).pointer({ in: 'agents-cloud', type: 'down', button: 'left', x: 16, y: 2 })
   expect(box).toBe('@agent-helper ')
   await ui.unmount()
 })
@@ -465,7 +468,104 @@ test('a hovered tab or chip puts its tip in the pane footer, and leaving clears 
   expect(await ui.find({ type: 'Text', text: ' · lists your agents' })).toBeDefined()
   await ui.pointer({ in: 'skills-agents', type: 'leave', x: 0, y: 0 })
   expect(await ui.find({ type: 'Text', text: / · lists/ })).toBeUndefined()
-  await ui.pointer({ in: 'skills-cloud', type: 'move', x: 14, y: 2 })
+  await ui.pointer({ in: 'skills-cloud', type: 'move', x: 16, y: 2 })
   expect(await ui.find({ type: 'Text', text: ' · adds /plain to the prompt' })).toBeDefined()
+  await ui.unmount()
+})
+
+const ready = async ($: any, on: any) => {
+  on('session.start', () => ({ cwd: '/h' }))
+  on('command.register', () => ({ value: { command: 'mod-skill-panel' } }))
+  on('state.set', () => ({ value: undefined }) as never)
+  const ui = pointing(await skillsPane($, on))
+  await $.session.start({ cwd: '/h' } as never)
+  return ui
+}
+
+const withPrompt = (on: any) => {
+  let box = ''
+  on('prompt.read', () => ({ value: { text: box, cursor: box.length } }))
+  on('prompt.fill', (_$: unknown, e: { mode: string; text: string }) => {
+    box = e.mode === 'append' ? box + e.text : e.text
+    return { isFilled: true }
+  })
+}
+
+test('a hovered chip lifts and turns accent; once the pointer leaves, only the selected chip stays accent and bold', { options: { animations: false } }, async ($, on) => {
+  on('session.start', () => ({ cwd: '/h' }))
+  on('command.register', () => ({ value: { command: 'mod-skill-panel' } }))
+  const ui = pointing(await skillsPane($, on))
+  await $.session.start({ cwd: '/h' } as never)
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).not.toContain(THEME.lifted)
+  await ui.pointer({ in: 'skills-cloud', type: 'move', x: 16, y: 2 })
+  const hover = JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))
+  expect(hover).toContain(THEME.lifted)
+  await ui.pointer({ in: 'skills-cloud', type: 'leave', x: 0, y: 0 })
+  const rest = JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))
+  expect(rest).not.toContain(THEME.lifted)
+  expect(rest).toContain(`"color":"${THEME.accent}","bold":true},"children":["plain"`)
+  expect(rest).toContain(`"bold":false},"children":["rev"`)
+  await ui.unmount()
+})
+
+test('a tag pill lights on hover and its tip reaches the footer', { options: { animations: false } }, async ($, on) => {
+  on('session.start', () => ({ cwd: '/h' }))
+  on('command.register', () => ({ value: { command: 'mod-skill-panel' } }))
+  const ui = pointing(await skillsPane($, on))
+  await $.session.start({ cwd: '/h' } as never)
+  await ui.pointer({ in: 'skills-cloud', type: 'move', x: 5, y: 0 })
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain(THEME.lifted)
+  expect(await ui.find({ type: 'Text', text: ' · 1 in this group' })).toBeDefined()
+  await ui.pointer({ in: 'skills-cloud', type: 'leave', x: 0, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · 1 in this group' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('on Nerd a tag pill leads with its icon as a capped subpill', { options: { icons: 'nerd' } }, async ($, on) => {
+  const ui = await ready($, on)
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain(`"key":"tag-0-icon"`)
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain(String.fromCodePoint(0xe0b6))
+  await ui.unmount()
+})
+
+test('the group rule is drawn in the border color', async ($, on) => {
+  const ui = await ready($, on)
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain(`"color":"${THEME.border}"},"children":["──`)
+  await ui.unmount()
+})
+
+test('the skills status line draws the Nerd mark after a click, like the settings pane', { options: { icons: 'nerd' } }, async ($, on) => {
+  withPrompt(on)
+  const ui = await ready($, on)
+  await ui.pointer({ in: 'skills-cloud', type: 'down', button: 'left', x: 16, y: 0 })
+  expect(await ui.find({ type: 'Text', text: `${lookFor(true).glyph.ok} Added /rev` })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: `${MARK.ok} Added /rev` })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('both panes paint the root bg and keep the footer space from shrinking', async ($, on) => {
+  on('config.list', () => ({ value: [] }))
+  const ui = await skillsPane($, on)
+  expect((await ui.find({ key: 'footer-space' }))?.props.flexShrink).toBe(0)
+  expect(JSON.stringify(await ui.drawn())).toContain(`"backgroundColor":"${THEME.bg}"`)
+  await ui.unmount()
+  const settings = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel-settings', props: { title: 'Settings', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
+  expect((await settings.find({ key: 'footer-space' }))?.props.flexShrink).toBe(0)
+  expect(JSON.stringify(await settings.drawn())).toContain(`"backgroundColor":"${THEME.bg}"`)
+  await settings.unmount()
+})
+
+test('the menu entry drops its label when mod-menu says labels never, on Nerd only', { options: { icons: 'nerd' } }, async ($, on) => {
+  on('ui.panes', () => ({ value: [] }))
+  on('state.get', (_$: unknown, e: { key: string }) => ({ value: { value: e.key === 'labels' ? 'never' : undefined } }) as never)
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>other mod</Text>
+  })
+  const band = { plugin: 'mod-skill-panel', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 80, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as const
+  const ui = await $.ui.mount(band as never)
+  const entry = JSON.stringify(await ui.drawn({ in: 'menu-entry-skills' }))
+  expect(entry).not.toContain('Skills')
+  expect(entry).toContain(decodeAll((style.glyphs.nerd.icon as Record<string, string>)['menu-skills']!))
   await ui.unmount()
 })

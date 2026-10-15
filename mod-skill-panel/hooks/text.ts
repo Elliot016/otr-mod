@@ -11,6 +11,7 @@ export default {
   "agentsTabTip": "lists your agents",
   "settingsTabTip": "opens this mod's settings",
   "chipTip": "adds /{name} to the prompt",
+  "tagTip": "{count} in this group",
   "agentChipTip": "mentions @agent-{name} in the prompt",
   "agentsHint": "Click an agent to mention it {sep} point at one to read it",
   "agentAdded": "Mentioned @agent-{name}",

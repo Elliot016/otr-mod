@@ -11,7 +11,7 @@ import { groupAgents, modelHue, readAgent, type Agent } from './agents'
 import { cardSpace, stickyCard } from './card'
 import { isTipMessage, type EntryMessage, type Tip } from './entry'
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
-import { menuEntry, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { labelsOf, menuEntry, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { settingChoice, settingsBody } from './settings'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
@@ -306,6 +306,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     await loadLook($)
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
+    const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     if (hidden.value === true) {
       if (toasts.items.length === 0) return next(e)
@@ -320,7 +321,7 @@ export const register: Register = (on, options) => {
     const shown = await isOpen($)
     const { group, row, rest, tip } = splitRow(await next(e))
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
-    const entry = menuEntry({ Box, Client, Text }, nerd, 'skills', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still })
+    const entry = menuEntry({ Box, Client, Text }, nerd, 'skills', { label: text.pillLabel, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still, labels })
 
     return pillRow({ Box, Client, Text }, nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip, e.props.bodyColumns)
   })
@@ -382,12 +383,12 @@ export const register: Register = (on, options) => {
     if (e.requestId === SETTINGS) {
       const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-skill-panel.'))
       return (
-        <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+        <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
           {tabRow({ Box, Client, Text }, look.nerd, tabs('settings'), still)}
           <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.settingsHint, { sep: MARK.sep })}</Text>
           <Box marginTop={0}>{settingsBody({ Box, Button, Client, Text }, look, { rows, actions: [], working: false, run: async () => {}, still })}</Box>
-        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
-        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
+          <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+          {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
         </Box>
       )
     }
@@ -403,6 +404,7 @@ export const register: Register = (on, options) => {
         label: group.model,
         icon: agentIcon,
         hex: modelHue(group.model),
+        tip: fill(text.tagTip, { count: group.agents.length }),
         skills: group.agents.map(agent => ({ index: index++, name: agent.name, tip: fill(text.agentChipTip, { name: agent.name }) })),
       }))
       const agent = orderedAgents()[selectedAgent]
@@ -417,6 +419,7 @@ export const register: Register = (on, options) => {
         label: tagName(group.tag),
         icon: group.swatch.icon,
         hex: group.swatch.hex,
+        tip: fill(text.tagTip, { count: group.skills.length }),
         skills: group.skills.map(skill => ({ index: index++, name: skill.name, tip: fill(text.chipTip, { name: skill.name }) })),
       }))
       const entry = groups.flatMap(group => group.skills.map(skill => ({ skill, group })))[selected]
@@ -427,16 +430,16 @@ export const register: Register = (on, options) => {
     const empty = view === 'agents' && agents.length === 0
 
     return (
-      <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows}>
+      <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(view), still)}
-        <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(view === 'agents' ? text.agentsHint : text.hint, { sep: MARK.sep })}</Text>
+        <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(view === 'agents' ? text.agentsHint : text.hint, { sep: MARK.sep })}</Text>
         {empty ? <Text color={THEME.muted}>{text.noAgents}</Text> : null}
         {card ? cardSpace({ Box }, CARD_ROWS) : null}
         {section({ Box, Text }, look, 'cloud', '', '', (
-          <Client key={`${view}-cloud`} module="./cloud.tsx" height={layoutCloud(cloud, width).rows.length} props={{ groups: cloud, width, selected: view === 'agents' ? selectedAgent : selected, nerd: look.nerd } satisfies CloudProps} />
+          <Client key={`${view}-cloud`} module="./cloud.tsx" height={layoutCloud(cloud, width).rows.length} props={{ groups: cloud, width, selected: view === 'agents' ? selectedAgent : selected, nerd: look.nerd, still } satisfies CloudProps} />
         ))}
         {card
-          ? stickyCard({ Box }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, (
+          ? stickyCard({ Box, Text }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, (
               <Box key="card-body" flexDirection="column">
                 <Box flexDirection="row" columnGap={1} flexShrink={0}>
                   {subpill({ Box, Text }, look.nerd, THEME.surface1, card.icon, 'card-icon', card.hex)}
@@ -450,8 +453,8 @@ export const register: Register = (on, options) => {
               </Box>
             ))
           : null}
-      <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
-      {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
+        <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
+        {paneFooter({ Box, Text }, hoveredTip, e.props.bodyColumns, e.props.scroll)}
       </Box>
     )
   })
