@@ -2,8 +2,11 @@
 // Registers the mod manager pane, pill, command and toggle actions with the engine.
 import type { ConfigValue, EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import { discover, featuresOf, setEnabled, type Io, type ModInfo } from './registry'
-import { CAPS, fill, MARK, statusColor, THEME } from './theme'
+import { catalogOf, catalogState, discover, featuresOf, marketOf, refreshCatalog, SELF, setEnabled, type CatalogEntry, type Io, type ModInfo } from './registry'
+import { checkedOf, planOf, runSteps, type Step } from './plan'
+import { OPEN_SETUP_SCOPE, signatureOf, updatesCard, welcomeCard } from './cards'
+import { checkedRows, planRows, type PickMessage, type PickProps } from './setup'
+import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
@@ -26,15 +29,28 @@ const ioOf = ($: EngineInterface): Io => ({
   list: path => $.fs.list(path),
   pluginDirs: async () => (await $.env.get('CLAUDE_CODE_PLUGIN_DIRS')) ?? '',
   home: async () => (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '',
+  // The validator needs literal names, so the refresh opt-outs are listed here.
+  env: async name => {
+    const known: Record<string, string | undefined> = {
+      DISABLE_AUTOUPDATER: (await $.env.get('DISABLE_AUTOUPDATER')) ?? undefined,
+      DISABLE_UPDATES: (await $.env.get('DISABLE_UPDATES')) ?? undefined,
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: (await $.env.get('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC')) ?? undefined,
+    }
+    return known[name]
+  },
+  run: async (argv, timeoutMs) => {
+    const result = await $.process.run(argv, { timeoutMs })
+    return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
+  },
+  store: { get: key => $.store.get(key), set: (key, value) => $.store.set(key, value as ConfigValue) },
 })
 
 // The icons setting (userConfig), fixed per activation: a change reloads the mod.
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 
-// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
-async function detectLook($: EngineInterface) {
-  if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
+// Whether the terminal's font is a Nerd Font, whatever the icons setting says.
+async function nerdFontFound($: EngineInterface) {
   const env = {
     WT_SESSION: await $.env.get('WT_SESSION'),
     TERM_PROGRAM: await $.env.get('TERM_PROGRAM'),
@@ -54,7 +70,13 @@ async function detectLook($: EngineInterface) {
       return result.stdout
     },
   }
-  return lookFor(await detectNerd(env, host))
+  return detectNerd(env, host)
+}
+
+// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
+async function detectLook($: EngineInterface) {
+  if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
+  return lookFor(await nerdFontFound($))
 }
 
 // Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
@@ -95,8 +117,8 @@ function loadLook($: EngineInterface) {
 }
 
 let mods: ModInfo[] = []
-// Mods toggled since the last reload, by name, with the state they had then; toggling back drops one.
-const changed = new Map<string, boolean>()
+// Mods toggled in the pane, by name, with the state Apply gives them; toggling back drops one.
+const pending = new Map<string, boolean>()
 // The mod whose page fills the pane, or -1 for the list.
 let page = -1
 // The mod under the pointer in the list, whose description shows in a card at the bottom of the pane.
@@ -106,54 +128,91 @@ let note = ''
 let featuresOpen = false
 let working = false
 
-// Toggles run in turn, as two read-edit-writes of settings.json would cross; a queued click names its mod, since a landed toggle re-sorts the rows.
-let toggling: Promise<void> = Promise.resolve()
-const queueToggle = ($: EngineInterface, index: number) => {
-  const name = mods[index]?.name
-  return (toggling = toggling.then(() => (name ? toggleMod($, name) : undefined)).catch(() => {}))
+// The marketplace mod-manager came from and its listing; each mod's state is worked out from it and `mods` on every draw.
+let market = 'claude-mods'
+let catalogEntries: CatalogEntry[] = []
+let catalogLoaded = false
+// Catalog keys ticked for install, and update keys the person unticked: updates start ticked.
+const installs = new Set<string>()
+const skipped = new Set<string>()
+// What the Checked list reads, once per pane open: the `claude --version` output and whether the font is a Nerd Font.
+let ccVersion: string | null = null
+let fontFound: boolean | null = null
+
+const catalogRows = () => catalogState(catalogEntries, mods, market)
+
+const planNow = () => planOf({ pending, shown: shownName, catalog: catalogRows(), installs, skipped, iconMode, arrow: look.glyph.icon.arrow ?? '' })
+
+// The catalog is cheap to read; the version and the font take longer, so they fill in beside the first draw.
+async function loadSetup($: EngineInterface) {
+  const io = ioOf($)
+  market = await marketOf(io)
+  catalogEntries = await catalogOf(io, market).catch(() => [])
+  catalogLoaded = true
+  void (async () => {
+    ccVersion = await io.run?.(['claude', '--version'], 10000).then(result => (result.exitCode === 0 ? result.stdout : null)).catch(() => null) ?? null
+    fontFound = await nerdFontFound($).catch(() => false)
+    $.ui.invalidate('ui.render')
+  })()
 }
 
-async function toggleMod($: EngineInterface, name: string) {
-  const mod = mods.find(each => each.name === name)
+const isOn = (mod: ModInfo) => pending.get(mod.name) ?? mod.enabled
+
+// A click only changes the plan; settings.json waits for Apply.
+function toggleMod($: EngineInterface, index: number) {
+  const mod = mods[index]
   if (!mod) return
-  const outcome = await setEnabled(ioOf($), mod, !mod.enabled)
-  if (outcome.ok) {
-    if (changed.get(mod.name) === !mod.enabled) changed.delete(mod.name)
-    else if (!changed.has(mod.name)) changed.set(mod.name, mod.enabled)
+  if (mod.name === SELF) {
+    note = `${MARK.warn} ${text.refuseSelf}`
+  } else {
+    note = ''
+    if (pending.has(mod.name)) pending.delete(mod.name)
+    else pending.set(mod.name, !mod.enabled)
   }
-  // Only a folder new to the dirs list waits for a restart; every other toggle lands with /reload-plugins.
-  const howToApply = outcome.ok && outcome.needsRestart ? text.howRestart : text.howReload
-  note = outcome.ok
-    ? `${MARK.ok} ${fill(mod.enabled ? text.modDisabled : text.modEnabled, { name: shownName(mod.name), how: howToApply })}`
-    : `${MARK.warn} ${outcome.reason}`
-  if (outcome.ok) mods = await discover(ioOf($))
   $.ui.invalidate('ui.render')
 }
 
-// Claude Code picks up a settings.json write a moment later; a reload before that applied the old toggles.
-// The pending toggles take effect through a plugin reload, once the settings file has every one.
 // A second Apply while one runs would reload twice.
 let isApplying = false
 
-async function applyChanges($: EngineInterface) {
+// Toggles write one at a time, as two read-edit-writes of settings.json would cross; the updates card passes only its update steps.
+async function applyChanges($: EngineInterface, only?: Step[]) {
   if (isApplying) return
   isApplying = true
+  const steps = only ?? planNow()
+  $.ui.invalidate('ui.render')
   try {
-    await toggling
+    const io = ioOf($)
+    // Only a folder new to the dirs list waits for a restart; every other toggle lands with /reload-plugins.
+    let needsRestart = false
+    for (const step of steps) {
+      const mod = step.kind === 'on' || step.kind === 'off' ? mods.find(each => each.name === step.name) : undefined
+      if (!mod) continue
+      const outcome = await setEnabled(io, mod, step.kind === 'on')
+      if (!outcome.ok) $.ui.toast(`${MARK.warn} ${fill(text.toggleFailed, { line: step.line, error: outcome.reason })}`)
+      else if (outcome.needsRestart) needsRestart = true
+    }
+    if (!only) pending.clear()
+    await runSteps(io, steps, (step, reason) => $.ui.toast(`${MARK.warn} ${fill(step.kind === 'install' ? text.installFailed : text.updateFailed, { name: shownName(step.name), error: reason })}`))
+    if (!only) {
+      installs.clear()
+      skipped.clear()
+    }
+    mods = await discover(io)
     await settingsCaughtUp($).catch(() => {})
     note = await $.command
       .run({ command: 'reload-plugins' })
-      .then(() => {
-        changed.clear()
-        return `${MARK.ok} ${text.reloading}`
-      })
+      .then(() => `${MARK.ok} ${fill(text.applyDone, { n: steps.length })}${needsRestart ? `, ${text.howRestart}` : ''}`)
       .catch(error => `${MARK.warn} ${fill(text.reloadFailed, { error: String(error) })}`)
-    $.ui.invalidate('ui.render')
   } finally {
     isApplying = false
+    // The Apply card goes once nothing is pending, so its tip goes with it.
+    paneTip = null
+    $.ui.invalidate('ui.render')
   }
 }
 
+// Claude Code picks up a settings.json write a moment later; a reload before that applied the old toggles.
 async function settingsCaughtUp($: EngineInterface) {
   const onDisk = JSON.stringify(JSON.parse(String(await $.fs.read(`${await configDir($)}/settings.json`))).enabledPlugins ?? {})
   for (let tries = 0; tries < 30; tries++) {
@@ -177,9 +236,106 @@ async function togglePane($: EngineInterface) {
   mods = await discover(ioOf($))
   page = -1
   note = ''
+  pending.clear()
+  installs.clear()
+  skipped.clear()
+  await loadSetup($)
   const opened = await $.ui.open({ id: 'manager', title: text.paneTitle, closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(fill(text.panelWaiting, { reason: opened.reason }))
+  if (!opened.isPlaced) $.ui.toast(text.panelWaiting)
   await $.state.set({ plugin: 'mod-manager', key: 'pane' }, opened.isPlaced)
+}
+
+// Marketplace auto-update lives in /plugin, which a mod cannot set; this opens it.
+async function openPlugin($: EngineInterface) {
+  note = await $.command
+    .run({ command: 'plugin' })
+    .then(() => '')
+    .catch(error => `${MARK.warn} ${String(error)}`)
+  $.ui.invalidate('ui.render')
+}
+
+// What the band cards read, loaded beside the first draw: the band never waits on the catalog or the font.
+let bandLoad: Promise<void> | null = null
+let isBandReady = false
+// What the band last said about Claude working, since a click handler cannot read the band's props.
+let bandIsWorking = false
+
+function loadBand($: EngineInterface) {
+  bandLoad ??= (async () => {
+    const io = ioOf($)
+    const font = nerdFontFound($).catch(() => false)
+    if (!catalogLoaded) {
+      market = await marketOf(io)
+      catalogEntries = await catalogOf(io, market).catch(() => [])
+      catalogLoaded = true
+    }
+    if (mods.length === 0) mods = await discover(io)
+    isBandReady = true
+    fontFound ??= await font
+    $.ui.invalidate('ui.render')
+  })().catch(() => {})
+  return bandLoad
+}
+
+// A store read can throw; then neither card draws, since a card that cannot be dismissed would come back on every draw.
+async function readStore($: EngineInterface, key: string) {
+  try {
+    return { isReadable: true, value: await $.store.get(key) }
+  } catch {
+    return { isReadable: false, value: undefined }
+  }
+}
+
+async function writeStore($: EngineInterface, key: string, value: ConfigValue) {
+  try {
+    await $.store.set(key, value)
+  } catch {
+    // The card stays until the store works again.
+  }
+}
+
+const updatesNow = () => catalogRows().filter(cat => cat.canUpdate)
+
+// The Update button runs the Apply flow for the update lines only.
+async function updateFromCard($: EngineInterface) {
+  if (isApplying) return
+  if (working || bandIsWorking) {
+    $.ui.toast(text.cardUpdateBusy)
+    return
+  }
+  const steps = planOf({ pending: new Map(), shown: shownName, catalog: catalogRows(), installs: new Set(), skipped: new Set(), iconMode, arrow: look.glyph.icon.arrow ?? '' })
+  if (steps.length) await applyChanges($, steps)
+}
+
+// At most one card: the welcome while `welcomed` is unset, else the updates of a release the person has not put off.
+async function bandCard($: EngineInterface, elements: Parameters<typeof welcomeCard>[0], maxRows: number, isWorking: boolean) {
+  const welcomed = await readStore($, 'welcomed')
+  // The font check lands in a moment; drawing the card after it keeps the tip from growing the band under the prompt.
+  if (welcomed.isReadable && !welcomed.value) {
+    return fontFound === null ? null : welcomeCard(elements, look, { showFontTip: fontFound === false, still, maxRows, onOpen: () => cardClick($, 'card-welcome-open') })
+  }
+  if (!isBandReady) return null
+  const updates = updatesNow()
+  if (updates.length === 0) return null
+  const dismissed = await readStore($, 'updates-dismissed')
+  if (!dismissed.isReadable || dismissed.value === signatureOf(updates)) return null
+  return updatesCard(elements, look, { updates, shown: shownName, isWorking: isWorking || working, isUpdating: isApplying, still, maxRows })
+}
+
+async function cardClick($: EngineInterface, id: string) {
+  // The card may go with this click, and a tip left in the band row would name a control no longer there.
+  toastTip = ''
+  if (id === 'card-welcome-open' || id === 'card-welcome-skip') {
+    // The pane opens first: once the card is gone, the press behind it no longer counts as the person asking.
+    if (id === 'card-welcome-open') await openingPane($)
+    await writeStore($, 'welcomed', true)
+    $.ui.invalidate('ui.render')
+  }
+  if (id === 'card-update-skip') {
+    await writeStore($, 'updates-dismissed', signatureOf(updatesNow()))
+    $.ui.invalidate('ui.render')
+  }
+  if (id === 'card-update-run') await updateFromCard($)
 }
 
 const openPage = ($: EngineInterface, index: number) => {
@@ -292,6 +448,17 @@ export const register: Register = (on, options) => {
     await $.state.set({ plugin: 'mod-manager', key: 'pane' }, await isOpen($))
     // A hot reload leaves an open pane on its old drawing until something redraws it.
     $.ui.invalidate('ui.render')
+    // Background and silent: a failure keeps the old catalog.
+    const io = ioOf($)
+    // A refreshed listing may hold new versions, so the cards read it again.
+    void marketOf(io)
+      .then(async name => {
+        await refreshCatalog(io, name)
+        catalogEntries = await catalogOf(io, name)
+        market = name
+        $.ui.invalidate('ui.render')
+      })
+      .catch(() => undefined)
 
     return next(e)
   })
@@ -348,12 +515,21 @@ export const register: Register = (on, options) => {
     const hidden = await $.state.get({ plugin: 'mod-menu', key: 'hidden' })
     const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    const { Box, Button, Client, Link, Text } = $.ui.resolve(e)
+    void loadBand($)
+    bandIsWorking = e.props.isWorking
+    // A card that fails to draw must not take the pill row with it: one throw in this hook drops the whole band.
+    const card = await bandCard($, { Box, Button, Client, Link, Text }, e.props.maxRows, e.props.isWorking).catch(() => null)
+    // A Button cannot post a tip, so Open setup's tip lies hidden over the tip row and shows while its pill is lit; padded to cover what is under it.
+    const openTip = (card as { props?: { key?: unknown } } | null)?.props?.key === 'card-welcome' ? (
+      <Box key="card-open-tip" position="absolute" top={0} left={0} display="none" hover={{ scope: OPEN_SETUP_SCOPE, display: 'flex' }}>
+        {tipLine({ Box, Text }, `${text.cardOpenSetup}: ${text.tipCardOpen}`.padEnd(Math.max(0, e.props.bodyColumns - 2)))}
+      </Box>
+    ) : null
     if (hidden.value === true) {
-      if (toasts.items.length === 0) return next(e)
-      const { Box, Client, Text } = $.ui.resolve(e)
-      return <Box key="toasts-manager" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{await next(e)}</Box>
+      if (toasts.items.length === 0 && !card) return next(e)
+      return <Box key="toasts-manager" flexDirection="column">{toastCards({ Box, Client, Text }, toasts, look, text.tipToast)}{card}{await next(e)}</Box>
     }
-    const { Box, Client, Text } = $.ui.resolve(e)
     // Reading the value subscribes the bar to redraws; the look trusts the pane list itself.
     await $.state.get({ plugin: 'mod-manager', key: 'pane' })
     const shown = await isOpen($)
@@ -361,7 +537,10 @@ export const register: Register = (on, options) => {
     // Opening the pane from here queues nothing, so the entry stays live mid-turn.
     const entry = menuEntry({ Box, Client, Text }, look.nerd, 'manager', { label: look.glyph.gear, isOpen: shown, idle: THEME.pill, isBusy: isOpening, still, labels })
 
-    return pillRow({ Box, Client, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest], toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip, e.props.bodyColumns)
+    const tipNow = toastTip ? tipLine({ Box, Text }, toastTip) : tipShown ? tipLine({ Box, Text }, text.pillTip) : tip
+    // Keyed as the tip row, so the next mod's splitRow takes it as the tip and never as one more row.
+    const tipSlot = openTip ? <Box key="menu-tip" flexDirection="column">{tipNow ?? tipLine({ Box, Text }, ' ')}{openTip}</Box> : tipNow
+    return pillRow({ Box, Client, Text }, look.nerd, [entry, ...group], row, [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...(card ? [card] : []), ...rest], tipSlot, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -374,7 +553,8 @@ export const register: Register = (on, options) => {
     }
     if (isTipMessage(e.data)) {
       const tip = e.data
-      const isToast = Boolean(tip.id?.startsWith('toast-manager-'))
+      // A band card's buttons and the toast × show their tip in the band's tip row.
+      const isToast = Boolean(tip.id?.startsWith('toast-manager-') || tip.id?.startsWith('card-'))
       toastTip = isToast ? `${tip.label}: ${tip.text}` : ''
       paneTip = tip.id && !isToast ? { glyph: tip.glyph ?? '', label: tip.label ?? '', text: tip.text ?? '' } : null
       // The list's tip carries the row under the pointer, whose card shows above the list.
@@ -395,6 +575,7 @@ export const register: Register = (on, options) => {
     }
     if (message?.type === 'menu-entry' && message.id.startsWith('icons-')) await setAllIcons($, message.id.slice('icons-'.length))
     if (message?.type === 'menu-entry' && message.id === 'manager-apply') await applyChanges($)
+    if (message?.type === 'menu-entry' && message.id.startsWith('card-')) await cardClick($, message.id)
     // The Mods tab on a mod's page goes back to the list; the open tab does nothing.
     if (message?.type === 'menu-entry' && message.id === 'manager-tab' && page >= 0) openPage($, -1)
     const change = settingChoice(e.data)
@@ -405,11 +586,17 @@ export const register: Register = (on, options) => {
 
   // A click on a mod's name opens its page.
   on('ui.message', { requestId: 'manager' }, async ($, e, next) => {
-    const message = e.data as ListMessage
+    const message = e.data as ListMessage | PickMessage
     // A click posts only its own message, so a toggle also says which row the pointer is on.
-    if (message?.type === 'toggle') {
+    // While Apply runs, a toggle or a tick would change the plan under it.
+    if (message?.type === 'toggle' && !isApplying) {
       hovering = message.index
-      await queueToggle($, message.index)
+      toggleMod($, message.index)
+    }
+    if (message?.type === 'pick' && !isApplying) {
+      const set = message.kind === 'install' ? installs : skipped
+      if (!set.delete(message.key)) set.add(message.key)
+      $.ui.invalidate('ui.render')
     }
     if (message?.type === 'select') {
       hovering = -1
@@ -429,7 +616,7 @@ export const register: Register = (on, options) => {
     if (mods.length === 0) mods = await discover(ioOf($))
 
     // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
-    const { Box, Button, Client, Text } = $.ui.resolve(e)
+    const { Box, Button, Client, Link, Text } = $.ui.resolve(e)
     const redraw = () => $.ui.invalidate('ui.render')
     const frame = (children: RenderChildren, reveals: Reveal[] = []) => (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
@@ -474,11 +661,21 @@ export const register: Register = (on, options) => {
           </Box>
         ),
       )
+      // The expand standard: the arrow, then a muted label, on the card's own fill, at the right end of the last feature row.
       const label = featuresOpen ? text.featuresLess : text.featuresAll
-      const featuresIcon = look.nerd ? { subLead: look.glyph.icon.features ?? look.glyph.title, subLeadColor: THEME.accent } : {}
-      const more = isCut
-        ? pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-features" module="./entry.tsx" height={1} props={{ id: 'manager-features', label, isOpen: true, bg: THEME.surface3, color: THEME.onSurface, nerd: look.nerd, still, ...featuresIcon, tip: { glyph: look.glyph.icon.features ?? look.glyph.title, label, text: featuresOpen ? text.tipFeaturesLess : text.tipFeaturesAll } } satisfies EntryProps} />, 'features-more', cardFill())
-        : null
+      const arrow = featuresOpen ? look.glyph.less : look.glyph.more
+      const more = isCut ? (
+        <Client key="manager-features" module="./entry.tsx" height={1} props={{ id: 'manager-features', label, lead: arrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, nerd: look.nerd, still, tip: { glyph: arrow, label, text: featuresOpen ? text.tipFeaturesLess : text.tipFeaturesAll } } satisfies EntryProps} />
+      ) : null
+      const featureRows = more
+        ? [
+            ...features.slice(0, -1),
+            <Box key="features-last" flexDirection="row" alignItems="flex-end" columnGap={1}>
+              <Box key="features-last-text" flexGrow={1} flexShrink={1}>{features[features.length - 1]}</Box>
+              <Box key="features-more" flexShrink={0}>{more}</Box>
+            </Box>,
+          ]
+        : features
 
       return frame([
         <Box key="page-head" flexDirection="row" columnGap={1}>
@@ -511,8 +708,18 @@ export const register: Register = (on, options) => {
             <Text color={THEME.muted}>{fill(text.turnOnFirst, { name: shownName(mod.name) })}</Text>
           </Box>
         ),
-        section({ Box, Text }, look, 'features', 'features', text.sectionFeatures, features.length ? [...features, more && <Box key="features-more-row" marginTop={featuresOpen ? 1 : 0}>{more}</Box>] : <Text color={THEME.muted}>{text.noFeatures}</Text>),
+        section({ Box, Text }, look, 'features', 'features', text.sectionFeatures, features.length ? featureRows : <Text color={THEME.muted}>{text.noFeatures}</Text>),
       ], actionReveals(actions, look, working))
+    }
+
+    if (!catalogLoaded) await loadSetup($)
+    const cats = catalogRows()
+    const steps = planNow()
+    const isBusy = working || isApplying
+    // The switch already says on or off, so the text beside the version is only for an update.
+    const updateOf = (item: ModInfo) => {
+      const update = cats.find(cat => cat.name === item.name && cat.canUpdate)
+      return update ? { update: fill(text.stateUpdate, { version: update.version }) } : {}
     }
 
     // One section per source, so a row needs no "yours" or "installed" label of its own.
@@ -533,12 +740,12 @@ export const register: Register = (on, options) => {
             rows: members.map(({ item, index }) => ({
               index,
               name: shownName(item.name),
-              slug: item.name,
               version: item.version,
-              enabled: item.enabled,
-              // A command named after its mod repeats the folder, so only other commands show.
+              enabled: isOn(item),
+              // A command named after its mod repeats the folder the hover card names, so only other commands show.
               commands: item.commands.filter(name => name !== item.name),
               hasSettings: item.settings > 0,
+              ...updateOf(item),
               // A Client prop refuses undefined, so a mod without a cost leaves the key out.
               // The footer tip is one row, so it says only that the mod costs; the page card holds the full summary.
               ...(item.showcase?.cost ? { cost: text.costTip } : {}),
@@ -546,7 +753,6 @@ export const register: Register = (on, options) => {
             gear: look.glyph.gear,
             still,
             nameWidth: Math.max(...members.map(({ item }) => shownName(item.name).length)),
-            slugWidth: Math.max(...members.map(({ item }) => item.name.length)),
             icon: look.glyph.icon[icon] ?? '',
             nerd: look.nerd,
             on: text.stateOn,
@@ -559,9 +765,8 @@ export const register: Register = (on, options) => {
         />,
       )
     }
-    const pending = changed.size
-    const applyLabel = fill(pending === 1 ? text.applyOne : text.applyMany, { n: pending })
-    const onCount = mods.filter(item => item.enabled).length
+    const applyLabel = fill(text.applyAction, { n: steps.length })
+    const onCount = mods.filter(isOn).length
 
     // The sticky card above the list keeps its space while nothing is hovered, so the list never jumps.
     const hoverCard = () => {
@@ -573,8 +778,11 @@ export const register: Register = (on, options) => {
         CARD_ROWS,
         hovered ? (
           <Box key="hover-card" flexDirection="column">
-            <Box key="hover-card-title" flexShrink={0}>
-              <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(hovered.name), sep: MARK.sep, version: hovered.version })}</Text>
+            <Box key="hover-card-title" flexDirection="row" flexShrink={0}>
+              <Box flexShrink={0}>
+                <Text color={THEME.onSurface} bold>{fill(text.pageTitle, { name: shownName(hovered.name), sep: MARK.sep, version: hovered.version })}</Text>
+              </Box>
+              <Text key="hover-card-folder" color={THEME.muted} wrap="truncate-end">{` ${MARK.sep} ${hovered.name}`}</Text>
             </Box>
             <Box key="hover-card-text" height={CARD_ROWS - 3} overflow="hidden" flexShrink={0}>
               <Text color={THEME.muted}>{hovered.description || text.noDescription}</Text>
@@ -596,18 +804,129 @@ export const register: Register = (on, options) => {
       isOn: iconsNow === mode,
       props: { id: `icons-${mode}`, label: (text.iconModes as Record<string, string>)[mode]!, still, tip: { glyph: look.glyph.title, label: text.iconsLabel, text: fill(text.tipIcons, { mode: (text.iconModes as Record<string, string>)[mode]! }) } },
     }))
-    const iconsSwitch = iconRows.length ? (
-      <Box key="icons-switch" flexDirection="column" marginTop={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
-        <Box key="icons-switch-row" flexDirection="row" columnGap={1}>
-          <Text color={THEME.onSurface} bold>{text.iconsLabel}</Text>
-          {choiceBar({ Box, Client, Text, Button }, look, 'icons', cardFill(), iconChoices)}
-          {iconsNow ? null : <Text color={THEME.muted}>{`${MARK.sep} ${text.iconsMixed}`}</Text>}
-        </Box>
-        <Text color={THEME.muted}>{text.iconsDescription}</Text>
-      </Box>
-    ) : null
+    // The card also carries the font line: shown once the check found no Nerd Font, with a link to get one.
+    const iconsCard =
+      iconRows.length || fontFound === false
+        ? section(
+            { Box, Text },
+            look,
+            'sec-icons',
+            'icons',
+            text.iconsLabel,
+            <Box key="icons-body" flexDirection="column">
+              {iconRows.length ? (
+                <Box key="icons-switch-row" flexDirection="row" columnGap={1}>
+                  {choiceBar({ Box, Client, Text, Button }, look, 'icons', cardFill(), iconChoices)}
+                  {iconsNow ? null : <Text color={THEME.muted}>{`${MARK.sep} ${text.iconsMixed}`}</Text>}
+                </Box>
+              ) : null}
+              {iconRows.length ? <Text color={THEME.muted}>{text.iconsDescription}</Text> : null}
+              {fontFound === false ? (
+                <Text key="nerd-line" color={THEME.muted}>
+                  <Text color={THEME.warn}>{look.glyph.warn}</Text>
+                  {` ${text.noNerdFont} ${MARK.sep} `}
+                  <Link href={text.nerdFontsUrl} label={text.getOne} />
+                </Text>
+              ) : null}
+            </Box>,
+          )
+        : null
 
+    // Catalog mods with no copy anywhere: the tick marks one for install.
+    const notInstalled = cats.filter(cat => cat.canInstall)
+    const pickList = (kind: PickProps['kind'], rows: PickProps['rows'], tickedLabel: string, tip: string) => (
+      <Client
+        key={`list-${kind}`}
+        module="./setup.tsx"
+        height={rows.length}
+        props={{ kind, rows, nameWidth: Math.max(...rows.map(row => row.name.length)), on: tickedLabel, off: text.tickSkip, nerd: look.nerd, tipGlyph: bare(look.glyph.on), tip, still } satisfies PickProps}
+      />
+    )
+    const notInstalledCard = notInstalled.length
+      ? section(
+          { Box, Text },
+          look,
+          'sec-install',
+          'not-installed',
+          text.sectionNotInstalled,
+          pickList('install', notInstalled.map(cat => ({ key: cat.key, name: shownName(cat.name), ticked: installs.has(cat.key), detail: fill(text.pickDetail, { version: cat.version, sep: MARK.sep, description: cat.description }) })), text.tickAdd, text.tipPickInstall),
+        )
+      : null
+
+    // Updates start ticked; the card lists every mod behind the marketplace, and always says where auto-update lives.
+    const updatable = cats.filter(cat => cat.canUpdate)
+    const arrow = look.glyph.icon.arrow ?? ''
+    const pluginControl = isBusy ? (
+      <Text key="open-plugin" color={THEME.muted}>{fill(text.pluginBusy, { label: `${look.glyph.go} ${text.openPlugin}`, sep: MARK.sep })}</Text>
+    ) : (
+      // A pill around a plain Button, since opening /plugin needs the person's press behind it; the glyph rides in the label so the whole pill lights.
+      pill(
+        { Box, Text },
+        look.nerd,
+        THEME.surface3,
+        <Button key="open-plugin" label={look.nerd ? `${bare(look.glyph.go)} ${text.openPlugin}` : ` ${bare(look.glyph.go)} ${text.openPlugin} `} plain hover={{ scope: 'open-plugin-pill', color: THEME.accent, inverse: true }} onPress={() => openPlugin($)} />,
+        'open-plugin-pill',
+        cardFill(),
+        THEME.accent,
+      )
+    )
+    const updatesCard = section(
+      { Box, Text },
+      look,
+      'sec-updates',
+      'updates',
+      text.sectionUpdates,
+      <Box key="updates-body" flexDirection="column">
+        {updatable.length ? (
+          pickList('update', updatable.map(cat => ({ key: cat.key, name: shownName(cat.name), ticked: !skipped.has(cat.key), detail: fill(text.pickUpdateDetail, { from: cat.installedVersion, to: cat.version, arrow }) })), text.tickUpdate, text.tipPickUpdate)
+        ) : (
+          <Text key="updates-none" color={THEME.muted}>{catalogEntries.length ? text.updatesNone : text.noCatalog}</Text>
+        )}
+        <Box key="updates-auto" flexDirection="column" marginTop={updatable.length ? 1 : 0}>
+          <Text color={THEME.muted}>{text.autoUpdateOff}</Text>
+          <Box key="updates-auto-row" flexDirection="row" columnGap={1}>
+            {/* The hint wraps in a narrow pane; the pill never does. */}
+            <Box key="open-plugin-cell" flexShrink={0} alignSelf="flex-start">{pluginControl}</Box>
+            <Text color={THEME.muted} wrap="wrap">{fill(text.pluginHint, { market })}</Text>
+          </Box>
+        </Box>
+      </Box>,
+    )
+
+    // Last, and only while something is pending: what was checked, every line Apply will run in full, and one control.
+    const checks = checkedOf({ version: ccVersion, market, hasCatalog: catalogEntries.length > 0, fontFound })
     const goLead = { subLead: bare(look.glyph.go), subLeadColor: THEME.accent }
+    const applyCard =
+      steps.length || isApplying
+        ? section(
+            { Box, Text },
+            look,
+            'sec-apply',
+            'apply',
+            text.sectionApply,
+            <Box key="apply-body" flexDirection="column">
+              <Text key="checked-title" color={THEME.onSurface} bold>{text.checkedTitle}</Text>
+              {checkedRows({ Box, Text }, look.glyph.ok, look.glyph.warn, checks)}
+              <Box key="apply-lines" flexDirection="column" marginTop={1}>
+                {planRows({ Box, Text }, steps)}
+              </Box>
+              <Box key="list-apply" flexDirection="row" marginTop={1}>
+                {/* A reload while Claude works would only queue as a prompt, and Apply twice would reload twice. */}
+                {isApplying ? (
+                  <Text color={THEME.muted}>{fill(text.applyRunning, { n: steps.length, sep: MARK.sep })}</Text>
+                ) : working ? (
+                  <Text color={THEME.muted}>{fill(text.applyBusy, { label: applyLabel, sep: MARK.sep })}</Text>
+                ) : (
+                  [
+                    <Box key="apply-gap" flexGrow={1} />,
+                    pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-apply" module="./entry.tsx" height={1} props={{ id: 'manager-apply', label: applyLabel, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, ...goLead, tip: { glyph: bare(look.glyph.cycle), label: applyLabel, text: text.tipApply } }} />, 'manager-apply-pill', cardFill()),
+                  ]
+                )}
+              </Box>
+            </Box>,
+          )
+        : null
+
     return frame([
       <Box key="list-head" flexDirection="row" columnGap={1}>
         {tabRow({ Box, Client, Text }, look.nerd, [listTab(true)], still)}
@@ -615,26 +934,14 @@ export const register: Register = (on, options) => {
       </Box>,
       <Text key="list-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { sep: MARK.sep })}</Text>,
       cardSpace({ Box }, CARD_ROWS),
-      iconsSwitch,
       mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>{text.noMods}</Text> : null,
       group('dir', text.sectionYours, 'mod'),
       group('installed', text.sectionInstalled, 'installed'),
-      cardGap({ Box }, 'list-apply'),
-      <Box key="list-apply" flexDirection="row">
-        {/* Nothing pending means nothing to reload; while Claude works, a reload would only queue as a prompt. */}
-        {pending === 0 ? (
-          <Text color={THEME.muted}>{text.noChanges}</Text>
-        ) : working ? (
-          <Text color={THEME.muted}>{fill(text.applyBusy, { label: applyLabel, sep: MARK.sep })}</Text>
-        ) : (
-          [
-            <Text key="apply-count" color={THEME.muted}>{applyLabel}</Text>,
-            <Box key="apply-gap" flexGrow={1} />,
-            pill({ Box, Text }, look.nerd, THEME.surface3, <Client key="manager-apply" module="./entry.tsx" height={1} props={{ id: 'manager-apply', label: text.applyAction, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, ...goLead, tip: { glyph: bare(look.glyph.cycle), label: text.applyAction, text: text.tipApply } }} />, 'manager-apply-pill', THEME.bg),
-          ]
-        )}
-      </Box>,
+      notInstalledCard,
+      iconsCard,
+      updatesCard,
+      applyCard,
       hoverCard(),
-    ])
+    ], isBusy ? [] : [{ scope: 'open-plugin-pill', tip: { glyph: bare(look.glyph.go), label: text.openPlugin, text: text.tipOpenPlugin } }])
   })
 }

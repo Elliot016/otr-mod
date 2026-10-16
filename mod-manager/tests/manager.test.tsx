@@ -265,6 +265,8 @@ test('the pane reads and writes under CLAUDE_CONFIG_DIR when it is set, else und
 
   expect(await ui.find({ type: 'Text', text: /^Yours$/ })).toBeDefined()
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
+  await ui.pointer({ in: 'manager-apply', type: 'down', button: 'left', x: 1, y: 0 })
+  for (let waited = 0; waited < 3000 && JSON.parse(files['/cfg/settings.json']!).enabledPlugins['gamma@inline'] === undefined; waited += 20) await new Promise(resolve => setTimeout(resolve, 20))
   expect(JSON.parse(files['/cfg/settings.json']!).enabledPlugins['gamma@inline']).toBe(false)
   expect(files['/h/.claude/settings.json']).toBe(homeSettings)
   await ui.unmount()
@@ -277,7 +279,6 @@ test('showcase uses showcase.json, else derives from the hooks source', async ()
 
   const beta = await byName(io, 'beta')
   expect(beta.events).toEqual(['tool.call', 'ui.render:AbovePrompt'])
-  expect(beta.calls).toEqual(['ui.status', 'command.register'])
   expect(beta.commands).toEqual(['mod-beta'])
   expect(featuresOf(beta).map(feature => feature.title)).toEqual(['tool.call', 'ui.render:AbovePrompt'])
   expect(featuresOf(beta)[0]!.detail).toContain('tool call')
@@ -286,7 +287,7 @@ test('showcase uses showcase.json, else derives from the hooks source', async ()
 // The engine rewrites paths in the host's style, so compare on a neutral form.
 const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
 
-test('two toggles pressed at once both land in settings.json', async ($, on) => {
+test('toggles wait for Apply, a reopen drops them, and Apply writes both to settings.json', async ($, on) => {
   const { files } = disk()
   const settingsPath = '/h/.claude/settings.json'
   on('fs.read', async (_$, e) => {
@@ -322,12 +323,19 @@ test('two toggles pressed at once both land in settings.json', async ($, on) => 
     requestId: 'manager',
     props: { title: 'Mods', isFocused: true, bodyColumns: 80, placement: 'above', scroll: { offset: 0, bodyRows: 20 }, view: {} },
   } as never))
-  // One post lands per frame, so the second click comes a moment after the first, while its settings.json write is still under way.
-  const rows = ((await ui.find({ type: 'Client', key: 'list-dir' }))?.props.props.rows ?? []) as { index: number; slug: string }[]
-  const indexOf = (slug: string) => rows.find(row => row.slug === slug)!.index
-  const first = ui.post({ type: 'toggle', index: indexOf('beta') }, { in: 'list-dir' })
-  await new Promise(resolve => setTimeout(resolve, 1))
-  await Promise.all([first, ui.post({ type: 'toggle', index: indexOf('alpha') }, { in: 'list-dir' })])
+  const rows = ((await ui.find({ type: 'Client', key: 'list-dir' }))?.props.props.rows ?? []) as { index: number; name: string }[]
+  const indexOf = (name: string) => rows.find(row => row.name === name)!.index
+  const untouched = files[settingsPath]
+  await ui.post({ type: 'toggle', index: indexOf('Alpha') }, { in: 'list-dir' })
+  expect(await ui.find({ type: 'Text', text: 'Turn off Alpha' })).toBeDefined()
+  await $.command.run({ command: 'mod-manager' } as never)
+  await ui.redraw()
+  expect(await ui.find({ key: 'sec-apply' })).toBeUndefined()
+
+  await ui.post({ type: 'toggle', index: indexOf('Beta') }, { in: 'list-dir' })
+  await ui.post({ type: 'toggle', index: indexOf('Alpha') }, { in: 'list-dir' })
+  expect(files[settingsPath]).toBe(untouched)
+  await ui.pointer({ in: 'manager-apply', type: 'down', button: 'left', x: 1, y: 0 })
   // The file's tests run side by side, so the writes are awaited rather than given a fixed time.
   for (let waited = 0; waited < 3000 && JSON.parse(files[settingsPath]!).enabledPlugins?.['alpha@inline'] === undefined; waited += 20) await new Promise(resolve => setTimeout(resolve, 20))
   const settings = JSON.parse(files[settingsPath]!)
@@ -336,7 +344,7 @@ test('two toggles pressed at once both land in settings.json', async ($, on) => 
   await ui.unmount()
 })
 
-test('pane lists mods on the terminal and a toggle press writes settings', async ($, on) => {
+test('pane lists mods on the terminal and a toggle press plans the change', async ($, on) => {
   const { files } = disk()
   const settingsPath = '/h/.claude/settings.json'
   on('fs.read', (_$, e) => {
@@ -380,27 +388,28 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   expect(await ui.find({ type: 'Text', text: ' 2 on ' })).toBeDefined()
   // Rows group by source, and nothing toggled yet means nothing to reload.
   expect(await ui.find({ type: 'Text', text: /^Yours$/ })).toBeDefined()
-  // Beside each readable name, the package name: the folder to open.
-  expect(JSON.stringify(await ui.drawn({ in: 'list-dir' }))).toContain('" alpha"')
+  // The row reads only the readable name; the hover card names the folder.
+  expect(JSON.stringify(await ui.drawn({ in: 'list-dir' }))).not.toContain('" alpha"')
   expect(await ui.find({ type: 'Text', text: /^Installed$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^No changes to apply$/ })).toBeDefined()
+  expect(await ui.find({ key: 'sec-apply' })).toBeUndefined()
 
-  // The switch pill at the row's start toggles; the rest of the row opens the mod.
+  // The switch pill at the row's start toggles; the rest of the row opens the mod. settings.json waits for Apply.
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 1 })
-  expect(dirs()).toContain('beta')
+  expect(dirs()).not.toContain('beta')
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
-  expect(JSON.parse(files[settingsPath]!).enabledPlugins['alpha@inline']).toBe(false)
-  expect(await ui.find({ type: 'Text', text: /Alpha disabled, reload plugins to apply/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Reload plugins to apply 2 changes' })).toBeDefined()
-  expect(JSON.stringify(await ui.drawn({ in: 'manager-apply' }))).toContain(' Reload plugins ')
+  expect(JSON.parse(files[settingsPath]!).enabledPlugins?.['alpha@inline']).toBeUndefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'list-dir' }))).toContain(`${MARK.stop} Off`)
+  expect(await ui.find({ type: 'Text', text: 'Turn on Beta' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Turn off Alpha' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-apply' }))).toContain(' Apply 2 ')
   expect(JSON.stringify(await ui.find({ key: 'manager-apply-pill' }))).toContain(THEME.surface3)
   // Toggling alpha back leaves one change pending.
   await ui.pointer({ in: 'list-dir', type: 'down', button: 'left', x: 1, y: 0 })
-  expect(await ui.find({ type: 'Text', text: 'Reload plugins to apply 1 change' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: 'manager-apply' }))).toContain(' Apply 1 ')
   // While Claude works the reload would only queue as a prompt, so it waits.
   await $.turn.start({ turnId: 't1' } as never)
   await ui.redraw()
-  expect(await ui.find({ type: 'Text', text: /^Reload plugins to apply 1 change · available once Claude is idle$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Apply 1 · Claude is working, available once it is idle$/ })).toBeDefined()
   // The last toggle left the pointer on alpha's row, so its card shows; leaving the list hides it, hovering again shows it.
   expect(await ui.find({ type: 'Text', text: /alpha does a thing/ })).toBeDefined()
   await ui.pointer({ in: 'list-dir', type: 'leave', x: 0, y: 0 })
@@ -411,6 +420,7 @@ test('pane lists mods on the terminal and a toggle press writes settings', async
   await ui.pointer({ in: 'list-dir', type: 'move', x: 12, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'alpha does a thing' })).toBeDefined()
   expect(await ui.find({ key: 'hover-card' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ` ${MARK.sep} alpha` })).toBeDefined()
   // The control under the pointer names itself in the pane footer: the name part opens, the switch part toggles.
   expect(await ui.find({ type: 'Text', text: / · opens this mod's page and settings$/ })).toBeDefined()
   await ui.pointer({ in: 'list-dir', type: 'move', x: 1, y: 0 })
@@ -465,7 +475,16 @@ test('a feature line too long for the page is cut until Show all wraps every lin
   const cut = async () => (await ui.find({ type: 'Text', text: `${MARK.sep} ${long}` }))?.props.wrap
   expect(await cut()).toBe('truncate-end')
   expect(JSON.stringify(await ui.drawn({ in: 'manager-features' }))).toContain('Show all')
+  // The expand standard: the arrow in accent, a muted label on the card's fill, no pill, at the last feature row's right end.
+  const toggle = (await ui.find({ type: 'Client', key: 'manager-features' }))?.props.props as Record<string, unknown>
+  expect(toggle.lead).toBe('▾')
+  expect(toggle.leadColor).toBe(THEME.accent)
+  expect(toggle.idle).toBe(THEME.muted)
+  expect(toggle.label).toBe('Show all')
+  expect(await ui.find({ key: 'features-more-pill' })).toBeUndefined()
+  expect(JSON.stringify(await ui.find({ key: 'features-last' }))).toContain('"key":"features-more"')
   await ui.pointer({ in: 'manager-features', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(((await ui.find({ type: 'Client', key: 'manager-features' }))?.props.props as Record<string, unknown>).lead).toBe('▴')
   // Open, the name has its own row, its text sits under it two cells in and wraps there, and a blank row parts the features.
   expect((await ui.find({ type: 'Text', text: long }))?.props.wrap).toBe('wrap')
   expect(await ui.find({ type: 'Text', text: `${MARK.sep} ${long}` })).toBeUndefined()
@@ -841,8 +860,11 @@ test('discovery reads only the summary of a showcase cost, and a mod without one
   expect((await byName(io, 'inst')).showcase).toBeNull()
 })
 
-const costPane = async ($: any, on: any, costs = true) => {
-  const { files } = disk(costs ? { '/h/.claude/mods/alpha/showcase.json': JSON.stringify({ cost: { summary: SUMMARY } }) } : {})
+const costPane = async ($: any, on: any, costs = true, extra: object = {}) => {
+  const { files } = disk({
+    ...(costs ? { '/h/.claude/mods/alpha/showcase.json': JSON.stringify({ cost: { summary: SUMMARY } }) } : {}),
+    '/h/.claude/mods/alpha/.claude-plugin/plugin.json': JSON.stringify({ ...JSON.parse(manifest('alpha')), ...extra }),
+  })
   on('fs.read', (_$: unknown, e: { path: string }) => {
     const path = neutral(e.path)
     if (!(path in files)) throw new Error('ENOENT')
@@ -867,25 +889,33 @@ const costPane = async ($: any, on: any, costs = true) => {
   } as never))
 }
 
-test('a row with a cost draws the cost pill after its name and a row without draws none, the columns still lined up', { options: { icons: 'safe' } }, async ($, on) => {
+test('a row with a cost draws the cost pill beside its version and a row without draws a blank, the columns still lined up', { options: { icons: 'safe' } }, async ($, on) => {
   const ui = await costPane($, on)
   const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
   expect(rows).toContain('"key":"cost-0"')
   expect(rows).not.toContain('"key":"cost-1"')
   expect(rows).toContain(`"color":"${THEME.ok}","backgroundColor":"${mix(THEME.ok, THEME.surface1, 0.72)}"`)
-  // The blank under it is as wide as the pill and its gap, so the folder column holds.
-  expect(rows).toContain('"children":["' + ' '.repeat(4) + '"]')
+  // The blank is as wide as the pill, so the version column holds.
+  expect(rows).toContain('"key":"cost-1-cell","flexShrink":0,"paddingLeft":1},"children":[{"type":"Text","children":["   "]')
+  expect(rows.indexOf('"cost-0-cell"')).toBeLessThan(rows.indexOf('"row-0-version"'))
+  expect(rows.indexOf('"row-0-gap"')).toBeLessThan(rows.indexOf('"cost-0-cell"'))
   await ui.unmount()
 })
 
-test('a long id never runs into the version: the version keeps a gap and only the id is cut', { options: { icons: 'safe' } }, async ($, on) => {
+test('a mod with settings gets a neutral gear pill the size of the cost pill, after it', { options: { icons: 'nerd' } }, async ($, on) => {
+  const ui = await costPane($, on, true, { userConfig: { level: { type: 'number', title: 'Level', default: 1 } } })
+  const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
+  expect(rows).toContain(`"color":"${THEME.secondary}","backgroundColor":"${THEME.surface3}","bold":true},"children":["${String.fromCodePoint(0xf0493)}"]`)
+  expect(rows.indexOf('"cost-0-cell"')).toBeLessThan(rows.indexOf('"gear-0-cell"'))
+  expect(rows).toContain('"key":"gear-1-cell"')
+  await ui.unmount()
+})
+
+test('the version keeps a gap and the row draws no folder column', { options: { icons: 'safe' } }, async ($, on) => {
   const ui = await costPane($, on)
   const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
   expect(rows).toContain('"key":"row-0-version","flexShrink":0,"paddingLeft":1')
-  expect(rows).toContain('"wrap":"truncate-end"')
-  // The id is never padded: a cut pad would draw … on rows whose id fits.
-  expect(rows).not.toMatch(/"children":\[" mod-[\w-]+ +"\]/)
-  expect(rows).toContain('"key":"row-0-slug"')
+  expect(rows).not.toMatch(/"children":\[" mod-[\w-]+"\]/)
   await ui.unmount()
 })
 
@@ -897,7 +927,9 @@ test('with no cost in any mod the list draws no pill and no blank', { options: {
 
 test('hovering the cost pill shows its summary in the pane footer, and the name still shows its own tip', { options: { icons: 'safe' } }, async ($, on) => {
   const ui = await costPane($, on)
-  await ui.pointer({ in: 'list-dir', type: 'move', x: 15, y: 0 })
+  // The pill sits right: the width less the version and its gap, less the pill's own cells.
+  await (ui as any).resize({ columns: 60, rows: 2, in: 'list-dir' })
+  await ui.pointer({ in: 'list-dir', type: 'move', x: 60 - 6 - 3 + 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' Costs' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: ` · calls a model and spends tokens, its page says how to turn it off` })).toBeDefined()
   await ui.pointer({ in: 'list-dir', type: 'move', x: 10, y: 0 })
@@ -914,10 +946,10 @@ test('safe mode draws the cost pill with $ and a space each side, no caps', { op
   await ui.unmount()
 })
 
-test('nerd mode draws the cost pill as a currency glyph between rounded caps', { options: { icons: 'nerd' } }, async ($, on) => {
+test('nerd mode draws the cost pill as a dollar glyph between rounded caps', { options: { icons: 'nerd' } }, async ($, on) => {
   const ui = await costPane($, on)
   const rows = JSON.stringify(await ui.drawn({ in: 'list-dir' }))
-  expect(rows).toContain(String.fromCodePoint(0xf01c1))
+  expect(rows).toContain(String.fromCodePoint(0xf155))
   expect(rows).toContain(String.fromCodePoint(0xe0b6))
   await ui.unmount()
 })

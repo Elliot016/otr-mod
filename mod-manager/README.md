@@ -4,7 +4,7 @@
 
 Part of [moonlight-claude-mods][doc-root].
 
-Turns mods on and off and edits their settings.
+Installs, turns on and off, and updates mods, and edits their settings.
 
 ## Install
 

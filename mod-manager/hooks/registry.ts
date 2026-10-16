@@ -13,6 +13,13 @@ export type Io = {
   pluginDirs?: () => Promise<string>
   // CLAUDE_CONFIG_DIR when set, else ~/.claude.
   config: () => Promise<string>
+  // A process environment variable (the refresh opt-outs).
+  env?: (name: string) => Promise<string | undefined>
+  // Runs the claude CLI.
+  run?: (argv: string[], timeoutMs: number) => Promise<{ exitCode: number; stdout: string; stderr: string }>
+  // This mod's store, for the refresh timestamp.
+  store?: { get: (key: string) => Promise<unknown>; set: (key: string, value: unknown) => Promise<void> }
+  now?: () => number
 }
 
 export type Feature = { title: string; detail: string }
@@ -30,7 +37,6 @@ export type ModInfo = {
   isOwn: boolean
   enabled: boolean
   events: string[]
-  calls: string[]
   commands: string[]
   showcase: Showcase | null
   // How many settings its manifest declares (userConfig); /config lists them only while it is on.
@@ -73,13 +79,11 @@ const splitDirs = (value: string, separator: string) =>
 
 const scan = (source: string) => {
   const events = new Set<string>()
-  const calls = new Set<string>()
   for (const found of source.matchAll(/\bon\(\s*['"]([\w.*]+)['"](?:\s*,\s*\{\s*component:\s*['"](\w+)['"])?/g)) {
     events.add(found[2] ? `${found[1]}:${found[2]}` : found[1]!)
   }
-  for (const found of source.matchAll(/\$\.(\w+\.\w+)\(/g)) calls.add(found[1]!)
   const commands = [...source.matchAll(/command\.register\(\{\s*name:\s*['"]([\w-]+)['"]/g)].map(found => found[1]!)
-  return { events: [...events], calls: [...calls], commands }
+  return { events: [...events], commands }
 }
 
 // A cost's longer readme is for the mod's own page elsewhere; only its one-sentence summary is kept.
@@ -233,4 +237,130 @@ export async function setEnabled(io: Io, mod: ModInfo, enabled: boolean): Promis
   if (!hasBackup) await io.write(backup, text)
   await io.write(path, out)
   return mod.source === 'dir' ? { ok: true, needsRestart } : { ok: true }
+}
+
+export const DEFAULT_MARKET = 'claude-mods'
+export const REFRESH_KEY = 'catalog-refreshed'
+export const REFRESH_MS = 24 * 60 * 60 * 1000
+export const REFRESH_OPT_OUTS = ['DISABLE_AUTOUPDATER', 'DISABLE_UPDATES', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC']
+
+// The marketplace mod-manager itself was installed from, else the default.
+export async function marketOf(io: Io): Promise<string> {
+  const claudeDir = slashes(await io.config())
+  const installed = await readJson(io, `${claudeDir}/plugins/installed_plugins.json`)
+  const id = Object.keys(installed?.plugins ?? {}).find(key => key.startsWith(`${SELF}@`))
+  return id ? id.slice(SELF.length + 1) : DEFAULT_MARKET
+}
+
+export type CatalogEntry = { name: string; description: string; version: string; declaresIcons: boolean }
+
+// The marketplace's plugin list, each with the version and icons support its own plugin.json declares.
+export async function catalogOf(io: Io, market: string): Promise<CatalogEntry[]> {
+  const claudeDir = slashes(await io.config())
+  const known = await readJson(io, `${claudeDir}/plugins/known_marketplaces.json`)
+  const location = known?.[market]?.installLocation
+  if (typeof location !== 'string') return []
+  const base = slashes(location).replace(/\/+$/, '')
+  const listing = await readJson(io, `${base}/.claude-plugin/marketplace.json`)
+  if (!Array.isArray(listing?.plugins)) return []
+  const entries: CatalogEntry[] = []
+  for (const plugin of listing.plugins) {
+    if (typeof plugin?.name !== 'string') continue
+    const source = typeof plugin.source === 'string' ? plugin.source : typeof plugin.source?.path === 'string' ? plugin.source.path : plugin.name
+    const manifest = (await readJson(io, `${base}/${source.replace(/^\.\//, '')}/.claude-plugin/plugin.json`)) ?? {}
+    entries.push({
+      name: plugin.name,
+      description: String(plugin.description ?? manifest.description ?? ''),
+      version: String(manifest.version ?? ''),
+      declaresIcons: Boolean(manifest.userConfig?.icons),
+    })
+  }
+  return entries
+}
+
+const parts = (version: string) => {
+  const found = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim())
+  return found ? [Number(found[1]), Number(found[2]), Number(found[3])] : null
+}
+
+// True when `latest` is higher than `current` on major.minor.patch; an unreadable version never is.
+export function isNewer(latest: string, current: string): boolean {
+  const a = parts(latest)
+  const b = parts(current)
+  if (!a || !b) return false
+  for (let at = 0; at < 3; at++) if (a[at] !== b[at]) return a[at]! > b[at]!
+  return false
+}
+
+export type CatalogState = 'on' | 'off' | 'not-installed' | 'update'
+// Where the running copy comes from: this marketplace, a folder, or another marketplace.
+export type CopyOrigin = 'marketplace' | 'dir' | 'other'
+
+export type CatalogMod = {
+  // Own id space, never an index into `mods`.
+  key: string
+  name: string
+  description: string
+  version: string
+  declaresIcons: boolean
+  state: CatalogState
+  origin: CopyOrigin | null
+  // A copy is enabled, whatever the state says (an update can be on or off).
+  enabled: boolean
+  installedVersion: string
+  // The loaded copy's id, for setEnabled.
+  modId: string | null
+  // A folder copy is never offered either: it would load twice.
+  canInstall: boolean
+  canUpdate: boolean
+  // `<name>@<market>`, for the CLI.
+  target: string
+}
+
+export function catalogState(catalog: CatalogEntry[], mods: ModInfo[], market: string): CatalogMod[] {
+  return catalog.map(entry => {
+    const copies = mods.filter(mod => mod.name === entry.name)
+    const originOf = (mod: ModInfo): CopyOrigin => (mod.source === 'dir' ? 'dir' : mod.id.endsWith(`@${market}`) ? 'marketplace' : 'other')
+    const running = copies.find(mod => mod.enabled) ?? copies[0] ?? null
+    const hasFolder = copies.some(mod => originOf(mod) === 'dir')
+    const fromMarket = copies.find(mod => originOf(mod) === 'marketplace')
+    const behind = !!fromMarket && !hasFolder && isNewer(entry.version, fromMarket.version)
+    const state: CatalogState = !running ? 'not-installed' : behind ? 'update' : running.enabled ? 'on' : 'off'
+    return {
+      key: `cat:${entry.name}`,
+      name: entry.name,
+      description: entry.description,
+      version: entry.version,
+      declaresIcons: entry.declaresIcons,
+      state,
+      origin: running ? originOf(running) : null,
+      enabled: !!running?.enabled,
+      installedVersion: fromMarket?.version ?? running?.version ?? '',
+      modId: running?.id ?? null,
+      canInstall: copies.length === 0,
+      canUpdate: behind,
+      target: `${entry.name}@${market}`,
+    }
+  })
+}
+
+export type Refresh = 'ran' | 'throttled' | 'disabled' | 'failed'
+
+// Pulls the marketplace at most once a day, never when an opt-out env var is set. A failure is silent and keeps the old catalog.
+export async function refreshCatalog(io: Io, market: string): Promise<Refresh> {
+  if (!io.run) return 'failed'
+  for (const name of REFRESH_OPT_OUTS) {
+    const value = (await io.env?.(name).catch(() => undefined)) ?? ''
+    if (value !== '' && !/^(0|false)$/i.test(value)) return 'disabled'
+  }
+  const now = (io.now ?? Date.now)()
+  const last = await io.store?.get(REFRESH_KEY).catch(() => undefined)
+  if (typeof last === 'number' && now - last < REFRESH_MS) return 'throttled'
+  try {
+    await io.store?.set(REFRESH_KEY, now)
+    const result = await io.run(['claude', 'plugin', 'marketplace', 'update', market], 60000)
+    return result.exitCode === 0 ? 'ran' : 'failed'
+  } catch {
+    return 'failed'
+  }
 }
