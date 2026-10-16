@@ -38,6 +38,11 @@ Progress pill.
 | --- |
 | https://github.com/user-attachments/assets/723714a0-74d8-44e5-9564-6c620e53d4f3 |
 
+## Features
+
+- **The gates view:** A card per loop with its gates ticked off, and a band count of every gate in the session. Gates come from files the mod reads, not from the model.
+- **GATES.md format:** The ledger is `GATES.md` and every `gates/<name>.md` in `~/.claude/gates/<repo>/<session id>/` (or under `GATES_HOME`). Each gate is a line `- [ ] G1: what must hold`, with an indented `EVIDENCE:` line under it. A gate counts as met only when its box is `[x]` and its evidence is not `pending`. A line `ABANDON: G1 reason` at the start of a line gives that gate up. A `gates/<name>.md` file also belongs to the agent of that name.
+
 ## Settings
 
 Change them with `/mod-progress settings` or the gear pill.
@@ -52,12 +57,12 @@ Change them with `/mod-progress settings` or the gear pill.
 Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [doc-author]: https://github.com/v-amorim
-[doc-icons]: ../README.md#icons-and-nerd-fonts
-[doc-install]: ../README.md#install
-[doc-license]: ../LICENSE
-[doc-root]: ../README.md
+[doc-icons]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#icons-and-nerd-fonts
+[doc-install]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#install
+[doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
+[doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-progress-panel]: ../showcase/progress-panel.png
-[img-progress-pill]: ../showcase/progress-pill.png
-[img-progress-shell]: ../showcase/progress-shell.png
-[img-progress-transcript]: ../showcase/progress-transcript.png
+[img-progress-panel]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/progress-panel.png
+[img-progress-pill]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/progress-pill.png
+[img-progress-shell]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/progress-shell.png
+[img-progress-transcript]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/progress-transcript.png

@@ -131,7 +131,7 @@ test('a background Bash and a Monitor start tasks on the card of the loop that r
   await $.tool.call({ tool: 'Monitor', command: 'tail -f logs/app.log | grep ERROR', description: 'Watch' } as never)
   await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
   await $.tool.call(shellCall('sleep 99', 'a1'))
-  const saved = store.get('snap') as Snap
+  const saved = store.get('snap:sid-1') as Snap
   expect(saved.main.bg!.map(task => [task.id, task.kind, task.command])).toEqual([['bg1', 'shell', 'sleep 30\necho never shown'], ['bg2', 'monitor', 'tail -f logs/app.log | grep ERROR']])
   expect(saved.agents.a1!.bg!.map(task => [task.id, task.kind])).toEqual([['bg3', 'shell']])
 
@@ -160,7 +160,7 @@ test('TaskStop ends the task it names as failed, and the notification marks it d
   await $.prompt.submit({ text: NOTIFY('bg2', 'completed'), origin: { kind: 'task-notification' } } as never)
   await $.prompt.submit({ text: NOTIFY('bg3', 'killed'), origin: { kind: 'task-notification' } } as never)
   await $.prompt.submit({ text: NOTIFY('bg4', 'completed'), origin: { kind: 'composer' } } as never)
-  expect((store.get('snap') as Snap).main.bg!.map(task => [task.id, task.end])).toEqual([['bg1', 'failed'], ['bg2', 'done'], ['bg3', 'failed'], ['bg4', undefined]])
+  expect((store.get('snap:sid-1') as Snap).main.bg!.map(task => [task.id, task.end])).toEqual([['bg1', 'failed'], ['bg2', 'done'], ['bg3', 'failed'], ['bg4', undefined]])
 })
 
 test('a Stop lists what still runs, so a task it leaves out has finished; a subagent stop settles only its own tasks', async ($, on) => {
@@ -170,7 +170,7 @@ test('a Stop lists what still runs, so a task it leaves out has finished; a suba
   await $.tool.call(shellCall('sleep 20'))
   await $.tool.call(shellCall('sleep 30', 'a1'))
   const state = () => {
-    const snap = store.get('snap') as Snap
+    const snap = store.get('snap:sid-1') as Snap
     return [snap.main.bg!.map(task => task.endedAt !== undefined), snap.agents.a1!.bg!.map(task => task.endedAt !== undefined)]
   }
   await $.classic.Stop(stopBody([{ id: 'bg2', status: 'running' }]))
@@ -189,7 +189,7 @@ test('a finished task keeps its line, and a failed one takes the alert color', a
   await $.tool.call(shellCall('sleep 3'))
   await $.tool.call({ tool: 'TaskStop', task_id: 'bg2' } as never)
   await $.classic.Stop(stopBody([{ id: 'bg3', status: 'running' }]))
-  expect((store.get('snap') as Snap).main.bg!.map(task => task.end)).toEqual(['done', 'failed', undefined])
+  expect((store.get('snap:sid-1') as Snap).main.bg!.map(task => task.end)).toEqual(['done', 'failed', undefined])
   const pane = await $.ui.mount(PANE)
   const text = JSON.stringify(await pane.drawn({ in: 'loops' }))
   for (const command of ['sleep 1', 'sleep 2', 'sleep 3']) expect(text).toContain(command)
@@ -436,7 +436,7 @@ test('a foreground Bash the host moves to the background (ctrl+b or its timeout)
   await $.session.start({ cwd: '/w' } as never)
   await $.tool.call({ tool: 'Bash', command: 'npm run moved' } as never)
   await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
-  const saved = store.get('snap') as Snap
+  const saved = store.get('snap:sid-1') as Snap
   expect(saved.main.bg!.map(task => [task.id, task.kind, task.command, task.output])).toEqual([['bg1', 'shell', 'npm run moved', '/tmp/bg1.output']])
 })
 
@@ -445,23 +445,23 @@ test('a task takes the time its call began, not the time its result came back', 
   took.ms = 5000
   await $.session.start({ cwd: '/w' } as never)
   await $.tool.call({ tool: 'Bash', command: 'make moved' } as never)
-  expect((store.get('snap') as Snap).main.bg![0]!.startedAt).toBe(START)
+  expect((store.get('snap:sid-1') as Snap).main.bg![0]!.startedAt).toBe(START)
 })
 
 test('a new process starts with no tasks, a hot reload keeps them, and an exit takes them', async ($, on) => {
   const { store } = stubEngine(on)
   const stale = emptySnap('sid-1')
   addBg(stale, undefined, 'old', { kind: 'shell', command: 'sleep 99' }, 0)
-  store.set('snap', stale)
+  store.set('snap:sid-1', stale)
   await $.session.start({ cwd: '/w' } as never)
-  expect((store.get('snap') as Snap).main.bg ?? []).toEqual([])
+  expect((store.get('snap:sid-1') as Snap).main.bg ?? []).toEqual([])
 
   await $.tool.call(shellCall('sleep 1'))
   await $.session.start({ cwd: '/w' } as never)
-  expect((store.get('snap') as Snap).main.bg).toHaveLength(1)
+  expect((store.get('snap:sid-1') as Snap).main.bg).toHaveLength(1)
 
   await $.session.end({ reason: 'prompt_input_exit', sessionId: 'sid-1', resume: {} } as never)
-  expect((store.get('snap') as Snap).main.bg ?? []).toEqual([])
+  expect((store.get('snap:sid-1') as Snap).main.bg ?? []).toEqual([])
 })
 
 test('a /clear keeps the shells it left running, on the new session, and a /resume drops them', async ($, on) => {
@@ -501,7 +501,7 @@ test('a task stopped from /tasks ends when its notification row is drawn with th
   const unknown = await $.ui.mount(row('nope', 'killed'))
   await unknown.unmount()
   await clock.advance(1)
-  const ends = (store.get('snap') as Snap).main.bg!.map(task => [task.id, task.end])
+  const ends = (store.get('snap:sid-1') as Snap).main.bg!.map(task => [task.id, task.end])
   expect(ends).toEqual([['bg1', 'failed'], ['bg2', undefined]])
 })
 
@@ -509,13 +509,13 @@ test('a plugin reload (a fresh module, the host\'s state kept) keeps the tasks, 
   const { store, states } = stubEngine(on)
   const stale = emptySnap('sid-1')
   addBg(stale, undefined, 'old', { kind: 'shell', command: 'sleep 99' }, 0)
-  store.set('snap', stale)
+  store.set('snap:sid-1', stale)
   states.set('mod-progress.booted', true)
   await $.session.start({ cwd: '/w' } as never)
-  expect((store.get('snap') as Snap).main.bg).toHaveLength(1)
+  expect((store.get('snap:sid-1') as Snap).main.bg).toHaveLength(1)
   states.delete('mod-progress.booted')
   await $.session.start({ cwd: '/w' } as never)
-  expect((store.get('snap') as Snap).main.bg ?? []).toEqual([])
+  expect((store.get('snap:sid-1') as Snap).main.bg ?? []).toEqual([])
   expect(states.get('mod-progress.booted')).toBe(true)
 })
 

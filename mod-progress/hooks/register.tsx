@@ -111,7 +111,7 @@ async function loadSnap($: EngineInterface) {
   snapLoad ??= (async () => {
     let stored: Snap | undefined
     try {
-      const raw = await $.store.get('snap')
+      const raw = (await $.store.get(`snap:${sid}`)) ?? (await $.store.get('snap'))
       if (raw && typeof raw === 'object' && (raw as Snap).sid === sid) stored = JSON.parse(JSON.stringify(raw)) as Snap
     } catch {
       // An unreadable store starts the figures over.
@@ -133,9 +133,26 @@ async function loadSnap($: EngineInterface) {
 
 async function saveSnap($: EngineInterface) {
   try {
-    await $.store.set('snap', JSON.parse(JSON.stringify(snap)))
+    await $.store.set(`snap:${snap?.sid}`, { ...JSON.parse(JSON.stringify(snap)), savedAt: await $.clock.now() })
   } catch {
     // The figures still draw from memory.
+  }
+}
+
+const SNAP_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+
+// A session's figures untouched for 30 days go, and so does the one shared key an older version kept.
+async function pruneSnaps($: EngineInterface) {
+  try {
+    const now = await $.clock.now()
+    for (const key of await $.store.keys()) {
+      if (key === 'snap') await $.store.delete(key)
+      if (!key.startsWith('snap:')) continue
+      const savedAt = Number(((await $.store.get(key)) as { savedAt?: unknown } | null)?.savedAt)
+      if (Number.isFinite(savedAt) && savedAt < now - SNAP_KEEP_MS) await $.store.delete(key)
+    }
+  } catch {
+    // Old entries stay until the next start.
   }
 }
 
@@ -378,23 +395,28 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
-    await loadLook($)
-    await $.command.register({ name: 'mod-progress', description: text.commandDescription, argumentHint: '[settings]' })
-    const current = await loadSnap($)
-    // A plugin reload re-runs this hook in the same process, with a fresh module; $.state is the host's and dies with the process, so an unset marker means a new process, whose shells are gone.
-    if (!(await $.state.get(BOOT_KEY)).value) wipeBg(current)
-    await $.state.set(BOOT_KEY, true)
-    const usage = await $.session.usage().catch(() => undefined)
-    if (current.startedAt === undefined) current.startedAt = usage?.startedAt ?? (await $.clock.now())
-    await readGates($, current)
-    ageStop($, current)
-    tickTasks($, current)
-    await saveSnap($)
-    await syncOutput($)
-    // The bar entry reads this; an unload drops the pane without raising ui.close here.
-    await $.state.set({ plugin: 'mod-progress', key: 'pane' }, await isOpen($))
-    // A hot reload leaves an open pane on its old drawing until something redraws it.
-    $.ui.invalidate('ui.render')
+    try {
+      await loadLook($)
+      await $.command.register({ name: 'mod-progress', description: text.commandDescription, argumentHint: '[settings]' })
+      const current = await loadSnap($)
+      // A plugin reload re-runs this hook in the same process, with a fresh module; $.state is the host's and dies with the process, so an unset marker means a new process, whose shells are gone.
+      if (!(await $.state.get(BOOT_KEY)).value) wipeBg(current)
+      await $.state.set(BOOT_KEY, true)
+      const usage = await $.session.usage().catch(() => undefined)
+      if (current.startedAt === undefined) current.startedAt = usage?.startedAt ?? (await $.clock.now())
+      await readGates($, current)
+      ageStop($, current)
+      tickTasks($, current)
+      await saveSnap($)
+      await pruneSnaps($)
+      await syncOutput($)
+      // The bar entry reads this; an unload drops the pane without raising ui.close here.
+      await $.state.set({ plugin: 'mod-progress', key: 'pane' }, await isOpen($))
+      // A hot reload leaves an open pane on its old drawing until something redraws it.
+      $.ui.invalidate('ui.render')
+    } catch {
+      // The figures stay as they were.
+    }
 
     return next(e)
   })
@@ -421,9 +443,13 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-progress', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
     if (e.id === PANE || e.id === SETTINGS) paneTip = null
-    if (e.id === PANE) await syncOutput($)
+    try {
+      if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-progress', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
+      if (e.id === PANE) await syncOutput($)
+    } catch {
+      // The figures stay as they were.
+    }
 
     return next(e)
   })
@@ -447,87 +473,111 @@ export const register: Register = (on, options) => {
 
   on('agent.spawn', async ($, e, next) => {
     const result = await next(e)
-    if ('agentId' in result) {
-      const current = await loadSnap($)
-      current.agents[result.agentId!] = {
-        model: result.model,
-        tokens: 0,
-        context: 0,
-        spawnedAt: await $.clock.now(),
-        gatesStem: gatesStemIn(e.prompt),
-        ...(e.workflow ? { workflow: { runId: e.workflow.runId, index: e.workflow.agentIndex, name: e.name ?? fill(text.workflowAgent, { n: e.workflow.agentIndex }), description: firstLine(e.description ?? e.prompt) } } : {}),
+    try {
+      if ('agentId' in result) {
+        const current = await loadSnap($)
+        current.agents[result.agentId!] = {
+          model: result.model,
+          tokens: 0,
+          context: 0,
+          spawnedAt: await $.clock.now(),
+          gatesStem: gatesStemIn(e.prompt),
+          ...(e.workflow ? { workflow: { runId: e.workflow.runId, index: e.workflow.agentIndex, name: e.name ?? fill(text.workflowAgent, { n: e.workflow.agentIndex }), description: firstLine(e.description ?? e.prompt) } } : {}),
+        }
+        await saveSnap($)
+        $.ui.invalidate('ui.render')
       }
-      await saveSnap($)
-      $.ui.invalidate('ui.render')
+    } catch {
+      // The figures stay as they were.
     }
     return result
   })
 
   // A gates file handed to a running agent by message, after a brief that named none.
   on('session.send', async ($, e, next) => {
-    const stem = gatesStemIn(e.text)
-    const current = stem ? await loadSnap($) : undefined
-    const agent = current?.agents[e.to]
-    if (agent && !agent.gatesStem) {
-      agent.gatesStem = stem
-      await saveSnap($)
-      $.ui.invalidate('ui.render')
+    try {
+      const stem = gatesStemIn(e.text)
+      const current = stem ? await loadSnap($) : undefined
+      const agent = current?.agents[e.to]
+      if (agent && !agent.gatesStem) {
+        agent.gatesStem = stem
+        await saveSnap($)
+        $.ui.invalidate('ui.render')
+      }
+    } catch {
+      // The figures stay as they were.
     }
     return next(e)
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!(e as { agentId?: string }).agentId) {
-      const current = await loadSnap($)
-      current.busy = true
-      delete current.stop
-      ageStop($, current)
-      await saveSnap($)
-      $.ui.invalidate('ui.render')
+    try {
+      if (!(e as { agentId?: string }).agentId) {
+        const current = await loadSnap($)
+        current.busy = true
+        delete current.stop
+        ageStop($, current)
+        await saveSnap($)
+        $.ui.invalidate('ui.render')
+      }
+    } catch {
+      // The figures stay as they were.
     }
     return next(e)
   })
 
   on('turn.step', async function* ($, e, next) {
     const result = yield* next(e)
-    const current = await loadSnap($)
-    applyStep(current, e.agentId, e.model, e.effort, (result as { usage?: Usage | null }).usage)
-    await saveSnap($)
-    $.ui.invalidate('ui.render')
+    try {
+      const current = await loadSnap($)
+      applyStep(current, e.agentId, e.model, e.effort, (result as { usage?: Usage | null }).usage)
+      await saveSnap($)
+      $.ui.invalidate('ui.render')
+    } catch {
+      // The figures stay as they were.
+    }
     return result
   })
 
   on('turn.complete', async ($, e, next) => {
-    const current = await loadSnap($)
-    if (!(e as { agentId?: string }).agentId) {
-      current.busy = false
-      delete current.main.step
+    try {
+      const current = await loadSnap($)
+      if (!(e as { agentId?: string }).agentId) {
+        current.busy = false
+        delete current.main.step
+      }
+      const now = await $.clock.now()
+      // A workflow agent is in no list, so its own turn ending is the only sign it is over.
+      if (e.agentId) finishAgent(current, e.agentId, now, e.reason !== 'answer')
+      settle(current, (await $.agent.list()) as AgentLite[], now)
+      await readGates($, current)
+      await saveSnap($)
+      $.ui.invalidate('ui.render')
+    } catch {
+      // The figures stay as they were.
     }
-    const now = await $.clock.now()
-    // A workflow agent is in no list, so its own turn ending is the only sign it is over.
-    if (e.agentId) finishAgent(current, e.agentId, now, e.reason !== 'answer')
-    settle(current, (await $.agent.list()) as AgentLite[], now)
-    await readGates($, current)
-    await saveSnap($)
-    $.ui.invalidate('ui.render')
     return next(e)
   })
 
   // The main turn ended on an API error. A subagent's failure is its own turn, so it leaves the main line alone.
   on('classic.StopFailure', async ($, e, next) => {
-    if (e.agent_id) {
-      const current = await loadSnap($)
-      if (finishAgent(current, e.agent_id, await $.clock.now(), true)) {
+    try {
+      if (e.agent_id) {
+        const current = await loadSnap($)
+        if (finishAgent(current, e.agent_id, await $.clock.now(), true)) {
+          await saveSnap($)
+          $.ui.invalidate('ui.render')
+        }
+      } else {
+        const current = await loadSnap($)
+        const usage = await $.session.usage().catch(() => undefined)
+        current.stop = stopOf(e.error, await $.clock.now(), usage?.rateLimits ?? [])
+        ageStop($, current)
         await saveSnap($)
         $.ui.invalidate('ui.render')
       }
-    } else {
-      const current = await loadSnap($)
-      const usage = await $.session.usage().catch(() => undefined)
-      current.stop = stopOf(e.error, await $.clock.now(), usage?.rateLimits ?? [])
-      ageStop($, current)
-      await saveSnap($)
-      $.ui.invalidate('ui.render')
+    } catch {
+      // The figures stay as they were.
     }
     return next(e)
   })
@@ -556,7 +606,7 @@ export const register: Register = (on, options) => {
         await saveSnap($)
         $.ui.invalidate('ui.render')
       }
-      const touchesGates = /^(Write|Edit|MultiEdit)$/.test(tool) ? isGatesPath(String(input.file_path ?? '')) : tool === 'Bash' && /gate/i.test(String(input.command ?? ''))
+      const touchesGates = /^(Write|Edit|MultiEdit)$/.test(tool) ? isGatesPath(String(input.file_path ?? '')) : tool === 'Bash' && /(^|[^a-z])gates?(?![a-z])/i.test(String(input.command ?? ''))
       if (touchesGates) await refreshGates($)
       await watchBackground($, e.agentId, tool, input, result, calledAt)
     } catch {
@@ -567,12 +617,20 @@ export const register: Register = (on, options) => {
 
   // The main turn's Stop lists the background work still running; whatever it no longer lists has finished.
   on('classic.Stop', async ($, e, next) => {
-    await resync($, undefined, e.background_tasks)
+    try {
+      await resync($, undefined, e.background_tasks)
+    } catch {
+      // The figures stay as they were.
+    }
     return next(e)
   })
 
   on('classic.SubagentStop', async ($, e, next) => {
-    await resync($, e.agent_id, e.background_tasks)
+    try {
+      await resync($, e.agent_id, e.background_tasks)
+    } catch {
+      // The figures stay as they were.
+    }
     return next(e)
   })
 

@@ -44,11 +44,11 @@ const seeded = (): Snap => {
 
 // `files` are the gates files the session's folder holds, by path under it; `repo` names the folder the checker filed them under.
 // `session.id` may change mid-test, as a /resume or /clear changes it.
-type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[]; files: Record<string, string>; repo: string; empty: string[]; session: { id: string } }
+type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[]; files: Record<string, string>; repo: string; empty: string[]; session: { id: string }; storeDown: { is: boolean }; reads: string[] }
 
 // Everything the mod reads from the engine, with the store backed by a map and the clock moved only by the test.
 function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], world: Partial<World> = {}) {
-  const store = new Map<string, unknown>([['snap', seeded()]])
+  const store = new Map<string, unknown>([['snap:sid-1', seeded()]])
   const clock = mock.clock(on, { now: world.now ?? 14 * 60 * 1000 })
   const windows = world.windows ?? []
   const files = world.files ?? { 'GATES.md': GATES, 'gates/leaf-1.1.1.md': GATES.split('\n').slice(0, 7).join('\n') }
@@ -63,12 +63,19 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
   on('classic.StopFailure', () => ({}) as never)
   on('store.get', (_$, e) => ({ value: store.get(e.key) }))
   on('store.set', (_$, e) => {
+    if (world.storeDown?.is) throw new Error('store unavailable')
     store.set(e.key, e.value)
+    return { value: undefined } as never
+  })
+  on('store.keys', () => ({ value: [...store.keys()] }))
+  on('store.delete', (_$, e) => {
+    store.delete(e.key)
     return { value: undefined } as never
   })
   // With no HOME set and no repo, the session's own folder is <home ''>/.claude/gates/<cwd's name>/<session id>.
   const folder = `/.claude/gates/${world.repo ?? 'w'}/sid-1`
   on('fs.read', (_$, e) => {
+    world.reads?.push(neutral(e.path))
     const path = neutral(e.path).replace(`${folder}/`, '')
     if (path in files) return { value: files[path]! }
     throw new Error('ENOENT')
@@ -351,15 +358,43 @@ test('icons=safe draws only plain glyphs', { options: { icons: 'safe' } }, async
 
 test('a spawn, a step and a task call update the figures the pane reads', async ($, on) => {
   const { store } = stubEngine(on, [{ ...AGENT, id: 'zz' }])
-  store.set('snap', emptySnap('sid-1'))
+  store.set('snap:sid-1', emptySnap('sid-1'))
   on('agent.spawn', () => ({ model: 'claude-haiku-4-5', agentId: 'zz' }) as never)
   on('tool.call', () => ({ result: { task: { id: '1', subject: 's' } } }) as never)
   await $.session.start({ cwd: '/w' } as never)
   await $.agent.spawn({ tool_use_id: 't', prompt: 'p', description: 'd', subagentType: 'general-purpose', provider: { plugin: 'x', tier: 'user' }, parentModel: 'm' } as never)
   await $.tool.call({ tool: 'TaskCreate', subject: 'step A', description: 'x' })
-  const saved = store.get('snap') as Snap
+  const saved = store.get('snap:sid-1') as Snap
   expect(saved.agents.zz?.model).toBe('claude-haiku-4-5')
   expect(saved.tasks).toEqual([{ id: '1', subject: 'step A', status: 'pending' }])
+})
+
+test('each session keeps its figures under its own key, and a session no one touched for 30 days is deleted at start', async ($, on) => {
+  const day = 24 * 60 * 60 * 1000
+  const now = 14 * 60 * 1000 + 40 * day
+  const { store } = stubEngine(on, [], [], { now })
+  store.set('snap:old', { ...emptySnap('old'), savedAt: now - 31 * day })
+  store.set('snap:recent', { ...emptySnap('recent'), savedAt: now - 29 * day })
+  store.set('other', 'kept')
+  store.set('snap', emptySnap('legacy'))
+  await $.session.start({ cwd: '/w' } as never)
+  expect(store.has('snap')).toBe(false)
+  expect(store.has('snap:old')).toBe(false)
+  expect(store.has('snap:recent')).toBe(true)
+  expect((store.get('snap:sid-1') as Snap & { savedAt: number }).savedAt).toBe(now)
+  expect(store.get('other')).toBe('kept')
+})
+
+test('a shell command touches the gates only when it names gates as a word, not investigate or navigate', async ($, on) => {
+  const reads: string[] = []
+  stubEngine(on, [], [], { reads })
+  on('tool.call', () => ({ result: {} }) as never)
+  await $.session.start({ cwd: '/w' } as never)
+  reads.length = 0
+  for (const command of ['investigate the flaky test', 'navigate to src', 'aggregate the totals']) await $.tool.call({ tool: 'Bash', command } as never)
+  expect(reads).toEqual([])
+  await $.tool.call({ tool: 'Bash', command: 'node gate-check.mjs' } as never)
+  expect(reads.some(path => path.endsWith('GATES.md'))).toBe(true)
 })
 
 test('hovering the band pill shows its tip in the tip row, and a card shows its tip in the pane footer', async ($, on) => {
@@ -598,10 +633,30 @@ test('a running card shows its latest call in place of its description, and the 
   await pane.unmount()
 })
 
+test('a failing store never stops a turn, a stop or a session start from reaching the next hook', async ($, on) => {
+  const storeDown = { is: false }
+  stubEngine(on, [AGENT], [], { storeDown })
+  let reached = 0
+  on('agent.spawn', () => ({ model: 'claude-haiku-4-5', agentId: 'zz' }) as never)
+  on('turn.complete', () => {
+    reached += 1
+    return { text: '' } as never
+  })
+  await $.session.start({ cwd: '/w' } as never)
+  storeDown.is = true
+  expect(await $.turn.start({ text: '', turnId: 'turn-x' } as never)).toEqual({ turnId: 'turn-x' })
+  await $.turn.complete({ text: '' } as never)
+  expect(reached).toBe(1)
+  await $.classic.StopFailure({ error: 'overloaded' } as never)
+  expect(await $.session.start({ cwd: '/w' } as never)).toEqual({ cwd: '/w' })
+  const spawned = await $.agent.spawn({ tool_use_id: 't', prompt: 'p', description: 'd', subagentType: 'general-purpose', provider: { plugin: 'x', tier: 'user' }, parentModel: 'm' } as never)
+  expect(spawned).toEqual({ model: 'claude-haiku-4-5', agentId: 'zz' })
+})
+
 test('a subagent with no gates file shows its own task list as gates, and the main list stays its own', async ($, on) => {
   const scout = { id: 'b2', name: 'scout', description: 'Explore the repo', type: 'Explore', status: 'running' }
   const { store } = stubEngine(on, [scout])
-  store.set('snap', { ...emptySnap('sid-1'), agents: { b2: { tokens: 0, context: 0 } } })
+  store.set('snap:sid-1', { ...emptySnap('sid-1'), agents: { b2: { tokens: 0, context: 0 } } })
   let created = 0
   on('tool.call', (_$, e) => ({ result: { task: { id: e.tool === 'TaskCreate' ? String(++created) : undefined } } }) as never)
   await $.session.start({ cwd: '/w' } as never)
@@ -610,7 +665,7 @@ test('a subagent with no gates file shows its own task list as gates, and the ma
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed', agentId: 'b2' } as never)
   await $.tool.call({ tool: 'TaskCreate', subject: 'main step', description: 'x' } as never)
 
-  const saved = store.get('snap') as Snap
+  const saved = store.get('snap:sid-1') as Snap
   expect(saved.tasks.map(task => task.subject)).toEqual(['main step'])
   expect(saved.agents.b2?.tasks?.map(task => task.status)).toEqual(['completed', 'pending'])
   expect(saved.agents.b2?.step).toBeUndefined()
@@ -654,7 +709,7 @@ test('a workflow agent is done or failed once its turn ends, and an agent the li
 
 test('a gates file sent to a running agent by message becomes its gates, and a brief\'s own file is kept', async ($, on) => {
   const { store } = stubEngine(on, [])
-  store.set('snap', emptySnap('sid-1'))
+  store.set('snap:sid-1', emptySnap('sid-1'))
   on('agent.spawn', (_$, e) => ({ model: 'claude-haiku-4-5', agentId: e.description === 'bare' ? 'a1' : 'a2' }) as never)
   on('session.send', () => ({ isDelivered: true }))
   await $.session.start({ cwd: '/w' } as never)
@@ -664,24 +719,24 @@ test('a gates file sent to a running agent by message becomes its gates, and a b
   const send = (to: string) => $.session.send({ to, text: 'Your gates file: C:\\g\\gates\\P.md, run the checker', origin: { kind: 'model' } } as never)
   await send('a1')
   await send('a2')
-  const saved = store.get('snap') as Snap
+  const saved = store.get('snap:sid-1') as Snap
   expect(saved.agents.a1?.gatesStem).toBe('P')
   expect(saved.agents.a2?.gatesStem).toBe('W')
 })
 
 test('a workflow agent\'s spawn keeps its run, and its own turn ending or failing settles its row', async ($, on) => {
   const { store } = stubEngine(on, [])
-  store.set('snap', emptySnap('sid-1'))
+  store.set('snap:sid-1', emptySnap('sid-1'))
   on('agent.spawn', (_$, e) => ({ model: 'claude-haiku-4-5', agentId: e.name === 'finder-1' ? 'w1' : 'w2' }) as never)
   on('turn.complete', () => ({ text: '' }) as never)
   await $.session.start({ cwd: '/w' } as never)
   const spawn = (name: string, index: number) => ({ tool_use_id: '', prompt: 'Find the callers\nmore', description: 'Find the callers', name, subagentType: 'general-purpose', provider: { plugin: 'x', tier: 'user' }, parentModel: 'm', workflow: { runId: 'wf_abc123def', agentIndex: index } }) as never
   await $.agent.spawn(spawn('finder-1', 1))
   await $.agent.spawn(spawn('editor-2', 2))
-  expect((store.get('snap') as Snap).agents.w1?.workflow).toEqual({ runId: 'wf_abc123def', index: 1, name: 'finder-1', description: 'Find the callers' })
+  expect((store.get('snap:sid-1') as Snap).agents.w1?.workflow).toEqual({ runId: 'wf_abc123def', index: 1, name: 'finder-1', description: 'Find the callers' })
   await $.turn.complete({ turnId: 't', agentId: 'w1', reason: 'answer' } as never)
   await $.turn.complete({ turnId: 't', agentId: 'w2', reason: 'error' } as never)
-  const saved = store.get('snap') as Snap
+  const saved = store.get('snap:sid-1') as Snap
   expect([saved.agents.w1?.endedAt, saved.agents.w1?.isFailed]).toEqual([14 * 60 * 1000, undefined])
   expect([saved.agents.w2?.endedAt, saved.agents.w2?.isFailed]).toEqual([14 * 60 * 1000, true])
 })
@@ -691,7 +746,7 @@ test('the pane groups a workflow run\'s agents under a line that counts how many
   snap.agents.w1 = { model: 'claude-haiku-4-5', tokens: 5, context: 100, spawnedAt: 1000, endedAt: 3000, workflow: WORKFLOW }
   snap.agents.w2 = { model: 'claude-sonnet-5-5', tokens: 9, context: 400, spawnedAt: 2000, workflow: { ...WORKFLOW, index: 2, name: 'editor-2', description: 'Edit the callers' } }
   const { store } = stubEngine(on)
-  store.set('snap', snap)
+  store.set('snap:sid-1', snap)
   await $.session.start({ cwd: '/w' } as never)
   const ui = await $.ui.mount(PANE)
   const list = JSON.stringify(await ui.drawn({ in: 'loops' }))
