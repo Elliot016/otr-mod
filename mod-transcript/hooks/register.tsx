@@ -164,6 +164,31 @@ async function followSession($: EngineInterface) {
   $.clock.after(0, () => void load($))
 }
 
+// A transcript path is kept with the time it was named; an older bare string counts as a path with no age yet.
+const pathOf = (kept: unknown) => {
+  const path = typeof kept === 'object' && kept !== null ? (kept as { path?: unknown }).path : kept
+  return typeof path === 'string' ? path : ''
+}
+
+const TRANSCRIPT_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+
+// Entries untouched for 30 days go; a bare string from an older version starts its clock now.
+async function pruneTranscripts($: EngineInterface) {
+  try {
+    const now = await $.clock.now()
+    for (const key of await $.store.keys()) {
+      if (!key.startsWith('transcript:')) continue
+      const kept = await $.store.get(key)
+      const at = typeof kept === 'object' && kept !== null ? Number((kept as { at?: unknown }).at) : NaN
+      if (Number.isFinite(at)) {
+        if (at < now - TRANSCRIPT_KEEP_MS) await $.store.delete(key)
+      } else if (typeof kept === 'string') await $.store.set(key, { path: kept, at: now })
+    }
+  } catch {
+    // Old entries stay until the next start.
+  }
+}
+
 // One read at a time: two at once would feed the same lines twice.
 let reading: Promise<void> = Promise.resolve()
 const load = ($: EngineInterface) => (reading = reading.then(() => readMore($)).catch(() => {}))
@@ -177,7 +202,7 @@ async function readMore($: EngineInterface) {
   await followSession($)
   if (isLoaded && !isPartial) return
   const session = logSession
-  const path = transcript || String((await $.store.get(`transcript:${session}`).catch(() => '')) ?? '') || (await findTranscript($))
+  const path = transcript || pathOf(await $.store.get(`transcript:${session}`).catch(() => '')) || (await findTranscript($))
   // A switch while this read waited makes it another session's.
   if (session !== logSession) return
   transcript = path
@@ -938,66 +963,82 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
-    await loadLook($)
-    await $.command.register({
-      name: 'mod-transcript',
-      description: text.commandDescription,
-      argumentHint: '[settings|debug]',
-    })
-    await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, await isPaneOpen($))
-    await readFlips($)
-    await loadAWhile($)
+    try {
+      await loadLook($)
+      await $.command.register({
+        name: 'mod-transcript',
+        description: text.commandDescription,
+        argumentHint: '[settings|debug]',
+      })
+      await pruneTranscripts($)
+      await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, await isPaneOpen($))
+      await readFlips($)
+      await loadAWhile($)
+    } catch {
+      // The rows stay as they were.
+    }
 
     return next(e)
   })
 
   // A click on a card's strip folds the turn or tool it runs beside.
   on('ui.message', async ($, e, next) => {
-    const clicked = e.data as EntryMessage
-    const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
-    if (dismissed !== undefined) {
-      toasts.drop(dismissed)
-      hovered = null
-      $.ui.invalidate('ui.render')
-      return next(e)
+    const react = async () => {
+      const clicked = e.data as EntryMessage
+      const dismissed = clicked?.type === 'menu-entry' ? toasts.idOf(clicked.id) : undefined
+      if (dismissed !== undefined) {
+        toasts.drop(dismissed)
+        hovered = null
+        $.ui.invalidate('ui.render')
+        return
+      }
+      if (isTipMessage(e.data)) {
+        const mark = (e.data as CopyTipMessage).mark
+        if (mark) await markCopy($, mark.id, mark.what)
+        hovered = e.data
+        $.ui.invalidate('ui.render')
+        return
+      }
+      // The pill names the choice to mark; the reply row reads it from the state and redraws.
+      const hover = e.data as CopyHoverMessage
+      if (hover?.type === 'copy-hover') {
+        await markCopy($, hover.id, hover.what)
+        return
+      }
+      // A click can move or remove the control under the pointer, and a leave may never come.
+      if (hovered) {
+        hovered = null
+        $.ui.invalidate('ui.render')
+      }
+      const change = settingChoice(e.data)
+      if (change) await saveSetting($, change.key, change.value)
+      const message = e.data as BarMessage
+      if (message?.type === 'fold') await flip($, message.kind, message.id)
+      const picked = e.data as ChipsMessage
+      if (picked?.type === 'chip') await pickChip($, picked.id, picked.kind)
+      const copy = e.data as CopyMessage
+      if (copy?.type === 'copy') {
+        await markCopy($, copy.id, copy.what)
+        const turn = log.turns.find(each => each.prompt === copy.id)
+        const result = turn ? await $.ui.copy({ text: copyText(turn.replyText ?? '', copy.what as CopyChoice), surface: e.surface }) : { isCopied: false, reason: text.copyNoTurn }
+        if (!result.isCopied) $.ui.toast(fill(text.copyFailed, { reason: String('reason' in result ? result.reason : '') }))
+      }
     }
-    if (isTipMessage(e.data)) {
-      const mark = (e.data as CopyTipMessage).mark
-      if (mark) await markCopy($, mark.id, mark.what)
-      hovered = e.data
-      $.ui.invalidate('ui.render')
-      return next(e)
-    }
-    // The pill names the choice to mark; the reply row reads it from the state and redraws.
-    const hover = e.data as CopyHoverMessage
-    if (hover?.type === 'copy-hover') {
-      await markCopy($, hover.id, hover.what)
-      return next(e)
-    }
-    // A click can move or remove the control under the pointer, and a leave may never come.
-    if (hovered) {
-      hovered = null
-      $.ui.invalidate('ui.render')
-    }
-    const change = settingChoice(e.data)
-    if (change) await saveSetting($, change.key, change.value)
-    const message = e.data as BarMessage
-    if (message?.type === 'fold') await flip($, message.kind, message.id)
-    const picked = e.data as ChipsMessage
-    if (picked?.type === 'chip') await pickChip($, picked.id, picked.kind)
-    const copy = e.data as CopyMessage
-    if (copy?.type === 'copy') {
-      await markCopy($, copy.id, copy.what)
-      const turn = log.turns.find(each => each.prompt === copy.id)
-      const result = turn ? await $.ui.copy({ text: copyText(turn.replyText ?? '', copy.what as CopyChoice), surface: e.surface }) : { isCopied: false, reason: text.copyNoTurn }
-      if (!result.isCopied) $.ui.toast(fill(text.copyFailed, { reason: String('reason' in result ? result.reason : '') }))
+    try {
+      await react()
+    } catch {
+      // The rows stay as they were.
     }
 
     return next(e)
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, false)
+    try {
+      if (e.id === PANE) await $.state.set({ plugin: 'mod-transcript', key: 'pane' }, false)
+    } catch {
+      // The rows stay as they were.
+    }
 
     return next(e)
   })
@@ -1071,7 +1112,7 @@ export const register: Register = (on, options) => {
     // A compact keeps the same session and file, which the log already holds.
     if (e.session_id !== logSession || e.transcript_path !== transcript || !isLoaded) {
       startLog(e.session_id, e.transcript_path)
-      await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
+      await $.store.set(`transcript:${e.session_id}`, { path: e.transcript_path, at: await $.clock.now() }).catch(() => {})
       await loadAWhile($)
     }
     // SessionStart comes between turns, so whatever the transcript holds has ended.
@@ -1131,11 +1172,15 @@ export const register: Register = (on, options) => {
     }
     // The turn is handed on before the messages are read, so no mod after this one waits for them.
     const result = await next(e)
-    if (!e.agentId) {
-      await load($)
-      const messages = await $.session.messages({ as: 'api' }).catch(() => null)
-      if (Array.isArray(messages)) log.learnThoughts(messages)
-      $.ui.invalidate('ui.render')
+    try {
+      if (!e.agentId) {
+        await load($)
+        const messages = await $.session.messages({ as: 'api' }).catch(() => null)
+        if (Array.isArray(messages)) log.learnThoughts(messages)
+        $.ui.invalidate('ui.render')
+      }
+    } catch {
+      // The rows stay as they were.
     }
 
     return result
@@ -1340,7 +1385,7 @@ export const register: Register = (on, options) => {
     if (isLoaded) log.claim(e.requestId, 'row')
     if (isFullView) return next(e)
     else {
-      await guess($)
+      if (!isLoaded) await guess($)
       log.follow(e.requestId)
     }
     const turn = log.turnOf(e.requestId)

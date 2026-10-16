@@ -54,7 +54,7 @@ const base64 = (bytes: Uint8Array) => {
 const byteLength = (text: string) => new TextEncoder().encode(text).length
 
 // held: a read of that path waits until the promise settles.
-type World = { files: Record<string, string>; store: Map<string, unknown>; session: string; readFails?: boolean; spawned?: string[][]; configDir?: string; held?: { path: string; until: Promise<void> } }
+type World = { files: Record<string, string>; store: Map<string, unknown>; session: string; readFails?: boolean; storeFails?: boolean; now?: number; spawned?: string[][]; configDir?: string; held?: { path: string; until: Promise<void> } }
 
 // One process that can switch sessions; files and the store are shared, as two windows share them.
 function world($: any, on: any, init: Partial<World> = {}) {
@@ -65,7 +65,13 @@ function world($: any, on: any, init: Partial<World> = {}) {
   on('session.id', () => ({ value: w.session }))
   on('store.get', (_$: unknown, e: { key: string }) => ({ value: w.store.get(e.key) }))
   on('store.set', (_$: unknown, e: { key: string; value: unknown }) => {
+    if (w.storeFails) throw new Error('store unavailable')
     w.store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: [...w.store.keys()] }))
+  on('store.delete', (_$: unknown, e: { key: string }) => {
+    w.store.delete(e.key)
     return { value: undefined }
   })
   on('fs.stat', (_$: unknown, e: { path: string }) => {
@@ -106,7 +112,7 @@ function world($: any, on: any, init: Partial<World> = {}) {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  const clock = mock.clock(on)
+  const clock = w.now === undefined ? mock.clock(on) : mock.clock(on, { now: w.now })
   // A row drawn again replaces its earlier instance, as a redraw does.
   const mounted = new Map<string, any>()
   // A /resume or /clear replaces the whole message list, so the old session's rows unmount.
@@ -285,4 +291,28 @@ test('a set CLAUDE_CONFIG_DIR is where a reload finds this session\'s file', asy
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
   await clock.settle()
   expect(await numberOf(await prompt(104, 'alpha two'))).toBe('2')
+})
+
+test('a store that fails on the transcript path still lets the session load its numbers', async ($, on) => {
+  const { w, start, prompt } = world($, on)
+  w.storeFails = true
+  await start('a', '/t/a.jsonl', 'startup')
+  expect(await numberOf(await prompt(104, 'alpha two'))).toBe('2')
+})
+
+test('transcript paths untouched for 30 days are deleted at session start, a bare path from an older version gets an age', async ($, on) => {
+  const now = Date.UTC(2026, 9, 5, 16, 52)
+  const day = 24 * 60 * 60 * 1000
+  const store = new Map<string, unknown>([
+    ['transcript:stale', { path: '/t/old.jsonl', at: now - 31 * day }],
+    ['transcript:fresh', { path: '/t/new.jsonl', at: now - 29 * day }],
+    ['transcript:bare', '/t/bare.jsonl'],
+    ['other', 'kept'],
+  ])
+  world($, on, { store, now })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  expect(store.has('transcript:stale')).toBe(false)
+  expect(store.get('transcript:fresh')).toEqual({ path: '/t/new.jsonl', at: now - 29 * day })
+  expect(store.get('transcript:bare')).toEqual({ path: '/t/bare.jsonl', at: expect.any(Number) })
+  expect(store.get('other')).toBe('kept')
 })

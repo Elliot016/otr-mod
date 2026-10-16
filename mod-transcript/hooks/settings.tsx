@@ -113,7 +113,12 @@ export function settingChoice(data: unknown): { key: string; value: ConfigValue 
   if (message?.type !== 'menu-entry' || !message.id?.startsWith(SETTING)) return null
   const rest = message.id.slice(SETTING.length)
   const at = rest.indexOf('=')
-  return { key: rest.slice(0, at), value: JSON.parse(rest.slice(at + 1)) as ConfigValue }
+  if (at === -1) return null
+  try {
+    return { key: rest.slice(0, at), value: JSON.parse(rest.slice(at + 1)) as ConfigValue }
+  } catch {
+    return null
+  }
 }
 
 // A control glyph without the brackets and padding it has as a standalone button (safe `[↻]`), since a pill already frames it.
