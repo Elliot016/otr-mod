@@ -3,7 +3,7 @@
 import type { ConfigRow, ConfigValue, RenderElement } from 'claude-code'
 
 import type { EntryProps, Tip } from './entry'
-import { cardGap, section, subpill, type Look, type Reveal } from './look'
+import { cardGap, section, type Look, type Reveal } from './look'
 import style from './style'
 import { CAPS, fill, MARK, mix, THEME, WASH } from './theme'
 
@@ -221,16 +221,13 @@ export function settingsBody(elements: Elements, look: Look, { rows, actions, wo
     working && !action.isLocal ? (
       <Text key={`action-${index}`} color={THEME.muted}>{`${look.glyph.go} ${action.label} ${MARK.sep} ${style.text.idleOnly}`}</Text>
     ) : (
-      // A pill around a plain Button, since an action needs the person's press behind it.
+      // A pill around a plain Button, since an action needs the person's press behind it; the glyph rides in the label so the whole pill lights.
       pillOn(
         elements,
         look,
         actionScope(index),
         THEME.surface3,
-        <Box key={`action-body-${index}`} flexDirection="row" backgroundColor={THEME.surface3}>
-          {subpill(elements, look.nerd, THEME.surface3, bare(look.glyph.go), `action-go-${index}`)}
-          <Button key={`action-${index}`} label={look.nerd ? ` ${action.label}` : ` ${action.label} `} plain hover={{ scope: actionScope(index), color: THEME.accent, inverse: true }} onPress={() => run(action)} />
-        </Box>,
+        <Button key={`action-${index}`} label={look.nerd ? `${bare(look.glyph.go)} ${action.label}` : ` ${bare(look.glyph.go)} ${action.label} `} plain hover={{ scope: actionScope(index), color: THEME.accent, inverse: true }} onPress={() => run(action)} />,
         THEME.surface1,
         THEME.accent,
       )

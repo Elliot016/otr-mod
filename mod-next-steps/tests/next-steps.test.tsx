@@ -311,7 +311,7 @@ for (const icons of ['nerd', 'safe']) {
       requestId: 'nextsteps',
       props: { title: 'mod-next-steps', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
     } as never)
-    const lead = icons === 'nerd' ? String.fromCodePoint(0xf013) : '⊛'
+    const lead = icons === 'nerd' ? String.fromCodePoint(0xf0493) : '⊛'
     const tab = JSON.stringify(await ui.drawn({ in: 'mod-next-steps-settings-tab' }))
     expect(tab).toContain('Next steps · Settings')
     expect(tab).toContain(lead)

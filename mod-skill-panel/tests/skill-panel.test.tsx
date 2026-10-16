@@ -330,7 +330,7 @@ const skillsPane = async ($: any, on: any) => {
 
 test('icons=nerd draws the settings pill with the Nerd gear', { options: { icons: 'nerd' } }, async ($, on) => {
   const ui = await skillsPane($, on)
-  expect(JSON.stringify(await ui.drawn({ in: 'skills-settings' }))).toContain(String.fromCodePoint(0xf013))
+  expect(JSON.stringify(await ui.drawn({ in: 'skills-settings' }))).toContain(String.fromCodePoint(0xf0493))
   await ui.unmount()
 })
 
@@ -338,7 +338,7 @@ test('icons=safe draws the settings pill with the plain gear', { options: { icon
   const ui = await skillsPane($, on)
   const pill = JSON.stringify(await ui.drawn({ in: 'skills-settings' }))
   expect(pill).toContain('⊛')
-  expect(pill).not.toContain(String.fromCodePoint(0xf013))
+  expect(pill).not.toContain(String.fromCodePoint(0xf0493))
   await ui.unmount()
 })
 
