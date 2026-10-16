@@ -40,10 +40,10 @@ const transcriptFor = (prompts: string[]) =>
 const encoder = new TextEncoder()
 const base64Of = (bytes: Uint8Array) => btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''))
 
-type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean; gate?: Promise<unknown>; oversize?: boolean; session?: { id: string }; cwd?: { dir: string } }
+type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean; gate?: Promise<unknown>; oversize?: boolean; session?: { id: string }; cwd?: { dir: string }; drop?: string }
 
 // Stubs everything the mod touches. `forks` and `completes` record what the model was asked, `store` what the mod saved, `reads` and `runs` the file and process calls, and the transcript holds each prompt the test sent. `gate` holds every read of a session's notes until it resolves; `oversize` makes the file read past 4 MiB, as the engine refuses it.
-function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate, oversize = false, session = { id: 's1' }, cwd = { dir: '/w' } }: Setup = {}) {
+function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate, oversize = false, session = { id: 's1' }, cwd = { dir: '/w' }, drop }: Setup = {}) {
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 5, 16, 52) })
   const store = new Map<string, unknown>([['transcript:s1', TRANSCRIPT], ['transcript:s2', TRANSCRIPT]])
   const sent: string[] = []
@@ -88,6 +88,7 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate,
     return { isFilled: true }
   })
   on('prompt.submit', (_$: unknown, e: { text: string }) => {
+    if (drop && e.text.startsWith('A heads-up note')) return { drop }
     sent.push(e.text)
     return { text: e.text }
   })
@@ -617,6 +618,66 @@ test('the card clears after two prompts, or at once on ×, and stays in the pane
   await panel.unmount()
 })
 
+test('a dropped Ask Claude toasts the reason and puts the note in the prompt box, after any draft', async ($, on) => {
+  const { clock, fills, sent, setDraft } = setup(on, { drop: 'a Stop stands' })
+  await finding($, clock)
+  const ui = await band($)
+  await click(ui, 'headsup-card-open')
+  await clock.settle()
+  await ui.unmount()
+  const panel = await pane($)
+  const id = String(JSON.stringify(await panel.drawn()).match(/"id":"headsup-chat-([^"]+)"/)?.[1])
+  await click(panel, `headsup-chat-${id}`)
+  await clock.settle()
+  expect(sent.slice(1)).toEqual([])
+  expect(fills).toHaveLength(1)
+  expect(fills[0]).toMatchObject({ mode: 'replace' })
+  expect(fills[0]!.text).toMatch(/^A heads-up note/)
+  const cards = await band($)
+  expect(JSON.stringify(await cards.drawn())).toContain('Ask Claude was not sent (a Stop stands), so the note is in the prompt box: press Enter to send it')
+  await cards.unmount()
+  setDraft('my reverted prompt')
+  await click(panel, `headsup-chat-${id}`)
+  expect(fills[1]).toMatchObject({ mode: 'append' })
+  expect(fills[1]!.text).toMatch(/^\nA heads-up note/)
+  await panel.unmount()
+})
+
+test('a note with a bullet wider than the card cuts it to one row with Show all, which shows it in full', async ($, on) => {
+  const long = 'The next npm run render gives you the quiet mix again, and the loudness pass has to run once more after it.'
+  const { clock } = setup(on, { reply: () => answered(FULL.replace('- /ask takes a quick side question.', `- ${long}`)) })
+  await finding($, clock)
+  const ui = await band($)
+  await click(ui, 'headsup-card-open')
+  await clock.settle()
+  await ui.unmount()
+  const panel = await pane($)
+  const tree = JSON.stringify(await panel.drawn())
+  const id = String(tree.match(/"id":"headsup-more-([^"]+)"/)?.[1])
+  expect(tree).toContain(`"wrap":"truncate-end"},"children":["• ${long}"]`)
+  // The expand standard: on the action row, after a spacer, the arrow before a muted label.
+  const actions = JSON.stringify(await panel.find({ key: 'headsup-actions' }))
+  expect(actions).toMatch(/headsup-more-gap.*"label":"Show all","lead":"▾"/)
+  await click(panel, `headsup-more-${id}`)
+  await clock.settle()
+  const open = JSON.stringify(await panel.drawn())
+  expect(JSON.stringify(await panel.find({ key: 'headsup-actions' }))).toMatch(/"label":"Show less","lead":"▴"/)
+  expect(open).toContain(`"wrap":"wrap"},"children":["${long}"]`)
+  await panel.unmount()
+})
+
+test('a short note shows no Show all', async ($, on) => {
+  const { clock } = setup(on)
+  await finding($, clock)
+  const ui = await band($)
+  await click(ui, 'headsup-card-open')
+  await clock.settle()
+  await ui.unmount()
+  const panel = await pane($)
+  expect(JSON.stringify(await panel.drawn())).not.toContain('headsup-more-')
+  await panel.unmount()
+})
+
 test('Open opens the panel on that note: its turn, the explanation, Chat sends the note, Simpler words rewrites it, ↗ scrolls', async ($, on) => {
   let rewritten = false
   const { clock, panes, fills, sent, forks, states } = setup(on, { reply: () => answered(rewritten ? 'title: Plainer\nexplain:\n- in short words' : FULL) })
@@ -834,13 +895,14 @@ test('the selected timeline row is accent and bold, the others are not bold', as
   await panel.unmount()
 })
 
-test('the note card keeps a fixed text height with hidden overflow, and the timeline rail is the border color', async ($, on) => {
+test('the note card text has a minimum height that a long note can grow past, and the timeline rail is the border color', async ($, on) => {
   const { store } = setup(on)
   seedNotes(store)
   const panel = await pane($)
-  const text = (await panel.find({ key: 'note-card-text' })) as { props: { height?: number; overflow?: string } }
-  expect(text.props.height).toBeGreaterThan(0)
-  expect(text.props.overflow).toBe('hidden')
+  const text = (await panel.find({ key: 'note-card-text' })) as { props: { height?: number; minHeight?: number; overflow?: string } }
+  expect(text.props.minHeight).toBeGreaterThan(0)
+  expect(text.props.height).toBeUndefined()
+  expect(text.props.overflow).toBeUndefined()
   const rail = (await panel.find({ type: 'Text', text: /^ +│$/ })) as { props: { color?: string } }
   expect(rail.props.color).toBe(border)
   await panel.unmount()

@@ -123,6 +123,8 @@ async function setOpen($: EngineInterface, id: string, isOpen: boolean) {
 let isCardClosed = false
 // The note whose rewording choices are shown.
 let wording = ''
+// The note whose bullets show in full; the others cut each bullet to one row.
+let fullNote = ''
 let note = ''
 let actions: Action[] = []
 let previews: Previews | undefined
@@ -354,7 +356,13 @@ async function knowIt($: EngineInterface, id: string) {
 async function chat($: EngineInterface, id: string) {
   const found = noteOf(id)
   if (!found) return
-  await $.prompt.submit({ text: fill(text.chatPrompt, { learn: found.learn }), asUser: true })
+  const prompt = fill(text.chatPrompt, { learn: found.learn })
+  const result = await $.prompt.submit({ text: prompt, asUser: true }).catch((error: unknown) => ({ drop: String(error) }))
+  if (!('drop' in result) || !result.drop) return
+  // A dropped prompt (an Esc that interrupted the turn is one way) leaves the note in the box for the person's own Enter.
+  const box = await $.prompt.read()
+  const filled = await $.prompt.fill({ text: box.text.trim() ? `\n${prompt}` : prompt, mode: box.text.trim() ? 'append' : 'replace' }).catch(() => ({ isFilled: false }))
+  $.ui.toast(fill(filled.isFilled ? text.chatDropped : text.chatLost, { reason: result.drop }))
 }
 
 async function redo($: EngineInterface, id: string, direction: Direction) {
@@ -394,7 +402,7 @@ async function showPane($: EngineInterface) {
   if (await isOpen($, SETTINGS)) await $.ui.close({ id: SETTINGS })
   note = ''
   const opened = await $.ui.open({ id: PANE, title: text.paneTitle, closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(fill(text.panelWaiting, { reason: opened.reason }))
+  if (!opened.isPlaced) $.ui.toast(text.panelWaiting)
   await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, opened.isPlaced)
 }
 
@@ -673,6 +681,10 @@ export const register: Register = (on, options) => {
       wording = ''
       paneTip = null
       await knowIt($, noteId)
+    } else if (id.startsWith('headsup-more-')) {
+      const noteId = id.slice('headsup-more-'.length)
+      fullNote = fullNote === noteId ? '' : noteId
+      $.ui.invalidate('ui.render')
     } else if (id.startsWith('headsup-chat-')) await chat($, id.slice('headsup-chat-'.length))
     else if (id.startsWith('headsup-reword-')) {
       const noteId = id.slice('headsup-reword-'.length)
@@ -769,6 +781,9 @@ export const register: Register = (on, options) => {
     // The Prompts look: the selected note in a card on top, with its three actions in one row at the card's foot, and every note in a timeline under it.
     const noteCard = (found: Note) => {
       const turn = fill(text.turnNumber, { n: found.turn })
+      // The card's border and padding take two columns a side; the bullet and its space come before the line.
+      const isCut = found.body.some(line => line.length + 2 > e.props.bodyColumns - 2 - 4)
+      const isFull = isCut && fullNote === found.id
       return section(elements, look, 'note-card', '', '', [
         <Box key="note-card-head" flexDirection="row" columnGap={1}>
           {pill({ Box, Text }, nerd, THEME.surface3, <Text color={THEME.muted}>{turn}</Text>, 'note-card-turn', cardFill())}
@@ -777,8 +792,8 @@ export const register: Register = (on, options) => {
           <Box key="note-card-gap" flexGrow={1} />
           {entryPill('headsup-close', bare(look.glyph.close), undefined, { glyph: bare(look.glyph.close), label: text.close, text: text.tipClose })}
         </Box>,
-        // A fixed height, so the actions and the timeline never move as the note's text changes.
-        <Box key="note-card-text" flexDirection="column" flexShrink={0} height={NOTE_TEXT_ROWS} overflow="hidden">
+        // A floor on the height, so a short note never moves the actions; a long one grows the card instead of losing rows.
+        <Box key="note-card-text" flexDirection="column" flexShrink={0} minHeight={NOTE_TEXT_ROWS}>
           <Box key={`summary-${found.id}`} marginTop={1}>
             <Text color={THEME.onSurface} bold>{found.learn}</Text>
           </Box>
@@ -787,9 +802,20 @@ export const register: Register = (on, options) => {
               <Text color={THEME.onSurface} bold>{found.title}</Text>
             </Box>
           ) : null}
-          {found.body.map((line, at) => <Text key={`body-${found.id}-${at}`} color={THEME.onSurface}>{`${MARK.bullet} ${line}`}</Text>)}
+          {found.body.map((line, at) =>
+            isFull ? (
+              <Box key={`body-${found.id}-${at}`} flexDirection="row">
+                <Box flexShrink={0}>
+                  <Text color={THEME.onSurface}>{`${MARK.bullet} `}</Text>
+                </Box>
+                <Text color={THEME.onSurface} wrap="wrap">{line}</Text>
+              </Box>
+            ) : (
+              <Text key={`body-${found.id}-${at}`} color={THEME.onSurface} wrap="truncate-end">{`${MARK.bullet} ${line}`}</Text>
+            ),
+          )}
         </Box>,
-        actionsBar(found),
+        actionsBar(found, isCut ? moreToggle(found, isFull) : null),
       ])
     }
 
@@ -814,7 +840,14 @@ export const register: Register = (on, options) => {
       }))
 
     // One row, always: Reword swaps the other two buttons for its three choices, so no button changes place with the note's text.
-    const actionsBar = (found: Note) => {
+    // The expand standard: the arrow, then a muted label, on the card's own fill, at the action row's right end.
+    const moreToggle = (found: Note, isFull: boolean) => {
+      const label = isFull ? text.showLess : text.showAll
+      const arrow = isFull ? look.glyph.less : look.glyph.more
+      return <Client key={`headsup-more-${found.id}`} module="./entry.tsx" height={1} props={{ id: `headsup-more-${found.id}`, label, lead: arrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, nerd, still, tip: { glyph: arrow, label, text: isFull ? text.tipShowLess : text.tipShowAll } } satisfies EntryProps} />
+    }
+
+    const actionsBar = (found: Note, more: unknown) => {
       const isRewording = wording === found.id
       const reword = pill({ Box, Text }, nerd, THEME.surface2, <Client key={`headsup-reword-${found.id}`} module="./entry.tsx" height={1} props={{ id: `headsup-reword-${found.id}`, label: text.reword, isOpen: isRewording, bg: THEME.surface2, idle: THEME.muted, nerd, still, isBusy: rewriting.endsWith(`-${found.id}`), subLead: bare(look.glyph.cycle), tip: { glyph: bare(look.glyph.cycle), label: text.reword, text: text.tipReword } } satisfies EntryProps} />, `headsup-reword-${found.id}-pill`, cardFill())
       return (
@@ -830,6 +863,8 @@ export const register: Register = (on, options) => {
               })}
             </Box>
           ), `redo-${found.id}`, cardFill()) : null}
+          {more ? <Box key="headsup-more-gap" flexGrow={1} /> : null}
+          {more}
         </Box>
       )
     }
