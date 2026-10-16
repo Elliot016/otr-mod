@@ -28,6 +28,20 @@ export type EntryProps = {
   tight?: boolean
   tip?: Tip
   rail?: boolean
+  compact?: boolean // false: the pill row may cut the entry to its lead when the row is wider than the band
+}
+
+const entryText = (props: EntryProps) => {
+  const pad = props.tight ? (props.isOpen && !props.nerd ? ' ' : '') : ' '
+  return `${pad}${props.compact && props.lead ? '' : props.label}${props.tight && props.badge ? ' ' : pad}`
+}
+
+// The cells an entry takes; subpills add their two caps, or their two padding spaces in safe mode.
+export const entryCells = (props: EntryProps) => {
+  if (props.rail) return 1
+  const cells = (text: string) => [...text].length
+  const lead = props.lead ? cells(props.lead) + (props.tight ? 0 : 1) : 0
+  return lead + (props.subLead ? cells(props.subLead) + 2 : 0) + cells(entryText(props)) + (props.badge ? cells(props.badge.text) + 2 : 0)
 }
 
 // A hovered control's glyph, label and what it does; the pane footer and the band's tip row both show it.
@@ -157,8 +171,7 @@ const Entry: ClientModule<EntryProps, State> = (props, surface) => {
     if (isClick) surface.post({ type: 'menu-entry', id: props.id } satisfies EntryMessage)
   })
 
-  const pad = props.tight ? (props.isOpen && !props.nerd ? ' ' : '') : ' '
-  const text = `${pad}${props.label}${props.tight && props.badge ? ' ' : pad}`
+  const text = entryText(props)
   const isShimmering = !props.still && (props.isBusy || isPressed(surface.state, props))
   const phase = surface.state?.phase ?? 0
   const label = isShimmering ? (

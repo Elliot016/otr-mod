@@ -2,7 +2,7 @@
 // Shared pill row. Copy unchanged into every mod that draws in the row.
 import type { RenderElement } from 'claude-code'
 
-import { mix, type EntryProps, type Tip } from './entry'
+import { entryCells, mix, type EntryProps, type Tip } from './entry'
 import style from './style'
 import { CAPS, decodeAll, THEME, WASH } from './theme'
 
@@ -61,11 +61,37 @@ export function pill({ Box, Text }: Elements, nerd: boolean, bg: string, body: u
   )
 }
 
-// mod-menu's `labels` state: `always` draws icon and label, `never` the icon alone (Nerd only; safe mode has no icon, so it keeps the label).
-export type LabelsMode = 'always' | 'never'
+// mod-menu's `labels`: `always` icon and label, `never` the icon alone, `auto` the icon alone while the row overflows (Nerd only; safe keeps labels).
+export type LabelsMode = 'auto' | 'always' | 'never'
 
-// The value of `{ plugin: 'mod-menu', key: 'labels' }` as a mode; a missing or unknown value is `always`, so a mod works without mod-menu.
-export const labelsOf = (value: unknown): LabelsMode => (value === 'never' ? 'never' : 'always')
+// The value of `{ plugin: 'mod-menu', key: 'labels' }` as a mode; a missing or unknown value is `auto`, so a mod works without mod-menu.
+export const labelsOf = (value: unknown): LabelsMode => (value === 'always' || value === 'never' ? value : 'auto')
+
+type ClientNode = { type: 'Client'; props: { props: Record<string, unknown> } }
+const isClient = (node: unknown): node is ClientNode => (node as { type?: string } | null)?.type === 'Client'
+
+// The cells a drawn row takes with every label shown: a Client that may go compact says its own `cells`, or is an entry.tsx one.
+const cellsOf = (node: unknown): number => {
+  if (Array.isArray(node)) return node.reduce((sum: number, each) => sum + cellsOf(each), 0)
+  if (typeof node === 'string') return [...node].length
+  if (!node || typeof node !== 'object') return 0
+  if (isClient(node)) {
+    const props = node.props.props
+    return typeof props.cells === 'number' ? props.cells : entryCells({ ...(props as EntryProps), compact: false })
+  }
+  // A `menu-flash` word comes and goes with the pointer; counting it would flip the row under the pointer.
+  const kids = childrenOf(node).filter(each => each && !keyOf(each)?.startsWith('menu-flash'))
+  return kids.reduce((sum: number, each) => sum + cellsOf(each), Number((node as Node)?.props?.columnGap ?? 0) * Math.max(0, kids.length - 1))
+}
+
+// Every Client that marked itself `compact: false` draws its icon alone instead.
+const compacted = (node: unknown): unknown => {
+  if (Array.isArray(node)) return node.map(compacted)
+  if (!node || typeof node !== 'object') return node
+  if (isClient(node)) return node.props.props.compact === false ? { ...node, props: { ...node.props, props: { ...node.props.props, compact: true } } } : node
+  const kids = (node as Node)?.children
+  return kids ? { ...node, children: kids.map(compacted) } : node
+}
 
 // A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open panel's entry is a pill of its own inside the group.
 export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, { labels, ...props }: Omit<EntryProps, 'id' | 'bg' | 'tight'> & { labels?: LabelsMode }) {
@@ -74,7 +100,7 @@ export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: an
   const glyph = (style.glyphs.nerd.icon as Record<string, string>)[`menu-${id}`]
   const icon = nerd && !props.lead && glyph ? decodeAll(glyph) : undefined
   // The icon sits tight against the cap, so the label that follows brings its own gap.
-  const shown = icon ? { lead: icon, label: labels === 'never' ? '' : ` ${props.label}` } : {}
+  const shown = icon ? { lead: icon, label: labels === 'never' ? '' : ` ${props.label}`, ...(labels === 'auto' ? { compact: false } : {}) } : {}
   // On Nerd the caps take the label's padding cells, so an entry is as wide as before the caps.
   const entry = <Client key={`menu-entry-${id}`} module="./entry.tsx" height={1} props={{ id, bg, ...props, ...(props.isOpen ? { color: THEME.ok } : {}), ...shown, nerd, tight: nerd } satisfies EntryProps} />
   return (
@@ -86,7 +112,7 @@ export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: an
 }
 
 // The band above the prompt: what else it holds (Claude Code's own effort line), then the pill row, so the pills sit on the input.
-export function pillRow(elements: Elements & { Client?: (props: any) => RenderElement }, nerd: boolean, group: unknown[], row: unknown[], rest: unknown[], tip: unknown = null, _columns?: number) {
+export function pillRow(elements: Elements & { Client?: (props: any) => RenderElement }, nerd: boolean, group: unknown[], row: unknown[], rest: unknown[], tip: unknown = null, columns?: number) {
   const { Box, Client, Text } = elements
   // Mods draw in load order, which an install or a toggle changes, so entries sort by a fixed rank instead.
   const rank = (entry: unknown) => {
@@ -98,15 +124,20 @@ export function pillRow(elements: Elements & { Client?: (props: any) => RenderEl
   const entries = Client
     ? sorted.flatMap((entry, at) => (at === 0 ? [entry] : [<Client key={`menu-group-sep-${at}`} module="./entry.tsx" height={1} props={{ id: `sep-${at}`, label: '', isOpen: false, bg: PILL.primary, rail: true } satisfies EntryProps} />, entry]))
     : sorted
+  const pills = (
+    <Box key="menu-row" flexDirection="row" columnGap={1}>
+      {group.length > 0 ? pill(elements, nerd, PILL.primary, entries, 'menu-group') : null}
+      {row}
+    </Box>
+  )
+  // Measured with every label shown, so a row cut to icons never grows back into a row that does not fit.
+  const fits = columns === undefined || cellsOf(pills) <= columns
   return (
     <Box key="menu-rows" flexDirection="column">
       {rest}
       {/* Above the row, kept even when empty so nothing above jumps when a tip appears. */}
       {tip ?? tipLine(elements, ' ')}
-      <Box key="menu-row" flexDirection="row" columnGap={1}>
-        {group.length > 0 ? pill(elements, nerd, PILL.primary, entries, 'menu-group') : null}
-        {row}
-      </Box>
+      {fits ? pills : compacted(pills)}
     </Box>
   )
 }
