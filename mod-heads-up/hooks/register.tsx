@@ -90,9 +90,10 @@ let saved: Saved = emptySaved()
 let loadedSession = ''
 // The load of the session's store. Hooks that ask at once share it, so none reads the notes before they load.
 let loading: { session: string; done: Promise<void> } | null = null
-// The seen topics live per session; the known topics stay global.
+// The seen topics live per session; the known topics live per project, under the folder the session runs in.
 let seen: string[] = []
 let known: string[] = []
+let knownKey = 'known:'
 // The prompts drawn in the composer this session, by requestId: the transcript may not hold them yet.
 const drawnPrompts = new Map<string, string>()
 // How far the transcript was read, so a check reads only what was written since. A cache: a reload starts it over.
@@ -134,10 +135,11 @@ async function ensureLoaded($: EngineInterface) {
 
 async function loadSession($: EngineInterface, session: string) {
   drawnPrompts.clear()
+  const key = `known:${await $.session.cwd().catch(() => '')}`
   const [nextSaved, nextSeen, nextKnown, sessions] = await Promise.all([
     $.store.get(`notes:${session}`).catch(() => undefined),
     $.store.get(`seen:${session}`).catch(() => undefined),
-    $.store.get('known').catch(() => undefined),
+    $.store.get(key).catch(() => undefined),
     $.store.get('sessions').catch(() => undefined),
   ])
   // A load for another session started meanwhile: that one owns the state now.
@@ -147,8 +149,16 @@ async function loadSession($: EngineInterface, session: string) {
     isCardClosed = false
     wording = ''
     note = ''
+    checkedTurn = ''
+    isChecking = false
+    mainSteps = 0
+    rewriting = ''
+    transcript = null
+    lastModel = ''
+    lastEffort = undefined
   }
   loadedSession = session
+  knownKey = key
   saved = savedOf(nextSaved)
   seen = stringsOf(nextSeen)
   known = stringsOf(nextKnown)
@@ -166,8 +176,33 @@ async function save($: EngineInterface) {
 
 // The transcript the session's SessionStart named; a session that began before this mod loaded is found by its file name.
 async function transcriptOf($: EngineInterface) {
-  const named = await $.store.get(`transcript:${await $.session.id()}`).catch(() => undefined)
-  return typeof named === 'string' && named ? named : findTranscript($)
+  const named = pathOf(await $.store.get(`transcript:${await $.session.id()}`).catch(() => undefined))
+  return named || findTranscript($)
+}
+
+// A transcript path is kept with the time it was named; an older bare string counts as a path with no age yet.
+const pathOf = (kept: unknown) => {
+  const path = typeof kept === 'object' && kept !== null ? (kept as { path?: unknown }).path : kept
+  return typeof path === 'string' ? path : ''
+}
+
+const TRANSCRIPT_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+
+// Entries untouched for 30 days go; a bare string from an older version starts its clock now.
+async function pruneTranscripts($: EngineInterface) {
+  try {
+    const now = await $.clock.now()
+    for (const key of await $.store.keys()) {
+      if (!key.startsWith('transcript:')) continue
+      const kept = await $.store.get(key)
+      const at = typeof kept === 'object' && kept !== null ? Number((kept as { at?: unknown }).at) : NaN
+      if (Number.isFinite(at)) {
+        if (at < now - TRANSCRIPT_KEEP_MS) await $.store.delete(key)
+      } else if (typeof kept === 'string') await $.store.set(key, { path: kept, at: now })
+    }
+  } catch {
+    // Old entries stay until the next start.
+  }
 }
 
 // Claude Code's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude.
@@ -232,16 +267,20 @@ async function numberPrompts($: EngineInterface) {
 
 const noteOf = (id: string) => saved.notes.find(each => each.id === id)
 
+const ASK_TIMEOUT_MS = 120_000
+
 // A fork runs at the session's effort and reads its cache; above medium, or with nothing to fork yet, the packed conversation goes to the session's model at medium.
 async function ask($: EngineInterface, prompt: string) {
   if (canFork(lastEffort)) {
-    const reply = await $.model.fork({ prompt })
+    // $.model.fork takes no timeoutMs, so a fork that never answers is cut here.
+    const reply = await Promise.race([$.model.fork({ prompt }), $.clock.sleep(ASK_TIMEOUT_MS).then(() => null)])
+    if (reply === null) return null
     if (reply.isAnswered) return reply.text
     if (!('reason' in reply) || reply.reason !== 'nothing-to-fork') return null
   }
   const messages = (await $.session.messages()) as SessionMessage[]
   const model = lastModel || (await $.session.model())
-  const reply = await $.model.complete({ model, effort: 'medium', prompt: `<conversation>\n${pack(messages)}\n</conversation>\n\n${prompt}`, maxTokens: 1500, timeoutMs: 120_000 })
+  const reply = await $.model.complete({ model, effort: 'medium', prompt: `<conversation>\n${pack(messages)}\n</conversation>\n\n${prompt}`, maxTokens: 1500, timeoutMs: ASK_TIMEOUT_MS })
   return reply.isAnswered ? reply.text : null
 }
 
@@ -307,7 +346,7 @@ async function knowIt($: EngineInterface, id: string) {
   const found = noteOf(id)
   if (!found) return
   known = remember(known, found.title || found.learn, KNOWN_KEPT)
-  await $.store.set('known', known).catch(() => {})
+  await $.store.set(knownKey, known).catch(() => {})
   if (saved.card === id) saved = { ...saved, card: null, since: 0 }
   await update($, id, { isRead: true })
 }
@@ -414,8 +453,9 @@ async function answer($: EngineInterface, args: string) {
     return text.cardCleared
   }
   if (word === 'forget') {
+    await ensureLoaded($)
     known = []
-    await $.store.set('known', known).catch(() => {})
+    await $.store.set(knownKey, known).catch(() => {})
     return text.knownForgotten
   }
   if (word === 'settings') await toggleSettings($)
@@ -505,6 +545,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     await $.command.register({ name: 'mod-heads-up', description: text.commandDescription, argumentHint: '[settings|clear|forget]' })
     await ensureLoaded($)
+    await pruneTranscripts($)
     // The bar entry reads this; an unload drops the pane without raising ui.close here.
     await $.state.set({ plugin: 'mod-heads-up', key: 'pane' }, (await isOpen($)) || (await isOpen($, SETTINGS)))
     $.ui.invalidate('ui.render')
@@ -555,7 +596,7 @@ export const register: Register = (on, options) => {
 
   // Only SessionStart names the transcript file; the store keeps it per session, as mod-transcript does.
   on('classic.SessionStart', async ($, e, next) => {
-    await $.store.set(`transcript:${e.session_id}`, e.transcript_path).catch(() => {})
+    await $.store.set(`transcript:${e.session_id}`, { path: e.transcript_path, at: await $.clock.now() }).catch(() => {})
 
     return next(e)
   })

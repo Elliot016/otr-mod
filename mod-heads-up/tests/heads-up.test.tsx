@@ -40,10 +40,10 @@ const transcriptFor = (prompts: string[]) =>
 const encoder = new TextEncoder()
 const base64Of = (bytes: Uint8Array) => btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''))
 
-type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean; gate?: Promise<unknown>; oversize?: boolean; session?: { id: string } }
+type Setup = { reply?: () => unknown; below?: (elements: any) => unknown; isUnplaced?: boolean; gate?: Promise<unknown>; oversize?: boolean; session?: { id: string }; cwd?: { dir: string } }
 
 // Stubs everything the mod touches. `forks` and `completes` record what the model was asked, `store` what the mod saved, `reads` and `runs` the file and process calls, and the transcript holds each prompt the test sent. `gate` holds every read of a session's notes until it resolves; `oversize` makes the file read past 4 MiB, as the engine refuses it.
-function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate, oversize = false, session = { id: 's1' } }: Setup = {}) {
+function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate, oversize = false, session = { id: 's1' }, cwd = { dir: '/w' } }: Setup = {}) {
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 5, 16, 52) })
   const store = new Map<string, unknown>([['transcript:s1', TRANSCRIPT], ['transcript:s2', TRANSCRIPT]])
   const sent: string[] = []
@@ -68,7 +68,9 @@ function setup(on: any, { reply = () => answered(FULL), below, isUnplaced, gate,
     store.delete(e.key)
     return { value: undefined }
   })
+  on('store.keys', () => ({ value: [...store.keys()] }))
   on('session.id', () => ({ value: session.id }))
+  on('session.cwd', () => ({ value: cwd.dir }))
   on('session.start', () => ({ cwd: '/w' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('session.messages', () => ({ value: [{ role: 'user', text: 'Add follow-ups to /ask', toolUses: [] }] }))
@@ -270,7 +272,8 @@ test('Got it in the panel stores the topic, closes the card and reads the note, 
   const id = String(JSON.stringify(await panel.drawn()).match(/"id":"headsup-understood-([^"]+)"/)?.[1])
   await click(panel, `headsup-understood-${id}`)
   await clock.settle()
-  expect(store.get('known')).toEqual(['One-off /ask questions cost more'])
+  expect(store.get('known:/w')).toEqual(['One-off /ask questions cost more'])
+  expect(store.has('known')).toBe(false)
   await panel.unmount()
   await step($, 6, { turnId: 't2' })
   await clock.settle()
@@ -298,11 +301,66 @@ test('a reworded repeat of a note already shown is not shown again', async ($, o
   await panel.unmount()
 })
 
-test('seen topics are stored under their session; the known topics stay global', async ($, on) => {
+test('seen topics are stored under their session; the known topics under their project', async ($, on) => {
   const { clock, store } = setup(on)
   await finding($, clock)
   expect(store.get('seen:s1')).toEqual([FULL_LEARN])
   expect(store.has('seen')).toBe(false)
+})
+
+test('a topic marked known in one project is not known in another', async ($, on) => {
+  const cwd = { dir: '/w' }
+  const session = { id: 's1' }
+  const { clock, store, forks } = setup(on, { cwd, session })
+  store.set('known:/w', ['Topic from the first project'])
+  await finding($, clock)
+  expect(forks[0]).toContain('- Topic from the first project')
+  cwd.dir = '/other'
+  session.id = 's2'
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  expect(forks[1]).not.toContain('Topic from the first project')
+})
+
+test('transcript paths untouched for 30 days are deleted at session start, newer and older-format ones stay', async ($, on) => {
+  const { store } = setup(on)
+  const now = Date.UTC(2026, 9, 5, 16, 52)
+  const day = 24 * 60 * 60 * 1000
+  store.set('transcript:stale', { path: '/t/old.jsonl', at: now - 31 * day })
+  store.set('transcript:fresh', { path: '/t/new.jsonl', at: now - 29 * day })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  expect(store.has('transcript:stale')).toBe(false)
+  expect(store.get('transcript:fresh')).toEqual({ path: '/t/new.jsonl', at: now - 29 * day })
+  expect(store.get('transcript:s1')).toEqual({ path: '/t/s1.jsonl', at: expect.any(Number) })
+})
+
+test('a fork that never answers is cut after two minutes and the next turn checks again', async ($, on) => {
+  const never = new Promise(() => {})
+  let answers = 0
+  const { clock, forks } = setup(on, { reply: () => (answers++ === 0 ? never : answered('learn: none')) })
+  await $.prompt.submit({ text: 'Add follow-ups to /ask' } as never)
+  await step($, 6)
+  await clock.settle()
+  expect(forks.length).toBe(1)
+  await clock.advance(120_000)
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  expect(forks.length).toBe(2)
+})
+
+test('a /resume or /clear starts the next session\'s check counters over', async ($, on) => {
+  const session = { id: 's1' }
+  const { clock, forks } = setup(on, { session, reply: () => answered('learn: none') })
+  await step($, 6)
+  await clock.settle()
+  expect(forks.length).toBe(1)
+  session.id = 's2'
+  const panel = await pane($)
+  await clock.settle()
+  await panel.unmount()
+  await step($, 6)
+  await clock.settle()
+  expect(forks.length).toBe(2)
 })
 
 test('the store keeps the notes and seen topics of the 40 most recent sessions, and deletes the rest', async ($, on) => {
@@ -647,11 +705,11 @@ test('the panel contract: the command toggles the panel and the settings, and th
 
 test('enabled off makes no model call; forget empties the known topics', { options: { enabled: false } }, async ($, on) => {
   const { clock, store, forks, completes } = setup(on)
-  store.set('known', ['A topic'])
+  store.set('known:/w', ['A topic'])
   await finding($, clock)
   expect(forks.length + completes.length).toBe(0)
   await $.command.run({ command: 'mod-heads-up', args: 'forget' } as never)
-  expect(store.get('known')).toEqual([])
+  expect(store.get('known:/w')).toEqual([])
 })
 
 test('a check reads only the bytes the transcript gained since the last check', async ($, on) => {

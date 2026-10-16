@@ -63,10 +63,10 @@ Change them with `/mod-heads-up settings` or the gear pill.
 Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [doc-author]: https://github.com/v-amorim
-[doc-icons]: ../README.md#icons-and-nerd-fonts
-[doc-install]: ../README.md#install
-[doc-license]: ../LICENSE
-[doc-root]: ../README.md
+[doc-icons]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#icons-and-nerd-fonts
+[doc-install]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#install
+[doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
+[doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-heads-up-card]: ../showcase/heads-up-card.png
-[img-heads-up-note]: ../showcase/heads-up-note.png
+[img-heads-up-card]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/heads-up-card.png
+[img-heads-up-note]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/heads-up-note.png
