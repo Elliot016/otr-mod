@@ -41,12 +41,33 @@ const SHELL_DIFF = {
 const isTranscript = (path: string) => path.replace(/\\/g, '/').endsWith('/s1.jsonl')
 
 // `transcript.text` is the session's .jsonl, which a test may grow between events.
-const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }, placed: string[] = [], seen: { env?: (name: string) => string | undefined; listed?: string[]; exists?: (path: string) => boolean } = {}) => {
+const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }, placed: string[] = [], seen: { store?: Map<string, unknown>; now?: number; stateFails?: { left: number }; env?: (name: string) => string | undefined; listed?: string[]; exists?: (path: string) => boolean } = {}) => {
   on('session.cwd', () => ({ value: '/w' }))
   on('session.id', () => ({ value: 's1' }))
   on('env.get', (_$, e) => ({ value: seen.env ? seen.env(e.name) : e.name === 'USERPROFILE' ? '/h' : undefined }))
-  on('store.get', () => ({ value: undefined }))
-  on('store.set', () => ({ value: undefined }))
+  const store = seen.store
+  on('store.get', (_$, e) => ({ value: store?.get(e.key) }))
+  on('store.set', (_$, e) => {
+    store?.set(e.key, e.value)
+    return { value: undefined }
+  })
+  if (store) {
+    on('store.keys', () => ({ value: [...store.keys()] }))
+    on('store.delete', (_$, e) => {
+      store.delete(e.key)
+      return { value: undefined }
+    })
+  }
+  if (seen.stateFails) {
+    const fails = seen.stateFails
+    on('state.set', () => {
+      if (fails.left > 0) {
+        fails.left -= 1
+        throw new Error('state unavailable')
+      }
+      return { value: undefined } as never
+    })
+  }
   on('fs.list', (_$, e) => {
     // The kit resolves a path against the drive on Windows.
     seen.listed?.push(e.path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, ''))
@@ -67,7 +88,8 @@ const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = 
   on('tool.call', (_$, e) => ({ result: e.tool === 'Bash' ? { stdout: '', bashEditDiff: SHELL_DIFF } : { text: 'ok' } }) as never)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
   on('turn.complete', () => ({ text: '' }))
-  mock.clock(on)
+  if (seen.now === undefined) mock.clock(on)
+  else mock.clock(on, { now: seen.now })
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>base</Text>
@@ -555,6 +577,41 @@ test('the transcript rebuilds every file and edit: the stored patch, a new file,
   expect(turnView(log).files.map(file => file.path)).toEqual(['docs/new.md'])
 })
 
+test('a subagent\'s edits rebuild into the tree like live ones, and its prompt opens no turn', () => {
+  const parsed = new TranscriptFiles('/w')
+  const side = (line: string) => JSON.stringify({ ...JSON.parse(line), isSidechain: true })
+  for (const line of [prompt('first'), side(prompt('subagent brief')), side(use('t-side', 'Edit', { file_path: '/w/side.ts', old_string: 'a', new_string: 'b' })), side(result('t-side', PATCH))]) parsed.feed(line)
+  expect(parsed.log.turn).toBe(1)
+  expect(parsed.log.files.map(file => file.path)).toEqual(['side.ts'])
+})
+
+test('a MultiEdit call fills the live tree as an edit', async ($, on) => {
+  stubs(on)
+  await $.tool.call({ tool: 'MultiEdit', file_path: '/w/multi.ts', edits: [{ old_string: 'a', new_string: 'b' }] } as never)
+  const ui = await $.ui.mount(PANE)
+  expect(JSON.stringify(await ui.drawn({ in: 'list-0' }))).toContain('multi.ts')
+  await ui.unmount()
+})
+
+test('transcript paths untouched for 30 days are deleted at session start, a bare path from an older version gets an age', async ($, on) => {
+  const now = Date.UTC(2026, 9, 5, 16, 52)
+  const day = 24 * 60 * 60 * 1000
+  const store = new Map<string, unknown>([
+    ['transcript:stale', { path: '/t/old.jsonl', at: now - 31 * day }],
+    ['transcript:fresh', { path: '/t/new.jsonl', at: now - 29 * day }],
+    ['transcript:bare', '/t/bare.jsonl'],
+    ['other', 'kept'],
+  ])
+  stubs(on, [], undefined, [], { store, now })
+  on('session.start', () => ({ cwd: '/w' }))
+  on('command.register', () => ({ value: undefined }))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  expect(store.has('transcript:stale')).toBe(false)
+  expect(store.get('transcript:fresh')).toEqual({ path: '/t/new.jsonl', at: now - 29 * day })
+  expect(store.get('transcript:bare')).toEqual({ path: '/t/bare.jsonl', at: expect.any(Number) })
+  expect(store.get('other')).toBe('kept')
+})
+
 test('a resumed session, with nothing in $.state, shows the files from its transcript', async ($, on) => {
   const transcript = { text: SESSION.replace(/C:\\\\repo/g, '/w'), reads: 0 }
   stubs(on, [], transcript)
@@ -1012,6 +1069,16 @@ test('a Windows folder opens through the shell handler, never cmd', async ($, on
   const ui = await $.ui.mount(PANE)
   await pointing(ui).pointer({ in: 'list-0', type: 'down', button: 'left', x: 65, y: 0 })
   expect(ran).toEqual([['rundll32.exe', 'url.dll,FileProtocolHandler', 'C:\\w\\a&b']])
+  await ui.unmount()
+})
+
+test('a state write that fails before a call runs does not drop the call from the tree', async ($, on) => {
+  stubs(on, [], undefined, [], { stateFails: { left: 1 } })
+  await $.tool.call({ tool: 'Write', file_path: '/w/new.md', content: 'hi\n' } as never)
+  const ui = await $.ui.mount(PANE)
+  const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
+  expect(drawn).toContain('new.md')
+  expect(drawn).toContain('"+1"')
   await ui.unmount()
 })
 

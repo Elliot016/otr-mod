@@ -148,9 +148,34 @@ async function findTranscript($: EngineInterface) {
   return ''
 }
 
+// A transcript path is kept with the time it was named; an older bare string counts as a path with no age yet.
+const pathOf = (kept: unknown) => {
+  const path = typeof kept === 'object' && kept !== null ? (kept as { path?: unknown }).path : kept
+  return typeof path === 'string' ? path : ''
+}
+
+const TRANSCRIPT_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+
+// Entries untouched for 30 days go; a bare string from an older version starts its clock now.
+async function pruneTranscripts($: EngineInterface) {
+  try {
+    const now = await $.clock.now()
+    for (const key of await $.store.keys()) {
+      if (!key.startsWith('transcript:')) continue
+      const kept = await $.store.get(key)
+      const at = typeof kept === 'object' && kept !== null ? Number((kept as { at?: unknown }).at) : NaN
+      if (Number.isFinite(at)) {
+        if (at < now - TRANSCRIPT_KEEP_MS) await $.store.delete(key)
+      } else if (typeof kept === 'string') await $.store.set(key, { path: kept, at: now })
+    }
+  } catch {
+    // Old entries stay until the next start.
+  }
+}
+
 // Builds the log from the whole transcript; a long session outgrows $.fs.read's 4 MiB cap, so it then streams through the platform's file printer.
 async function load($: EngineInterface, session: string) {
-  const path = transcript || String((await $.store.get(`transcript:${session}`).catch(() => '')) ?? '') || (await findTranscript($))
+  const path = transcript || pathOf(await $.store.get(`transcript:${session}`).catch(() => '')) || (await findTranscript($))
   if (session !== logSession) return
   transcript = path
   let raw = ''
@@ -426,8 +451,8 @@ async function planOf($: EngineInterface, e: ToolEvent) {
   const cwd = await $.session.cwd().catch(() => '')
   const at = (path: unknown) => relPath(String(cwd ?? ''), String(path))
   if (e.tool === 'Read' && e.file_path) return { path: at(e.file_path), tool: 'Read', kind: 'read' as Kind, note: '', lines: [] as Line[] }
-  if (e.tool === 'Edit' && e.file_path) {
-    return { path: at(e.file_path), tool: 'Edit', kind: 'edit' as Kind, note: e.replace_all ? text.notes.replaceAll : '', lines: diffLines(String(e.old_string ?? ''), String(e.new_string ?? '')) }
+  if ((e.tool === 'Edit' || e.tool === 'MultiEdit') && e.file_path) {
+    return { path: at(e.file_path), tool: e.tool, kind: 'edit' as Kind, note: e.replace_all ? text.notes.replaceAll : '', lines: diffLines(String(e.old_string ?? ''), String(e.new_string ?? '')) }
   }
   if (e.tool === 'NotebookEdit' && e.notebook_path) {
     const editMode = String(e.edit_mode ?? 'replace')
@@ -567,17 +592,22 @@ export const register: Register = (on, options) => {
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
-    await loadLook($)
-    await $.command.register({
-      name: 'mod-file-tree',
-      description: text.commandDescription,
-      argumentHint: '[settings|clear]',
-    })
-    // The bar entry reads this; an unload drops the pane without raising ui.close here.
-    await $.state.set({ plugin: 'mod-file-tree', key: 'pane' }, (await isOpen($, PANE)) || (await isOpen($, SETTINGS)))
-    await hydrate($)
-    // A hot reload leaves an open pane on its old drawing until something redraws it.
-    $.ui.invalidate('ui.render')
+    try {
+      await loadLook($)
+      await $.command.register({
+        name: 'mod-file-tree',
+        description: text.commandDescription,
+        argumentHint: '[settings|clear]',
+      })
+      await pruneTranscripts($)
+      // The bar entry reads this; an unload drops the pane without raising ui.close here.
+      await $.state.set({ plugin: 'mod-file-tree', key: 'pane' }, (await isOpen($, PANE)) || (await isOpen($, SETTINGS)))
+      await hydrate($)
+      // A hot reload leaves an open pane on its old drawing until something redraws it.
+      $.ui.invalidate('ui.render')
+    } catch {
+      // The tree stays as it was.
+    }
 
     return next(e)
   })
@@ -585,8 +615,12 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'mod-file-tree' }, async ($, e) => ({ text: await answer($, e.args) }))
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE || e.id === SETTINGS) {
-      await $.state.set({ plugin: 'mod-file-tree', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
+    try {
+      if (e.id === PANE || e.id === SETTINGS) {
+        await $.state.set({ plugin: 'mod-file-tree', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
+      }
+    } catch {
+      // The tree stays as it was.
     }
 
     return next(e)
@@ -615,42 +649,62 @@ export const register: Register = (on, options) => {
       if (e.tool !== 'Bash') return next(e)
       // A shell command's edits come back with its result, as Claude Code diffed them.
       const ran = await next(e)
-      const cwd = String((await $.session.cwd().catch(() => '')) ?? '')
-      const shells = shellPlans((ran as { result?: { bashEditDiff?: unknown } })?.result?.bashEditDiff, cwd)
-      if (shells.length > 0) {
-        await apply($, current => shells.reduce((each, shell) => commit(touch(each, shell.path, shell.kind), shell.path, shell.tool, shell.kind, shell.note, shell.lines), current))
-        for (const shell of shells) landed.set(shell.path, { at: Date.now(), seq: log!.seq })
+      try {
+        const cwd = String((await $.session.cwd().catch(() => '')) ?? '')
+        const shells = shellPlans((ran as { result?: { bashEditDiff?: unknown } })?.result?.bashEditDiff, cwd)
+        if (shells.length > 0) {
+          await apply($, current => shells.reduce((each, shell) => commit(touch(each, shell.path, shell.kind), shell.path, shell.tool, shell.kind, shell.note, shell.lines), current))
+          for (const shell of shells) landed.set(shell.path, { at: Date.now(), seq: log!.seq })
+        }
+      } catch {
+        // The tree stays as it was.
       }
       return ran
     }
 
-    await apply($, current => touch(current, plan.path, plan.kind))
+    try {
+      await apply($, current => touch(current, plan.path, plan.kind))
+    } catch {
+      // The tree stays as it was.
+    }
 
     const result = await next(e)
     const isFailed = typeof result === 'object' && result !== null && ('deny' in result || ('isError' in result && result.isError === true))
-    if (plan.kind !== 'read' && !isFailed) {
-      await apply($, current => commit(current, plan.path, plan.tool, plan.kind, plan.note, plan.lines))
-      landed.set(plan.path, { at: Date.now(), seq: log!.seq })
-      if (replayTurn === null) index = Math.max(0, stepsOfTurn(viewOf(log!), null).length - 1)
+    try {
+      if (plan.kind !== 'read' && !isFailed) {
+        await apply($, current => commit(current, plan.path, plan.tool, plan.kind, plan.note, plan.lines))
+        landed.set(plan.path, { at: Date.now(), seq: log!.seq })
+        if (replayTurn === null) index = Math.max(0, stepsOfTurn(viewOf(log!), null).length - 1)
+      }
+    } catch {
+      // The tree stays as it was.
     }
 
     return result
   })
 
   on('turn.start', async ($, e, next) => {
-    if (!(e as { agentId?: string }).agentId) {
-      opened = []
-      replayTurn = null
-      await apply($, current => ({ ...current, turn: current.turn + 1, working: true }))
+    try {
+      if (!(e as { agentId?: string }).agentId) {
+        opened = []
+        replayTurn = null
+        await apply($, current => ({ ...current, turn: current.turn + 1, working: true }))
+      }
+    } catch {
+      // The tree stays as it was.
     }
 
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId) {
-      if (replayTurn === null) index = 0
-      await apply($, current => ({ ...current, working: false }))
+    try {
+      if (!e.agentId) {
+        if (replayTurn === null) index = 0
+        await apply($, current => ({ ...current, working: false }))
+      }
+    } catch {
+      // The tree stays as it was.
     }
 
     return next(e)
@@ -658,13 +712,17 @@ export const register: Register = (on, options) => {
 
   // Only the settings hook event names the transcript. A compact keeps the same file and the log already holds it, so only a new transcript is read.
   on('classic.SessionStart', async ($, e, next) => {
-    if (e.session_id !== logSession || e.transcript_path !== transcript || !log) {
-      startLog(e.session_id, e.transcript_path)
-      await $.state.set({ plugin: 'mod-file-tree', key: 'cleared' }, cleared)
-      await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
-      // The state may hold another session's log, which this one must not reuse.
-      await $.state.set({ plugin: 'mod-file-tree', key: 'session' }, '')
-      await hydrate($)
+    try {
+      if (e.session_id !== logSession || e.transcript_path !== transcript || !log) {
+        startLog(e.session_id, e.transcript_path)
+        await $.state.set({ plugin: 'mod-file-tree', key: 'cleared' }, cleared)
+        await $.store.set(`transcript:${e.session_id}`, { path: e.transcript_path, at: await $.clock.now() })
+        // The state may hold another session's log, which this one must not reuse.
+        await $.state.set({ plugin: 'mod-file-tree', key: 'session' }, '')
+        await hydrate($)
+      }
+    } catch {
+      // The tree stays as it was.
     }
 
     return next(e)
@@ -720,31 +778,36 @@ export const register: Register = (on, options) => {
       tipShown = hover.isOver === true
       $.ui.invalidate('ui.render')
     }
-    const change = settingChoice(e.data)
-    if (change) await saveSetting($, change.key, change.value)
-    const message = e.data as EntryMessage
-    if (message?.type !== 'menu-entry') return next(e)
-    if (message.id === 'filetree') await openingPane($)
-    // The title line's tabs swap the panel and its settings; the open tab does nothing.
-    if (message.id === 'filetree-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
-    if (message.id === 'filetree-tab' && !(await isOpen($, PANE))) await togglePane($)
-    if (message.id === 'tab-tree' || message.id === 'tab-replay') {
-      mode = message.id === 'tab-tree' ? 'tree' : 'replay'
-      note = ''
-      $.ui.invalidate('ui.render')
-    }
-    if (message.id === 'scope-turn' || message.id === 'scope-recent' || message.id === 'scope-session') {
-      scope = message.id === 'scope-turn' ? 'turn' : message.id === 'scope-recent' ? 'recent' : 'session'
-      note = ''
-      $.ui.invalidate('ui.render')
-    }
-    if (message.id === 'fold-all' || message.id === 'unfold-all') foldAll($, viewOf(await hydrate($)), message.id === 'fold-all')
-    if (message.id === 'session-reveal') {
-      const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
-      await openFolder($, cwd, cwd.split('/').pop() || text.rootFallback)
-    }
-    if (message.id === 'replay-prev' || message.id === 'replay-next') {
-      walk($, message.id === 'replay-prev' ? -1 : 1, stepsOfTurn(viewOf(await hydrate($)), replayTurn).length)
+    try {
+      const change = settingChoice(e.data)
+      if (change) await saveSetting($, change.key, change.value)
+      const message = e.data as EntryMessage
+      if (message?.type === 'menu-entry') {
+        if (message.id === 'filetree') await openingPane($)
+        // The title line's tabs swap the panel and its settings; the open tab does nothing.
+        if (message.id === 'filetree-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
+        if (message.id === 'filetree-tab' && !(await isOpen($, PANE))) await togglePane($)
+        if (message.id === 'tab-tree' || message.id === 'tab-replay') {
+          mode = message.id === 'tab-tree' ? 'tree' : 'replay'
+          note = ''
+          $.ui.invalidate('ui.render')
+        }
+        if (message.id === 'scope-turn' || message.id === 'scope-recent' || message.id === 'scope-session') {
+          scope = message.id === 'scope-turn' ? 'turn' : message.id === 'scope-recent' ? 'recent' : 'session'
+          note = ''
+          $.ui.invalidate('ui.render')
+        }
+        if (message.id === 'fold-all' || message.id === 'unfold-all') foldAll($, viewOf(await hydrate($)), message.id === 'fold-all')
+        if (message.id === 'session-reveal') {
+          const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
+          await openFolder($, cwd, cwd.split('/').pop() || text.rootFallback)
+        }
+        if (message.id === 'replay-prev' || message.id === 'replay-next') {
+          walk($, message.id === 'replay-prev' ? -1 : 1, stepsOfTurn(viewOf(await hydrate($)), replayTurn).length)
+        }
+      }
+    } catch {
+      // The tree stays as it was.
     }
 
     return next(e)
@@ -753,17 +816,21 @@ export const register: Register = (on, options) => {
   // The list reports clicks on a row's text: a folder folds, a file opens its diff.
   on('ui.message', { requestId: PANE }, async ($, e, next) => {
     const message = e.data as ListMessage
-    if (message.type === 'select') {
-      const current = viewOf(await hydrate($))
-      const row = rowsOf(current, foldsOf(current), showReads)[message.index]
-      if (row?.isDir) fold($, current, row.key)
-      else if (row) await openDiff($, row.key)
-    }
-    if (message.type === 'open') {
-      const current = viewOf(await hydrate($))
-      const row = rowsOf(current, foldsOf(current), showReads)[message.index]
-      if (row?.isDir) await openFolder($, row.key)
-      else if (row) await openFile($, row.key)
+    try {
+      if (message?.type === 'select') {
+        const current = viewOf(await hydrate($))
+        const row = rowsOf(current, foldsOf(current), showReads)[message.index]
+        if (row?.isDir) fold($, current, row.key)
+        else if (row) await openDiff($, row.key)
+      }
+      if (message?.type === 'open') {
+        const current = viewOf(await hydrate($))
+        const row = rowsOf(current, foldsOf(current), showReads)[message.index]
+        if (row?.isDir) await openFolder($, row.key)
+        else if (row) await openFile($, row.key)
+      }
+    } catch {
+      // The tree stays as it was.
     }
 
     return next(e)

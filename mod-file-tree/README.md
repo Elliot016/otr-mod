@@ -57,10 +57,10 @@ Change them with `/mod-file-tree settings` or the gear pill.
 Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [doc-author]: https://github.com/v-amorim
-[doc-icons]: ../README.md#icons-and-nerd-fonts
-[doc-install]: ../README.md#install
-[doc-license]: ../LICENSE
-[doc-root]: ../README.md
+[doc-icons]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#icons-and-nerd-fonts
+[doc-install]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#install
+[doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
+[doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-file-tree-folded]: ../showcase/file-tree-folded.png
-[img-file-tree-panel]: ../showcase/file-tree-panel.png
+[img-file-tree-folded]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/file-tree-folded.png
+[img-file-tree-panel]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/file-tree-panel.png
