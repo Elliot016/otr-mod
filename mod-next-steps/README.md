@@ -64,9 +64,9 @@ Change them with `/mod-next-steps settings` or the gear pill.
 Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [doc-author]: https://github.com/v-amorim
-[doc-icons]: ../README.md#icons-and-nerd-fonts
-[doc-install]: ../README.md#install
-[doc-license]: ../LICENSE
-[doc-root]: ../README.md
+[doc-icons]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#icons-and-nerd-fonts
+[doc-install]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#install
+[doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
+[doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-next-steps]: ../showcase/next-steps.png
+[img-next-steps]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/next-steps.png
