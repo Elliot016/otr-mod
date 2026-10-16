@@ -11,6 +11,14 @@ Add-ons for the Claude Code terminal that add panels, safety checks and pills (s
 > [!WARNING]
 > Mods are not sandboxed: they run with your permissions.
 
+Not sure which ones you want? Start with mod-manager. It lists every mod, installs the ones you tick, turns them on and off, and tells you when there are updates. From your terminal:
+
+```sh
+claude plugin install mod-manager --marketplace v-amorim/moonlight-claude-mods
+```
+
+Then start Claude Code, and click Open setup on the card above the prompt, or the gear pill.
+
 One mod, inside Claude Code, using any name from [the list of mods][doc-mods]:
 
 ```text
@@ -50,7 +58,9 @@ One mod, inside Claude Code, using any name from [the list of mods][doc-mods]:
 
 </details>
 
-Each mod works alone. Add `mod-manager` too if you want the gear pill, which turns mods on and off and opens every mod's settings in one place.
+Each mod works alone. Add `mod-manager` too if you want the gear pill, which installs, turns on and off, and updates mods, and opens every mod's settings in one place.
+
+This marketplace doesn't update on its own. Claude Code turns auto-update on only for official marketplaces. mod-manager shows a card when mods have updates, or turn auto-update on in `/plugin`, under Marketplaces, then `claude-mods`.
 
 ## See them in action
 
@@ -69,7 +79,7 @@ Click a name for its screenshots, features and settings.
 | Mod | What it does | How to open it |
 | --- | --- | --- |
 | [`mod-menu`][doc-mod-menu] | The switch that hides or shows the pill row above the prompt, plus its hover tips; each panel mod draws its own pill | `/mod-menu` |
-| [`mod-manager`][doc-mod-manager] | Turns mods on and off and edits their settings | The gear pill, or `/mod-manager` |
+| [`mod-manager`][doc-mod-manager] | Installs, turns on and off, and updates mods, and edits their settings | The gear pill, or `/mod-manager` |
 | [`mod-skill-panel`][doc-mod-skill-panel] | Lists your skills and agents; a click adds one to the prompt | Skills pill |
 | [`mod-prompts`][doc-mod-prompts] | Every prompt of the session; jump back to any of them | Prompts pill |
 | [`mod-file-tree`][doc-mod-file-tree] | The files Claude read and changed, with a replay of each edit | Files pill |

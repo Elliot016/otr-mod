@@ -14,7 +14,7 @@
     {
       "name": "mod-manager",
       "source": "./mod-manager",
-      "description": "Lists every mod and toggles it on or off; a click on a mod opens its page with its settings, actions and features. Opens from the gear in the pill row"
+      "description": "Lists every mod, installs the ones you tick, turns them on or off and updates them, with a first-run card and an update card above the prompt; a click on a mod opens its page with its settings, actions and features. Opens from the gear in the pill row"
     },
     {
       "name": "mod-menu",
