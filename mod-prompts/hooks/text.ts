@@ -21,6 +21,7 @@ export default {
   "pageNextTip": "shows the next page of prompts",
   "tools": "{count} tools",
   "empty": "No prompts yet.",
+  "unreadable": "Could not read the transcript.",
   "cardNumber": "#{n}",
   "cardMore": "+{n} more lines",
   "page": "Page {page} of {pages} {sep} {from}–{to}",

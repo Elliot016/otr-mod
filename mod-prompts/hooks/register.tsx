@@ -135,6 +135,31 @@ function startList(session: string, path = '') {
   drawn.clear()
 }
 
+// A transcript path is kept with the time it was named; an older bare string counts as a path with no age yet.
+const pathOf = (kept: unknown) => {
+  const path = typeof kept === 'object' && kept !== null ? (kept as { path?: unknown }).path : kept
+  return typeof path === 'string' ? path : ''
+}
+
+const TRANSCRIPT_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+
+// Entries untouched for 30 days go; a bare string from an older version starts its clock now.
+async function pruneTranscripts($: EngineInterface) {
+  try {
+    const now = await $.clock.now()
+    for (const key of await $.store.keys()) {
+      if (!key.startsWith('transcript:')) continue
+      const kept = await $.store.get(key)
+      const at = typeof kept === 'object' && kept !== null ? Number((kept as { at?: unknown }).at) : NaN
+      if (Number.isFinite(at)) {
+        if (at < now - TRANSCRIPT_KEEP_MS) await $.store.delete(key)
+      } else if (typeof kept === 'string') await $.store.set(key, { path: kept, at: now })
+    }
+  } catch {
+    // Old entries stay until the next start.
+  }
+}
+
 // Asking the id on every row would cost a round trip each, so rows ask after a session.end, or once this long has passed.
 const SESSION_CHECK_MS = 500
 let sessionCheckedAt = 0
@@ -188,7 +213,7 @@ async function readMore($: EngineInterface) {
   if (isLoaded && !isStale) return
   const session = listSession
   isStale = false
-  const path = transcript || String((await $.store.get(`transcript:${session}`).catch(() => '')) ?? '') || (await findTranscript($))
+  const path = transcript || pathOf(await $.store.get(`transcript:${session}`).catch(() => '')) || (await findTranscript($))
   if (!path || session !== listSession) return
   transcript = path
   const { size } = await $.fs.stat(path).catch(() => ({ size: -1 }))
@@ -205,6 +230,7 @@ async function readMore($: EngineInterface) {
   // A failed read leaves the transcript unloaded until the file grows, so a draw does not read it again and again.
   if (!fresh) {
     failedSize = size
+    $.ui.invalidate('ui.render')
     return
   }
   carry = transcriptRows.append(carry + fresh)
@@ -381,12 +407,17 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
-    await loadLook($)
-    await $.command.register({ name: 'mod-prompts', description: text.commandDescription, argumentHint: '[settings]' })
-    // The bar entry reads this; an unload drops the pane without raising ui.close here.
-    await $.state.set({ plugin: 'mod-prompts', key: 'pane' }, await isOpen($))
-    // A hot reload leaves an open pane on its old drawing until something redraws it.
-    $.ui.invalidate('ui.render')
+    try {
+      await loadLook($)
+      await $.command.register({ name: 'mod-prompts', description: text.commandDescription, argumentHint: '[settings]' })
+      await pruneTranscripts($)
+      // The bar entry reads this; an unload drops the pane without raising ui.close here.
+      await $.state.set({ plugin: 'mod-prompts', key: 'pane' }, await isOpen($))
+      // A hot reload leaves an open pane on its old drawing until something redraws it.
+      $.ui.invalidate('ui.render')
+    } catch {
+      // The pane stays as it was.
+    }
 
     return next(e)
   })
@@ -395,7 +426,7 @@ export const register: Register = (on, options) => {
   on('classic.SessionStart', async ($, e, next) => {
     // A compact keeps the same session and transcript, and the prompts learned since the read are already here.
     if (e.session_id !== listSession || e.transcript_path !== transcript) startList(e.session_id, e.transcript_path)
-    await $.store.set(`transcript:${e.session_id}`, e.transcript_path)
+    await $.store.set(`transcript:${e.session_id}`, { path: e.transcript_path, at: await $.clock.now() }).catch(() => {})
 
     return next(e)
   })
@@ -446,7 +477,11 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-prompts', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
+    try {
+      if (e.id === PANE || e.id === SETTINGS) await $.state.set({ plugin: 'mod-prompts', key: 'pane' }, await isOpen($, e.id === PANE ? SETTINGS : PANE))
+    } catch {
+      // The pane stays as it was.
+    }
 
     return next(e)
   })
@@ -511,18 +546,22 @@ export const register: Register = (on, options) => {
       tipShown = hover.isOver === true
       $.ui.invalidate('ui.render')
     }
-    const message = e.data as EntryMessage
-    if (message?.type === 'menu-entry' && message.id === 'prompts') await openingPane($)
-    // The title line's tabs swap the sidebar and its settings; the open tab does nothing.
-    if (message?.type === 'menu-entry' && message.id === 'prompts-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
-    if (message?.type === 'menu-entry' && message.id === 'prompts-tab' && !(await isOpen($))) await togglePane($)
-    if (message?.type === 'menu-entry' && (message.id === 'prompts-page-prev' || message.id === 'prompts-page-next')) {
-      const shown = page < 0 ? Math.floor(Math.max(0, selected) / PAGE_SIZE) : page
-      page = Math.max(0, Math.min(pageCount - 1, shown + (message.id === 'prompts-page-next' ? 1 : -1)))
-      $.ui.invalidate('ui.render')
+    try {
+      const message = e.data as EntryMessage
+      if (message?.type === 'menu-entry' && message.id === 'prompts') await openingPane($)
+      // The title line's tabs swap the sidebar and its settings; the open tab does nothing.
+      if (message?.type === 'menu-entry' && message.id === 'prompts-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
+      if (message?.type === 'menu-entry' && message.id === 'prompts-tab' && !(await isOpen($))) await togglePane($)
+      if (message?.type === 'menu-entry' && (message.id === 'prompts-page-prev' || message.id === 'prompts-page-next')) {
+        const shown = page < 0 ? Math.floor(Math.max(0, selected) / PAGE_SIZE) : page
+        page = Math.max(0, Math.min(pageCount - 1, shown + (message.id === 'prompts-page-next' ? 1 : -1)))
+        $.ui.invalidate('ui.render')
+      }
+      const change = settingChoice(e.data)
+      if (change) await saveSetting($, change.key, change.value)
+    } catch {
+      // The pane stays as it was.
     }
-    const change = settingChoice(e.data)
-    if (change) await saveSetting($, change.key, change.value)
 
     return next(e)
   })
@@ -530,7 +569,7 @@ export const register: Register = (on, options) => {
   // The timeline reports a click on a stop, which opens that prompt.
   on('ui.message', { requestId: 'prompts' }, async ($, e, next) => {
     const message = e.data as TimelineMessage
-    if (message.type === 'select' && message.index !== selected) {
+    if (message?.type === 'select' && message.index !== selected) {
       selected = message.index
       $.ui.invalidate('ui.render')
     }
@@ -612,7 +651,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(text.hint, { sep: MARK.sep })}</Text>
-        {prompts.length === 0 ? <Text color={THEME.muted}>{text.empty}</Text> : null}
+        {prompts.length === 0 ? <Text color={THEME.muted}>{failedSize >= 0 ? text.unreadable : text.empty}</Text> : null}
         {current ? cardSpace({ Box }, CARD_ROWS) : null}
         {section({ Box, Text }, look, 'timeline', '', '', [
           before.length > 0 ? (

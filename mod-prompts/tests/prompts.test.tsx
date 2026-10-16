@@ -509,3 +509,81 @@ test('the transcript is looked up under CLAUDE_CONFIG_DIR when set', async ($, o
 test('without CLAUDE_CONFIG_DIR the transcript is looked up under ~/.claude as before', async ($, on) => {
   expect(await listedFolders($, on, { USERPROFILE: '/home/u' })).toContain('/home/u/.claude/projects')
 })
+
+test('a transcript that cannot be read says so instead of "No prompts yet."', async ($, on) => {
+  on('store.get', () => ({ value: { path: '/t/s3.jsonl', at: 0 } }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's3' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 100, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => {
+    throw new Error('unreadable')
+  })
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  mock.env(on, {})
+  mock.clock(on)
+  await $.command.run({ command: 'mod-prompts' } as never)
+  const ui = await paneOf($)
+  expect(await ui.find({ type: 'Text', text: 'Could not read the transcript.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'No prompts yet.' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('transcript paths untouched for 30 days are deleted at session start, a bare path from an older version gets an age', async ($, on) => {
+  const now = Date.UTC(2026, 9, 5, 16, 52)
+  const day = 24 * 60 * 60 * 1000
+  const store = new Map<string, unknown>([
+    ['transcript:stale', { path: '/t/old.jsonl', at: now - 31 * day }],
+    ['transcript:fresh', { path: '/t/new.jsonl', at: now - 29 * day }],
+    ['transcript:bare', '/t/bare.jsonl'],
+    ['other', 'kept'],
+  ])
+  on('store.keys', () => ({ value: [...store.keys()] }))
+  on('store.get', (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('store.delete', (_$, e) => {
+    store.delete(e.key)
+    return { value: undefined }
+  })
+  on('session.start', () => ({ cwd: '/w' }))
+  on('command.register', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [] }))
+  mock.env(on, {})
+  mock.clock(on, { now })
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  expect(store.has('transcript:stale')).toBe(false)
+  expect(store.get('transcript:fresh')).toEqual({ path: '/t/new.jsonl', at: now - 29 * day })
+  expect(store.get('transcript:bare')).toEqual({ path: '/t/bare.jsonl', at: now })
+  expect(store.get('other')).toBe('kept')
+})
+
+test('a store that fails on the transcript path still lets the session start and the list load', async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => {
+    throw new Error('store unavailable')
+  })
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: TRANSCRIPT }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+
+  expect(await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)).toEqual({})
+  await $.command.run({ command: 'mod-prompts' } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'Pane', requestId: 'prompts', props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } } as never)
+  expect(JSON.stringify(await ui.drawn({ in: 'prompts-tab' }))).toContain('3')
+  await ui.unmount()
+})
