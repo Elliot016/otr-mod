@@ -211,14 +211,14 @@ test('a click on the model name lists the models used before, and a pick switche
 
   // The current model leads, then the others in the order they were used; a model never seen before still shows.
   await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
-  // Each entry is a pill: the current one on surface3 with a green ✓ subpill, the others on surface2 with a blank as wide, so names line up.
+  // Each entry is a pill: the current one on surface3 with a green ✓ subpill, the others on surface2.
   const current = JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))
   expect(current).toContain('" ✓ "')
   expect(current).toContain('#A2B0EA')
   expect(current).toContain('" Opus 5.5 "')
   expect(current).toContain('#252A42')
   const other = JSON.stringify(await ui.drawn({ in: 'effort-model-1' }))
-  expect(other).toContain('"    Sonnet 5.5 "')
+  expect(other).toContain('" Sonnet 5.5 "')
   expect(other).toContain('#1C2033')
   expect(JSON.stringify(await ui.drawn({ in: 'effort-model-2' }))).toContain('Newmodel 6.0')
   const all = JSON.stringify(await ui.drawn({ in: 'effort-model-all' }))
@@ -657,4 +657,114 @@ test('the model menu card has no left strip, a neutral border and an accent-tint
   expect((await pane.find({ key: 'footer-space' }))?.props.flexShrink).toBe(0)
   expect(JSON.stringify(await pane.drawn())).toContain(`"backgroundColor":"${THEME.bg}"`)
   await pane.unmount()
+})
+
+const TIGHT = { ...(BAND as any), props: { ...(BAND as any).props, bodyColumns: 8 } } as never
+
+test('icons=nerd cuts the meter to its level when the row is wider than the band; hovering it does not open it inline', { options: { icons: 'nerd' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', () => ({ value: undefined }))
+  on('config.list', () => ({ value: [] }))
+  const wide = await $.ui.mount(BAND)
+  expect(JSON.stringify(await wide.drawn({ in: 'meter' }))).toContain(' Opus 5.5 ')
+  await wide.unmount()
+  const ui = await $.ui.mount(TIGHT)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).not.toContain('Opus')
+  await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'meter', type: 'move', x: 3, y: 0 })
+  // Hover posts its tip but never widens the pill: head and the one level only.
+  expect(children(await ui.drawn({ in: 'meter' })).filter(Boolean)).toHaveLength(4)
+  expect(await ui.find({ type: 'Text', text: ' shows the effort levels' })).toBeDefined()
+  expect(await ui.find({ key: 'effort-card' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a click on the compact meter opens the effort card with every level and a ×; × closes it', { options: { icons: 'nerd' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', () => ({ value: undefined }))
+  const ui = await $.ui.mount(TIGHT)
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ key: 'effort-card' })).toBeDefined()
+  const meter = JSON.stringify(await ui.drawn({ in: 'effort-card-meter' }))
+  for (const glyph of ['○ ', '◐ ', '● ', '◉ ', '◈ ']) expect(meter).toContain(glyph)
+  expect(meter).toContain(' Opus 5.5 ')
+  expect(await ui.find({ key: 'effort-card-close' })).toBeDefined()
+  expect(await ui.find({ key: 'effort-models' })).toBeUndefined()
+  // The card meter's hover names its level in the tip row.
+  await pointer(ui, { in: 'effort-card-meter', type: 'move', x: 1, y: 0 })
+  await pointer(ui, { in: 'effort-card-meter', type: 'move', x: 13, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' sets effort to medium' })).toBeDefined()
+  await pointer(ui, { in: 'effort-card-close', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ key: 'effort-card' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a level in the effort card sets it and closes the card; the model name opens the model menu in its place', { options: { icons: 'nerd' } }, async ($, on) => {
+  const files: Record<string, string> = { '/h/.claude/settings.json': JSON.stringify(SETTINGS, null, 2) + '\n' }
+  const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('fs.exists', (_$, e) => ({ value: neutral(e.path) in files }))
+  on('fs.read', (_$, e) => ({ value: files[neutral(e.path)] ?? '' }))
+  on('fs.write', (_$, e) => {
+    files[neutral(e.path)] = e.text
+    return { value: undefined }
+  })
+  on('settings.read', () => ({ value: JSON.parse(files['/h/.claude/settings.json']!) }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  mock.clock(on)
+  await firstRequest($, on, 'claude-opus-5-5', 'medium')
+  const ui = await $.ui.mount(TIGHT)
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 1, y: 0 })
+  // Nerd: cap 1 + ' Opus 5.5 ' 10 cells, so the fifth level sits at x 20.
+  await pointer(ui, { in: 'effort-card-meter', type: 'move', x: 20, y: 0 })
+  await pointer(ui, { in: 'effort-card-meter', type: 'down', button: 'left', x: 20, y: 0 })
+  expect(JSON.parse(files['/h/.claude/settings.json']!).modelSettings['claude-opus-5-5'].effortLevel).toBe('max')
+  expect(await ui.find({ key: 'effort-card' })).toBeUndefined()
+
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ key: 'effort-card' })).toBeDefined()
+  await pointer(ui, { in: 'effort-card-meter', type: 'down', button: 'left', x: 3, y: 0 })
+  expect(await ui.find({ key: 'effort-card' })).toBeUndefined()
+  expect(await ui.find({ key: 'effort-models' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the model menu draws on one line: every model, All models…, then ×', { options: { icons: 'safe' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', (_$: unknown, e: { key: string }) => ({ value: e.key === 'models' ? ['claude-opus-5-5', 'claude-sonnet-5-5'] : undefined }))
+  on('store.set', () => ({ value: undefined }))
+  const ui = await $.ui.mount(BAND)
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  const card = await ui.find({ key: 'effort-models' })
+  expect(card?.props.flexDirection).toBe('row')
+  const keys = children(card as object).filter(Boolean).map(child => (child as { props: { key?: string } }).props.key)
+  expect(keys).toEqual(['effort-model-0-pill', 'effort-model-1-pill', 'effort-model-all-pill', 'effort-model-close-pill'])
+  expect(await ui.find({ key: 'effort-models-head' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a model menu wider than the band stacks, with the × beside the first model', { options: { icons: 'safe' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', (_$: unknown, e: { key: string }) => ({ value: e.key === 'models' ? ['claude-opus-5-5', 'claude-sonnet-5-5'] : undefined }))
+  on('store.set', () => ({ value: undefined }))
+  const ui = await $.ui.mount({ ...(BAND as any), props: { ...(BAND as any).props, bodyColumns: 30 } } as never)
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
+  expect((await ui.find({ key: 'effort-models' }))?.props.flexDirection).toBe('column')
+  const head = children((await ui.find({ key: 'effort-models-head' })) as object).filter(Boolean).map(child => (child as { props: { key?: string } }).props.key)
+  expect(head).toEqual(['effort-model-0-pill', 'effort-model-close-pill'])
+  await ui.unmount()
+})
+
+test('safe mode keeps the model name however narrow', { options: { icons: 'safe' } }, async ($, on) => {
+  band(on as never)
+  on('store.get', () => ({ value: undefined }))
+  const ui = await $.ui.mount(TIGHT)
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(' Opus 5.5 ')
+  await ui.unmount()
 })

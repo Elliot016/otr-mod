@@ -7,10 +7,14 @@ import { LEVEL_LOOK, LEVELS } from './levels'
 import style from './style'
 import { CAPS, THEME } from './theme'
 
+// card: the meter drawn inside the effort card, always open and never compact. under: the fill behind its caps there.
 // still: the animations are off, so the levels switch at once. nerd: the meter draws its caps, so a pointer on one keeps the levels open.
-export type MeterProps = { effort: string | null; model: string; bg: string; still?: boolean; nerd?: boolean; tipModel: Tip; tipRest: Tip; tipLevels: Tip[] }
+export type MeterProps = { effort: string | null; model: string; bg: string; still?: boolean; nerd?: boolean; tipModel: Tip; tipRest: Tip; tipLevels: Tip[]; cells?: number; compact?: boolean; card?: boolean; under?: string }
 
-export type MeterMessage = { type: 'set'; effort: string } | { type: 'model-menu' }
+// The meter at rest: its caps on Nerd, the model name padded by one, then the current level and its space.
+export const meterCells = (model: string, nerd: boolean) => (nerd ? 2 : 0) + [...model].length + 2 + 2
+
+export type MeterMessage = { type: 'set'; effort: string } | { type: 'model-menu' } | { type: 'effort-card' }
 
 // The inside of the Moonlight-claude oh-my-posh model pill.
 const PILL_FG = style.colors.pills.readout
@@ -60,7 +64,9 @@ const wake = (surface: Parameters<ClientModule<MeterProps, Hover>>[1]) => {
 const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
   const reached = props.effort ? LEVELS.indexOf(props.effort as (typeof LEVELS)[number]) : -1
-  const head = ` ${props.model} `
+  // A compact meter never opens inline: a click opens the effort card instead.
+  const compact = Boolean(props.compact) && !props.card
+  const head = compact ? ' ' : ` ${props.model} ` // compact keeps one cell before the level, which still opens the model menu
   const start = (props.nerd ? 1 : 0) + head.length
 
   // The level under the pointer previews what a click would set: -1 on the model name, -2 off the pill.
@@ -71,14 +77,14 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   const goalNow = targets(litOf(props, hovered))
   if ((surface.state?.lights ?? goalNow).some((light, index) => light !== goalNow[index])) wake(surface)
   // At rest the pill shows only the current level; the pointer on it opens every level.
-  const isExpanded = hovered !== -2
+  const isExpanded = Boolean(props.card) || (!compact && hovered !== -2)
   surface.onPointer(event => {
     wake(surface)
     const slot = event.x - start
     // While folded the slots are not where they will be, so the first event only opens the meter.
     const level = event.type === 'leave' ? -2 : isExpanded && slot >= 0 && slot < LEVELS.length * 2 ? Math.floor(slot / 2) : -1
     const isClick = event.type === 'down' && event.button === 'left'
-    const isModel = slot < 0
+    const isModel = !compact && slot < 0
     const tipId = level === -2 ? null : level >= 0 ? `effort-level-${LEVELS[level]}` : isModel ? 'effort-model' : 'effort-rest'
     // One post lands per event, so a click posts its own message and the next move posts the tip.
     if (tipId !== (surface.state?.tipId ?? null) && !isClick) postTip(surface, tipId ?? 'effort-meter', tipId === null ? null : level >= 0 ? props.tipLevels[level]! : isModel ? props.tipModel : props.tipRest)
@@ -86,6 +92,10 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
     // The first fade step lands with the pointer, so the meter answers at once.
     const stepped = targets(litOf(props, level)).map((goal, index) => stepToward(lights[index] ?? 0, goal > 0))
     surface.setState({ ...surface.state, level, at: Date.now(), tipId: isClick ? (surface.state?.tipId ?? null) : tipId, lights: props.still ? targets(litOf(props, level)) : level !== hovered ? stepped : lights })
+    if (isClick && compact) {
+      surface.post({ type: 'effort-card' } satisfies MeterMessage)
+      return
+    }
     if (isClick && level >= 0) surface.post({ type: 'set', effort: LEVELS[level]! } satisfies MeterMessage)
     // The model name opens the model menu.
     if (isClick && level < 0 && isModel) surface.post({ type: 'model-menu' } satisfies MeterMessage)
@@ -94,7 +104,7 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
 
   return (
     <Box flexDirection="row">
-      {props.nerd ? <Text key="cap-left" color={props.bg}>{CAPS.left}</Text> : null}
+      {props.nerd ? <Text key="cap-left" color={props.bg} backgroundColor={props.under}>{CAPS.left}</Text> : null}
       <Text key="head" color={PILL_FG} backgroundColor={props.bg}>{head}</Text>
       {LEVELS.map((level, index) =>
         isExpanded || index === Math.max(reached, 0) ? (
@@ -103,7 +113,7 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
           </Text>
         ) : null,
       )}
-      {props.nerd ? <Text key="cap-right" color={props.bg}>{CAPS.right}</Text> : null}
+      {props.nerd ? <Text key="cap-right" color={props.bg} backgroundColor={props.under}>{CAPS.right}</Text> : null}
     </Box>
   )
 }

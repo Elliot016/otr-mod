@@ -3,12 +3,12 @@
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import { displayName, LEVEL_LOOK, LEVELS, withEffort, withModel } from './levels'
-import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
+import { entryCells, isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
-import type { MeterMessage } from './meter'
+import { meterCells, type MeterMessage } from './meter'
 import { settingChoice, settingsBody } from './settings'
 import { fill, MARK, statusColor, THEME } from './theme'
-import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { labelsOf, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import text from './text'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 
@@ -207,6 +207,9 @@ const hoveredLevel = () => (bandTip?.id?.startsWith('effort-level-') ? bandTip.i
 // The model menu above the pill, opened by a click on the model name.
 let isModelMenuOpen = false
 
+// The effort card above the pill, opened by a click on a compact meter.
+let isEffortCardOpen = false
+
 // Whether Claude is working, as the band's last draw saw it: `/model` run by a click would queue as a prompt.
 let isWorking = false
 
@@ -244,30 +247,56 @@ const menuEntry = ({ Box, Client, Text }: Elements, id: string, fill: string, en
 // A control glyph without the brackets and padding it carries as a Button label, for drawing as a subpill.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
-// The models used before, the current one on surface3 with a ✓ subpill, then the full picker; a card right-aligned over the pill.
-function modelMenu(elements: Elements, currentId: string) {
+// The models used before (the current one with a ✓), the full picker and ×: one line while it fits the band, else stacked.
+function modelMenu(elements: Elements, currentId: string, columns: number) {
   const { Box } = elements
   const ok = bare(look.glyph.ok)
-  // The others start with blanks as wide as the ✓ subpill, so every name lines up.
-  const blank = ' '.repeat([...ok].length + 2)
   // While Claude works a pick would queue as a prompt, so the entries draw muted and a click only says why.
   const live = !isWorking
-  const entries = menuModels.map((id, index) =>
+  // Stacked, the others start with blanks as wide as the ✓ subpill, so every name lines up.
+  const blank = ' '.repeat([...ok].length + 2)
+  const models: [string, string, Omit<EntryProps, 'id' | 'bg'>][] = menuModels.map((id, index) =>
     id === currentId
-      ? menuEntry(elements, `effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: live, idle: THEME.muted, subLead: ok, subLeadColor: THEME.ok, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } })
-      : menuEntry(elements, `effort-model-${index}`, THEME.surface2, { label: `${blank}${displayName(id)}`, isOpen: live, idle: THEME.muted, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }),
+      ? [`effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: live, idle: THEME.muted, subLead: ok, subLeadColor: THEME.ok, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }]
+      : [`effort-model-${index}`, THEME.surface2, { label: displayName(id), isOpen: live, idle: THEME.muted, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }],
   )
-  // The × closes the menu without a pick, as on a toast card; it shares the first entry's row.
-  const close = menuEntry(elements, 'effort-model-close', THEME.surface3, { label: bare(look.glyph.close), isOpen: false, tip: { glyph: bare(look.glyph.close), label: text.labelClose, text: text.tipModelClose } })
+  const all: [string, string, Omit<EntryProps, 'id' | 'bg'>] = ['effort-model-all', THEME.surface2, { label: text.allModels, isOpen: false, subLead: bare(look.glyph.go), tip: { glyph: bare(look.glyph.go), label: text.allModels, text: text.tipAll } }]
+  // The × closes the menu without a pick, as on a toast card.
+  const close: [string, string, Omit<EntryProps, 'id' | 'bg'>] = ['effort-model-close', THEME.surface3, { label: bare(look.glyph.close), isOpen: false, tip: { glyph: bare(look.glyph.close), label: text.labelClose, text: text.tipModelClose } }]
+  const line = [...models, all, close]
+  // Each pill is its entry plus two caps on Nerd; the card adds its border and padding, two cells a side.
+  const lineCells = line.reduce((sum, [id, bg, entry]) => sum + entryCells({ id, bg, nerd: look.nerd, ...entry }) + (look.nerd ? 2 : 0), line.length - 1 + 4)
+  const draw = ([id, bg, entry]: [string, string, Omit<EntryProps, 'id' | 'bg'>]) => menuEntry(elements, id, bg, entry)
+  const stacked = models.map(([id, bg, entry]) => draw([id, bg, entry.subLead ? entry : { ...entry, label: `${blank}${entry.label}` }]))
   return (
     <Box key="effort-models-row" flexDirection="row" justifyContent="flex-end">
-      <Box key="effort-models" flexDirection="column" alignItems="flex-start" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
-        <Box key="effort-models-head" flexDirection="row" columnGap={1}>
-          {entries[0] ?? null}
-          {close}
+      {lineCells <= columns ? (
+        <Box key="effort-models" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
+          {line.map(draw)}
         </Box>
-        {entries.slice(1)}
-        {menuEntry(elements, 'effort-model-all', THEME.surface2, { label: text.allModels, isOpen: false, subLead: bare(look.glyph.go), tip: { glyph: bare(look.glyph.go), label: text.allModels, text: text.tipAll } })}
+      ) : (
+        <Box key="effort-models" flexDirection="column" alignItems="flex-start" paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
+          <Box key="effort-models-head" flexDirection="row" columnGap={1}>
+            {stacked[0] ?? null}
+            {draw(close)}
+          </Box>
+          {stacked.slice(1)}
+          {draw(all)}
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+// The effort card above the pill row: the meter held open, then a × pill; opened by a click on a compact meter.
+function effortCard(elements: Elements, meterProps: Record<string, unknown>) {
+  const { Box, Client } = elements
+  const close = menuEntry(elements, 'effort-card-close', THEME.surface3, { label: bare(look.glyph.close), isOpen: false, tip: { glyph: bare(look.glyph.close), label: text.labelClose, text: text.tipCardClose } })
+  return (
+    <Box key="effort-card-row" flexDirection="row" justifyContent="flex-end">
+      <Box key="effort-card" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
+        <Client key="effort-card-meter" module="./meter.tsx" height={1} props={{ ...meterProps, card: true, compact: false, under: cardFill() }} />
+        {close}
       </Box>
     </Box>
   )
@@ -402,6 +431,12 @@ export const register: Register = (on, options) => {
       $.ui.invalidate('ui.render')
       return next(e)
     }
+    if (clicked?.type === 'menu-entry' && clicked.id === 'effort-card-close') {
+      isEffortCardOpen = false
+      bandTip = null
+      $.ui.invalidate('ui.render')
+      return next(e)
+    }
     if (clicked?.type === 'menu-entry' && clicked.id === 'effort-model-close') {
       isModelMenuOpen = false
       bandTip = null
@@ -423,14 +458,25 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     const message = e.data as MeterMessage
+    if (message?.type === 'effort-card') {
+      isEffortCardOpen = !isEffortCardOpen
+      isModelMenuOpen = false
+      bandTip = null
+      $.ui.invalidate('ui.render')
+    }
     if (message?.type === 'model-menu') {
+      isEffortCardOpen = false
       isModelMenuOpen = !isModelMenuOpen
       bandTip = null
       const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
       menuModels = withModel(await $.store.get('models'), current?.model ?? (await $.session.model().catch(() => undefined)))
       $.ui.invalidate('ui.render')
     }
-    if (message?.type === 'set') await setEffort($, message.effort)
+    if (message?.type === 'set') {
+      isEffortCardOpen = false
+      bandTip = null
+      await setEffort($, message.effort)
+    }
 
     return next(e)
   })
@@ -469,12 +515,16 @@ export const register: Register = (on, options) => {
     const modelId = shown?.model ?? (await $.session.model().catch(() => undefined))
     const model = displayName(modelId ?? '')
     const { group, row, rest, tip } = splitRow(await next(e))
-    const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: shown?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd, tipModel: { glyph: look.glyph.title, label: text.labelModel, text: text.tipModel }, tipRest: { glyph: look.glyph.title, label: text.paneName, text: text.tipRest }, tipLevels: LEVELS.map(level => ({ glyph: LEVEL_LOOK[level]!.glyph, label: text.paneName, text: fill(text.tipLevel, { level: (text.levelNames as Record<string, string>)[level]! }) })) }} />
+    // The pill row cuts the meter to its level when the row overflows; labels never always does.
+    const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
+    const fit = look.nerd && labels !== 'always' ? { cells: meterCells(model, look.nerd), compact: labels === 'never' } : {}
+    const meterProps = { effort: shown?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd, ...fit, tipModel: { glyph: look.glyph.title, label: text.labelModel, text: text.tipModel }, tipRest: { glyph: look.glyph.title, label: text.paneName, text: text.tipRest }, tipLevels: LEVELS.map(level => ({ glyph: LEVEL_LOOK[level]!.glyph, label: text.paneName, text: fill(text.tipLevel, { level: (text.levelNames as Record<string, string>)[level]! }) })) }
+    const meter = <Client key="meter" module="./meter.tsx" height={1} props={meterProps} />
     // The level word follows the pill, so it never moves the glyphs under the pointer.
     const shownWord = hoveredLevel() ?? flash
     const word = shownWord ? <Text key="menu-flash" color={LEVEL_LOOK[shownWord]?.color}>{(text.levelNames as Record<string, string>)[shownWord] ?? shownWord}</Text> : null
 
-    const menu = isModelMenuOpen ? [modelMenu({ Box, Client, Text }, modelId)] : []
+    const menu = isModelMenuOpen ? [modelMenu({ Box, Client, Text }, modelId, e.props.bodyColumns)] : isEffortCardOpen ? [effortCard({ Box, Client, Text }, meterProps)] : []
     return pillRow({ Box, Client, Text }, look.nerd, group, [...row, <Box key="menu-pill" flexDirection="row">{meter}</Box>, word], [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...rest, ...menu], bandTip?.id ? tipLine({ Box, Text }, tipText(bandTip)) : tip, e.props.bodyColumns)
   })
 

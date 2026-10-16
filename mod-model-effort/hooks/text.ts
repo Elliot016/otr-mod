@@ -14,6 +14,7 @@ export default {
   "tipLevel": "sets effort to {level}",
   "tipModelEntry": "switches to this model",
   "tipModelClose": "closes the model menu",
+  "tipCardClose": "closes the effort card",
   "tipAll": "opens the full model picker",
   "tipTab": "shows this mod's settings",
   "paneName": "Effort",
