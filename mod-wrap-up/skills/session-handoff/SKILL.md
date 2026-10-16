@@ -1,6 +1,7 @@
 ---
 name: session-handoff
-description: Write a concise continuation message so the user can /clear and keep working. Use when the user asks for a session handoff, a wrap-up, or wants to clear without losing the thread.
+description: Internal template for the wrap-up mod's handoff writer. The mod reads this file and runs it in a hidden fork; it is not meant to be invoked by the model.
+disable-model-invocation: true
 ---
 
 # session-handoff

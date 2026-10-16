@@ -229,15 +229,15 @@ export const relatedPrompt = (goal: string, handoff: string, message: string) =>
     '{ "related": true }  or  { "related": false }',
   ].join('\n')
 
-// A reply that is not clear carries over: losing the thread costs more than a stray handoff.
+// Only a clear "related": true carries the handoff over; a reply that is not clear starts fresh.
 export function parseRelated(reply: string) {
   const start = reply.indexOf('{')
   const end = reply.lastIndexOf('}')
-  if (start < 0 || end <= start) return true
+  if (start < 0 || end <= start) return false
   try {
-    return JSON.parse(reply.slice(start, end + 1))?.related !== false
+    return JSON.parse(reply.slice(start, end + 1))?.related === true
   } catch {
-    return true
+    return false
   }
 }
 

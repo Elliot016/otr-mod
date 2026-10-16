@@ -20,7 +20,7 @@ const BAND = (isWorking = false) =>
 
 // Stubs every op the flow reaches and records the order they were called in.
 // threads is Haiku's reply for the picker. The kit answers no $.ui.ask, so a picker that gets that far sees it dismissed.
-function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: '' }), messages: unknown[] = [], threads: unknown = answered) {
+function world(on: any, fork: unknown, runClear: ($: any) => unknown = () => ({ text: '' }), messages: unknown[] = [], threads: unknown = answered, fillThrows = false, fillFailsFirst = 0) {
   const calls: string[] = []
   const filled: string[] = []
   const forks: string[] = []
@@ -50,12 +50,14 @@ function world(on: any, fork: unknown, runClear: () => unknown = () => ({ text: 
     calls.push('fork')
     return { value: fork }
   })
-  on('command.run', (_$: unknown, e: { command: string }) => {
+  on('command.run', (_$: any, e: { command: string }) => {
     calls.push(`run:${e.command}`)
-    return runClear()
+    return runClear(_$)
   })
   on('prompt.fill', (_$: unknown, e: { text: string }) => {
     calls.push('fill')
+    if (fillThrows) throw new Error('prompt is gone')
+    if (calls.filter(call => call === 'fill').length <= fillFailsFirst) return { isFilled: false }
     filled.push(e.text)
     return { isFilled: true }
   })
@@ -287,6 +289,32 @@ test('a refused /clear falls back to /clear in the composer and keeps the handof
   await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
   await w.clock.advance(400)
   expect(w.filled).toEqual(['/clear', 'Goal: ship it.'])
+  await band.unmount()
+})
+
+test('a fill that throws after the clear is a "not filled" card, never an unhandled error', async ($, on) => {
+  const w = world(on, answered, () => ({ text: '' }), [], answered, true)
+  const band = await $.ui.mount(BAND())
+  await handOff(band)
+
+  expect(w.filled).toEqual([])
+  expect(await band.find({ type: 'Text', text: 'Cleared, but the handoff could not be filled in' })).toBeDefined()
+  await band.unmount()
+})
+
+test('a /clear whose session.end already filled the prompt gives no false "cleared, not filled" warning', async ($, on) => {
+  // The command's first retries fail, then session.end's later fill lands before the command's next try finds the handoff gone.
+  const w = world(on, answered, async () => {
+    await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+    return { text: '' }
+  }, [], answered, false, 2)
+  const band = await $.ui.mount(BAND())
+  const done = handOff(band)
+  for (let step = 0; step < 15; step++) await w.clock.advance(100)
+  await done
+
+  expect(w.filled).toEqual(['Goal: ship it.'])
+  expect(await band.find({ type: 'Text', text: /could not be filled in/ })).toBeUndefined()
   await band.unmount()
 })
 

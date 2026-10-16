@@ -85,12 +85,12 @@ Change them with `/mod-wrap-up settings` or the gear pill.
 Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [doc-author]: https://github.com/v-amorim
-[doc-icons]: ../README.md#icons-and-nerd-fonts
-[doc-install]: ../README.md#install
-[doc-license]: ../LICENSE
-[doc-root]: ../README.md
+[doc-icons]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#icons-and-nerd-fonts
+[doc-install]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#install
+[doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
+[doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-wrap-up-card]: ../showcase/wrap-up-card.png
-[img-wrap-up-carried]: ../showcase/wrap-up-carried.png
-[img-wrap-up-compact]: ../showcase/wrap-up-compact.png
-[img-wrap-up-countdown]: ../showcase/wrap-up-countdown.png
+[img-wrap-up-card]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/wrap-up-card.png
+[img-wrap-up-carried]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/wrap-up-carried.png
+[img-wrap-up-compact]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/wrap-up-compact.png
+[img-wrap-up-countdown]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/wrap-up-countdown.png

@@ -112,7 +112,7 @@ test('the compaction instructions keep what the person typed first, and the rest
 
 test('the restore steps aside only while a manual handoff is fresh; the relatedness reply and the switch parse', () => {
   expect([yieldsToManual(null, 1000), yieldsToManual(1000, 1500), yieldsToManual(1000, 999_999), yieldsToManual(2000, 1000)]).toEqual([false, true, false, false])
-  expect([parseRelated('{ "related": false }'), parseRelated('{ "related": true }'), parseRelated('maybe'), parseRelated('{ "related": "no" }')]).toEqual([false, true, true, true])
+  expect([parseRelated('{ "related": false }'), parseRelated('{ "related": true }'), parseRelated('maybe'), parseRelated('{ "related": "no" }')]).toEqual([false, true, false, false])
   expect([flip('carried'), flip('fresh')]).toEqual(['fresh', 'carried'])
 })
 
@@ -567,6 +567,27 @@ test('after a clear, an unrelated first prompt starts its own chain, leaves the 
   await $.prompt.submit({ text: 'back to the API', wait: false, origin: COMPOSER } as never)
   expect(w.submitted[1]?.[0]).toContain('HANDOFF-ONE')
   await band.unmount()
+})
+
+async function expectFreshStart($: any, on: any, reply: unknown) {
+  const w = world(on, autoFiles(), (system: string) => (system.includes('compare') ? reply : UPDATE('X')))
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+  w.flags.id = 's2'
+  await $.prompt.submit({ text: 'something else entirely', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[0]).toBeUndefined()
+  expect(saved(w).decisions[0].text).toBe('Use PostgreSQL, not MySQL')
+  expect(saved(w, 's2').decisions).toEqual([])
+  const band = await $.ui.mount(BAND as never)
+  expect(await band.find({ type: 'Text', text: 'Fresh start' })).toBeDefined()
+  await band.unmount()
+}
+
+test('after a clear, a failed relatedness call starts fresh and never carries the old handoff', { options: { icons: 'safe' } }, async ($, on) => {
+  await expectFreshStart($, on, { isAnswered: false, reason: 'api-error', status: 500, usage: USAGE })
+})
+
+test('after a clear, an unclear relatedness reply starts fresh and never carries the old handoff', { options: { icons: 'safe' } }, async ($, on) => {
+  await expectFreshStart($, on, { isAnswered: true, text: 'maybe', usage: USAGE })
 })
 
 test('two sessions in one folder keep separate ledgers: a new session never touches the running one, and each compaction carries its own handoff', async ($, on) => {

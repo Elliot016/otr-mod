@@ -166,13 +166,27 @@ async function fillPending($: EngineInterface) {
   return true
 }
 
+// Never throws: a failed read or fill counts as "not filled", so a timer or a command never fails on it.
 async function fillWithRetry($: EngineInterface) {
-  for (let tries = 0; tries < 10; tries++) {
-    if (await fillPending($)) return true
-    if (!isFresh(await $.store.get('pending'), await $.clock.now())) return false
-    await $.clock.sleep(200)
+  try {
+    for (let tries = 0; tries < 10; tries++) {
+      if (await fillPending($)) return true
+      if (!isFresh(await $.store.get('pending'), await $.clock.now())) return false
+      await $.clock.sleep(200)
+    }
+  } catch {
+    // The handoff stays in the store, so a later fill can still land.
   }
   return false
+}
+
+// True while a handoff still waits to be filled; false once a fill landed or it went stale.
+async function isPendingLeft($: EngineInterface) {
+  try {
+    return isFresh(await $.store.get('pending'), await $.clock.now())
+  } catch {
+    return true
+  }
 }
 
 // Haiku splits the session into threads the card can keep or drop; none when it fails or finds nothing to choose between.
@@ -287,7 +301,8 @@ async function startHandoff($: EngineInterface, scope: string) {
       say($, `${MARK.warn} ${text.clearFailed}`)
       return
     }
-    if (!(await fillWithRetry($))) say($, `${MARK.warn} ${text.clearedNotFilled}`)
+    // A /clear can reach session.end first, which fills the prompt itself: warn only when the handoff is still waiting.
+    if (!(await fillWithRetry($)) && (await isPendingLeft($))) say($, `${MARK.warn} ${text.clearedNotFilled}`)
   } catch (error) {
     say($, `${MARK.warn} ${String(error)}`)
   } finally {
@@ -494,7 +509,8 @@ async function decideAfterClear($: EngineInterface, prompt: string) {
   if (!dir || !ledger || !(ledger.handoff || ledger.goal)) return ''
   const reply = await $.model.complete({ model: 'sonnet', effort: 'low', system: RELATED_SYSTEM, prompt: relatedPrompt(ledger.goal, ledger.handoff, prompt), maxTokens: 100, timeoutMs: 20_000 }).catch(() => null)
   const id = await $.session.id()
-  if (!reply?.isAnswered || parseRelated(reply.text)) {
+  // Only a clear "related" carries the old handoff; an unsure answer starts fresh.
+  if (reply?.isAnswered && parseRelated(reply.text)) {
     await saveLedger($, dir, withSession(ledger, id))
     showChoice($, 'carried', ledger.goal)
     return ledger.handoff ? restoreContext(ledger.handoff, fileOf(dir)) : ''
@@ -731,7 +747,7 @@ export const register: Register = (on, options) => {
       carriedAt = null
     }
     if (e.reason === 'clear' && isFresh(await $.store.get('pending'), await $.clock.now())) {
-      $.clock.after(300, () => fillWithRetry($))
+      $.clock.after(300, () => fillWithRetry($).catch(() => undefined))
     }
 
     return next(e)
@@ -754,7 +770,7 @@ export const register: Register = (on, options) => {
       turnsSince += 1
       const isUpdate = autoOn && isDue(turnsSince, every)
       if (isUpdate) turnsSince = 0
-      if (autoOn) $.clock.after(0, () => void (isUpdate ? runAuto($) : Promise.resolve()).then(() => startCountdown($)))
+      if (autoOn) $.clock.after(0, () => void (isUpdate ? runAuto($) : Promise.resolve()).then(() => startCountdown($)).catch(() => undefined))
     }
 
     return next(e)
