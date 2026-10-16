@@ -32,7 +32,7 @@ Automatic.
 
 ## Features
 
-- **Shared log:** Each session records the files it edits in its own small file under ~/.claude/mod-collision-guard, so sessions never write over each other.
+- **Shared log:** Each session records the files it edits in its own small file under ~/.claude/mods-data/mod-collision-guard/sessions, so sessions never write over each other.
 - **Pause:** Before Edit, Write, MultiEdit or NotebookEdit, a question appears when another open session edited that file inside the window.
 - **Four ways out:** Proceed, move to a worktree (Claude calls EnterWorktree and redoes the edit there), cancel, or type an instruction for Claude.
 
@@ -52,9 +52,9 @@ Change them with `/mod-collision-guard settings` or the gear pill.
 Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [doc-author]: https://github.com/v-amorim
-[doc-icons]: ../README.md#icons-and-nerd-fonts
-[doc-install]: ../README.md#install
-[doc-license]: ../LICENSE
-[doc-root]: ../README.md
+[doc-icons]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#icons-and-nerd-fonts
+[doc-install]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#install
+[doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
+[doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-collision-guard]: ../showcase/collision-guard.png
+[img-collision-guard]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/collision-guard.png

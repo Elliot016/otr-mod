@@ -9,7 +9,7 @@ export type Edit = { path: string; session: string; at: number }
 export type Io = {
   read: (path: string) => Promise<unknown>
   write: (path: string, text: string) => Promise<void>
-  list: (path: string) => Promise<{ name: string; kind: string }[]>
+  list: (path: string) => Promise<{ name: string; kind: string; mtimeMs?: number }[]>
 }
 
 export const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
@@ -20,9 +20,9 @@ export const pathOf = (input: Record<string, unknown>) => {
   return typeof raw === 'string' && raw ? raw : ''
 }
 
-// One spelling per file: forward slashes, and case folded on a Windows drive path.
+// One spelling per file: forward slashes, git-bash `/c/` as `c:/`, and case folded on a Windows drive path.
 export const normalize = (path: string) => {
-  const flat = path.replace(/\\/g, '/').replace(/\/{2,}/g, '/')
+  const flat = path.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/([A-Za-z])\//, '$1:/')
   return /^[A-Za-z]:/.test(flat) ? flat.toLowerCase() : flat
 }
 
@@ -66,6 +66,8 @@ export async function findConflict(io: Io, dir: string, session: string, path: s
   let newest: Edit | undefined
   for (const entry of entries) {
     if (entry.kind !== 'file' || !entry.name.endsWith('.json') || entry.name === mine) continue
+    // Ended sessions leave their files behind; one not written inside the window holds no live edit, so it is never read.
+    if (entry.mtimeMs && now - entry.mtimeMs > windowMs) continue
     for (const edit of parseEdits(await io.read(`${dir}/${entry.name}`).catch(() => ''))) {
       if (edit.session === session || normalize(edit.path) !== target || now - edit.at > windowMs) continue
       if (!newest || edit.at > newest.at) newest = edit

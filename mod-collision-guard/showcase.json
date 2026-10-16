@@ -1,7 +1,7 @@
 {
   "tagline": "Two open sessions, one file: ask before the second edit lands",
   "features": [
-    { "title": "Shared log", "detail": "Each session records the files it edits in its own small file under ~/.claude/mod-collision-guard, so sessions never write over each other." },
+    { "title": "Shared log", "detail": "Each session records the files it edits in its own small file under ~/.claude/mods-data/mod-collision-guard/sessions, so sessions never write over each other." },
     { "title": "Pause", "detail": "Before Edit, Write, MultiEdit or NotebookEdit, a question appears when another open session edited that file inside the window." },
     { "title": "Four ways out", "detail": "Proceed, move to a worktree (Claude calls EnterWorktree and redoes the edit there), cancel, or type an instruction for Claude." }
   ],

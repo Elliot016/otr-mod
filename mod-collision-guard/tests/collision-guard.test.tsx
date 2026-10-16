@@ -17,6 +17,7 @@ const edit = (session: string, minutesAgo: number, path = FILE) => JSON.stringif
 function world(on: any, files: Record<string, string>, answerWith: string | (() => never) = 'Proceed', env: { configDir?: string; throws?: boolean } = {}) {
   const asked: { question: string; options: string[] }[] = []
   const ran: string[] = []
+  const mtimes: Record<string, number> = {}
   on('fs.read', (_$: unknown, e: { path: string }) => {
     const path = neutral(e.path)
     if (path.endsWith('/showcase.json')) return { value: JSON.stringify({ actions: [{ label: "Forget this session's recorded edits", command: 'mod-collision-guard', args: 'clear' }] }) }
@@ -29,7 +30,7 @@ function world(on: any, files: Record<string, string>, answerWith: string | (() 
   })
   on('fs.list', (_$: unknown, e: { path: string }) => {
     const dir = neutral(e.path).replace(/\/$/, '')
-    return { value: Object.keys(files).filter(path => path.startsWith(`${dir}/`)).map(path => ({ name: path.slice(dir.length + 1), kind: 'file', size: 0, mtimeMs: 0, isLink: false })) }
+    return { value: Object.keys(files).filter(path => path.startsWith(`${dir}/`)).map(path => ({ name: path.slice(dir.length + 1), kind: 'file', size: 0, mtimeMs: mtimes[path] ?? 0, isLink: false })) }
   })
   on('env.get', (_$: unknown, e: { name: string }) => {
     if (env.throws) throw new Error('env is gone')
@@ -47,7 +48,7 @@ function world(on: any, files: Record<string, string>, answerWith: string | (() 
     ran.push(`${e.tool} ${e.file_path ?? e.notebook_path}`)
     return { result: { text: 'ok' } }
   })
-  return { files, asked, ran, clock }
+  return { files, asked, ran, clock, mtimes }
 }
 
 const call = ($: any, tool = 'Edit', path = FILE) => $.tool.call(tool === 'NotebookEdit' ? { tool, notebook_path: path, new_source: 'x' } : { tool, file_path: path, old_string: 'a', new_string: 'b', content: 'b' })
@@ -101,6 +102,48 @@ test('Proceed runs the edit and records it', async ($, on) => {
   await call($)
   expect(w.ran).toEqual([`Edit ${FILE}`])
   expect(JSON.parse(w.files[`${DIR}/mine.json`]!)).toHaveLength(1)
+})
+
+test('after Proceed, later edits of that file run without asking', async ($, on) => {
+  const w = world(on, { [`${DIR}/other.json`]: edit('other', 4) }, 'Proceed')
+  await call($)
+  w.clock.advance(5 * MIN)
+  await call($, 'Write')
+  expect(w.asked).toHaveLength(1)
+  expect(w.ran).toHaveLength(2)
+})
+
+test('after Proceed, a newer edit by the other session asks again', async ($, on) => {
+  const w = world(on, { [`${DIR}/other.json`]: edit('other', 4) }, 'Proceed')
+  await call($)
+  w.files[`${DIR}/other.json`] = JSON.stringify([{ path: FILE, session: 'other', at: NOW + MIN }])
+  w.clock.advance(2 * MIN)
+  await call($)
+  expect(w.asked).toHaveLength(2)
+})
+
+test('a -p run has nobody to ask, so a collision lets the edit through', async ($, on) => {
+  const w = world(on, { [`${DIR}/other.json`]: edit('other', 4) }, 'Cancel')
+  on('session.start', () => ({ cwd: '/w' }) as never)
+  on('command.register', () => ({ value: undefined }) as never)
+  on('ui.panes', () => ({ value: [] }) as never)
+  await $.session.start({ cwd: '/w', surface: null, isInteractive: false } as never)
+  await call($)
+  expect(w.asked).toEqual([])
+  expect(w.ran).toEqual([`Edit ${FILE}`])
+})
+
+test('a git-bash /c/ path collides with the same C:/ path', async ($, on) => {
+  const w = world(on, { [`${DIR}/other.json`]: edit('other', 2, 'C:/Work/app.ts') })
+  await call($, 'Edit', '/c/work/app.ts')
+  expect(w.asked).toHaveLength(1)
+})
+
+test('a session file not written inside the window is never read', async ($, on) => {
+  const w = world(on, { [`${DIR}/other.json`]: edit('other', 4) })
+  w.mtimes[`${DIR}/other.json`] = NOW - 40 * MIN
+  await call($)
+  expect(w.asked).toEqual([])
 })
 
 test('Move to a worktree denies with an EnterWorktree instruction', async ($, on) => {

@@ -2,7 +2,7 @@
 // Wires the mod into the engine: checks edit tools for conflicts, asks, and draws its pane.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
-import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, pathOf, recordEdit, type Io } from './guard'
+import { agoText, clearOwn, clockText, EDIT_TOOLS, findConflict, normalize, pathOf, recordEdit, type Io } from './guard'
 import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
 import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
 import { pillRow, splitRow, tabRow, tipLine } from './pills'
@@ -17,6 +17,10 @@ let enabled = true
 let hovered: TipMessage | null = null
 const hoveredTip = (): Tip | null => (hovered?.id && hovered.label ? { glyph: hovered.glyph ?? '', label: hovered.label, text: hovered.text ?? '' } : null)
 let windowMinutes = 30
+// False for a `-p` run or the SDK, from session.start.
+let isInteractive = true
+// When the person last chose Proceed per file: quiet until another session edits it after that, so at most one window.
+const snoozed = new Map<string, number>()
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 const toasts = new ToastList('collisionguard')
@@ -148,16 +152,24 @@ const worktreeReason = (path: string) =>
 
 // The question, the dialog's choices and what each means for the call: undefined lets it run.
 async function decide($: EngineInterface, path: string, at: number, now: number) {
+  // A `-p` run has nobody to ask, and refusing would fail every collision in it.
+  if (!isInteractive) return undefined
+  const key = normalize(path)
+  const quiet = snoozed.get(key)
+  if (quiet !== undefined && at <= quiet) return undefined
   const question = fill(text.question, { path, ago: agoText(now - at), clock: clockText(at) })
   // Fire and forget: a refused notification must never touch the pause.
-  void Promise.resolve().then(() => $.ui.notify(fill(text.notifyPaused, { file: path.split(/[\/]/).pop() }), { title: text.notifyTitle })).catch(() => undefined)
+  void Promise.resolve().then(() => $.ui.notify(fill(text.notifyPaused, { file: path.split(/[\\/]/).pop() }), { title: text.notifyTitle })).catch(() => undefined)
   let picked = text.choiceCancel
   try {
     picked = await $.ui.ask(question, { options: CHOICES, header: text.askHeader })
   } catch {
-    // Dismissed, "Chat about this", or a run with nobody to ask: refuse, the safe answer.
+    // Dismissed or "Chat about this": refuse, the safe answer.
   }
-  if (picked === text.choiceProceed) return undefined
+  if (picked === text.choiceProceed) {
+    snoozed.set(key, now)
+    return undefined
+  }
   if (picked === text.choiceWorktree) return { deny: worktreeReason(path) }
   if (picked === text.choiceCancel) return { deny: `The user cancelled this edit of ${path} because another open session is editing it. Do not retry it; ask what to do instead.` }
   return { deny: `Another open session is editing ${path}. The user says: ${picked}` }
@@ -218,6 +230,8 @@ export const register: Register = (on, options) => {
   })
 
   enabled = options.enabled !== false
+  snoozed.clear()
+  isInteractive = true
   const minutes = Number(options.window_minutes)
   windowMinutes = minutes > 0 ? minutes : 30
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
@@ -225,6 +239,7 @@ export const register: Register = (on, options) => {
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
+    isInteractive = e.isInteractive !== false
     await loadLook($)
     await $.command.register({
       name: 'mod-collision-guard',
