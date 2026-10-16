@@ -178,6 +178,27 @@ test('safety: refuses itself, invalid JSON and leaves the file alone', async () 
   expect(Object.keys(files).some(path => path.endsWith('.bak'))).toBe(false)
 })
 
+test('a second toggle keeps the first backup', async () => {
+  const { io, files } = disk()
+  const original = files['/h/.claude/settings.json']!
+  await setEnabled(io, await byName(io, 'inst'), false)
+  await setEnabled(io, await byName(io, 'inst'), true)
+  expect(files['/h/.claude/settings.json.mod-manager.bak']).toBe(original)
+})
+
+test('an install record that is not a list is skipped instead of throwing', async () => {
+  const { io } = disk({ '/h/.claude/plugins/installed_plugins.json': JSON.stringify({ plugins: { 'bad@m': { scope: 'user' }, 'inst@m': [{ scope: 'user', installPath: '\\cache\\inst' }] } }) })
+  expect((await discover(io)).map(mod => mod.name)).toEqual(['alpha', 'beta', 'inst'])
+})
+
+test('plugin dirs from the process environment join the ones in settings', async () => {
+  const { io } = disk()
+  io.pluginDirs = async () => '~/.claude/mods/beta'
+  const found = await discover(io)
+  expect(found.find(mod => mod.name === 'beta')).toMatchObject({ source: 'dir', enabled: true })
+  expect(found.find(mod => mod.name === 'alpha')).toMatchObject({ enabled: true })
+})
+
 test('with a config dir set, discovery and toggles stay inside it and leave ~/.claude alone', async () => {
   const { io, files } = disk({
     '/cfg/settings.json': JSON.stringify({ enabledPlugins: {} }, null, 2) + '\n',
@@ -741,6 +762,45 @@ test('the icons switch shows Mixed when mods differ, and one click sets every mo
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: '· Mixed' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /Icons set to Nerd in 2 mods/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the icons switch skips a mod whose icons field is not the standard set', async ($, on) => {
+  const { files } = disk()
+  const values: Record<string, string> = { 'mod-manager.icons': 'auto', 'mod-alpha.icons': 'auto', 'mod-odd.icons': 'auto' }
+  const optionsOf = (key: string) => (key === 'mod-odd.icons' ? ['auto', 'plain'] : ['auto', 'nerd', 'safe'])
+  const rows = () => Object.entries(values).map(([key, value]) => ({ key, label: 'Icons', kind: 'select', value, options: optionsOf(key), description: 'd' }))
+  const saved: string[] = []
+  on('fs.read', (_$: unknown, e: { path: string }) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  on('fs.list', () => ({ value: [{ name: 'alpha', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('config.list', () => ({ value: rows() as never }))
+  on('config.set', ((_$: unknown, e: { key: string; value: string }) => {
+    saved.push(e.key)
+    values[e.key] = e.value
+    return { value: e.value }
+  }) as never)
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  await $.command.run({ command: 'mod-manager' } as never)
+  const ui = withPointer(await $.ui.mount({
+    plugin: 'mod-manager',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'manager',
+    props: { title: 'Mods', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  } as never))
+  await ui.pointer({ in: 'icons-nerd', type: 'down', button: 'left', x: 1, y: 0 })
+  await ui.redraw()
+  expect(saved).toEqual(['mod-alpha.icons', 'mod-manager.icons'])
   await ui.unmount()
 })
 

@@ -48,11 +48,11 @@ Change them with `/mod-manager settings` or the gear pill.
 Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [doc-author]: https://github.com/v-amorim
-[doc-icons]: ../README.md#icons-and-nerd-fonts
-[doc-install]: ../README.md#install
-[doc-license]: ../LICENSE
-[doc-root]: ../README.md
+[doc-icons]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#icons-and-nerd-fonts
+[doc-install]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#install
+[doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
+[doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-manager-icons-auto]: ../showcase/manager-icons-auto.png
-[img-manager-icons-plain]: ../showcase/manager-icons-plain.png
-[img-manager-page]: ../showcase/manager-page.png
+[img-manager-icons-auto]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/manager-icons-auto.png
+[img-manager-icons-plain]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/manager-icons-plain.png
+[img-manager-page]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/manager-page.png

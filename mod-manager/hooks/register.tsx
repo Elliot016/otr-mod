@@ -24,6 +24,7 @@ const ioOf = ($: EngineInterface): Io => ({
   read: path => $.fs.read(path),
   write: (path, text) => $.fs.write(path, text),
   list: path => $.fs.list(path),
+  pluginDirs: async () => (await $.env.get('CLAUDE_CODE_PLUGIN_DIRS')) ?? '',
   home: async () => (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '',
 })
 
@@ -242,7 +243,12 @@ const COUNT_WASH = 0.72
 // A control glyph without the brackets and padding it carries as a Button label.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
-const iconRowsOf = async ($: EngineInterface) => (await $.config.list()).filter(row => row.key.startsWith('mod-') && row.key.endsWith('.icons'))
+// A mod follows the standard when its icons field offers exactly auto, nerd and safe.
+const followsStandard = (options: readonly string[] | undefined) =>
+  Array.isArray(options) && options.length === ICON_MODES.length && ICON_MODES.every(mode => options.includes(mode))
+
+const iconRowsOf = async ($: EngineInterface) =>
+  (await $.config.list()).filter(row => row.key.startsWith('mod-') && row.key.endsWith('.icons') && followsStandard(row.options))
 
 async function setAllIcons($: EngineInterface, mode: string) {
   const rows = await iconRowsOf($)
@@ -401,11 +407,11 @@ export const register: Register = (on, options) => {
   on('ui.message', { requestId: 'manager' }, async ($, e, next) => {
     const message = e.data as ListMessage
     // A click posts only its own message, so a toggle also says which row the pointer is on.
-    if (message.type === 'toggle') {
+    if (message?.type === 'toggle') {
       hovering = message.index
       await queueToggle($, message.index)
     }
-    if (message.type === 'select') {
+    if (message?.type === 'select') {
       hovering = -1
       paneTip = null
       openPage($, message.index)

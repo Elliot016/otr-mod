@@ -9,6 +9,8 @@ export type Io = {
   write: (path: string, text: string) => Promise<void>
   list: (path: string) => Promise<{ name: string; kind: string }[]>
   home: () => Promise<string>
+  // CLAUDE_CODE_PLUGIN_DIRS from the process environment, beside the one in settings.json.
+  pluginDirs?: () => Promise<string>
   // CLAUDE_CONFIG_DIR when set, else ~/.claude.
   config: () => Promise<string>
 }
@@ -122,9 +124,10 @@ export async function discover(io: Io): Promise<ModInfo[]> {
   const home = await homeDir(io)
   const claudeDir = slashes(await io.config())
   const settings = (await readJson(io, `${claudeDir}/settings.json`)) ?? {}
-  const active = splitDirs(String(settings.env?.CLAUDE_CODE_PLUGIN_DIRS ?? ''), separatorFor(home)).map(entry =>
-    expand(entry, home),
-  )
+  const separator = separatorFor(home)
+  const fromProcess = splitDirs(String((await io.pluginDirs?.().catch(() => '')) ?? ''), separator)
+  const fromSettings = splitDirs(String(settings.env?.CLAUDE_CODE_PLUGIN_DIRS ?? ''), separator)
+  const active = [...new Set([...fromSettings, ...fromProcess].map(entry => expand(entry, home)))]
 
   const roots = new Set(active)
   for (const entry of await io.list(`${claudeDir}/mods`).catch(() => [])) {
@@ -133,7 +136,7 @@ export async function discover(io: Io): Promise<ModInfo[]> {
 
   // A folder installed from the local marketplace loads in place: its installed entry is the one that loads and toggles.
   const installed = await readJson(io, `${claudeDir}/plugins/installed_plugins.json`)
-  const entries = Object.entries<any[]>(installed?.plugins ?? {}).map(([id, list]) => ({ id, entry: list.find(candidate => candidate.scope === 'user') ?? list[0] }))
+  const entries = Object.entries<any[]>(installed?.plugins ?? {}).map(([id, list]) => ({ id, entry: Array.isArray(list) ? (list.find(candidate => candidate?.scope === 'user') ?? list[0]) : undefined }))
   const same = (a: string, b: string) => slashes(a).replace(/\/+$/, '').toLowerCase() === slashes(b).replace(/\/+$/, '').toLowerCase()
   const isOwnPath = (path: string) => slashes(path).toLowerCase().startsWith(`${claudeDir}/mods/`.toLowerCase())
 
@@ -224,7 +227,10 @@ export async function setEnabled(io: Io, mod: ModInfo, enabled: boolean): Promis
   const out = JSON.stringify(after, null, indent) + '\n'
   if (!untouched(before, JSON.parse(out), edited)) return refuse(shown.refuseOtherSettings)
 
-  await io.write(`${path}.mod-manager.bak`, text)
+  // The first backup is the one worth keeping: later writes never replace it.
+  const backup = `${path}.mod-manager.bak`
+  const hasBackup = await io.read(backup).then(() => true, () => false)
+  if (!hasBackup) await io.write(backup, text)
   await io.write(path, out)
   return mod.source === 'dir' ? { ok: true, needsRestart } : { ok: true }
 }
