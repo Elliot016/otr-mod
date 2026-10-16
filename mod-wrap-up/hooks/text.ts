@@ -48,6 +48,11 @@ export default {
     "auto": "Auto",
     "autoCompact": "Auto handoff"
   },
+  "menu": {
+    "hint": "pick one, or {close} to close",
+    "close": "Close",
+    "tipClose": "closes this menu, changes nothing"
+  },
   "card": {
     "title": "pick what stays",
     "hint": "click a line to keep or drop it",

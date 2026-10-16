@@ -6,8 +6,8 @@ import { AUTO_SYSTEM, autoPrompt, capWords, clampCompactAt, clampCompactTokens, 
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
 import { cardFill, detectNerd, FOOTER_ROWS, heading, lookFor, paneFooter, subpill, type IconMode, withMark } from './look'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
-import type { ChoiceProps } from './choice'
-import { PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
+import { choiceCells, type ChoiceProps } from './choice'
+import { labelsOf, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { actionReveals, settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
 import text from './text'
@@ -63,6 +63,8 @@ type Mode = 'handoff' | 'compact'
 type Card = { mode: Mode; threads: Thread[] | null; kept: boolean[]; also: Record<AlsoId, boolean>; token: number }
 
 let card: Card | null = null
+// The choices card a pill cut to its icon opens above the row.
+let isMenuOpen = false
 let cardToken = 0
 let actions: Action[] = []
 let previews: Previews | undefined
@@ -567,6 +569,26 @@ type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => Re
 // A control glyph without the brackets and padding it carries as a Button label, for drawing as a subpill.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
+// The pill cut to its icon opens its choices here: one pill of the three side by side, then a × pill, right-aligned over the row.
+function menuCard({ Box, Client, Text }: Elements, options: { id: string; label: string; tip: Tip }[], isIdle: boolean) {
+  const bg = THEME.surface3
+  const entry = (id: string, label: string, isOpen: boolean, tip: Tip) =>
+    <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen, bg, nerd: look.nerd, still, idle: THEME.muted, tip } satisfies EntryProps} />
+  const entries = options.flatMap((option, at) => [
+    ...(at === 0 ? [] : [<Client key={`wrap-up-menu-rail-${at}`} module="./entry.tsx" height={1} props={{ id: `wrap-up-menu-rail-${at}`, label: '', isOpen: false, bg, rail: true } satisfies EntryProps} />]),
+    entry(option.id, option.label, isIdle, option.tip),
+  ])
+  const close = bare(look.glyph.close)
+  return (
+    <Box key="wrap-up-menu-row" flexDirection="row" justifyContent="flex-end">
+      <Box key="wrap-up-menu" flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={cardFill()}>
+        {pill({ Box, Text }, look.nerd, bg, entries, 'wrap-up-menu-group', cardFill())}
+        {pill({ Box, Text }, look.nerd, bg, entry('wrap-up-menu-close', close, false, { glyph: close, label: text.menu.close, text: text.menu.tipClose }), 'wrap-up-menu-close-pill', cardFill())}
+      </Box>
+    </Box>
+  )
+}
+
 // The band card: each thread and each "also keep" item a line that keeps or drops itself on a click, then what the go does.
 function cardBox({ Box, Client, Text }: Elements, picked: Card) {
   // A kept item is a surface3 pill, a dropped one surface2 and muted; its mark leads as a subpill, so the state shows by mark and by text.
@@ -841,6 +863,10 @@ export const register: Register = (on, options) => {
       { id: 'wrap-up-compact', label: text.choice.compact },
       { id: 'wrap-up-auto', label: `${autoGlyph} ${text.choice.auto}` },
     ]
+    // The pill row cuts the pill to its icon when the row overflows; labels never draws the icon alone.
+    const labels = labelsOf((await $.state.get({ plugin: 'mod-menu', key: 'labels' })).value)
+    const icon = look.nerd ? look.glyph.icon.wrapup : undefined
+    const fit = icon && labels !== 'always' ? { icon, cells: choiceCells(text.label, look.nerd), compact: labels === 'never' } : {}
     const body = isRunning ? (
       // Writing takes a model call; the shimmer shows it is still on its way.
       <Box key="wrap-up-running-pad">
@@ -849,12 +875,20 @@ export const register: Register = (on, options) => {
     ) : (
       // Like the effort pill, the pointer opens the options and lifts the one under it, all inside the Client, so nothing waits on a redraw.
       <Box key="wrap-up-choice-pad">
-        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, bg: PILL.secondary, nerd: look.nerd, isIdle, still, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }, { glyph: autoGlyph, label: text.choice.autoCompact, text: autoTip() }] } satisfies ChoiceProps} />
+        <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, isMenuOpen, bg: PILL.secondary, nerd: look.nerd, isIdle, still, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }, { glyph: autoGlyph, label: text.choice.autoCompact, text: autoTip() }], ...fit } satisfies ChoiceProps} />
       </Box>
     )
-    const cards = [...counting, ...(choice ? [choiceCard({ Box, Client, Text }, choice)] : []), ...(card ? [cardBox({ Box, Client, Text }, card)] : [])]
+    const menu = isMenuOpen && !isRunning
+    const menuOptions = [
+      { ...options[0]!, tip: { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff } },
+      { ...options[1]!, tip: { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact } },
+      { ...options[2]!, tip: { glyph: autoGlyph, label: text.choice.autoCompact, text: autoTip() } },
+    ]
+    const cards = [...counting, ...(choice ? [choiceCard({ Box, Client, Text }, choice)] : []), ...(card ? [cardBox({ Box, Client, Text }, card)] : []), ...(menu ? [menuCard({ Box, Client, Text }, menuOptions, isIdle)] : [])]
+    const menuHint = `${text.label}: ${fill(text.menu.hint, { close: bare(look.glyph.close) })}`
+    const shownTip = bandTip?.id ? tipLine({ Box, Text }, tipText(bandTip)) : menu ? tipLine({ Box, Text }, menuHint) : tip
 
-    return pillRow({ Box, Client, Text }, look.nerd, group, [...row, isRunning ? pill({ Box, Text }, look.nerd, PILL.secondary, body, 'wrap-up-pill') : <Box key="wrap-up-pill" flexDirection="row">{body}</Box>], [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...cards, ...rest], bandTip?.id ? tipLine({ Box, Text }, tipText(bandTip)) : tip, e.props.bodyColumns)
+    return pillRow({ Box, Client, Text }, look.nerd, group, [...row, isRunning ? pill({ Box, Text }, look.nerd, PILL.secondary, body, 'wrap-up-pill') : <Box key="wrap-up-pill" flexDirection="row">{body}</Box>], [...toastCards({ Box, Client, Text }, toasts, look, text.tipToast), ...cards, ...rest], shownTip, e.props.bodyColumns)
   })
 
   on('ui.message', async ($, e, next) => {
@@ -877,7 +911,15 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type !== 'menu-entry') return next(e)
-    const isChoice = message.id === 'wrap-up-entry' || message.id === 'wrap-up-handoff' || message.id === 'wrap-up-compact' || message.id === 'wrap-up-auto'
+    const picksFromMenu = message.id === 'wrap-up-handoff' || message.id === 'wrap-up-compact' || message.id === 'wrap-up-auto'
+    const wasMenuOpen = isMenuOpen
+    if (message.id === 'wrap-up-menu-close' || picksFromMenu) isMenuOpen = false
+    if (message.id === 'wrap-up-entry-open') isMenuOpen = !isMenuOpen && !working
+    if (wasMenuOpen !== isMenuOpen) {
+      bandTip = null
+      $.ui.invalidate('ui.render')
+    }
+    const isChoice = message.id === 'wrap-up-entry' || message.id === 'wrap-up-entry-open' || message.id === 'wrap-up-handoff' || message.id === 'wrap-up-compact' || message.id === 'wrap-up-auto'
     if (isChoice && working) $.ui.toast(text.claudeWorkingPill)
     else if (message.id === 'wrap-up-handoff') openCard($, 'handoff')
     else if (message.id === 'wrap-up-compact') openCard($, 'compact')

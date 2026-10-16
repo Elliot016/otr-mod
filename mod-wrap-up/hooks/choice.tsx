@@ -10,7 +10,10 @@ import { CAPS, THEME } from './theme'
 // mode: the id of the option the open card is in, drawn lifted and keeping the pill open; isIdle false mutes it while Claude works.
 // still: the animations setting is off, so an option's hover color switches at once.
 // The pill's own caps are drawn here too, so the pointer on a cap is still on the pill and the options stay open.
-export type ChoiceProps = { id: string; label: string; options: { id: string; label: string }[]; mode: string | null; bg: string; nerd: boolean; isIdle: boolean; tips: Tip[]; still?: boolean }
+export type ChoiceProps = { id: string; label: string; options: { id: string; label: string }[]; mode: string | null; bg: string; nerd: boolean; isIdle: boolean; tips: Tip[]; still?: boolean; icon?: string; cells?: number; compact?: boolean; isMenuOpen?: boolean }
+
+// The pill at rest: its caps on Nerd, then the label padded by one.
+export const choiceCells = (label: string, nerd: boolean) => (nerd ? 2 : 0) + [...label].length + 2
 
 // A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
 const HOVER_QUIET_MS = 5000
@@ -65,8 +68,10 @@ const startFade = (surface: Parameters<ClientModule<ChoiceProps, Hover>>[1]) => 
 const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
   const over = surface.state?.over ?? -2
-  const isExpanded = props.isIdle && (over !== -2 || props.mode !== null)
-  const head = ` ${props.label} `
+  // Cut to its icon the pill does not widen, the options open as a card above the row instead.
+  const isFolded = props.compact === true
+  const isExpanded = !isFolded && props.isIdle && (over !== -2 || props.mode !== null)
+  const head = ` ${props.compact && props.icon ? props.icon : props.label} `
 
   if (!surface.state) surface.setState({ over: -2, at: 0 })
 
@@ -93,7 +98,7 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
     surface.setState({ over: next, at: Date.now(), tipId: isClick ? (surface.state?.tipId ?? null) : tipId, levels })
     if (!props.still && levels.some((level, index) => level > 0 && index !== next)) startFade(surface)
     if (!isClick) return
-    surface.post({ type: 'menu-entry', id: next >= 0 ? props.options[next]!.id : props.id } satisfies EntryMessage)
+    surface.post({ type: 'menu-entry', id: isFolded ? `${props.id}-open` : next >= 0 ? props.options[next]!.id : props.id } satisfies EntryMessage)
   })
 
   const option = (index: number) => {
@@ -112,7 +117,7 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
   return (
     <Box flexDirection="row">
       {props.nerd ? <Text key="cap-left" color={props.bg}>{CAPS.left}</Text> : null}
-      <Text key="head" color={props.isIdle ? (isExpanded ? THEME.muted : THEME.onSurface) : THEME.muted} backgroundColor={props.bg}>{head}</Text>
+      <Text key="head" color={props.isIdle ? (isExpanded ? THEME.muted : THEME.onSurface) : THEME.muted} bold={isFolded && props.isMenuOpen === true} backgroundColor={isFolded && props.isMenuOpen === true ? THEME.lifted : props.bg}>{head}</Text>
       {isExpanded ? props.options.map((_, index) => option(index)) : null}
       {props.nerd ? <Text key="cap-right" color={props.bg}>{CAPS.right}</Text> : null}
     </Box>

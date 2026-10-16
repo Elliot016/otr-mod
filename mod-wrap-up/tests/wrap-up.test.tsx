@@ -371,6 +371,94 @@ test('on auto the saved icons draw while the font is read beside session.start, 
   await band.unmount()
 })
 
+test('icons=nerd cuts the pill to its archive icon when the row is wider than the band', { options: { icons: 'nerd' } }, async ($, on) => {
+  world(on, answered)
+  const narrow = BAND()
+  const band = await $.ui.mount({ ...narrow, props: { ...narrow.props, bodyColumns: 6 } } as never)
+  expect(await label(band, 'wrap-up-entry')).toContain(`" ${String.fromCodePoint(0xf187)} "`)
+  await band.unmount()
+})
+
+const narrowBand = async ($: any, isWorking = false) => {
+  const base = BAND(isWorking)
+  return $.ui.mount({ ...base, props: { ...base.props, bodyColumns: 6 } } as never)
+}
+
+test('a pill cut to its icon does not expand on hover, and the hover still posts the head tip', { options: { icons: 'nerd' } }, async ($, on) => {
+  world(on, answered)
+  const band = await narrowBand($)
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-entry' } as never)
+  expect(await label(band, 'wrap-up-entry')).not.toContain(' Handoff ')
+  expect(await band.find({ type: 'Text', text: ' offers to hand off to a fresh session, or compact this one' })).toBeDefined()
+  expect(await band.find({ key: 'wrap-up-menu' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('a click on the icon pill opens the choices card above the row; a choice runs as before and closes it', { options: { icons: 'nerd' } }, async ($, on) => {
+  world(on, answered)
+  const band = await narrowBand($)
+  await click(band, 'wrap-up-entry')
+  expect(await band.find({ key: 'wrap-up-menu' })).toBeDefined()
+  for (const id of ['wrap-up-handoff', 'wrap-up-compact', 'wrap-up-auto', 'wrap-up-menu-close']) expect(await band.find({ key: id })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'Wrap up:' })).toBeDefined()
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-compact' } as never)
+  expect(await band.find({ type: 'Text', text: ' opens the pick card to fill a /compact' })).toBeDefined()
+  await click(band, 'wrap-up-compact')
+  expect(await band.find({ key: 'wrap-up-menu' })).toBeUndefined()
+  expect(await band.find({ key: 'wrap-up-card' })).toBeDefined()
+  await band.unmount()
+})
+
+test('the x closes the choices card and runs nothing', { options: { icons: 'nerd' } }, async ($, on) => {
+  const w = world(on, answered)
+  const band = await narrowBand($)
+  await click(band, 'wrap-up-entry')
+  await click(band, 'wrap-up-menu-close')
+  expect(await band.find({ key: 'wrap-up-menu' })).toBeUndefined()
+  expect(await band.find({ key: 'wrap-up-card' })).toBeUndefined()
+  expect(w.calls).toEqual([])
+  await click(band, 'wrap-up-entry')
+  await click(band, 'wrap-up-entry')
+  expect(await band.find({ key: 'wrap-up-menu' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('while Claude works the icon pill opens no choices card, a click explains', { options: { icons: 'nerd' } }, async ($, on) => {
+  const w = world(on, answered)
+  on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
+  await $.turn.start({ turnId: 't1' } as never)
+  const band = await narrowBand($, true)
+  await click(band, 'wrap-up-entry')
+  expect(await band.find({ key: 'wrap-up-menu' })).toBeUndefined()
+  expect(await band.find({ type: 'Text', text: 'Claude is working, Wrap up is available once it is idle' })).toBeDefined()
+  expect(w.calls).toEqual([])
+  await band.unmount()
+})
+
+test('with full labels a click on the head and hover still expand inline, never the card', { options: { icons: 'nerd' } }, async ($, on) => {
+  world(on, answered)
+  const band = await $.ui.mount(BAND())
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-entry' } as never)
+  expect(await label(band, 'wrap-up-entry')).toContain(' Handoff ')
+  await click(band, 'wrap-up-entry')
+  expect(await band.find({ key: 'wrap-up-menu' })).toBeUndefined()
+  await band.unmount()
+})
+
+test('labels never draws the archive icon alone, and labels always keeps the label however narrow', { options: { icons: 'nerd' } }, async ($, on) => {
+  world(on, answered)
+  let labels = 'never'
+  on('state.get', (_$: unknown, e: { plugin: string; key: string }) => ({ value: { value: e.plugin === 'mod-menu' && e.key === 'labels' ? labels : undefined } }))
+  const band = await $.ui.mount(BAND())
+  expect(await label(band, 'wrap-up-entry')).toContain(`" ${String.fromCodePoint(0xf187)} "`)
+  await band.unmount()
+  labels = 'always'
+  const narrow = BAND()
+  const wide = await $.ui.mount({ ...narrow, props: { ...narrow.props, bodyColumns: 6 } } as never)
+  expect(await label(wide, 'wrap-up-entry')).toContain('" Wrap up "')
+  await wide.unmount()
+})
+
 test('icons=nerd keeps the Wrap up labels plain, with no icon', { options: { icons: 'nerd' } }, async ($, on) => {
   world(on, answered)
   const band = await $.ui.mount(BAND())
