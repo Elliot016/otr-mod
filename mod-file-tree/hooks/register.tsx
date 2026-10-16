@@ -962,15 +962,15 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
-    // Fold all and Unfold all ride at the heading row's right end, like the replay's steppers.
-    const foldPill = (id: string, label: string, icon: string, tipText: string) =>
-      pill({ Box, Text }, look.nerd, THEME.surface3, entry(id, label, false, THEME.surface3, { idle: THEME.secondary, ...iconLead(icon, THEME.accent), tip: { glyph: look.glyph.icon[icon] ?? look.glyph.title, label, text: tipText } }), `${id}-pill`, THEME.surface1)
+    // Keyed on folded, not open: the live fold keeps the edited folder open through a Fold all.
+    const isAnyFolded = rows.some(row => row.isDir && row.isFolded)
+    const foldToggle = (id: string, label: string, arrow: string, tipText: string) =>
+      entry(id, label, false, THEME.surface1, { idle: THEME.muted, lead: arrow, leadColor: THEME.accent, tip: { glyph: arrow, label, text: tipText } })
     const treeHead = (
       <Box key="tree-heading-row" flexDirection="row" columnGap={1}>
         {heading(elements, look, 'tree', 'folder-open', rootName)}
         <Box key="tree-heading-gap" flexGrow={1} />
-        {rows.some(row => row.isDir) ? foldPill('fold-all', text.foldAll, 'fold', text.foldAllTip) : null}
-        {rows.some(row => row.isDir) ? foldPill('unfold-all', text.unfoldAll, 'folder-open', text.unfoldAllTip) : null}
+        {!rows.some(row => row.isDir) ? null : isAnyFolded ? foldToggle('unfold-all', text.unfoldAll, glyph.more, text.unfoldAllTip) : foldToggle('fold-all', text.foldAll, glyph.less, text.foldAllTip)}
       </Box>
     )
 

@@ -887,11 +887,14 @@ const FOLDERS = async ($: Parameters<TestBody>[0]) => {
   await $.tool.call({ tool: 'Edit', file_path: '/w/docs/c.md', old_string: 'x', new_string: 'y' } as never)
 }
 
-test('Fold all folds every folder and Unfold all opens every folder, from the tree heading row', async ($, on) => {
+test('one toggle at the tree heading row\'s right end folds every folder, then turns into Unfold all and opens them', async ($, on) => {
   stubs(on)
   await FOLDERS($)
   const ui = await $.ui.mount(PANE)
-  expect(JSON.stringify(await ui.find({ key: 'tree-heading-row' }))).toContain('unfold-all')
+  const head = async () => JSON.stringify(await ui.find({ key: 'tree-heading-row' }))
+  // The expand standard: after the spacer, the arrow before a muted label, and only one of the two at a time.
+  expect(await head()).toMatch(/tree-heading-gap.*"id":"fold-all","label":"Fold all".*"lead":"▴"/)
+  expect(await head()).not.toContain('unfold-all')
   const tree = async () => JSON.stringify(await ui.drawn({ in: 'list-0' }))
   const click = (key: string) => pointing(ui).pointer({ in: key, type: 'down', button: 'left', x: 2, y: 0 })
   expect(await tree()).toContain('b.ts')
@@ -900,6 +903,8 @@ test('Fold all folds every folder and Unfold all opens every folder, from the tr
   expect(shut).toContain('src')
   expect(shut).toContain('docs')
   for (const name of ['a.ts', 'deep', 'b.ts', 'c.md']) expect(shut).not.toContain(name)
+  expect(await head()).toMatch(/"id":"unfold-all","label":"Unfold all".*"lead":"▾"/)
+  expect(await head()).not.toContain('"id":"fold-all"')
   await click('unfold-all')
   const open = await tree()
   for (const name of ['a.ts', 'deep', 'b.ts', 'c.md']) expect(open).toContain(name)
@@ -919,24 +924,26 @@ test('Fold all and Unfold all also work while the live fold holds folders shut',
   await ui.unmount()
 })
 
-test('Fold all and Unfold all show their tip in the pane footer and draw no Nerd glyph in safe mode', { options: { icons: 'safe' } }, async ($, on) => {
+test('the fold toggle shows its tip in the pane footer either way, and draws no Nerd glyph in safe mode', { options: { icons: 'safe' } }, async ($, on) => {
   stubs(on)
   await FOLDERS($)
   const ui = await $.ui.mount(PANE)
   await pointing(ui).pointer({ in: 'fold-all', type: 'move', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' · folds every folder in the tree' })).toBeDefined()
+  await pointing(ui).pointer({ in: 'fold-all', type: 'down', button: 'left', x: 2, y: 0 })
   await pointing(ui).pointer({ in: 'unfold-all', type: 'move', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: ' · opens every folder in the tree' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn())).not.toMatch(/[\uE000-\uF8FF\u{F0000}-\u{FFFFD}]/u)
   await ui.unmount()
 })
 
-test('icons=nerd gives Fold all and Unfold all an icon each', { options: { icons: 'nerd' } }, async ($, on) => {
+test('icons=nerd draws the fold toggle with the caret arrows', { options: { icons: 'nerd' } }, async ($, on) => {
   stubs(on)
   await FOLDERS($)
   const ui = await $.ui.mount(PANE)
-  expect(JSON.stringify(await ui.drawn({ in: 'fold-all' }))).toContain(nf(0xf066))
-  expect(JSON.stringify(await ui.drawn({ in: 'unfold-all' }))).toContain(nf(0xeaf7))
+  expect(JSON.stringify(await ui.drawn({ in: 'fold-all' }))).toContain(nf(0xf0d8))
+  await pointing(ui).pointer({ in: 'fold-all', type: 'down', button: 'left', x: 2, y: 0 })
+  expect(JSON.stringify(await ui.drawn({ in: 'unfold-all' }))).toContain(nf(0xf0d7))
   await ui.unmount()
 })
 
