@@ -1154,3 +1154,47 @@ test('the card tips carry a bare glyph, with no brackets or padding', { options:
   await call
   await band.unmount()
 })
+
+test('a throw while Haiku writes the card words clears the shimmer and keeps the rule wording', async ($, on) => {
+  const { seen, clock } = world(on)
+  on('model.complete', (() => { throw new Error('model is gone') }) as never)
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await clock.advance(1)
+  await clock.settle()
+  await band.redraw()
+  expect(await band.find({ key: 'hold-explaining' })).toBeUndefined()
+  expect(await textOf(band, /Delete/)).toBeDefined()
+  await cancel($)
+  await call
+  await band.unmount()
+})
+
+// The kit cannot raise another mod's toast, so the pass-on of those is a live check; this pins that the mod's own are still drawn, each time.
+test('the mod’s own toasts are drawn as its cards every time and never reach Claude Code’s box', async ($, on) => {
+  const { seen } = world(on)
+  await $.command.run({ command: 'mod-blast-radius', args: 'settings' } as never)
+  const settings = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...SETTINGS })
+  await click(settings, 'mod-blast-radius-details-tab')
+  await click(settings, 'mod-blast-radius-details-tab')
+  await settings.unmount()
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  expect((await band.find({ type: 'Text', text: /none is held now/ }))).toBeDefined()
+  await band.unmount()
+  expect(seen.toasts).toEqual([])
+})
+
+test('what Run approved is keyed by tool_use_id: the same command under another id is asked again', async ($, on) => {
+  const { seen } = world(on, { verdict: 'ask', verdictReason: ASK })
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build', tool_use_id: 'tu-1' } as never)
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await click(band, 'blast-run')
+  await call
+  await band.unmount()
+
+  const input = { command: 'rm -rf build' }
+  expect(await $.tool.check({ tool: 'Bash', input, tool_use_id: 'tu-1' } as never)).toEqual({ decision: 'allow' })
+  expect((await $.tool.check({ tool: 'Bash', input, tool_use_id: 'tu-2' } as never)).decision).toBe('ask')
+})

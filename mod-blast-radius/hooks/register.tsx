@@ -173,11 +173,15 @@ async function describe($: EngineInterface, mine: Held) {
   let found = describedCache.get(mine.command)
   if (!found) {
     mine.isDescribing = true
-    $.ui.invalidate('ui.render')
-    const prompt = describePrompt(mine.command, mine.risk.reason, mine.report?.summary ?? '', risky.map(step => step.text))
-    const reply = await $.model.complete({ model: 'haiku', system: SYSTEM, prompt, maxTokens: 500, timeoutMs: 15000 }).catch(() => null)
-    mine.isDescribing = false
-    $.ui.invalidate('ui.render')
+    let reply: Awaited<ReturnType<typeof $.model.complete>> | null = null
+    try {
+      $.ui.invalidate('ui.render')
+      const prompt = describePrompt(mine.command, mine.risk.reason, mine.report?.summary ?? '', risky.map(step => step.text))
+      reply = await $.model.complete({ model: 'haiku', system: SYSTEM, prompt, maxTokens: 500, timeoutMs: 15000 }).catch(() => null)
+    } finally {
+      mine.isDescribing = false
+      $.ui.invalidate('ui.render')
+    }
     found = reply?.isAnswered ? parseDescribed(reply.text, risky.length) ?? undefined : undefined
     // No answer still gets a verdict line: with nothing to go on, it points to Details.
     if (!found) {
@@ -199,11 +203,12 @@ async function canDraw($: EngineInterface) {
   return surfaces.some(surface => surface === 'terminal' || surface === 'desktop')
 }
 
-// What Run approved, by tool_use_id and by command text, so the settings hook's own prompt is not asked a second time.
+// What Run approved, by tool_use_id, so the settings hook's own prompt is not asked a second time; command text only stands in when the check carries no id.
 const approved = new Set<string>()
 const approvedCommands = new Set<string>()
 
-const isApproved = (id: unknown, command: unknown) => approved.has(String(id)) || approvedCommands.has(String(command))
+const hasId = (id: unknown) => typeof id === 'string' && id !== ''
+const isApproved = (id: unknown, command: unknown) => (hasId(id) ? approved.has(id as string) : approvedCommands.has(String(command)))
 
 // The settings hook's ask, wherever the engine carries it; matched loosely because a prefix may precede its text.
 const isDestructiveAsk = (ask: unknown) => typeof ask === 'string' && ask.includes(DESTRUCTIVE_ASK)
@@ -225,12 +230,12 @@ async function toggleList($: EngineInterface) {
     return
   }
   if (!held?.report) {
-    $.ui.toast(text.ui.nothingHeld)
+    toast($, text.ui.nothingHeld)
     return
   }
   await closePanes($, LIST_PANE)
   const opened = await $.ui.open({ id: LIST_PANE, title: text.card.details, closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(fill(text.ui.listWaiting, { reason: opened.reason }))
+  if (!opened.isPlaced) toast($, fill(text.ui.listWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, opened.isPlaced)
 }
 
@@ -283,7 +288,7 @@ async function toggleSettings($: EngineInterface) {
   previews = showcase?.previews
   actions = (Array.isArray(showcase?.actions) ? showcase.actions : []).map((action: Action) => ({ ...action, isLocal: action.command === 'mod-blast-radius' }))
   const opened = await $.ui.open({ id: SETTINGS_PANE, title: text.ui.paneName, closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(fill(text.ui.settingsWaiting, { reason: opened.reason }))
+  if (!opened.isPlaced) toast($, fill(text.ui.settingsWaiting, { reason: opened.reason }))
   await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, opened.isPlaced)
 }
 
@@ -414,6 +419,12 @@ async function choose($: EngineInterface, id: string) {
 }
 
 const toasts = new ToastList('blast')
+// Texts this mod raised and has not yet drawn: the ui.toast handler draws these, and passes every other mod's toast on.
+const ownToasts: string[] = []
+function toast($: EngineInterface, message: string) {
+  ownToasts.push(message)
+  $.ui.toast(message)
+}
 // The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 
@@ -453,7 +464,7 @@ async function holdRisky($: EngineInterface, e: { tool_use_id?: unknown }, next:
     } else {
       // Other band mods can read this to step aside while the card is up.
       await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, true)
-      $.clock.after(0, () => describe($, mine))
+      $.clock.after(0, () => describe($, mine).catch(() => undefined))
       // Fire and forget: a refused notification must never touch the hold.
       void Promise.resolve().then(() => $.ui.notify(fill(text.ui.notifyHeld, { command: oneLine(command) }), { title: text.ui.notifyTitle })).catch(() => undefined)
       $.ui.invalidate('ui.render')
@@ -479,10 +490,11 @@ async function holdRisky($: EngineInterface, e: { tool_use_id?: unknown }, next:
 
   if (mine.decision === 'run') {
     if (!isSilent) {
-      approved.add(String(e.tool_use_id))
+      if (hasId(e.tool_use_id)) approved.add(e.tool_use_id as string)
       approvedCommands.add(command)
       if (approved.size > 100) approved.delete(approved.values().next().value as string)
-      $.ui.toast(text.ui.running)
+      if (approvedCommands.size > 100) approvedCommands.delete(approvedCommands.values().next().value as string)
+      toast($, text.ui.running)
     }
     return 'run'
   }
@@ -495,14 +507,19 @@ function warnOnce($: EngineInterface, error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   if (warned.has(message)) return
   warned.add(message)
-  void Promise.resolve().then(() => $.ui.toast(text.ui.checkFailed)).catch(() => undefined)
+  void Promise.resolve().then(() => toast($, text.ui.checkFailed)).catch(() => undefined)
 }
 
 export const register: Register = (on, options) => {
   still = options.animations === false
   toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
-  on('ui.toast', async ($, e) => {
+  on('ui.toast', async ($, e, next) => {
+    const own = ownToasts.indexOf(e.text)
+    if (own >= 0) ownToasts.splice(own, 1)
+    // Another mod's toast stays its own to draw, unless the hold card is covering the band where it would show.
+    const isCardUp = held !== null && held.decision === null
+    if (own < 0 && !isCardUp) return next(e)
     const id = toasts.add(e.text)
     $.ui.invalidate('ui.render')
     $.clock.after(e.timeoutMs ?? TOAST_MS, () => {

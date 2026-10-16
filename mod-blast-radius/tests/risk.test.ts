@@ -430,6 +430,19 @@ test('a broken rules file never disables the built-in checks, and each bad entry
   expect(classify('git reset --hard', mixed.rules)!.reason).toBe(FORCE)
 })
 
+test('a user pattern over 500 characters is skipped with a note, and a 500 character one still loads', () => {
+  const { rules, notes } = compileRules(JSON.stringify([{ pattern: 'a'.repeat(501), reason: 'huge' }, { pattern: 'b'.repeat(500), reason: 'edge' }]))
+  expect(rules.map(rule => rule.reason)).toEqual(['edge'])
+  expect(notes).toHaveLength(1)
+  expect(notes[0]).toContain('rule 1 skipped')
+  expect(notes[0]).toContain('over 500 characters')
+})
+
+test('a user rule that throws when it runs is skipped, never failing the whole check', () => {
+  const broken = { get lastIndex() { return 0 }, set lastIndex(_: number) { throw new Error('boom') }, test: () => true, source: 'x' } as unknown as RegExp
+  expect(classify('echo hi', [{ re: broken, reason: 'broken' }])).toBe(null)
+})
+
 const SCRIPT = Array.from({ length: 40 }, (_, index) => `console.log("rm -rf step ${index}")`).join('\n')
 
 test('steps split only on top-level operators: a 40-line heredoc is one step, and only rm is risky', () => {

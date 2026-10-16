@@ -175,6 +175,7 @@ export default {
     "notArray": "rules.json must be an array of { pattern, reason }, no rules loaded",
     "needsFields": "rule {n} skipped: it needs a string pattern and reason",
     "skipped": "rule {n} skipped: {why}",
+    "tooLong": "the pattern is over {max} characters",
     "unreadable": "could not read rules.json ({why})"
   },
   "preview": {

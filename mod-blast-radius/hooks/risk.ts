@@ -900,8 +900,12 @@ export function classify(original: string, rules: UserRule[] = [], depth = 0): R
   if (found && !found.isPreviewOnly) return found
 
   for (const rule of rules) {
-    rule.re.lastIndex = 0
-    if (rule.re.test(command)) return { ...RULE, label: words.labels.yourRule, reason: rule.reason, pattern: rule.re.source, source: 'rules' }
+    try {
+      rule.re.lastIndex = 0
+      if (rule.re.test(command)) return { ...RULE, label: words.labels.yourRule, reason: rule.reason, pattern: rule.re.source, source: 'rules' }
+    } catch {
+      // A user rule that fails to run is skipped; the built-in checks still hold the command.
+    }
   }
   return null
 }
@@ -918,6 +922,9 @@ export function evaluate(value: unknown, rules: UserRule[] = []): { risk: Risk |
   }
 }
 
+// A longer pattern is skipped: it runs on every Bash call, and a huge one can stall the hook.
+const MAX_PATTERN = 500
+
 // rules.json: an array of { pattern, reason, flags? }. A bad entry is skipped with a note; the built-in checks never depend on it.
 export function compileRules(text: string): { rules: UserRule[]; notes: string[] } {
   let data: unknown
@@ -933,6 +940,10 @@ export function compileRules(text: string): { rules: UserRule[]; notes: string[]
     const item = entry as { pattern?: unknown; reason?: unknown; flags?: unknown } | null
     if (!item || typeof item.pattern !== 'string' || typeof item.reason !== 'string' || (item.flags !== undefined && typeof item.flags !== 'string')) {
       notes.push(fill(words.rulesNotes.needsFields, { n: index + 1 }))
+      return
+    }
+    if (item.pattern.length > MAX_PATTERN) {
+      notes.push(fill(words.rulesNotes.skipped, { n: index + 1, why: fill(words.rulesNotes.tooLong, { max: MAX_PATTERN }) }))
       return
     }
     try {
