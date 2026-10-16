@@ -37,7 +37,7 @@ export type ToolCall = { id: string; name: string; input: any; added: number; re
 
 // What an opened call shows under its line: a diff's lines, or the start of what the call gave back, and how many lines were left out.
 export type PreviewLine = { text: string; kind: 'add' | 'del' | 'same' | 'out' }
-export type Preview = { lines: PreviewLine[]; more: number }
+export type Preview = { lines: PreviewLine[]; more: number; rest: PreviewLine[] }
 
 // The thinking since the last result or text, carried block by block: thinking adds its text, text ends it.
 const thoughtAfter = (pending: string | undefined, block: any) => {
@@ -103,7 +103,7 @@ export function diffStat(name: string, input: any, output: any, isFailed = false
 
 const PREVIEW_LINES = 8
 
-const capped = (lines: PreviewLine[]): Preview => ({ lines: lines.slice(0, PREVIEW_LINES), more: Math.max(0, lines.length - PREVIEW_LINES) })
+const capped = (lines: PreviewLine[]): Preview => ({ lines: lines.slice(0, PREVIEW_LINES), more: Math.max(0, lines.length - PREVIEW_LINES), rest: lines.slice(PREVIEW_LINES) })
 
 // The text a result block carries: a plain string, or its text parts.
 export const resultText = (content: unknown) =>

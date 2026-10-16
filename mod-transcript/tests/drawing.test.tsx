@@ -193,7 +193,7 @@ test('an API error that needs the person is one red line that says so', async ($
   expect((await reply.find({ type: 'Text', text: /billing problem/ }))?.props.color).toBe(THEME.alert)
 })
 
-test('a subagent report draws a head line with its fields, and a card whose body stops at six lines after the head\'s summary', async ($, on) => {
+test('a subagent report draws a head line with its fields, and a card whose body stops at six lines after the head\'s summary', { options: { expand_live: false, icons: 'safe' } }, async ($, on) => {
   const mount = await open($, on)
   const report = await mount('UserMessage', ID(20), {
     text: 'Found it\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9',
@@ -207,10 +207,45 @@ test('a subagent report draws a head line with its fields, and a card whose body
   expect(await report.find({ type: 'Text', text: /^Found it$/ })).toBeUndefined()
   expect(await report.find({ type: 'Text', text: 'l7' })).toBeDefined()
   expect(await report.find({ type: 'Text', text: 'l8' })).toBeUndefined()
-  expect(await labelText(report, 'toggle-report-more-colored')).toBe('+ 2 more lines')
-  await clickLabel(report, 'toggle-report-more-colored')
+  // The control sits on the last text row: the line, a spacer, then the arrow and its muted label.
+  const control = 'toggle-more-report:00000020-0000-4000-8000-000000000000'
+  expect(await report.find({ key: 'toggle-report-more-gap' })).toBeDefined()
+  expect(await report.find({ key: 'toggle-report-more-body' })).toBeDefined()
+  expect((await report.findAll({ key: 'toggle-report-more' }))).toHaveLength(1)
+  expect(await labelText(report, control)).toBe(' ▾ 2 more lines ')
+  await clickLabel(report, control)
   expect(await report.find({ type: 'Text', text: 'l9' })).toBeDefined()
-  expect(await labelText(report, 'toggle-report-more-colored')).toBe('Show fewer lines')
+  expect(await labelText(report, control)).toBe(' ▴ Show less ')
+  await clickLabel(report, control)
+  expect(await report.find({ type: 'Text', text: 'l9' })).toBeUndefined()
+  expect(await labelText(report, control)).toBe(' ▾ 2 more lines ')
+})
+
+const LONG_OUTPUT_TURN = [
+  row(1, 'user', { message: { role: 'user', content: 'list it' } }),
+  said(2, [{ type: 'tool_use', id: 'toolu_l', name: 'Write', input: { file_path: '/repo/a.txt', content: Array.from({ length: 11 }, (_, n) => `out ${n}`).join('\n') } }]),
+  answered(3, 'toolu_l', { toolUseResult: {} }),
+  said(4, [{ type: 'text', text: 'Done.' }]),
+  row(5, 'system', { subtype: 'turn_duration', durationMs: 1000 }),
+  row(6, 'user', { message: { role: 'user', content: 'next' } }),
+].join('\n') + '\n'
+
+test('an open call\'s preview pins the expand control at the right of its last row, and a click shows every line', { options: { expand_live: false, icons: 'safe' } }, async ($, on) => {
+  const mount = await open($, on, LONG_OUTPUT_TURN)
+  const head = await mount('UserMessage', ID(1), prompt('list it'))
+  await clickLabel(head, 'toggle-turn-colored')
+  await head.pointer({ in: 'toggle-chips-line', type: 'down', button: 'left', x: 1, y: 0 })
+  await clickLabel(head, 'toggle-call-0-colored')
+  const control = 'toggle-more-preview:toolu_l'
+  expect(await head.find({ key: 'more-row-toolu_l-gap' })).toBeDefined()
+  expect(await head.find({ type: 'Text', text: 'out 7' })).toBeDefined()
+  expect(await head.find({ type: 'Text', text: 'out 8' })).toBeUndefined()
+  expect(await labelText(head, control)).toBe(' ▾ 3 more lines ')
+  await clickLabel(head, control)
+  expect(await head.find({ type: 'Text', text: 'out 10' })).toBeDefined()
+  expect(await labelText(head, control)).toBe(' ▴ Show less ')
+  await clickLabel(head, control)
+  expect(await head.find({ type: 'Text', text: 'out 8' })).toBeUndefined()
 })
 
 test('a message from another session wraps its long paragraphs in full instead of cutting them', async ($, on) => {

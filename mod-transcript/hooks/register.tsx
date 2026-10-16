@@ -11,7 +11,7 @@ import type { DotProps } from './dot'
 import type { FoldProps } from './fold'
 import type { LabelPart, LabelProps } from './label'
 import { pillWidth, type NumberProps } from './number'
-import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
+import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
 import { pillRow, splitRow, tabRow, tipLine } from './pills'
 import { actionReveals, settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -586,6 +586,35 @@ function questionRows({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, input: unknown,
 
 const REPORT_LINES = 6
 
+// The expand standard's id prefix: an entry click with it flips the item under the rest of the id, in the open tool ids.
+const MORE = 'more:'
+
+// The expand control: the arrow, then a muted label, on the fill it sits on; a click flips `id`.
+function moreToggle({ Client }: Pick<Rows, 'Client'>, id: string, isOpen: boolean, hidden: number, bg: string) {
+  const label = isOpen ? text.showLess : fill(text.previewMore, { n: hidden })
+  const arrow = isOpen ? look.glyph.less : look.glyph.more
+  return (
+    <Client
+      key={`toggle-more-${id}`}
+      module="./entry.tsx"
+      width={cells(label) + 4}
+      height={1}
+      props={{ id: `${MORE}${id}`, label, lead: arrow, leadColor: THEME.accent, isOpen: false, bg, idle: THEME.muted, nerd: look.nerd, still, tip: { glyph: arrow, label, text: isOpen ? text.tipShowLess : text.tipShowAll } } satisfies EntryProps}
+    />
+  )
+}
+
+// A text row with the control pinned at its right end: the text, a flexGrow spacer, then the control.
+function rowWithMore({ Box }: Pick<Rows, 'Box'>, key: string, body: unknown, control: unknown) {
+  return (
+    <Box key={key} flexDirection="row">
+      <Box key={`${key}-body`} flexShrink={1}>{body}</Box>
+      <Box key={`${key}-gap`} flexGrow={1} />
+      <Box key={`${key}-control`} flexShrink={0}>{control}</Box>
+    </Box>
+  )
+}
+
 // What a notice or a report row reads from its props.
 type TaskProps = { text: string; origin: { kind: string }; from?: { name: string }; task?: { id?: string; status?: string; type?: string; durationMs?: number; toolUseId?: string } }
 
@@ -629,19 +658,11 @@ function reportRow(parts: Rows, props: TaskProps, report: Report, width: number,
           {fields.map((field, n) => (
             <Text key={`toggle-report-field-${n}`} color={THEME.muted} wrap="truncate-end">{field}</Text>
           ))}
-          {shown.map((line, n) => (
-            <Text key={`toggle-report-line-${n}`} color={THEME.onSurface} wrap="truncate-end">{line || ' '}</Text>
-          ))}
-          {more > 0 ? (
-            <Box key="toggle-report-more" height={1}>
-              <Client
-                key="toggle-report-more-colored"
-                module="./label.tsx"
-                height={1}
-                props={{ kind: 'tools', id: moreId, parts: [{ text: isAll ? text.reportLess : fill(text.previewMore, { n: more }) }], isDim: true, hover: THEME.accent, tip: { label: text.tipReportLabel, text: text.tipReport } } satisfies LabelProps}
-              />
-            </Box>
-          ) : null}
+          {shown.map((line, n) => {
+            const body = <Text key={`toggle-report-line-${n}`} color={THEME.onSurface} wrap="truncate-end">{line || ' '}</Text>
+            // The control sits on the last text row, pinned right.
+            return more > 0 && n === shown.length - 1 ? rowWithMore(parts, 'toggle-report-more', body, moreToggle(parts, moreId, isAll, more, cardFill())) : body
+          })}
         </Box>
       ) : null}
     </Box>
@@ -725,8 +746,10 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
   const thoughtLines = thoughts.filter(Boolean).join('\n\n').split('\n').flatMap(paragraph => wrapWords(paragraph, width - 8))
   // An open call's preview under its line: diff lines on Claude Code's add and remove backgrounds, any other output muted.
   const preview = (call: Turn['tools'][number], n: number) => {
-    const shown = call.preview?.lines ?? []
     const more = call.preview?.more ?? 0
+    const moreId = `preview:${call.id}`
+    const isAll = more > 0 && flips.tools.includes(moreId)
+    const shown = [...(call.preview?.lines ?? []), ...(isAll ? (call.preview?.rest ?? []) : [])]
     // The call line cuts a long command, so the open call shows it whole first.
     const command = call.name === 'Bash' ? String(call.input?.command ?? '').split('\n').flatMap(commandLine => wrapWords(commandLine, width - 14)) : []
     // A SendMessage's result only says it was sent, so the open call shows the message itself first.
@@ -746,13 +769,14 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
         {shown.map((previewLine, at) => {
           const mark = previewLine.kind === 'add' ? '+ ' : previewLine.kind === 'del' ? '- ' : previewLine.kind === 'same' ? '  ' : ''
           const background = previewLine.kind === 'add' ? { backgroundColor: THEME.addBg } : previewLine.kind === 'del' ? { backgroundColor: THEME.delBg } : {}
-          return (
+          const body = (
             <Text key={`line-${at}`} color={previewLine.kind === 'out' ? THEME.muted : THEME.onSurface} wrap="truncate-end" {...background}>
               {cut(`${mark}${previewLine.text}`, width - 10) || ' '}
             </Text>
           )
+          // The control sits on the last preview row, pinned right.
+          return more > 0 && at === shown.length - 1 ? rowWithMore({ Box }, `more-row-${call.id}`, body, moreToggle({ Client }, moreId, isAll, more, THEME.surface1)) : body
         })}
-        {more > 0 ? <Text key="more" color={THEME.muted}>{fill(text.previewMore, { n: more })}</Text> : null}
       </Box>
     )
   }
@@ -1014,6 +1038,7 @@ export const register: Register = (on, options) => {
       if (change) await saveSetting($, change.key, change.value)
       const message = e.data as BarMessage
       if (message?.type === 'fold') await flip($, message.kind, message.id)
+      if (clicked?.type === 'menu-entry' && clicked.id.startsWith(MORE)) await flip($, 'tools', clicked.id.slice(MORE.length))
       const picked = e.data as ChipsMessage
       if (picked?.type === 'chip') await pickChip($, picked.id, picked.kind)
       const copy = e.data as CopyMessage
