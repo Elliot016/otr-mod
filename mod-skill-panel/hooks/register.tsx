@@ -94,6 +94,8 @@ let note = ''
 let selected = 0
 let agents: Agent[] = []
 let selectedAgent = 0
+// The folders the last scan looked in, for the empty-list text.
+let agentFolders: string[] = []
 // Which list the panel shows; its settings are a pane of their own.
 let view: 'skills' | 'agents' = 'skills'
 
@@ -233,19 +235,24 @@ export const register: Register = (on, options) => {
     await loadLook($)
     await $.command.register({ name: 'mod-skill-panel', description: text.commandDescription, argumentHint: '[settings]' })
     const config = await configDir($)
-    const root = `${config}/skills`
-    const found: Skill[] = []
-    for (const entry of await $.fs.list(root).catch(() => [])) {
-      if (entry.kind !== 'dir') continue
-      const text = await $.fs.read(`${root}/${entry.name}/SKILL.md`).catch(() => '')
-      const meta = readFrontmatter(String(text))
-      if (!meta) continue
-      found.push({ name: meta.name ?? entry.name, tag: meta.tag, description: meta.description ?? '', hidden: meta.hidden })
+    const projectClaude = `${String(e.cwd ?? '').replace(/\\/g, '/')}/.claude`
+    // The person's skills, then the project's, which win over a same-named one as they do in Claude Code.
+    const foundSkills = new Map<string, Skill>()
+    for (const root of [`${config}/skills`, `${projectClaude}/skills`]) {
+      for (const entry of await $.fs.list(root).catch(() => [])) {
+        if (entry.kind !== 'dir') continue
+        const text = await $.fs.read(`${root}/${entry.name}/SKILL.md`).catch(() => '')
+        const meta = readFrontmatter(String(text))
+        if (!meta) continue
+        const name = meta.name ?? entry.name
+        foundSkills.set(name, { name, tag: meta.tag, description: meta.description ?? '', hidden: meta.hidden })
+      }
     }
-    skills = found
+    skills = [...foundSkills.values()]
     // The person's agents, then the project's, which win over a same-named one as they do in Claude Code.
     const foundAgents = new Map<string, Agent>()
-    for (const agentRoot of [`${config}/agents`, `${String(e.cwd ?? '').replace(/\\/g, '/')}/.claude/agents`]) {
+    agentFolders = [`${config}/agents`, `${projectClaude}/agents`]
+    for (const agentRoot of agentFolders) {
       for (const entry of await $.fs.list(agentRoot).catch(() => [])) {
         if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
         const agent = readAgent(String(await $.fs.read(`${agentRoot}/${entry.name}`).catch(() => '')), entry.name.slice(0, -3))
@@ -436,7 +443,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(view), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(view === 'agents' ? text.agentsHint : text.hint, { sep: MARK.sep })}</Text>
-        {empty ? <Text color={THEME.muted}>{text.noAgents}</Text> : null}
+        {empty ? <Text color={THEME.muted}>{fill(text.noAgents, { folders: agentFolders.join(' or ') })}</Text> : null}
         {card ? cardSpace({ Box }, CARD_ROWS) : null}
         {section({ Box, Text }, look, 'cloud', '', '', (
           <Client key={`${view}-cloud`} module="./cloud.tsx" height={layoutCloud(cloud, width).rows.length} props={{ groups: cloud, width, selected: view === 'agents' ? selectedAgent : selected, nerd: look.nerd, still } satisfies CloudProps} />

@@ -252,7 +252,54 @@ test('with CLAUDE_CONFIG_DIR set, skills, agents and mods are read under it and 
 
 test('without CLAUDE_CONFIG_DIR, skills, agents and mods are read under ~/.claude', async ($, on) => {
   const listed = await readPaths($, on, undefined)
-  expect(listed).toEqual(['/h/.claude/skills', '/h/.claude/agents', '/p/.claude/agents', '/h/.claude/mods'])
+  expect(listed).toEqual(['/h/.claude/skills', '/p/.claude/skills', '/h/.claude/agents', '/p/.claude/agents', '/h/.claude/mods'])
+})
+
+test("the skills list adds the project's skills, which win over a same-named one of the person's", async ($, on) => {
+  const files: Record<string, string> = {
+    '/h/.claude/skills/same/SKILL.md': '---\nname: same\ndescription: Personal one\n---\n',
+    '/p/.claude/skills/same/SKILL.md': '---\nname: same\ndescription: Project one\n---\n',
+    '/p/.claude/skills/only/SKILL.md': '---\nname: only\ndescription: Only here\n---\n',
+  }
+  const dir = (name: string) => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('fs.list', (_$, e) => {
+    const path = neutral(e.path)
+    if (path === '/h/.claude/skills') return { value: [dir('same')] }
+    if (path === '/p/.claude/skills') return { value: [dir('same'), dir('only')] }
+    return { value: [] }
+  })
+  on('fs.read', (_$, e) => {
+    const path = neutral(e.path)
+    if (!(path in files)) throw new Error('ENOENT')
+    return { value: files[path]! }
+  })
+  stubSession(on)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('state.set', () => ({ value: undefined }) as never)
+
+  await $.session.start({ cwd: 'C:\\p' } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
+  const cloud = JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))
+  expect(cloud).toContain('only')
+  expect(cloud.match(/same/g)).toHaveLength(1)
+  await ui.unmount()
+})
+
+test('with no agents the panel names the folders it checked, under the config dir when set', async ($, on) => {
+  const dir = (name: string) => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+  on('fs.list', () => ({ value: [dir('x')].slice(1) }))
+  on('fs.read', () => ({ value: '' }))
+  stubSession(on)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('state.set', () => ({ value: undefined }) as never)
+
+  await $.session.start({ cwd: 'C:\\p' } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
+  await pointing(ui).pointer({ in: 'skills-agents', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ type: 'Text', text: 'No agents in /cfg/agents or C:/p/.claude/agents yet.' })).toBeDefined()
+  await ui.unmount()
 })
 
 test('the command toggles: it opens a closed pane and closes an open one', async ($, on) => {

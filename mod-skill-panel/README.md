@@ -38,6 +38,11 @@ Skills pill.
 | --- |
 | https://github.com/user-attachments/assets/827f92d0-898c-4a47-bfee-4e3dfe490d2f |
 
+## Features
+
+- **Skills and agents:** Lists your skills and agents, personal and the open project's, grouped under tags. A click adds one to the prompt.
+- **Color tags:** Give a skill a `color-tag: <tag>` line in its SKILL.md frontmatter to group it under that tag and badge it in the slash typeahead. The tags are router, start, debug, review, interface, writing, utility and mods; a skill without one, or with another name, lands under personal.
+
 ## Settings
 
 Change them with `/mod-skill-panel settings` or the gear pill.
@@ -52,12 +57,12 @@ Change them with `/mod-skill-panel settings` or the gear pill.
 Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [doc-author]: https://github.com/v-amorim
-[doc-icons]: ../README.md#icons-and-nerd-fonts
-[doc-install]: ../README.md#install
-[doc-license]: ../LICENSE
-[doc-root]: ../README.md
+[doc-icons]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#icons-and-nerd-fonts
+[doc-install]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md#install
+[doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
+[doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-skill-panel-added]: ../showcase/skill-panel-added.png
-[img-skill-panel-settings]: ../showcase/skill-panel-settings.png
-[img-skill-panel-slash]: ../showcase/skill-panel-slash.png
-[img-skill-panel]: ../showcase/skill-panel.png
+[img-skill-panel-added]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/skill-panel-added.png
+[img-skill-panel-settings]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/skill-panel-settings.png
+[img-skill-panel-slash]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/skill-panel-slash.png
+[img-skill-panel]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/skill-panel.png

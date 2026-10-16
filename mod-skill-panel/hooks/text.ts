@@ -17,7 +17,7 @@ export default {
   "agentAdded": "Mentioned @agent-{name}",
   "agentTools": "{count} tools",
   "agentAllTools": "all tools",
-  "noAgents": "No agents in ~/.claude/agents yet.",
+  "noAgents": "No agents in {folders} yet.",
   "noAgentDescription": "This agent has no description.",
   "hint": "Click a skill to add it {sep} point at one to read it",
   "settingsHint": "Click a setting to change it {sep} The mod reloads",

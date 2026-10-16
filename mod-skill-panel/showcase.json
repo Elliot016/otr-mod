@@ -1,0 +1,7 @@
+{
+  "tagline": "Your skills and agents, one click from the prompt",
+  "features": [
+    { "title": "Skills and agents", "detail": "Lists your skills and agents, personal and the open project's, grouped under tags. A click adds one to the prompt." },
+    { "title": "Color tags", "detail": "Give a skill a `color-tag: <tag>` line in its SKILL.md frontmatter to group it under that tag and badge it in the slash typeahead. The tags are router, start, debug, review, interface, writing, utility and mods; a skill without one, or with another name, lands under personal." }
+  ]
+}
