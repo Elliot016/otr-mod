@@ -2,7 +2,7 @@
 // Registers the mod: wires the prompts sidebar, timeline, settings, jumps and toasts.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
-import { cardSpace, stickyCard } from './card'
+import { cardSpace, HEAD_ROWS, stickyCard } from './card'
 import { isTipMessage, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
 import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
@@ -88,6 +88,9 @@ const PLACEHOLDER = 'placeholder'
 
 // Border, the number line and six lines of the prompt.
 const CARD_ROWS = 9
+
+// An entry click with this prefix flips the card of the prompt whose id follows.
+const MORE = 'prompts-more:'
 
 const STOPS_PER_CLIENT = 30
 
@@ -299,7 +302,7 @@ async function togglePane($: EngineInterface) {
   page = -1
   await loadAWhile($)
   const opened = await $.ui.open({ id: PANE, title: text.paneTitle, closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(fill(text.panelWaiting, { reason: opened.reason }))
+  if (!opened.isPlaced) $.ui.toast(text.panelWaiting)
   await $.state.set({ plugin: 'mod-prompts', key: 'pane' }, opened.isPlaced)
 }
 
@@ -313,7 +316,7 @@ async function toggleSettings($: EngineInterface) {
   if (await isOpen($)) await $.ui.close({ id: PANE })
   note = ''
   const opened = await $.ui.open({ id: SETTINGS, title: text.settingsPaneTitle, closeOnEscape: true })
-  if (!opened.isPlaced) $.ui.toast(fill(text.settingsWaiting, { reason: opened.reason }))
+  if (!opened.isPlaced) $.ui.toast(text.settingsWaiting)
   await $.state.set({ plugin: 'mod-prompts', key: 'pane' }, opened.isPlaced)
 }
 
@@ -332,26 +335,31 @@ const oneLine = (text: string, width: number) => {
   return flat.length > width ? `${flat.slice(0, Math.max(0, width - 1))}…` : flat
 }
 
-// Rows a text takes at this width, wrapped at spaces the way the card breaks it.
-const rowsOf = (value: string, width: number) => value.split('\n').reduce((total, line) => total + wrappedRows(line, width), 0)
+// The rows a text takes at this width, wrapped at spaces, a word wider than the width breaking across rows.
+const wrapRows = (value: string, width: number) =>
+  value.split('\n').flatMap(line => {
+    const rows = ['']
+    let used = 0
+    for (const word of line.split(' ')) {
+      const chars = [...word]
+      if (used > 0 && used + 1 + chars.length <= width) {
+        rows[rows.length - 1] += ` ${word}`
+        used += 1 + chars.length
+        continue
+      }
+      if (used > 0) rows.push('')
+      rows[rows.length - 1] = chars.slice(0, width).join('')
+      used = Math.min(chars.length, width)
+      for (let at = width; at < chars.length; at += width) {
+        rows.push(chars.slice(at, at + width).join(''))
+        used = Math.min(chars.length - at, width)
+      }
+    }
+    return rows
+  })
 
-const wrappedRows = (line: string, width: number) => {
-  let rows = 1
-  let used = 0
-  for (const word of line.split(' ')) {
-    const size = [...word].length
-    if (used > 0 && used + 1 + size <= width) used += 1 + size
-    else {
-      if (used > 0) rows++
-      used = size
-    }
-    while (used > width) {
-      rows++
-      used -= width
-    }
-  }
-  return rows
-}
+// The prompt whose card shows every line; a click on its control flips it.
+let fullPrompt = ''
 
 const clock = (at?: string) => {
   const date = at ? new Date(at) : undefined
@@ -557,6 +565,11 @@ export const register: Register = (on, options) => {
         page = Math.max(0, Math.min(pageCount - 1, shown + (message.id === 'prompts-page-next' ? 1 : -1)))
         $.ui.invalidate('ui.render')
       }
+      if (message?.type === 'menu-entry' && message.id.startsWith(MORE)) {
+        const id = message.id.slice(MORE.length)
+        fullPrompt = fullPrompt === id ? '' : id
+        $.ui.invalidate('ui.render')
+      }
       const change = settingChoice(e.data)
       if (change) await saveSetting($, change.key, change.value)
     } catch {
@@ -641,10 +654,24 @@ export const register: Register = (on, options) => {
       : []
 
     // The card's text is the pane's width less its border and padding; a prompt past its rows gives the last one to the count.
-    const textRows = CARD_ROWS - 3 - (pageCount > 1 ? 1 : 0)
-    const rowsNeeded = current ? rowsOf(current.text, Math.max(10, e.props.bodyColumns - 6)) : 0
+    const pagerRows = pageCount > 1 ? 1 : 0
+    const textRows = CARD_ROWS - 3 - pagerRows
+    const wrapped = current ? wrapRows(current.text, Math.max(10, e.props.bodyColumns - 6)) : []
+    const rowsNeeded = wrapped.length
     const isClipped = rowsNeeded > textRows
-    const textShown = isClipped ? textRows - 1 : textRows
+    // Opened, the card grows to every row, as far as the pane has room for it.
+    const isFull = isClipped && current !== undefined && fullPrompt === current.id
+    const roomRows = Math.max(textRows, e.props.scroll.bodyRows - HEAD_ROWS - FOOTER_ROWS - 4 - pagerRows)
+    const textShown = isFull ? Math.min(rowsNeeded, roomRows) : textRows
+    const cardRows = CARD_ROWS + (textShown - textRows)
+    const shownRows = wrapped.slice(0, textShown)
+    const moreId = `${MORE}${current?.id ?? ''}`
+    const moreLabel = isFull ? text.showLess : fill(text.cardMore, { n: rowsNeeded - textRows })
+    const moreArrow = isFull ? look.glyph.less : look.glyph.more
+    // The expand standard: the arrow, then a muted label, on the card's fill, pinned right on the last text row.
+    const moreControl = (
+      <Client key={moreId} module="./entry.tsx" width={[...moreLabel].length + 4} height={1} props={{ id: moreId, label: moreLabel, lead: moreArrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreArrow, label: moreLabel, text: isFull ? text.tipShowLess : text.tipShowAll } } satisfies EntryProps} />
+    )
 
     // Mouse only: the jump is a Button, since a scroll needs the person's press behind it; a click on a stop opens it.
     return (
@@ -652,7 +679,7 @@ export const register: Register = (on, options) => {
         {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(text.hint, { sep: MARK.sep })}</Text>
         {prompts.length === 0 ? <Text color={THEME.muted}>{failedSize >= 0 ? text.unreadable : text.empty}</Text> : null}
-        {current ? cardSpace({ Box }, CARD_ROWS) : null}
+        {current ? cardSpace({ Box }, cardRows) : null}
         {section({ Box, Text }, look, 'timeline', '', '', [
           before.length > 0 ? (
             timeline('timeline-before', before, false)
@@ -678,15 +705,24 @@ export const register: Register = (on, options) => {
           ) : null,
         ])}
         {current
-          ? stickyCard({ Box, Text }, e.props.scroll.offset, e.props.bodyColumns, CARD_ROWS, [
+          ? stickyCard({ Box, Text }, e.props.scroll.offset, e.props.bodyColumns, cardRows, [
               <Box key="card-title" flexDirection="row" columnGap={1} flexShrink={0}>
                 {subpill({ Box, Text }, look.nerd, cardFill(), fill(text.cardNumber, { n: selected + 1 }), 'card-number')}
                 {clock(current.at) ? <Text color={THEME.onSurface} bold>{clock(current.at)}</Text> : null}
               </Box>,
-              <Box key="card-text" height={textShown} overflow="hidden" flexShrink={0}>
-                <Text color={THEME.muted}>{current.text}</Text>
+              <Box key="card-text" height={shownRows.length} flexDirection="column" overflow="hidden" flexShrink={0}>
+                {shownRows.map((row, at) =>
+                  isClipped && at === shownRows.length - 1 ? (
+                    <Box key={`card-row-${at}`} flexDirection="row">
+                      <Box key="card-row-text" flexShrink={1}><Text color={THEME.muted} wrap="truncate-end">{row || ' '}</Text></Box>
+                      <Box key="card-row-gap" flexGrow={1} />
+                      <Box key="card-row-more" flexShrink={0}>{moreControl}</Box>
+                    </Box>
+                  ) : (
+                    <Text key={`card-row-${at}`} color={THEME.muted} wrap="truncate-end">{row || ' '}</Text>
+                  ),
+                )}
               </Box>,
-              isClipped ? <Text key="card-more" color={THEME.muted}>{fill(text.cardMore, { n: rowsNeeded - textShown })}</Text> : null,
               // The pager rides in the pinned card, so it stays in view however far the timeline scrolls.
               pageCount > 1 ? (
                 <Box key="pager" flexDirection="row" columnGap={1} flexShrink={0}>

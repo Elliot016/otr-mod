@@ -241,7 +241,7 @@ async function emptyPane($: any, on: any) {
 
 test('icons=nerd draws the settings pill with the Nerd gear', { options: { icons: 'nerd' } }, async ($, on) => {
   const ui = await emptyPane($, on)
-  expect(JSON.stringify(await ui.drawn({ in: 'prompts-settings' }))).toContain(String.fromCodePoint(0xf013))
+  expect(JSON.stringify(await ui.drawn({ in: 'prompts-settings' }))).toContain(String.fromCodePoint(0xf0493))
   await ui.unmount()
 })
 
@@ -249,7 +249,7 @@ test('icons=safe draws the settings pill with the plain gear', { options: { icon
   const ui = await emptyPane($, on)
   const pill = JSON.stringify(await ui.drawn({ in: 'prompts-settings' }))
   expect(pill).toContain('⊛')
-  expect(pill).not.toContain(String.fromCodePoint(0xf013))
+  expect(pill).not.toContain(String.fromCodePoint(0xf0493))
   await ui.unmount()
 })
 
@@ -353,11 +353,41 @@ test('a placeholder draw lists no prompt, and the uuid draw that follows lists i
   await ui.unmount()
 })
 
-test('a card that cuts a long prompt ends with a muted count of the lines it leaves out', async ($, on) => {
+test('a card that cuts a long prompt pins the expand control right on its last text row, and a click opens and closes the whole prompt', { options: { icons: 'safe' } }, async ($, on) => {
+  session(on, user(1, null, `${'word '.repeat(119)}last`))
+  await $.command.run({ command: 'mod-prompts' } as never)
+  const ui = await paneOf($)
+  const control = `prompts-more:${ID(1)}`
+  const words = (node: unknown): string => (typeof node === 'string' ? node : Array.isArray(node) ? node.map(words).join('') : node ? words((node as { children?: unknown }).children) : '')
+  expect(await ui.find({ key: 'card-row-gap' })).toBeDefined()
+  expect(await ui.find({ key: 'card-row-text' })).toBeDefined()
+  expect(words(await ui.drawn({ in: control }))).toBe(' ▾ 5 more lines ')
+  expect(await ui.find({ type: 'Text', text: /last/ })).toBeUndefined()
+  await pointer(ui, { in: control, type: 'down', button: 'left', x: 1, y: 0 })
+  expect(words(await ui.drawn({ in: control }))).toBe(' ▴ Show less ')
+  expect(await ui.find({ type: 'Text', text: /last/ })).toBeDefined()
+  await pointer(ui, { in: control, type: 'down', button: 'left', x: 1, y: 0 })
+  expect(words(await ui.drawn({ in: control }))).toBe(' ▾ 5 more lines ')
+  expect(await ui.find({ type: 'Text', text: /last/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('an opened card keeps its pager in view', { options: { icons: 'safe' } }, async ($, on) => {
+  const many = Array.from({ length: 342 }, (_, n) => user(n + 1, n === 0 ? null : n, n === 341 ? 'word '.repeat(120).trim() : `prompt ${n + 1}`)).join('\n')
+  session(on, many)
+  await $.command.run({ command: 'mod-prompts' } as never)
+  const ui = await paneOf($)
+  await pointer(ui, { in: `prompts-more:${ID(342)}`, type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ key: 'pager' })).toBeDefined()
+  expect(await ui.find({ key: 'prompts-page-next' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('icons=nerd draws the expand control with the Nerd arrow', { options: { icons: 'nerd' } }, async ($, on) => {
   session(on, user(1, null, 'word '.repeat(120).trim()))
   await $.command.run({ command: 'mod-prompts' } as never)
   const ui = await paneOf($)
-  expect(await ui.find({ type: 'Text', text: '+6 more lines' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn({ in: `prompts-more:${ID(1)}` }))).toContain(String.fromCodePoint(0xf0d7))
   await ui.unmount()
 })
 
