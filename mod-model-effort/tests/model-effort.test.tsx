@@ -86,7 +86,7 @@ test('the footer meter follows each request and a click saves that level', async
 })
 
 // Mounts the meter on a disk that throws for a missing file, clicks the fifth level and returns the files.
-async function clickMax($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], files: Record<string, string>, env: Record<string, string>) {
+async function clickMax($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], files: Record<string, string>, env: Record<string, string>, check?: (ui: object) => Promise<void>) {
   const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('fs.exists', (_$, e) => ({ value: neutral(e.path) in files }))
@@ -114,6 +114,7 @@ async function clickMax($: Parameters<Parameters<typeof test>[1]>[0], on: Parame
   const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
   await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
   await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
+  await check?.(ui)
   await ui.unmount()
 }
 
@@ -134,6 +135,50 @@ test('a click on a machine with no settings.json creates it from {}', async ($, 
   await clickMax($, on, files, { USERPROFILE: '/h' })
   expect(JSON.parse(files['/h/.claude/settings.json']!)).toEqual({ modelSettings: { 'claude-opus-5-5': { effortLevel: 'max' } } })
   expect(files['/h/.claude/settings.json.mod-model-effort.bak']).toBeUndefined()
+})
+
+test('a second click keeps the first backup', async ($, on) => {
+  const files: Record<string, string> = {
+    '/h/.claude/settings.json': JSON.stringify(SETTINGS, null, 2) + '\n',
+    '/h/.claude/settings.json.mod-model-effort.bak': 'FIRST',
+  }
+  await clickMax($, on, files, { USERPROFILE: '/h' })
+  expect(JSON.parse(files['/h/.claude/settings.json']!).modelSettings['claude-opus-5-5'].effortLevel).toBe('max')
+  expect(files['/h/.claude/settings.json.mod-model-effort.bak']).toBe('FIRST')
+})
+
+test('a settings.json that cannot be read toasts and writes nothing', async ($, on) => {
+  const files: Record<string, string> = {}
+  Object.defineProperty(files, '/h/.claude/settings.json', {
+    enumerable: true,
+    get: () => {
+      throw new Error('EACCES')
+    },
+  })
+  mock.clock(on)
+  await clickMax($, on, files, { USERPROFILE: '/h' }, async ui => {
+    expect(await (ui as { find: (q: object) => Promise<unknown> }).find({ type: 'Text', text: /is not valid JSON|not JSON|valid JSON/i })).toBeDefined()
+  })
+  expect(Object.keys(files)).toEqual(['/h/.claude/settings.json'])
+})
+
+test('the model menu opens when the session cannot name its model', async ($, on) => {
+  on('env.get', () => ({ value: undefined }))
+  on('settings.read', () => ({ value: {} }))
+  on('store.get', (_$, e) => ({ value: e.key === 'models' ? ['claude-sonnet-5-5'] : undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.model', () => {
+    throw new Error('no session')
+  })
+  mock.clock(on)
+  on('ui.render', ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  const ui = await $.ui.mount({ plugin: 'mod-model-effort', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 100, scroll: { offset: 0, bodyRows: 12 }, view: {} } } as never)
+  await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 1, y: 0 })
+  expect(await ui.find({ key: 'effort-model-all' })).toBeDefined()
+  await ui.unmount()
 })
 
 test('a click on the model name lists the models used before, and a pick switches through /model', async ($, on) => {

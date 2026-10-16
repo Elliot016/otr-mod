@@ -113,13 +113,21 @@ async function setEffort($: EngineInterface, effort: string) {
   const path = `${await configDir($)}/settings.json`
   // A fresh machine has no settings.json yet: start from {} and create it.
   const isMissing = !(await $.fs.exists(path).catch(() => true))
-  const raw = isMissing ? '{}' : String(await $.fs.read(path))
+  let raw: string
+  try {
+    raw = isMissing ? '{}' : String(await $.fs.read(path))
+  } catch {
+    $.ui.toast(fill(text.settingsNotJson, { mark: MARK.warn }))
+    return
+  }
   const out = withEffort(raw, current.model, effort)
   if (!out) {
     $.ui.toast(fill(text.settingsNotJson, { mark: MARK.warn }))
     return
   }
-  if (!isMissing) await $.fs.write(`${path}.mod-model-effort.bak`, raw)
+  // The first backup is the one worth keeping: later clicks never replace it.
+  const backup = `${path}.mod-model-effort.bak`
+  if (!isMissing && !(await $.fs.exists(backup).catch(() => false))) await $.fs.write(backup, raw)
   await $.fs.write(path, out)
   override = { effort, before: current.effort }
   await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model: current.model, effort })
@@ -419,7 +427,7 @@ export const register: Register = (on, options) => {
       isModelMenuOpen = !isModelMenuOpen
       bandTip = null
       const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
-      menuModels = withModel(await $.store.get('models'), current?.model ?? (await $.session.model()))
+      menuModels = withModel(await $.store.get('models'), current?.model ?? (await $.session.model().catch(() => undefined)))
       $.ui.invalidate('ui.render')
     }
     if (message?.type === 'set') await setEffort($, message.effort)
@@ -458,8 +466,8 @@ export const register: Register = (on, options) => {
       isCheckingLevel = true
       $.clock.after(250, () => followSavedChange($).catch(() => {}).finally(() => { isCheckingLevel = false }))
     }
-    const modelId = shown?.model ?? (await $.session.model())
-    const model = displayName(modelId)
+    const modelId = shown?.model ?? (await $.session.model().catch(() => undefined))
+    const model = displayName(modelId ?? '')
     const { group, row, rest, tip } = splitRow(await next(e))
     const meter = <Client key="meter" module="./meter.tsx" height={1} props={{ effort: shown?.effort ?? null, model, bg: PILL.secondary, still, nerd: look.nerd, tipModel: { glyph: look.glyph.title, label: text.labelModel, text: text.tipModel }, tipRest: { glyph: look.glyph.title, label: text.paneName, text: text.tipRest }, tipLevels: LEVELS.map(level => ({ glyph: LEVEL_LOOK[level]!.glyph, label: text.paneName, text: fill(text.tipLevel, { level: (text.levelNames as Record<string, string>)[level]! }) })) }} />
     // The level word follows the pill, so it never moves the glyphs under the pointer.
