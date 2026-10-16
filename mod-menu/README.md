@@ -40,7 +40,7 @@ Change them in the plugin's settings.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Menu labels | `always` | always draws each menu entry with its icon and its name. never draws the icon alone, which fits more entries in a narrow window; it applies on Nerd Font icons only, since safe mode has no icon. /mod-menu labels always\|never sets it too |
+| Menu labels | `auto` | auto draws each pill with its icon and its name, and every pill drops to its icon alone when the row is wider than the window. always keeps the names, never draws the icons alone. Icons alone apply on Nerd Font icons only, since safe mode has no icon. /mod-menu labels auto\|always\|never sets it too |
 
 ## License
 

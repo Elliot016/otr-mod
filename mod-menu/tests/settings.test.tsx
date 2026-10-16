@@ -17,10 +17,10 @@ const states = (on: any) => {
   return written
 }
 
-test('the labels setting defaults to always in the shared state', async ($, on) => {
+test('the labels setting defaults to auto in the shared state', async ($, on) => {
   const written = states(on)
   await start($)
-  expect(written.get('mod-menu.labels')).toBe('always')
+  expect(written.get('mod-menu.labels')).toBe('auto')
 })
 
 test('the labels setting never reaches the shared state at session start', { options: { labels: 'never' } }, async ($, on) => {
@@ -49,9 +49,9 @@ test('/mod-menu labels with no valid mode saves nothing and says the usage', asy
     saved.push(e.key)
     return { value: e.value }
   })
-  const result = await $.command.run({ command: 'mod-menu', args: 'labels auto' } as never)
+  const result = await $.command.run({ command: 'mod-menu', args: 'labels sometimes' } as never)
   expect(saved).toEqual([])
-  expect(JSON.stringify(result)).toContain('Usage: /mod-menu labels always|never')
+  expect(JSON.stringify(result)).toContain('Usage: /mod-menu labels auto|always|never')
 })
 
 test('/mod-menu with no argument still flips hidden and says so', async ($, on) => {

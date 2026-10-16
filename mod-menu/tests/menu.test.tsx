@@ -61,6 +61,21 @@ test('a hidden menu stays hidden after a /clear, which empties the state and sta
   await band.drawn()
   await clock.advance(1)
   expect(states.get('mod-menu.hidden')).toBe(true)
-  expect(states.get('mod-menu.labels')).toBe('always')
+  expect(states.get('mod-menu.labels')).toBe('auto')
+  await band.unmount()
+})
+
+test('a labels setting saved in a settings pane reaches the state on the next draw, with no session start', async ($, on) => {
+  const { states } = stubEngine(on)
+  const clock = mock.clock(on, { now: 0 })
+  states.set('mod-menu.booted', true)
+  states.set('mod-menu.hidden', true)
+  states.set('mod-menu.labels', 'always')
+
+  const band = await $.ui.mount(BAND)
+  await band.drawn()
+  await clock.advance(1)
+  expect(states.get('mod-menu.labels')).toBe('auto')
+  expect(states.get('mod-menu.hidden')).toBe(true)
   await band.unmount()
 })
