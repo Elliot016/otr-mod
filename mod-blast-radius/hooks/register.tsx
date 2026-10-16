@@ -3,7 +3,7 @@
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
 import { cardFill, cardGap, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Look } from './look'
-import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
+import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { ACTION_EXTRA, ACTION_GAP, actionLabels, cardRows, HOTKEY, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
@@ -28,7 +28,13 @@ const plural = (count: number, unit: Unit) => fill(count === 1 ? unit.one : unit
 
 type Decision = 'run' | 'cancel' | 'interrupted' | 'error'
 // isDescribing: Haiku is still writing the card's words.
-type Held = { command: string; risk: Risk; report: Report | null; plain: Plain | null; decision: Decision | null; described?: Described; isDescribing?: boolean }
+// isFull: the Details pane shows the whole command, not its first rows.
+type Held = { command: string; risk: Risk; report: Report | null; plain: Plain | null; decision: Decision | null; described?: Described; isDescribing?: boolean; isFull?: boolean }
+
+const MORE = 'blast-more'
+// The Details pane's full command: this many rows closed, and at most this many opened.
+const FULL_ROWS = 12
+const FULL_ROWS_OPEN = 400
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let isEnabled = true
@@ -647,11 +653,26 @@ export const register: Register = (on, options) => {
         )),
         rest ? plainText('does-rest', rest, THEME.muted) : null,
       ]
-      const full = wrapSpans(colorLines(command, rules), Math.max(20, e.props.bodyColumns - 6), 12)
-      const fullRows = [
-        ...full.rows.map((row, index) => spansText(Text, row.length ? row : [{ text: ' ', role: 'plain' }], `full-${index}`)),
-        full.more ? <Text key="full-more" color={THEME.muted}>{fill(text.ui.andMoreLines, { n: full.more })}</Text> : null,
-      ]
+      const everyRow = wrapSpans(colorLines(command, rules), Math.max(20, e.props.bodyColumns - 6), Number.POSITIVE_INFINITY).rows
+      const hidden = Math.max(0, everyRow.length - FULL_ROWS)
+      const isFull = hidden > 0 && held?.isFull === true
+      const fullShown = everyRow.slice(0, isFull ? FULL_ROWS_OPEN : FULL_ROWS)
+      const moreLabel = isFull ? text.ui.showLess : fill(text.ui.moreLines, { n: hidden })
+      const moreArrow = isFull ? look.glyph.less : look.glyph.more
+      // The expand standard: the arrow, then a muted label, on the section's fill, pinned right on the last text row.
+      const moreControl = (
+        <Client key="blast-more" module="./entry.tsx" width={[...moreLabel].length + 4} height={1} props={{ id: MORE, label: moreLabel, lead: moreArrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreArrow, label: moreLabel, text: isFull ? text.ui.tipShowLess : text.ui.tipShowAll } } satisfies EntryProps} />
+      )
+      const fullRows = fullShown.map((row, index) => {
+        const line = spansText(Text, row.length ? row : [{ text: ' ', role: 'plain' }], `full-${index}`)
+        return hidden > 0 && index === fullShown.length - 1 ? (
+          <Box key="full-last-row" flexDirection="row">
+            <Box key="full-last-text" flexShrink={1}>{line}</Box>
+            <Box key="full-last-gap" flexGrow={1} />
+            <Box key="full-last-more" flexShrink={0}>{moreControl}</Box>
+          </Box>
+        ) : line
+      })
       // One pill per role, in a wash of its color, as mod-file-tree's footer names its colors.
       const legend = LEGEND.map(span => {
         const hue = roleProps(span.role).color
@@ -758,6 +779,11 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry') await choose($, message.id)
+    // The Details pane's expand control only changes how much of the command it draws; the card's Run and Cancel never read it.
+    if (message?.type === 'menu-entry' && message.id === MORE && held) {
+      held.isFull = !held.isFull
+      $.ui.invalidate('ui.render')
+    }
     // The title line's tabs swap Details and Settings; the open tab does nothing.
     if (message?.type === 'menu-entry' && message.id === SETTINGS_TAB && !(await isSettingsOpen($))) await toggleSettings($)
     if (message?.type === 'menu-entry' && message.id === DETAILS_TAB && !(await isPaneOpen($, LIST_PANE))) await toggleList($)

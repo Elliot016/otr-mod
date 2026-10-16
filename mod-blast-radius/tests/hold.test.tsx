@@ -610,7 +610,7 @@ test('Details sections: each piece of the command, why it was held, what it touc
   await band.unmount()
 })
 
-test('Details: a long script is one step, the full command is capped at twelve rows, and the card never shows it', async ($, on) => {
+test('Details: a long script is one step, the full command is capped at twelve rows, and the card never shows it', { options: { icons: 'safe' } }, async ($, on) => {
   const script = Array.from({ length: 40 }, (_, index) => `console.log("line ${index}")`).join('\n')
   const command = `cd ~ && node - <<'EOF'\n${script}\nEOF\n && rm -r blast-radius-demo`
   const { seen } = world(on)
@@ -626,7 +626,17 @@ test('Details: a long script is one step, the full command is capped at twelve r
   expect(await textOf(pane, /^and 1 safe step \(cd\)$/)).toBe('and 1 safe step (cd)')
   const lines = ((await pane.findAll({ type: 'Text', text: /^console\.log/ })) as unknown[]).length
   expect(lines).toBeLessThanOrEqual(12)
-  expect(await textOf(pane, /^and \d+ more lines$/)).toBe('and 31 more lines')
+  // The expand control sits on the last command row: the row, a spacer, then the arrow and its muted label.
+  expect(await pane.find({ key: 'full-last-gap' })).toBeDefined()
+  expect(await pane.find({ key: 'full-last-text' })).toBeDefined()
+  const words = (node: unknown): string => (typeof node === 'string' ? node : Array.isArray(node) ? node.map(words).join('') : node ? words((node as { children?: unknown }).children) : '')
+  expect(words(await pane.drawn({ in: 'blast-more' }))).toBe(' ▾ 31 more lines ')
+  await click(pane, 'blast-more')
+  expect(((await pane.findAll({ type: 'Text', text: /^console\.log/ })) as unknown[]).length).toBe(40)
+  expect(words(await pane.drawn({ in: 'blast-more' }))).toBe(' ▴ Show less ')
+  await click(pane, 'blast-more')
+  expect(((await pane.findAll({ type: 'Text', text: /^console\.log/ })) as unknown[]).length).toBeLessThanOrEqual(12)
+  expect(words(await pane.drawn({ in: 'blast-more' }))).toBe(' ▾ 31 more lines ')
   await pane.unmount()
   await click(band, 'blast-cancel')
   await call
