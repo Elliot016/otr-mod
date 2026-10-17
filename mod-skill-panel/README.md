@@ -36,7 +36,7 @@ Skills pill.
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
-| https://github.com/user-attachments/assets/c26f35ef-db0a-4450-8dc0-f4972a9eba89 |
+| https://github.com/user-attachments/assets/eb28c54a-75e6-4aeb-b48f-eb56d3574c90 |
 
 ## Features
 

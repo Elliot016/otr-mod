@@ -32,7 +32,7 @@ The gear pill, or `/mod-manager`.
 
 | Hover a mod, switch the icons |
 | --- |
-| https://github.com/user-attachments/assets/a984edc8-dd89-40df-81aa-7fe35de13e7e |
+| https://github.com/user-attachments/assets/a4b7d9f0-4b46-42af-9fe6-4ec9581c1e7f |
 
 ## Settings
 

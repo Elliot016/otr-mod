@@ -64,7 +64,7 @@ Each mod works alone, with or without mod-manager.
 
 | Every terminal mod in 133 seconds |
 | --- |
-| https://github.com/user-attachments/assets/d2fd0a54-b9ac-489b-830d-72833fa6e85c |
+| https://github.com/user-attachments/assets/3d22e732-40f9-4a5e-857c-7af29199dbdb |
 
 <details>
 <summary>Narration</summary>
@@ -191,7 +191,7 @@ Click a mod to open its video and a link to its full page.
 
 | Hovering an entry shows its tip |
 | --- |
-| https://github.com/user-attachments/assets/b385c49e-a298-4594-98fd-8e620150e3e2 |
+| https://github.com/user-attachments/assets/2e6b876d-4b02-4930-8eef-05ec66a85bc7 |
 
 [Full page][doc-mod-menu]
 
@@ -202,7 +202,7 @@ Click a mod to open its video and a link to its full page.
 
 | Hover a mod, switch the icons |
 | --- |
-| https://github.com/user-attachments/assets/a984edc8-dd89-40df-81aa-7fe35de13e7e |
+| https://github.com/user-attachments/assets/a4b7d9f0-4b46-42af-9fe6-4ec9581c1e7f |
 
 [Full page][doc-mod-manager]
 
@@ -213,7 +213,7 @@ Click a mod to open its video and a link to its full page.
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/da738c8d-4dda-4ed3-a6a3-fb6d2e8fe72e |
+| https://github.com/user-attachments/assets/3dcc0840-9944-43c7-a07e-609d37bb05bf |
 
 [Full page][doc-mod-file-tree]
 
@@ -224,7 +224,7 @@ Click a mod to open its video and a link to its full page.
 
 | Picking one by its digit |
 | --- |
-| https://github.com/user-attachments/assets/c6eba33e-5ebf-4e3f-b30d-514da45b0319 |
+| https://github.com/user-attachments/assets/a7ac7b78-b812-4c20-9e30-3bc8dba54b8b |
 
 [Full page][doc-mod-next-steps]
 
@@ -235,7 +235,7 @@ Click a mod to open its video and a link to its full page.
 
 | Pick a prompt to read it |
 | --- |
-| https://github.com/user-attachments/assets/94884a8e-62d4-4605-af19-591ab12e8adb |
+| https://github.com/user-attachments/assets/c62c8e6b-5549-46c9-bd3c-6aa85bceee93 |
 
 [Full page][doc-mod-prompts]
 
@@ -246,7 +246,7 @@ Click a mod to open its video and a link to its full page.
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
-| https://github.com/user-attachments/assets/c26f35ef-db0a-4450-8dc0-f4972a9eba89 |
+| https://github.com/user-attachments/assets/eb28c54a-75e6-4aeb-b48f-eb56d3574c90 |
 
 [Full page][doc-mod-skill-panel]
 
@@ -257,7 +257,7 @@ Click a mod to open its video and a link to its full page.
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/f4310ccc-c80d-48b4-ae0d-9a6f0fad2efe |
+| https://github.com/user-attachments/assets/940b7369-106c-4916-9121-4b791948e59d |
 
 [Full page][doc-mod-transcript]
 
@@ -268,7 +268,7 @@ Click a mod to open its video and a link to its full page.
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/6eb5747c-7a7d-4546-b8d0-512a0464c96d |
+| https://github.com/user-attachments/assets/1e58f376-4df6-4cb0-a1c4-a016d1e4d47f |
 
 [Full page][doc-mod-model-effort]
 
@@ -279,7 +279,7 @@ Click a mod to open its video and a link to its full page.
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/39ddfb43-7ad3-4e98-a3c1-4e6fa8a44c23 |
+| https://github.com/user-attachments/assets/e77e957d-8ca1-478c-a1ed-11b9c0da11b9 |
 
 [Full page][doc-mod-heads-up]
 
@@ -290,7 +290,7 @@ Click a mod to open its video and a link to its full page.
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/4339b8da-f37d-4ad3-ba5a-2bd5f93b9e76 |
+| https://github.com/user-attachments/assets/a68525f6-40eb-4cbf-b048-8054ab5e81b9 |
 
 [Full page][doc-mod-progress]
 
@@ -301,7 +301,7 @@ Click a mod to open its video and a link to its full page.
 
 | A risky command held |
 | --- |
-| https://github.com/user-attachments/assets/e98ac88c-e06f-4bc5-a2b6-a690009d9208 |
+| https://github.com/user-attachments/assets/35476b51-6e57-4735-b2cd-2da649aeae62 |
 
 [Full page][doc-mod-blast-radius]
 
@@ -323,11 +323,11 @@ Click a mod to open its video and a link to its full page.
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/1d4a0d56-3999-42f4-b990-8428403b9db0 |
+| https://github.com/user-attachments/assets/2543e5ef-f24c-4871-b5c0-e7f66977d4ac |
 
 | Auto handoff at the mark: countdown, clear, carry on |
 | --- |
-| https://github.com/user-attachments/assets/124db9fa-76f6-4a4b-8117-904c42a7bdb8 |
+| https://github.com/user-attachments/assets/746ef30c-7f53-4274-aa4c-07e6ec06b883 |
 
 [Full page][doc-mod-wrap-up]
 

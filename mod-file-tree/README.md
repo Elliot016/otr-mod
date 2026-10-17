@@ -32,7 +32,7 @@ Files pill.
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/da738c8d-4dda-4ed3-a6a3-fb6d2e8fe72e |
+| https://github.com/user-attachments/assets/3dcc0840-9944-43c7-a07e-609d37bb05bf |
 
 ## Features
 

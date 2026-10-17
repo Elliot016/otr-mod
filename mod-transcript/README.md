@@ -36,7 +36,7 @@ Automatic.
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/f4310ccc-c80d-48b4-ae0d-9a6f0fad2efe |
+| https://github.com/user-attachments/assets/940b7369-106c-4916-9121-4b791948e59d |
 
 ## Features
 
