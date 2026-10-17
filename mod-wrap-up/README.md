@@ -73,12 +73,12 @@ Change them with `/mod-wrap-up settings` or the gear pill.
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 | Handoff length (words) | `400` | Most words the handoff may use. A hard cap on the message the model writes |
 | Read the threads | on | Haiku finds up to four threads. You keep or drop each one when the card opens. Off, the card shows only the fixed items and the whole session counts |
-| Automatic handoff | on | After a turn, Sonnet keeps a ledger of decisions and tasks and a fresh handoff in the background. /compact is given the handoff, and the next prompt after a compaction or a related /clear carries it. Off, only the Wrap up pill hands off |
-| Update every (turns) | `1` | Turns between automatic handoff updates, at least 1 |
-| Auto handoff at the mark | off | Once either mark below is reached, a 5 second countdown card appears between turns; unless you cancel, type a draft or start a turn, the ledger is brought up to date, the chat is cleared and Claude continues the open task from the handoff (with no open task, the handoff is filled into the prompt instead). Replaces the old auto compact. Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on |
-| Hand off at (%) | `65` | Context percent at which the auto handoff counts down between turns. Guards small windows; the token mark comes first on large ones |
-| Hand off at (tokens) | `400000` | Context tokens at which the auto handoff counts down between turns, whichever of the two marks comes first |
-| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Automatic handoff | on | Keeps a handoff ready each turn. After a turn, Sonnet updates a ledger of decisions and tasks and a fresh handoff in the background. /compact is given the handoff, and the next prompt after a compaction or a related /clear carries it. Off, only the Wrap up pill hands off |
+| Update every (turns) | `1` | Turns between handoff updates. At least 1 |
+| Auto handoff at the mark | off | Clears and hands off at the mark. Once either mark below is reached, a 5 second countdown card appears between turns. Unless you cancel, type a draft or start a turn, the ledger is brought up to date, the chat is cleared and Claude continues the open task from the handoff (with no open task, the handoff is filled into the prompt instead). Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on |
+| Hand off at (%) | `65` | Context % that starts the countdown. Guards small windows; the token mark comes first on large ones |
+| Hand off at (tokens) | `400000` | Tokens that start the countdown. Whichever mark comes first, tokens or percent, starts it |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License
 

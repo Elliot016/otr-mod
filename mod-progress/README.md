@@ -40,8 +40,8 @@ Progress pill.
 
 ## Features
 
-- **The gates view:** A card per loop with its gates ticked off, and a band count of every gate in the session. Gates come from files the mod reads, not from the model.
-- **GATES.md format:** The ledger is `GATES.md` and every `gates/<name>.md` in `~/.claude/gates/<repo>/<session id>/` (or under `GATES_HOME`). Each gate is a line `- [ ] G1: what must hold`, with an indented `EVIDENCE:` line under it. A gate counts as met only when its box is `[x]` and its evidence is not `pending`. A line `ABANDON: G1 reason` at the start of a line gives that gate up. A `gates/<name>.md` file also belongs to the agent of that name.
+- **The gates view:** A card per loop with its gates ticked off, and a band count of every gate in the session. Gates come from `GATES.md` files written by your own skill or script, not from the model. The rest of the mod works without them.
+- **GATES.md format:** The ledger is `GATES.md` plus every `gates/<name>.md` in `~/.claude/gates/<repo>/<session id>/` (or under `GATES_HOME`). A gate is a line `- [ ] G1: what must hold`, with an indented `EVIDENCE:` line under it. It counts as met only when its box is `[x]` and its evidence is not `pending`. A line starting `ABANDON: G1 reason` gives that gate up. A `gates/<name>.md` file also belongs to the agent of that name.
 
 ## Settings
 
@@ -49,7 +49,7 @@ Change them with `/mod-progress settings` or the gear pill.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 
 ## License

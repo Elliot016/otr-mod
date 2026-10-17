@@ -43,7 +43,7 @@ Automatic.
 - **Turn line:** Under each prompt, a line names what the turn did: tool count, file changes with lines added and removed, skills, agents and time.
 - **Tool lines:** Inside an open turn, each finished tool call is one line; a click shows its full row and diff.
 - **Card:** An open turn draws as one tinted card with a bar down its left edge; the final reply stays outside it.
-- **Copy button:** Under each finished reply, a button copies it as markdown, its code, plain text, its tables rebuilt as clean markdown, or its links. Pointing at a choice marks the characters it takes.
+- **Copy button:** A button under each finished reply copies it as markdown, its code, plain text, its tables rebuilt as clean markdown, or its links. Pointing at a choice marks the characters it takes.
 
 ## Settings
 
@@ -53,12 +53,12 @@ Change them with `/mod-transcript settings` or the gear pill.
 | --- | --- | --- |
 | Fold finished turns | on | Turns start folded to one line. The line sits under its prompt. Off, they start open and the line folds them |
 | Fold tool rows | on | Each tool row folds to one line. Finished rows have their own toggle. Off, tool rows draw as Claude Code draws them |
-| Show times | on | Prompt send time, tool duration. Each prompt shows when you sent it, and each tool line when it started and how long it took. Off, rows show no times |
-| Show the latest turn in full | on | Stays open until your next prompt. The latest turn shows every tool row and result as Claude Code draws them. Off, finished tool calls fold right away |
-| Copy button | on | On each finished reply's edge. A copy button sits there: point at it to pick reply, code, text, table or links, then click one. The reply marks what the choice under the pointer copies. Off, the edge stays plain |
+| Show times | on | Prompt send time, tool duration. Each prompt shows when you sent it, each tool line when it started and how long it took. Off, rows show no times |
+| Show the latest turn in full | on | Stays open until your next prompt, with every tool row and result as Claude Code draws them. Off, finished tool calls fold right away |
+| Copy button | on | On each finished reply's edge. Point at the copy button to pick reply, code, text, table or links, then click. The reply marks what the choice under the pointer copies. Off, the edge stays plain |
 | Prompt numbers | on | #N before each of your prompts. It matches the number the Prompts and Heads up panels show |
-| Animations | on | The fold chip and the kind chips fade when the pointer leaves them, a running command's dot blinks, and the tabs and settings fade. Off, they switch at once and the dot stays lit |
-| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Animations | on | Fold and kind chips fade when the pointer leaves, a running command's dot blinks, and the tabs and settings fade. Off, they switch at once and the dot stays lit |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License
 

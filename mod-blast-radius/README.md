@@ -38,8 +38,8 @@ Automatic.
 
 - **Hold:** A risky Bash command waits before it runs, with no timeout: rm, git reset --hard, force push, SQL DROP, production deploys, gcloud, az, databricks, chmod 777, curl into a shell, credential reads, mv over a file, > over a file and Windows deletes.
 - **Your rules:** ~/.claude/mods-data/mod-blast-radius/rules.json, an array of { "pattern": "regex", "reason": "text", "flags": "i" }. Read again when the file changes. A bad entry is skipped with a note in the settings pane; the built-in checks never depend on it.
-- **One prompt:** After you press Run, a settings hook's ask with a reason starting "Destructive operation detected" is answered too, so you are not asked twice. Any other ask or deny passes through.
-- **No drawing surface:** In a VS Code chat panel, claude -p or an SDK session nothing can show the hold, so the call is not held: the permission system asks instead, with the reason.
+- **One prompt:** If a PreToolUse hook asks with a reason starting "Destructive operation detected", Run answers it too, so you are not asked twice. Any other ask or deny passes through.
+- **No drawing surface:** Where nothing can show the hold (a VS Code chat panel, claude -p, an SDK session), the call is not held. The permission system asks instead, with the reason.
 - **Preview:** Paths with counts and size, git status and dry runs, the commits a force push would drop. Read-only: the command itself never runs.
 - **Run or Cancel:** Cancel refuses the call with a reason Claude reads. A narrow terminal draws the same report above the prompt.
 
@@ -58,7 +58,7 @@ Change them with `/mod-blast-radius settings` or the gear pill.
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 | Hold risky commands | on | Risky Bash waits for your choice. You pick Run or Cancel. Off, every command runs as usual |
 | Explain with Haiku | on | Each held command is sent to Haiku for a plain-language explanation on the card. It spends tokens. Off, no model is called and the card shows the rule's reason and the preview |
-| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License
 

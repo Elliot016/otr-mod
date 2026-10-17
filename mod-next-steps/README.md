@@ -55,9 +55,9 @@ Change them with `/mod-next-steps settings` or the gear pill.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
-| Suggest next steps | on | Lists next prompts after a turn. After each finished turn, the model writes a few and lists them above the input. Off, no request is made |
+| Suggest next steps | on | Lists next prompts after a turn. The model writes them after each finished turn. Off, no request is made |
 | Suggestions | `3` | How many suggestions to show, 1 to 3 |
-| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License
 

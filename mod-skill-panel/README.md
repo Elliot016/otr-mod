@@ -40,7 +40,7 @@ Skills pill.
 
 ## Features
 
-- **Skills and agents:** Lists your skills and agents, personal and the open project's, grouped under tags. A click adds one to the prompt.
+- **Skills and agents:** Lists your skills and agents, personal and the open project's: skills grouped by tag, agents by model. A click adds one to the prompt.
 - **Color tags:** Give a skill a `color-tag: <tag>` line in its SKILL.md frontmatter to group it under that tag and badge it in the slash typeahead. The tags are router, start, debug, review, interface, writing, utility and mods; a skill without one, or with another name, lands under personal.
 
 ## Settings
@@ -49,7 +49,7 @@ Change them with `/mod-skill-panel settings` or the gear pill.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one |
+| Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 
 ## License

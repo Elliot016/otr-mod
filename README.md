@@ -167,7 +167,7 @@ The mods draw safe Unicode symbols, so they work in any terminal. With a Nerd Fo
 | --- | --- |
 | ![][img-icons-plain] | ![][img-icons-nerd] |
 
-See how cool it looks with the font? Round pills, real icons on every tab, and not a square corner in sight.
+With the font, pills are round and every tab has a real icon.
 
 A Nerd Font is a programming font with thousands of icons added to it. To use one:
 
@@ -195,7 +195,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 </details>
 
 <details>
-<summary><b>mod-manager</b>: Hover a mod to read about it, and switch every mod's icons at once.</summary>
+<summary><b>mod-manager</b>: Hover a mod to read about it, switch every mod's icons at once, and apply a toggle.</summary>
 
 | Hover a mod, switch the icons |
 | --- |
@@ -357,7 +357,7 @@ Made by [Vinicius Amorim][author] and released under the [MIT license][license].
 3. Test it with `claude plugin test <clone>/<name>`.
 4. Try it with `claude --plugin-dir <clone>/<name>`, then add its folder to `CLAUDE_CODE_PLUGIN_DIRS`.
 
-`showcase/tools/` records the videos and stills on the maintainer's Windows setup (Windows Terminal, pwsh, pywin32, Opera GX). No mod needs it, and it won't run elsewhere as is.
+`showcase/tools/` is maintainer-only tooling for the videos and stills. It needs Windows, and no mod uses it.
 
 Each mod's folder:
 

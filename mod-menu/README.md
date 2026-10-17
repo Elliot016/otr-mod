@@ -40,7 +40,7 @@ Change them in the plugin's settings.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Menu labels | `auto` | auto draws each pill with its icon and its name, and every pill drops to its icon alone when the row is wider than the window. always keeps the names, never draws the icons alone. Icons alone apply on Nerd Font icons only, since safe mode has no icon. /mod-menu labels auto\|always\|never sets it too |
+| Menu labels | `auto` | When pills show their names. auto draws icon and name, and drops every pill to its icon when the row is wider than the window. always keeps the names. never shows icons alone. Icons alone need Nerd Font icons, since safe mode has none. /mod-menu labels auto\|always\|never sets it too |
 
 ## License
 
