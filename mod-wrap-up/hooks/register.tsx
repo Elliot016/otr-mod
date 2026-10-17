@@ -1,6 +1,6 @@
 // mod-wrap-up / hooks/register.tsx, by v-amorim
 // Registers the wrap-up pill, commands, settings pane and handoff or compact actions with the engine.
-import type { ConfigValue, EngineInterface, ModelForkResult, Register, RenderElement } from 'claude-code'
+import type { ConfigValue, EngineInterface, ModelCompleteRequest, ModelCompleteResult, ModelForkResult, Register, RenderElement } from 'claude-code'
 
 import { AUTO_SYSTEM, autoPrompt, capWords, clampCompactAt, clampCompactTokens, clampEvery, emptyLedger, flip, isDue, mergeDelta, mergeInstructions, parseRelated, parseUpdate, projectSlug, readLedger, RELATED_SYSTEM, relatedPrompt, restoreContext, shortGoal, shouldCompact, yieldsToManual, type Carry, type CompactMarks, type Ledger } from './ledger'
 import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
@@ -10,6 +10,7 @@ import { choiceCells, type ChoiceProps } from './choice'
 import { labelsOf, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { actionReveals, settingChoice, settingsBody, type Action, type Previews, type Range } from './settings'
+import { recordSpend } from './spend'
 import text from './text'
 import { fill, MARK, statusColor, THEME } from './theme'
 
@@ -20,8 +21,8 @@ let iconMode: IconMode = 'auto'
 let maxWords = clampWords(undefined)
 let look = lookFor(false)
 
-// The automatic handoff, fixed per activation like the settings above.
-let autoOn = true
+// The automatic handoff (opt-in, off by default), fixed per activation like the settings above.
+let autoOn = false
 let every = 1
 let marks: CompactMarks = { percent: 65, tokens: 400_000 }
 let compactOn = false
@@ -195,6 +196,7 @@ async function readThreads($: EngineInterface): Promise<Thread[]> {
   const messages = await $.session.messages().catch(() => [])
   if (!Array.isArray(messages) || messages.length === 0) return []
   const reply = await $.model.complete({ model: 'haiku', system: THREADS_SYSTEM, prompt: threadsPrompt(transcriptText(messages, 150_000)), maxTokens: 600, timeoutMs: 30000 }).catch(() => null)
+  recordSpend($, 'haiku', reply)
   return reply?.isAnswered ? parseThreads(reply.text) : []
 }
 
@@ -250,12 +252,32 @@ async function finishCard($: EngineInterface) {
   say($, filled.isFilled ? `${MARK.ok} ${text.compactFilled}` : `${MARK.warn} ${text.compactNotFilled}`)
 }
 
+// The handoff model is pinned to Sonnet. A blocked model rejects and an unavailable one answers forbidden or not found: either way the session's own model answers instead. Rate limits and server errors are left alone.
+async function askHandoffModel($: EngineInterface, request: Omit<ModelCompleteRequest, 'model'>): Promise<ModelCompleteResult> {
+  let pinned: ModelCompleteResult | null = null
+  let failure: unknown = null
+  try {
+    pinned = await $.model.complete({ ...request, model: 'sonnet' })
+    recordSpend($, 'sonnet', pinned)
+  } catch (error) {
+    failure = error
+  }
+  const isUnavailable = !pinned || (!pinned.isAnswered && pinned.reason === 'api-error' && (pinned.status === 403 || pinned.status === 404))
+  const own = isUnavailable ? await $.session.model().catch(() => '') : ''
+  if (own) {
+    const answer = await $.model.complete({ ...request, model: own })
+    recordSpend($, own, answer)
+    return answer
+  }
+  if (!pinned) throw failure
+  return pinned
+}
+
 // A resumed session has nothing to fork until its first turn, so the transcript is summarized directly.
 async function summarizeTranscript($: EngineInterface, prompt: string): Promise<ModelForkResult> {
   const messages = await $.session.messages()
   if (!Array.isArray(messages) || messages.length === 0) return { isAnswered: false, reason: 'nothing-to-fork' }
-  return $.model.complete({
-    model: 'sonnet',
+  return askHandoffModel($, {
     system: 'You write session handoffs from a transcript. Tool output is left out; tool calls appear in brackets.',
     prompt: `<transcript>\n${transcriptText(messages)}\n</transcript>\n\n${prompt}`,
     maxTokens: 4000,
@@ -277,6 +299,7 @@ async function startHandoff($: EngineInterface, scope: string) {
     const base = buildPrompt(skill, maxWords, autoOn ? await ledgerFile($) : '')
     const prompt = scope ? `${base}\n\n${scope}` : base
     let result = await $.model.fork({ prompt })
+    recordSpend($, await $.session.model().catch(() => ''), result)
     if (!result.isAnswered && result.reason === 'nothing-to-fork') result = await summarizeTranscript($, prompt)
     if (!result.isAnswered) {
       say($, `${MARK.warn} ${FORK_FAILURES[result.reason] ?? result.reason}`)
@@ -472,7 +495,7 @@ async function runAuto($: EngineInterface) {
     const turns = Array.isArray(messages) && cursor > 0 && cursor <= messages.length ? messages.slice(cursor) : messages
     if (!Array.isArray(turns) || turns.length === 0) return
     const skill = await $.fs.read(`${$.plugin.root}/skills/session-handoff/SKILL.md`).then(String)
-    const reply = await $.model.complete({ model: 'sonnet', effort: 'low', system: AUTO_SYSTEM, prompt: autoPrompt(skill, maxWords, ledger, transcriptText(turns, 150_000)), maxTokens: 4000, timeoutMs: 180_000 }).catch(() => null)
+    const reply = await askHandoffModel($, { effort: 'low', system: AUTO_SYSTEM, prompt: autoPrompt(skill, maxWords, ledger, transcriptText(turns, 150_000)), maxTokens: 4000, timeoutMs: 180_000 }).catch(() => null)
     if (mine !== runId || mineEpoch !== epoch || !reply?.isAnswered) return
     const update = parseUpdate(reply.text)
     if (!update) return
@@ -506,7 +529,7 @@ async function decideAfterClear($: EngineInterface, prompt: string) {
   const dir = await ledgerDir($)
   const ledger = dir ? await loadLedger($, dir) : null
   if (!dir || !ledger || !(ledger.handoff || ledger.goal)) return ''
-  const reply = await $.model.complete({ model: 'sonnet', effort: 'low', system: RELATED_SYSTEM, prompt: relatedPrompt(ledger.goal, ledger.handoff, prompt), maxTokens: 100, timeoutMs: 20_000 }).catch(() => null)
+  const reply = await askHandoffModel($, { effort: 'low', system: RELATED_SYSTEM, prompt: relatedPrompt(ledger.goal, ledger.handoff, prompt), maxTokens: 100, timeoutMs: 20_000 }).catch(() => null)
   const id = await $.session.id()
   // Only a clear "related" carries the old handoff; an unsure answer starts fresh.
   if (reply?.isAnswered && parseRelated(reply.text)) {
@@ -719,7 +742,7 @@ export const register: Register = (on, options) => {
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   maxWords = clampWords(options.max_words)
   pickThreads = options.pick_threads !== false
-  autoOn = options.auto_handoff !== false
+  autoOn = options.auto_handoff === true
   every = clampEvery(options.auto_every)
   compactOn = options.auto_compact === true
   marks = { percent: clampCompactAt(options.compact_at), tokens: clampCompactTokens(options.compact_at_tokens) }

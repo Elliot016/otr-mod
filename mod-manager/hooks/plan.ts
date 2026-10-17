@@ -59,6 +59,9 @@ export function checkedOf({ version, market, hasCatalog, fontFound }: CheckedInp
 
 const firstLine = (output: string) => output.trim().split('\n').find(Boolean)?.trim() ?? ''
 
+// A spawn that fails because `claude` is missing reads as an OS error, which tells the person nothing.
+const isMissingCli = (message: string) => /ENOENT|not found|not recognized|cannot find|no such file/i.test(message)
+
 // Runs each CLI step in turn; a failure goes to onFail and the rest still run. Returns how many failed.
 export async function runSteps(io: Io, steps: Step[], onFail: (step: Step, reason: string) => void): Promise<number> {
   let failed = 0
@@ -66,7 +69,10 @@ export async function runSteps(io: Io, steps: Step[], onFail: (step: Step, reaso
     if (!step.argv) continue
     try {
       if (!io.run) throw new Error('cannot run claude')
-      const result = await io.run(step.argv, CLI_MS)
+      const result = await io.run(step.argv, CLI_MS).catch(error => {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(isMissingCli(message) ? text.cliMissing : message)
+      })
       if (result.exitCode !== 0) throw new Error(firstLine(result.stderr) || firstLine(result.stdout) || `exit ${result.exitCode}`)
     } catch (error) {
       failed++

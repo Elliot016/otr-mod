@@ -16,7 +16,7 @@
       "type": "boolean",
       "title": "Suggest next steps",
       "description": "Lists next prompts after a turn. The model writes them after each finished turn. Off, no request is made",
-      "default": true
+      "default": false
     },
     "count": {
       "type": "number",

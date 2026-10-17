@@ -30,8 +30,8 @@
     "auto_handoff": {
       "type": "boolean",
       "title": "Automatic handoff",
-      "description": "Keeps a handoff ready each turn. After a turn, Sonnet updates a ledger of decisions and tasks and a fresh handoff in the background. /compact is given the handoff, and the next prompt after a compaction or a related /clear carries it. Off, only the Wrap up pill hands off",
-      "default": true
+      "description": "Keeps a handoff ready each turn. After a turn, Sonnet updates a ledger of decisions and tasks and a fresh handoff in the background. /compact is given the handoff, and the next prompt after a compaction or a related /clear carries it. Off (the default), the mod makes no background model call and only the Wrap up pill hands off",
+      "default": false
     },
     "auto_every": {
       "type": "number",

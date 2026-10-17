@@ -6,6 +6,7 @@ import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rew
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode, type Reveal } from './look'
 import { byTurn, canFork, CLEAR_AFTER_PROMPTS, emptySaved, KNOWN_KEPT, pack, recentSessions, remember, restates, sameText, savedOf, SEEN_KEPT, shouldCheck, stringsOf, unreadCount, type Note, type Saved } from './notes'
+import { recordSpend } from './spend'
 import { isPrompt, PLACEHOLDER, PromptNumbers } from './prompts'
 import { labelsOf, menuEntry, pill, PILL, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { actionReveals, settingChoice, settingsBody, type Action, type Previews } from './settings'
@@ -17,7 +18,7 @@ import { bytesOf, CHUNK_BYTES, chunkArgv, feedLines, utf8Length, WHOLE_READ_BYTE
 
 // The settings (userConfig), fixed per activation: a change reloads the mod.
 let iconMode: IconMode = 'auto'
-let enabled = true
+let enabled = false
 let look = lookFor(false)
 
 async function detectLook($: EngineInterface) {
@@ -270,19 +271,48 @@ const noteOf = (id: string) => saved.notes.find(each => each.id === id)
 
 const ASK_TIMEOUT_MS = 120_000
 
+const REASON_CHARS = 80
+
+// The session that already got the "side check unavailable" toast.
+let warnedSession: string | null = null
+
+// One toast per session when the side model call fails, so a blocked plan is not silent forever.
+async function sideUnavailable($: EngineInterface, reason: string) {
+  const session = await $.session.id().catch(() => '')
+  if (warnedSession === session) return
+  warnedSession = session
+  const short = reason.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().slice(0, REASON_CHARS)
+  const message = short ? fill(text.sideUnavailableWhy, { reason: short }) : text.sideUnavailable
+  $.ui.toast(message)
+}
+
+const apiReason = (reply: { isAnswered: boolean; reason?: string; status?: number | null; error?: string }) =>
+  reply.isAnswered || reply.reason !== 'api-error' ? null : [reply.error ?? '', reply.status ? String(reply.status) : ''].filter(Boolean).join(' ')
+
 // A fork runs at the session's effort and reads its cache; above medium, or with nothing to fork yet, the packed conversation goes to the session's model at medium.
 async function ask($: EngineInterface, prompt: string) {
-  if (canFork(lastEffort)) {
-    // $.model.fork takes no timeoutMs, so a fork that never answers is cut here.
-    const reply = await Promise.race([$.model.fork({ prompt }), $.clock.sleep(ASK_TIMEOUT_MS).then(() => null)])
-    if (reply === null) return null
-    if (reply.isAnswered) return reply.text
-    if (!('reason' in reply) || reply.reason !== 'nothing-to-fork') return null
+  try {
+    if (canFork(lastEffort)) {
+      // $.model.fork takes no timeoutMs, so a fork that never answers is cut here.
+      const reply = await Promise.race([$.model.fork({ prompt }), $.clock.sleep(ASK_TIMEOUT_MS).then(() => null)])
+      if (reply === null) return null
+      recordSpend($, lastModel || (await $.session.model().catch(() => '')), reply)
+      if (reply.isAnswered) return reply.text
+      const failure = apiReason(reply)
+      if (failure !== null) await sideUnavailable($, failure)
+      if (!('reason' in reply) || reply.reason !== 'nothing-to-fork') return null
+    }
+    const messages = (await $.session.messages()) as SessionMessage[]
+    const model = lastModel || (await $.session.model())
+    const reply = await $.model.complete({ model, effort: 'medium', prompt: `<conversation>\n${pack(messages)}\n</conversation>\n\n${prompt}`, maxTokens: 1500, timeoutMs: ASK_TIMEOUT_MS })
+    recordSpend($, model, reply)
+    const failure = apiReason(reply)
+    if (failure !== null) await sideUnavailable($, failure)
+    return reply.isAnswered ? reply.text : null
+  } catch (error) {
+    await sideUnavailable($, error instanceof Error ? error.message : String(error))
+    throw error
   }
-  const messages = (await $.session.messages()) as SessionMessage[]
-  const model = lastModel || (await $.session.model())
-  const reply = await $.model.complete({ model, effort: 'medium', prompt: `<conversation>\n${pack(messages)}\n</conversation>\n\n${prompt}`, maxTokens: 1500, timeoutMs: ASK_TIMEOUT_MS })
-  return reply.isAnswered ? reply.text : null
 }
 
 async function check($: EngineInterface) {
@@ -530,7 +560,7 @@ const DIRECTIONS: [Direction, string, string][] = [['simpler', text.simpler, tex
 
 export const register: Register = (on, options) => {
   still = options.animations === false
-  enabled = options.enabled !== false
+  enabled = options.enabled === true
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')

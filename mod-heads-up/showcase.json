@@ -1,13 +1,13 @@
 {
   "tagline": "One thing worth knowing, only when it matters",
   "cost": {
-    "summary": "Calls a model: every sixth step of a turn, at most once per turn, it asks your session's model about the session. The `Check while Claude works` setting turns it off.",
+    "summary": "Off by default, no model call. The `Check while Claude works` setting turns on a side check that asks your session's model about the session, at most once per turn.",
     "readme": [
-      "This mod calls a model, which spends tokens and counts against your plan quota.",
+      "By default this mod makes no model call. Turn on Check while Claude works (`/mod-heads-up settings`) and it calls a model, which spends tokens and counts against your plan quota.",
       "",
       "- **The side check:** on every sixth step of the main agent, at most once per turn and never while a note card is showing, the mod asks a model to read the session. It forks your session when its effort is low or medium, which reuses the cached conversation. At a higher effort, or with nothing to fork yet, it sends the whole conversation to your session's model at medium effort. If a newer step may have overtaken the finding, it asks once more before showing it.",
       "- **Reword:** each click on simpler words, less detail or more detail makes one more call.",
-      "- **Turn it off:** set Check while Claude works to off (`/mod-heads-up settings`). The side check then makes no request. Reword only runs when you click it."
+      "- **Off by default:** with Check while Claude works off, the side check makes no request. Reword only runs when you click it."
     ]
   },
   "features": [

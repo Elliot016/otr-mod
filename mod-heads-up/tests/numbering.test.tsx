@@ -1,6 +1,12 @@
 // mod-heads-up / tests/numbering.test.tsx, by v-amorim
 // Tests prompt numbering across a transcript branch as the panel shows it.
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test as kitTest } from 'claude-code/testing'
+
+// The side check is opt-in, so these tests turn it on unless a test sets its own value.
+const test = ((name: string, first: any, second?: any) => {
+  const [settings, body] = typeof first === 'function' ? [{}, first] : [first, second]
+  return kitTest(name, { ...settings, options: { enabled: true, ...settings.options } }, body)
+}) as typeof kitTest
 
 const ID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const TRANSCRIPT = '/home/u/.claude/projects/p/s1.jsonl'

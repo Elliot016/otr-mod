@@ -12,6 +12,7 @@ import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from '
 import { measure, tilde, type Io, type Report } from './preview'
 import { CHECKS, compileRules, evaluate, type Risk, type UserRule } from './risk'
 import { actionReveals, settingChoice, settingsBody, type Action, type Previews } from './settings'
+import { recordSpend } from './spend'
 import text from './text'
 import { fill, MARK, mix, statusColor, SYNTAX, THEME, WASH } from './theme'
 
@@ -38,8 +39,8 @@ const FULL_ROWS_OPEN = 400
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let isEnabled = true
-// Off, no held command is sent to Haiku: the card keeps the rule's words and the preview.
-let isExplaining = true
+// Opt-in, off by default: no held command is sent to Haiku: the card keeps the rule's words and the preview.
+let isExplaining = false
 let iconMode: IconMode = 'auto'
 let look: Look = lookFor(false)
 
@@ -183,6 +184,7 @@ async function describe($: EngineInterface, mine: Held) {
       $.ui.invalidate('ui.render')
       const prompt = describePrompt(mine.command, mine.risk.reason, mine.report?.summary ?? '', risky.map(step => step.text))
       reply = await $.model.complete({ model: 'haiku', system: SYSTEM, prompt, maxTokens: 500, timeoutMs: 15000 }).catch(() => null)
+      recordSpend($, 'haiku', reply)
     } finally {
       mine.isDescribing = false
       $.ui.invalidate('ui.render')
@@ -534,7 +536,7 @@ export const register: Register = (on, options) => {
   })
 
   isEnabled = options.enabled !== false
-  isExplaining = options.explain !== false
+  isExplaining = options.explain === true
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')

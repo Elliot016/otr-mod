@@ -4,6 +4,8 @@ export default {
   "settingsWaiting": "Settings panel waiting: {reason}",
   "suggestionsCleared": "Suggestions cleared",
   "commandDescription": "Next-prompt suggestions above the input; `settings` opens its settings panel, `clear` drops the current ones",
+  "sideUnavailable": "Side check unavailable",
+  "sideUnavailableWhy": "Side check unavailable: {reason}",
   "thinking": "Thinking of next steps…",
   "paneHeading": "Next steps",
   "paneHeadingSettings": "Settings",

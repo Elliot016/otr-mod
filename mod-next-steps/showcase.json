@@ -1,13 +1,13 @@
 {
   "tagline": "Next prompts one click away, never sent for you",
   "cost": {
-    "summary": "Calls a model: after each finished turn it forks your session to ask for the suggestions. The `Suggest next steps` setting turns it off.",
+    "summary": "Off by default, no model call. The `Suggest next steps` setting turns on a fork of your session after each finished turn to ask for the suggestions.",
     "readme": [
-      "This mod calls a model, which spends tokens and counts against your plan quota.",
+      "By default this mod makes no model call. Turn on Suggest next steps (`/mod-next-steps settings`) and it calls a model, which spends tokens and counts against your plan quota.",
       "",
       "After each finished turn of the main agent (not an interrupted one, not a subagent's), it forks your session to ask for the suggestions. The fork runs on your session's model and reuses the cached conversation, so a long session still makes a sizable request every turn.",
       "",
-      "To turn it off, set Suggest next steps to off (`/mod-next-steps settings`). Then no request is made."
+      "With Suggest next steps off, the default, no request is made."
     ]
   },
   "features": [

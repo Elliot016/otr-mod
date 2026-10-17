@@ -8,6 +8,7 @@ import { fill, MARK, statusColor, THEME } from './theme'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
+import { recordSpend } from './spend'
 import text from './text'
 
 const PANE = 'nextsteps'
@@ -24,7 +25,7 @@ const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
 let iconMode: IconMode = 'auto'
-let enabled = true
+let enabled = false
 let count = 3
 let look = lookFor(false)
 // The control under the pointer, from its tip post: the band's tip row and the pane footer show it.
@@ -116,19 +117,34 @@ function parseSteps(text: string, limit: number) {
 }
 
 let isSuggesting = false
+const REASON_CHARS = 80
+// The session that already got the "side check unavailable" toast.
+let warnedSession: string | null = null
+
+// One toast per session when the side model call fails, so a blocked plan is not silent forever.
+async function sideUnavailable($: EngineInterface, reason: string) {
+  const session = await $.session.id().catch(() => '')
+  if (warnedSession === session) return
+  warnedSession = session
+  const short = reason.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().slice(0, REASON_CHARS)
+  const message = short ? fill(text.sideUnavailableWhy, { reason: short }) : text.sideUnavailable
+  $.ui.toast(message)
+}
 
 async function suggest($: EngineInterface, mine: number) {
   isSuggesting = true
   $.ui.invalidate('ui.render')
   try {
     const reply = await $.model.fork({ prompt: question(count) })
+    recordSpend($, await $.session.model().catch(() => ''), reply)
+    if (!reply.isAnswered && reply.reason === 'api-error') await sideUnavailable($, [reply.error, reply.status ? String(reply.status) : ''].filter(Boolean).join(' '))
     if (mine !== epoch || !reply.isAnswered) return
     const found = parseSteps(reply.text, count)
     if (found.length === 0) return
     steps = found
     $.ui.invalidate('ui.render')
-  } catch {
-    // A suggestion is a courtesy: any failure shows nothing.
+  } catch (error) {
+    await sideUnavailable($, error instanceof Error ? error.message : String(error))
   } finally {
     if (mine === epoch) {
       isSuggesting = false
@@ -214,7 +230,7 @@ export const register: Register = (on, options) => {
   })
 
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  enabled = options.enabled !== false
+  enabled = options.enabled === true
   count = Math.min(3, Math.max(1, Math.round(Number(options.count ?? 3)) || 3))
   look = lookFor(iconMode === 'nerd')
 

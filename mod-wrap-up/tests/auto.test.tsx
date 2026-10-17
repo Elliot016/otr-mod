@@ -1,10 +1,16 @@
 // mod-wrap-up / tests/auto.test.tsx, by v-amorim
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test as kitTest } from 'claude-code/testing'
 
 import { compactNote } from '../hooks/handoff'
 import { autoPrompt, capWords, clampCompactAt, clampCompactTokens, clampEvery, digest, emptyLedger, flip, isDue, mergeDelta, mergeInstructions, parseRelated, parseUpdate, normalizeCwd, projectSlug, readLedger, restoreContext, shouldCompact, yieldsToManual } from '../hooks/ledger'
 
-const SKILL = '---\nname: session-handoff\ndescription: x\n---\n\n# session-handoff\n\nWrite one message.'
+// Automatic handoff is opt-in, so these tests turn it on unless a test sets its own value.
+const test = ((name: string, first: any, second?: any) => {
+  const [settings, body] = typeof first === 'function' ? [{}, first] : [first, second]
+  return kitTest(name, { ...settings, options: { auto_handoff: true, ...settings.options } }, body)
+}) as typeof kitTest
+
+const SKILL ='---\nname: session-handoff\ndescription: x\n---\n\n# session-handoff\n\nWrite one message.'
 const USAGE = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 const NONE = { decisions: [], superseded: [], done: [], opened: [] }
 const DIR = `C:/home/.claude/mods-data/mod-wrap-up/${projectSlug('C:/work/proj')}`
@@ -118,7 +124,7 @@ test('the restore steps aside only while a manual handoff is fresh; the relatedn
 
 type World = ReturnType<typeof world>
 
-function world(on: any, files: Map<string, string>, reply: (system: string, prompt: string) => unknown | Promise<unknown>, messages: unknown[] = [{ role: 'user', text: 'hello', toolUses: [] }], env: Record<string, string> = {}) {
+function world(on: any, files: Map<string, string>, reply: (system: string, prompt: string, model: string) => unknown | Promise<unknown>, messages: unknown[] = [{ role: 'user', text: 'hello', toolUses: [] }], env: Record<string, string> = {}) {
   const prompts: { model: string; effort?: string; system: string; prompt: string }[] = []
   const filled: string[] = []
   const compacted: (string | undefined)[] = []
@@ -148,8 +154,9 @@ function world(on: any, files: Map<string, string>, reply: (system: string, prom
   on('session.messages', () => ({ value: flags.messages }))
   on('model.complete', async (_$: unknown, e: { model: string; effort?: string; system: string; prompt: string }) => {
     prompts.push({ model: e.model, effort: e.effort, system: e.system, prompt: e.prompt })
-    return { value: await reply(e.system, e.prompt) }
+    return { value: await reply(e.system, e.prompt, e.model) }
   })
+  on('session.model', () => ({ value: 'session-model' }))
   on('model.fork', (_$: unknown, e: { prompt: string }) => {
     forks.push(e.prompt)
     return { value: { isAnswered: true, text: 'MANUAL HANDOFF', usage: USAGE } }
@@ -216,6 +223,44 @@ test('a set CLAUDE_CONFIG_DIR is where the ledger and handoff land', async ($, o
   await w.clock.advance(1)
   expect(readLedger(w.files.get(inCfg))!.handoff).toBe('HANDOFF-CFG')
   expect(w.files.has(LEDGER_FILE)).toBe(false)
+})
+
+kitTest('by default (setting untouched) a turn end and a first prompt after a clear make no model call', async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('X'))
+  await $.turn.complete(MAIN_TURN)
+  await w.clock.advance(1)
+  await $.prompt.submit({ text: 'next task', wait: false, origin: COMPOSER } as never)
+  await w.clock.advance(1)
+  expect(w.prompts).toHaveLength(0)
+  expect(w.files.get(LEDGER_FILE)).toBe(JSON.stringify(seeded()))
+})
+
+const UNAVAILABLE = { isAnswered: false, reason: 'api-error', status: 404, error: 'invalid_request', usage: USAGE }
+
+test('when Sonnet is unavailable (404) the update is retried once on the session model and lands', async ($, on) => {
+  const w = world(on, autoFiles(), (_system, _prompt, model) => (model === 'sonnet' ? UNAVAILABLE : UPDATE('HANDOFF-FALLBACK')))
+  await $.turn.complete(MAIN_TURN)
+  await w.clock.advance(1)
+  expect(w.prompts.map(item => item.model)).toEqual(['sonnet', 'session-model'])
+  expect(saved(w).handoff).toBe('HANDOFF-FALLBACK')
+})
+
+test('when Sonnet is blocked (the call rejects) the session model answers instead', async ($, on) => {
+  const w = world(on, autoFiles(), (_system, _prompt, model) => {
+    if (model === 'sonnet') throw new Error('model blocked')
+    return UPDATE('HANDOFF-BLOCKED')
+  })
+  await $.turn.complete(MAIN_TURN)
+  await w.clock.advance(1)
+  expect(w.prompts.map(item => item.model)).toEqual(['sonnet', 'session-model'])
+  expect(saved(w).handoff).toBe('HANDOFF-BLOCKED')
+})
+
+test('a rate limit on Sonnet is not retried on another model', async ($, on) => {
+  const w = world(on, autoFiles(), () => ({ isAnswered: false, reason: 'api-error', status: 429, error: 'rate_limit', usage: USAGE }))
+  await $.turn.complete(MAIN_TURN)
+  await w.clock.advance(1)
+  expect(w.prompts.map(item => item.model)).toEqual(['sonnet'])
 })
 
 const FULL = { options: { auto_compact: true, icons: 'safe' } } as const

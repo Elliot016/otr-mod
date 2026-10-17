@@ -242,6 +242,7 @@ export async function setEnabled(io: Io, mod: ModInfo, enabled: boolean): Promis
 export const DEFAULT_MARKET = 'claude-mods'
 export const REFRESH_KEY = 'catalog-refreshed'
 export const REFRESH_MS = 24 * 60 * 60 * 1000
+export const RETRY_MS = 60 * 60 * 1000
 export const REFRESH_OPT_OUTS = ['DISABLE_AUTOUPDATER', 'DISABLE_UPDATES', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC']
 
 // The marketplace mod-manager itself was installed from, else the default.
@@ -346,7 +347,7 @@ export function catalogState(catalog: CatalogEntry[], mods: ModInfo[], market: s
 
 export type Refresh = 'ran' | 'throttled' | 'disabled' | 'failed'
 
-// Pulls the marketplace at most once a day, never when an opt-out env var is set. A failure is silent and keeps the old catalog.
+// Pulls the marketplace at most once a day, never when an opt-out env var is set. A failure is silent, keeps the old catalog and tries again an hour later.
 export async function refreshCatalog(io: Io, market: string): Promise<Refresh> {
   if (!io.run) return 'failed'
   for (const name of REFRESH_OPT_OUTS) {
@@ -356,11 +357,9 @@ export async function refreshCatalog(io: Io, market: string): Promise<Refresh> {
   const now = (io.now ?? Date.now)()
   const last = await io.store?.get(REFRESH_KEY).catch(() => undefined)
   if (typeof last === 'number' && now - last < REFRESH_MS) return 'throttled'
-  try {
-    await io.store?.set(REFRESH_KEY, now)
-    const result = await io.run(['claude', 'plugin', 'marketplace', 'update', market], 60000)
-    return result.exitCode === 0 ? 'ran' : 'failed'
-  } catch {
-    return 'failed'
-  }
+  // Stamped before the run, so two sessions starting together pull once; a failure moves the stamp back to allow the retry.
+  await io.store?.set(REFRESH_KEY, now).catch(() => undefined)
+  const outcome = await io.run(['claude', 'plugin', 'marketplace', 'update', market], 60000).then(result => (result.exitCode === 0 ? 'ran' : 'failed'), () => 'failed' as const)
+  if (outcome === 'failed') await io.store?.set(REFRESH_KEY, now - REFRESH_MS + RETRY_MS).catch(() => undefined)
+  return outcome
 }

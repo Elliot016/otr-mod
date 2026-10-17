@@ -2,7 +2,19 @@
 // Tests the marketplace catalog, each mod's state and the once-a-day refresh.
 import { expect, test } from 'claude-code/testing'
 
+import { runSteps, type Step } from '../hooks/plan'
 import { catalogOf, catalogState, discover, isNewer, marketOf, refreshCatalog, type Io } from '../hooks/registry'
+import text from '../hooks/text'
+
+test('an install whose claude command is missing names that, not the OS error', async () => {
+  const steps: Step[] = [{ kind: 'install', name: 'mod-menu', line: 'Install Menu', argv: ['claude', 'plugin', 'install', 'mod-menu@claude-mods'] }]
+  const reasons: string[] = []
+  const missing = await runSteps({ run: async () => Promise.reject(new Error('spawn claude ENOENT')) } as unknown as Io, steps, (_, reason) => reasons.push(reason))
+  expect(missing).toBe(1)
+  expect(reasons).toEqual([text.cliMissing])
+  await runSteps({ run: async () => ({ exitCode: 1, stdout: '', stderr: 'Plugin not in marketplace\nmore' }) } as unknown as Io, steps, (_, reason) => reasons.push(reason))
+  expect(reasons[1]).toBe('Plugin not in marketplace')
+})
 
 const hooks = JSON.stringify({ modules: ['./register.tsx'] })
 const manifest = (name: string, version: string, extra: object = {}) => JSON.stringify({ name, description: `${name} does a thing`, version, ...extra })
@@ -156,12 +168,17 @@ test('refresh: once a day', async () => {
   expect(ran.length).toBe(2)
 })
 
-test('refresh: a failure is silent and still counts as the day\'s try', async () => {
-  const { io, ran } = refresher()
+test('refresh: a failure is silent and tries again an hour later, not a day', async () => {
+  const { io, ran, advance } = refresher()
+  const run = io.run!
   io.run = async () => Promise.reject(new Error('offline'))
   expect(await refreshCatalog(io, 'claude-mods')).toBe('failed')
+  advance(59 * 60 * 1000)
   expect(await refreshCatalog(io, 'claude-mods')).toBe('throttled')
-  expect(ran.length).toBe(0)
+  io.run = run
+  advance(2 * 60 * 1000)
+  expect(await refreshCatalog(io, 'claude-mods')).toBe('ran')
+  expect(ran.length).toBe(1)
 })
 
 const skipped = async (name: string) => {

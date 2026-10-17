@@ -1,6 +1,12 @@
 // mod-heads-up / tests/heads-up.test.tsx, by v-amorim
 // Tests the panel above the prompt: rendering, pill, pane and note cards.
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test as kitTest } from 'claude-code/testing'
+
+// The side check is opt-in, so these tests turn it on unless a test sets its own value.
+const test = ((name: string, first: any, second?: any) => {
+  const [settings, body] = typeof first === 'function' ? [{}, first] : [first, second]
+  return kitTest(name, { ...settings, options: { enabled: true, ...settings.options } }, body)
+}) as typeof kitTest
 
 import Row from '../hooks/timeline'
 
@@ -259,6 +265,49 @@ test('with nothing to fork yet the check falls back to the uncached route', asyn
   const ui = await band($)
   expect(await ui.find({ key: 'headsup-card' })).toBeDefined()
   await ui.unmount()
+})
+
+test('a failed side call raises one "Side check unavailable" toast per session, with the reason', async ($, on) => {
+  const notes: string[] = []
+  on('ui.toast', (_$: unknown, e: { text: string }) => {
+    notes.push(e.text)
+    return { value: {} }
+  })
+  let calls = 0
+  const { clock } = setup(on, {
+    reply: () => {
+      if (calls++ > 0) throw new Error('blocked by your organization')
+      return { isAnswered: false, reason: 'api-error', status: 403, error: 'permission_denied' }
+    },
+  })
+  await finding($, clock)
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  expect(calls).toBe(2)
+  expect(notes).toEqual(['Side check unavailable: permission denied 403'])
+})
+
+test('a thrown side call names its message, and an empty reply raises nothing', async ($, on) => {
+  const notes: string[] = []
+  on('ui.toast', (_$: unknown, e: { text: string }) => {
+    notes.push(e.text)
+    return { value: {} }
+  })
+  let mode = 'empty'
+  const { clock } = setup(on, {
+    reply: () => {
+      if (mode === 'throw') throw new Error('blocked by your organization')
+      return { isAnswered: false, reason: 'empty-reply' }
+    },
+  })
+  await finding($, clock)
+  expect(notes).toEqual([])
+  mode = 'throw'
+  await step($, 6, { turnId: 't2' })
+  await clock.settle()
+  // The test engine words a throwing handler itself, so only the lead and the one-notification rule are fixed.
+  expect(notes).toHaveLength(1)
+  expect(notes[0]).toMatch(/^Side check unavailable: \S/)
 })
 
 test('Got it in the panel stores the topic, closes the card and reads the note, and the next check is told to skip it', async ($, on) => {
@@ -768,6 +817,12 @@ test('enabled off makes no model call; forget empties the known topics', { optio
   expect(store.get('known:/w')).toEqual([])
 })
 
+kitTest('with the setting untouched, the side check is off and makes no model call', async ($, on) => {
+  const { clock, forks, completes } = setup(on)
+  await finding($, clock)
+  expect(forks.length + completes.length).toBe(0)
+})
+
 test('a check reads only the bytes the transcript gained since the last check', async ($, on) => {
   const { clock, reads, runs } = setup(on, { reply: () => answered('learn: none') })
   await $.prompt.submit({ text: 'Add follow-ups to /ask' } as never)
@@ -920,4 +975,34 @@ test('mod-menu labels never hides the pill label on Nerd and keeps the icon', { 
   const entry = await drawn(ui, 'menu-entry-headsup')
   expect(entry).not.toContain('Heads up')
   await ui.unmount()
+})
+
+const SPEND = 'C:/cfg/mods-data/mod-heads-up/spend.json'
+function spendWorld(on: any, failWrite = false) {
+  const world = setup(on, { reply: () => ({ isAnswered: true, text: 'learn: none', usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 } }) })
+  const writes: { path: string; text: string }[] = []
+  on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? 'C:\\cfg' : undefined }))
+  on('fs.write', (_$: unknown, e: { path: string; text: string }) => {
+    if (failWrite) throw new Error('disk full')
+    writes.push({ path: e.path.replace(/\\/g, '/'), text: e.text })
+    return { value: undefined }
+  })
+  return { ...world, writes }
+}
+
+test('a check result adds its usage to spend.json under today and the session model', async ($, on) => {
+  const { clock, writes } = spendWorld(on)
+  await step($, 6)
+  await clock.settle()
+  expect(writes.length).toBe(1)
+  expect(writes[0].path).toBe(SPEND)
+  const day = Object.values(JSON.parse(writes[0].text).days)[0] as Record<string, unknown>
+  expect(day['claude-opus-5-5']).toEqual({ calls: 1, input: 100, output: 20, cacheRead: 5, cacheWrite: 7 })
+})
+
+test('a spend.json write that fails is ignored and the check still finishes', async ($, on) => {
+  const { clock, forks } = spendWorld(on, true)
+  await step($, 6)
+  await clock.settle()
+  expect(forks.length).toBe(1)
 })

@@ -10,7 +10,7 @@
       "type": "boolean",
       "title": "Check while Claude works",
       "description": "Every sixth step of a turn, at most once per turn, a side check reads the session for one thing worth flagging. Off, it makes no request",
-      "default": true
+      "default": false
     },
     "animations": {
       "type": "boolean",

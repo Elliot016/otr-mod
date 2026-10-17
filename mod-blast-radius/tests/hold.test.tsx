@@ -272,7 +272,7 @@ test('the rules overrule an ok verdict: nothing measured, or a path outside the 
   expect(verdictOf({ ...found, verdict: 'check' }, inside, 'C:\\w').isOk).toBe(false)
 })
 
-test('Haiku words replace the heading and the sentence, while Run keeps the rule wording', async ($, on) => {
+test('Haiku words replace the heading and the sentence, while Run keeps the rule wording', { options: { explain: true } }, async ($, on) => {
   const { seen, clock } = world(on)
   const asked: string[] = []
   on('model.complete', ((_$: unknown, e: { model: string; prompt: string }) => {
@@ -295,7 +295,7 @@ test('Haiku words replace the heading and the sentence, while Run keeps the rule
   await band.unmount()
 })
 
-test('while Haiku writes the card words, a shimmering Explaining shows on the action row', async ($, on) => {
+test('while Haiku writes the card words, a shimmering Explaining shows on the action row', { options: { explain: true } }, async ($, on) => {
   const { seen, clock } = world(on)
   let release = (_: unknown) => {}
   const pending = new Promise(resolve => (release = resolve))
@@ -317,7 +317,7 @@ test('while Haiku writes the card words, a shimmering Explaining shows on the ac
   await band.unmount()
 })
 
-test('a failed Haiku call leaves the rule wording in place, and the verdict points to Details', async ($, on) => {
+test('a failed Haiku call leaves the rule wording in place, and the verdict points to Details', { options: { explain: true } }, async ($, on) => {
   const { seen, clock } = world(on)
   on('model.complete', (() => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } })) as never)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
@@ -909,7 +909,7 @@ test('/mod-blast-radius answers with what it holds', async ($, on) => {
   expect(JSON.stringify(result)).toContain('Blast radius is on: 22 built-in checks')
 })
 
-test('the card: its title in bold alert, a check verdict with an alert mark and muted words', async ($, on) => {
+test('the card: its title in bold alert, a check verdict with an alert mark and muted words', { options: { explain: true } }, async ($, on) => {
   const { seen, clock } = world(on)
   on('model.complete', (() => ({ value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } })) as never)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
@@ -1092,7 +1092,7 @@ test('an error from an allowed command passes through, never relabeled as a refu
   expect(message).not.toContain('did not run it')
 })
 
-test('Haiku explains the held command by default, and the card waits for it', async ($, on) => {
+test('with explain on, Haiku explains the held command and the card waits for it', { options: { explain: true } }, async ($, on) => {
   const { seen, clock } = world(on)
   const asked: string[] = []
   on('model.complete', ((_$: unknown, e: { model: string }) => {
@@ -1105,6 +1105,52 @@ test('Haiku explains the held command by default, and the card waits for it', as
   await cancel($)
   await call
   expect(asked).toEqual(['haiku'])
+})
+
+const SPEND_PATH = 'C:/cfg/mods-data/mod-blast-radius/spend.json'
+async function explainWithSpend($: any, on: any, failWrite: boolean) {
+  const { seen, clock } = world(on, { configDir: 'C:\\cfg\\' })
+  const writes: { path: string; text: string }[] = []
+  on('fs.write', (_$: unknown, e: { path: string; text: string }) => {
+    if (failWrite) throw new Error('disk full')
+    writes.push({ path: asGiven(e.path), text: e.text })
+    return { value: undefined }
+  })
+  on('model.complete', (() => ({ value: { isAnswered: true, text: 'nothing parseable', usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 } } })) as never)
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  await clock.advance(1)
+  await sleep(20)
+  await cancel($)
+  await call
+  return writes
+}
+
+test('with explain on, the Haiku reply usage lands in spend.json', { options: { explain: true } }, async ($, on) => {
+  const writes = await explainWithSpend($, on, false)
+  expect(writes.map(write => write.path)).toEqual([SPEND_PATH])
+  const day = Object.values(JSON.parse(writes[0]!.text).days)[0] as Record<string, unknown>
+  expect(day.haiku).toEqual({ calls: 1, input: 100, output: 20, cacheRead: 5, cacheWrite: 7 })
+})
+
+test('a spend.json write that fails does not stop the held command from being cancelled', { options: { explain: true } }, async ($, on) => {
+  const writes = await explainWithSpend($, on, true)
+  expect(writes).toEqual([])
+})
+
+test('by default (setting untouched) no model is called for a held command', async ($, on) => {
+  const { seen, clock } = world(on)
+  const asked: string[] = []
+  on('model.complete', ((_$: unknown, e: { model: string }) => {
+    asked.push(e.model)
+    return { value: { isAnswered: false, reason: 'api-error', status: 500, usage: {} } }
+  }) as never)
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  await clock.advance(1)
+  await cancel($)
+  await call
+  expect(asked).toEqual([])
 })
 
 test('with explain off, no model is called and the card keeps the rule wording and the preview', { options: { explain: false } }, async ($, on) => {
@@ -1165,7 +1211,7 @@ test('the card tips carry a bare glyph, with no brackets or padding', { options:
   await band.unmount()
 })
 
-test('a throw while Haiku writes the card words clears the shimmer and keeps the rule wording', async ($, on) => {
+test('a throw while Haiku writes the card words clears the shimmer and keeps the rule wording', { options: { explain: true } }, async ($, on) => {
   const { seen, clock } = world(on)
   on('model.complete', (() => { throw new Error('model is gone') }) as never)
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })

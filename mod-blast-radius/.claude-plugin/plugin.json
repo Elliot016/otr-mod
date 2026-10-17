@@ -24,8 +24,8 @@
     "explain": {
       "type": "boolean",
       "title": "Explain with Haiku",
-      "description": "Each held command is sent to Haiku for a plain-language explanation on the card. It spends tokens. Off, no model is called and the card shows the rule's reason and the preview",
-      "default": true
+      "description": "Each held command is sent to Haiku for a plain-language explanation on the card. It spends tokens. Off (the default), no model is called and the card shows the rule's reason and the preview",
+      "default": false
     },
     "icons": {
       "type": "string",

@@ -32,6 +32,8 @@ export default {
   "showLess": "Show less",
   "tipShowAll": "shows every line of this note in full",
   "tipShowLess": "cuts each line of this note to one row",
+  "sideUnavailable": "Side check unavailable",
+  "sideUnavailableWhy": "Side check unavailable: {reason}",
   "chatDropped": "Ask Claude was not sent ({reason}), so the note is in the prompt box: press Enter to send it",
   "chatLost": "Ask Claude was not sent ({reason}), and the prompt box could not take the note",
   "jumped": "Scrolled to turn #{n}",

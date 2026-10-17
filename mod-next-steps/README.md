@@ -42,11 +42,11 @@ Automatic.
 
 ## Costs
 
-This mod calls a model, which spends tokens and counts against your plan quota.
+By default this mod makes no model call. Turn on Suggest next steps (`/mod-next-steps settings`) and it calls a model, which spends tokens and counts against your plan quota.
 
 After each finished turn of the main agent (not an interrupted one, not a subagent's), it forks your session to ask for the suggestions. The fork runs on your session's model and reuses the cached conversation, so a long session still makes a sizable request every turn.
 
-To turn it off, set Suggest next steps to off (`/mod-next-steps settings`). Then no request is made.
+With Suggest next steps off, the default, no request is made.
 
 ## Settings
 
@@ -55,7 +55,7 @@ Change them with `/mod-next-steps settings` or the gear pill.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
-| Suggest next steps | on | Lists next prompts after a turn. The model writes them after each finished turn. Off, no request is made |
+| Suggest next steps | off | Lists next prompts after a turn. The model writes them after each finished turn. Off, no request is made |
 | Suggestions | `3` | How many suggestions to show, 1 to 3 |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 

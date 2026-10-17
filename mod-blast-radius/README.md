@@ -45,9 +45,9 @@ Automatic.
 
 ## Costs
 
-This mod calls a model, which spends tokens and counts against your plan quota.
+By default this mod makes no model call: the held dialog shows only the rule's reason and the preview.
 
-Each held command is sent to Haiku for a plain-language explanation, so the command text leaves your machine like any prompt. Set Explain with Haiku to off (`/mod-blast-radius settings`) and the card keeps only the rule's reason and the preview, with no request.
+Turn on Explain with Haiku (`/mod-blast-radius settings`) and each held command is sent to Haiku for a plain-language explanation, so the command text leaves your machine like any prompt. That spends tokens and counts against your plan quota. It is off by default.
 
 ## Settings
 
@@ -57,7 +57,7 @@ Change them with `/mod-blast-radius settings` or the gear pill.
 | --- | --- | --- |
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 | Hold risky commands | on | Risky Bash waits for your choice. You pick Run or Cancel. Off, every command runs as usual |
-| Explain with Haiku | on | Each held command is sent to Haiku for a plain-language explanation on the card. It spends tokens. Off, no model is called and the card shows the rule's reason and the preview |
+| Explain with Haiku | off | Each held command is sent to Haiku for a plain-language explanation on the card. It spends tokens. Off (the default), no model is called and the card shows the rule's reason and the preview |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 
 ## License

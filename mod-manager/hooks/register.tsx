@@ -15,6 +15,7 @@ import { cardFill, cardGap, detectNerd, FOOTER_ROWS, lookFor, paneFooter, sectio
 import { actionReveals, choiceBar, settingChoice, settingsBody, type Action } from './settings'
 import { cardSpace, stickyCard } from './card'
 import { costPill } from './cost'
+import { readSpend, resetSpend, spendLine, type Spend } from './spend'
 import { type ListMessage, type ListProps } from './list'
 
 const homeOf = async ($: EngineInterface) => ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
@@ -117,6 +118,27 @@ function loadLook($: EngineInterface) {
 }
 
 let mods: ModInfo[] = []
+// Each mod with a cost, by name: its last days of side-model spend, or null; read again after a few seconds and after a Reset.
+let spends: Record<string, Spend | null> = {}
+let spendsAt = -Infinity
+const SPEND_FRESH_MS = 3000
+
+async function loadSpends($: EngineInterface) {
+  const now = await $.clock.now()
+  if (now - spendsAt < SPEND_FRESH_MS) return
+  spendsAt = now
+  const config = await configDir($)
+  const next: Record<string, Spend | null> = {}
+  for (const mod of mods) if (mod.showcase?.cost) next[mod.name] = await readSpend(path => $.fs.read(path), config, mod.name, now)
+  spends = next
+}
+
+// A failed write leaves the counts as they were.
+async function resetSpendOf($: EngineInterface, name: string) {
+  await resetSpend((path, body) => $.fs.write(path, body), await configDir($), name).catch(() => undefined)
+  spendsAt = -Infinity
+  $.ui.invalidate('ui.render')
+}
 // Mods toggled in the pane, by name, with the state Apply gives them; toggling back drops one.
 const pending = new Map<string, boolean>()
 // The mod whose page fills the pane, or -1 for the list.
@@ -573,6 +595,7 @@ export const register: Register = (on, options) => {
       featuresOpen = !featuresOpen
       $.ui.invalidate('ui.render')
     }
+    if (message?.type === 'menu-entry' && message.id.startsWith('spend-reset-')) await resetSpendOf($, message.id.slice('spend-reset-'.length))
     if (message?.type === 'menu-entry' && message.id.startsWith('icons-')) await setAllIcons($, message.id.slice('icons-'.length))
     if (message?.type === 'menu-entry' && message.id === 'manager-apply') await applyChanges($)
     if (message?.type === 'menu-entry' && message.id.startsWith('card-')) await cardClick($, message.id)
@@ -612,6 +635,7 @@ export const register: Register = (on, options) => {
 
     // A reload resets module state while the pane stays open, so reload the list.
     if (mods.length === 0) mods = await discover(ioOf($))
+    await loadSpends($).catch(() => undefined)
 
     // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Link, Text } = $.ui.resolve(e)
@@ -675,6 +699,27 @@ export const register: Register = (on, options) => {
           ]
         : features
 
+      const spend = spends[mod.name]
+      const resetGlyph = look.glyph.cycle.replace(/[[\]\s]/g, '')
+      // The Spend card leads the settings cards, in the same round border.
+      const spendCard = mod.showcase?.cost ? (
+        <Box key="page-spend" flexDirection="column" marginTop={1} borderStyle="round" borderColor={THEME.border} backgroundColor={THEME.surface1} paddingX={1}>
+          <Box key="page-spend-head" flexDirection="row" columnGap={2}>
+            <Text color={THEME.onSurface} bold>{text.spendTitle}</Text>
+            {spend
+              ? pill(
+                  { Box, Text },
+                  look.nerd,
+                  THEME.surface3,
+                  <Client key="page-spend-reset" module="./entry.tsx" height={1} props={{ id: `spend-reset-${mod.name}`, label: `${text.spendReset} ${resetGlyph}`, isOpen: false, bg: THEME.surface3, color: THEME.accent, idle: THEME.accent, still, tip: { glyph: resetGlyph, label: text.spendReset, text: text.tipSpendReset } } satisfies EntryProps} />,
+                  'page-spend-pill',
+                  THEME.surface1,
+                )
+              : null}
+          </Box>
+          <Text key="page-spend-text" color={THEME.muted} wrap="wrap">{spend ? spendLine(spend) : text.spendNone}</Text>
+        </Box>
+      ) : null
       return frame([
         <Box key="page-head" flexDirection="row" columnGap={1}>
           {tabRow({ Box, Client, Text }, look.nerd, [listTab(false), { id: 'manager-page', label: shownName(mod.name), icon: look.glyph.icon.mod ?? look.glyph.title, isOpen: true, tip: { glyph: look.glyph.title, label: shownName(mod.name), text: text.tipTabPage } }], still)}
@@ -698,6 +743,7 @@ export const register: Register = (on, options) => {
             </Text>
           </Box>
         ) : null,
+        spendCard,
         mod.enabled || mod.settings === 0 ? (
           settingsBody({ Box, Button, Client, Text }, look, { rows, actions, working, run, previews: mod.showcase?.previews, fields: mod.fields, still })
         ) : (
@@ -746,7 +792,7 @@ export const register: Register = (on, options) => {
               ...updateOf(item),
               // A Client prop refuses undefined, so a mod without a cost leaves the key out.
               // The footer tip is one row, so it says only that the mod costs; the page card holds the full summary.
-              ...(item.showcase?.cost ? { cost: text.costTip } : {}),
+              ...(item.showcase?.cost ? { cost: spends[item.name] ? `${spendLine(spends[item.name]!)} ${MARK.sep} ${text.costTip}` : text.costTip } : {}),
             })),
             gear: look.glyph.gear,
             still,

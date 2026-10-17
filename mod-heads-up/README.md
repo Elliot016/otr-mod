@@ -42,11 +42,11 @@ Automatic, or the Heads up pill.
 
 ## Costs
 
-This mod calls a model, which spends tokens and counts against your plan quota.
+By default this mod makes no model call. Turn on Check while Claude works (`/mod-heads-up settings`) and it calls a model, which spends tokens and counts against your plan quota.
 
 - **The side check:** on every sixth step of the main agent, at most once per turn and never while a note card is showing, the mod asks a model to read the session. It forks your session when its effort is low or medium, which reuses the cached conversation. At a higher effort, or with nothing to fork yet, it sends the whole conversation to your session's model at medium effort. If a newer step may have overtaken the finding, it asks once more before showing it.
 - **Reword:** each click on simpler words, less detail or more detail makes one more call.
-- **Turn it off:** set Check while Claude works to off (`/mod-heads-up settings`). The side check then makes no request. Reword only runs when you click it.
+- **Off by default:** with Check while Claude works off, the side check makes no request. Reword only runs when you click it.
 
 ## Settings
 
@@ -54,7 +54,7 @@ Change them with `/mod-heads-up settings` or the gear pill.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Check while Claude works | on | Every sixth step of a turn, at most once per turn, a side check reads the session for one thing worth flagging. Off, it makes no request |
+| Check while Claude works | off | Every sixth step of a turn, at most once per turn, a side check reads the session for one thing worth flagging. Off, it makes no request |
 | Animations | on | Entries shimmer while they wait. Hover colors also fade. Off, everything draws still |
 | Icons | `auto` | auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one |
 
