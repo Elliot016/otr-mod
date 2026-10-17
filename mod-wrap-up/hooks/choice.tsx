@@ -12,7 +12,6 @@ import { CAPS, THEME } from './theme'
 // The pill's own caps are drawn here too, so the pointer on a cap is still on the pill and the options stay open.
 export type ChoiceProps = { id: string; label: string; options: { id: string; label: string }[]; mode: string | null; bg: string; nerd: boolean; isIdle: boolean; tips: Tip[]; still?: boolean; icon?: string; cells?: number; compact?: boolean; isMenuOpen?: boolean }
 
-// The pill at rest: its caps on Nerd, then the label padded by one.
 export const choiceCells = (label: string, nerd: boolean) => (nerd ? 2 : 0) + [...label].length + 2
 
 // A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
@@ -24,7 +23,6 @@ const TICK_MS = 500
 // levels: each option's hover fade, full while the pointer is on it and one step down per tick once it left.
 type Hover = { over: number; at: number; tipId?: string | null; levels?: number[] }
 
-// Each option's cells: the rail before it, then its label padded by one, as the menu spaces its entries.
 const widthOf = (label: string) => 1 + label.length + 2
 
 // The stale-hover watch runs only while the pointer is on the pill, so an idle pill costs no wakeups.
@@ -45,7 +43,6 @@ const watch = (surface: Parameters<ClientModule<ChoiceProps, Hover>>[1], id: str
   timers.set(surface, stop)
 }
 
-// The fade-out runs on its own ticker, started by a leave and stopped once every option rests.
 const fades = new WeakMap<object, () => void>()
 
 const startFade = (surface: Parameters<ClientModule<ChoiceProps, Hover>>[1]) => {
@@ -64,18 +61,15 @@ const startFade = (surface: Parameters<ClientModule<ChoiceProps, Hover>>[1]) => 
   fades.set(surface, stop)
 }
 
-// Like the effort pill: at rest only the label, the pointer opens the options and lights the one under it.
 const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
   const { Box, Text } = surface.elements
   const over = surface.state?.over ?? -2
-  // Cut to its icon the pill does not widen, the options open as a card above the row instead.
   const isFolded = props.compact === true
   const isExpanded = !isFolded && props.isIdle && (over !== -2 || props.mode !== null)
   const head = ` ${props.compact && props.icon ? props.icon : props.label} `
 
   if (!surface.state) surface.setState({ over: -2, at: 0 })
 
-  // The option at cell x, from the drawn order: the head, then the options side by side, as in the menu group.
   const optionAt = (x: number) => {
     let start = (props.nerd ? 1 : 0) + head.length
     for (const [index, option] of props.options.entries()) {
@@ -103,7 +97,6 @@ const Choice: ClientModule<ChoiceProps, Hover> = (props, surface) => {
 
   const option = (index: number) => {
     const { id, label } = props.options[index]!
-    // As in the menu group: the pointer turns an option accent, and only the card's mode lifts, as an open panel's entry does.
     const isLifted = props.isIdle && id === props.mode
     const color = !props.isIdle ? THEME.muted : hoverMix(isLifted ? THEME.onSurface : THEME.pill, THEME.accent, surface.state?.levels?.[index] ?? 0)
     return (

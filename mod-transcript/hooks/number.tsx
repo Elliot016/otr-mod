@@ -13,7 +13,6 @@ export const pillWidth = (n: number) => fill(text.promptNumber, { n }).length + 
 
 const isTipped = new WeakMap<object, boolean>()
 
-// The prompt's number outside its bubble, in the turn pill's look; the pointer over it shows its tip.
 const PromptNumber: ClientModule<NumberProps> = (props, surface) => {
   const { Box, Text } = surface.elements
 

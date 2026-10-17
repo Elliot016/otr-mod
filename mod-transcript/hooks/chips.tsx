@@ -57,7 +57,6 @@ const wake = (surface: Surface) => {
   timers.set(surface, stop)
 }
 
-// The open turn's kinds as one line of pills; a click on one asks the hooks module to show its calls below.
 const Chips: ClientModule<ChipsProps, State> = (props, surface) => {
   const { Box, Text } = surface.elements
   const { chips, nerd } = props

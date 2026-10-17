@@ -10,7 +10,6 @@ const LEAF_LIMIT = 10000
 
 const marked = (text: string): Piece => ({ kind: 'marked', parts: [{ text, isMarked: true }] })
 
-// Prose cut into paragraphs (runs of lines with no blank line), each with its lines.
 const paragraphsOf = (text: string) => {
   const found: string[][] = []
   let run: string[] = []

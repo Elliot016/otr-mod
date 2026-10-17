@@ -179,7 +179,6 @@ const FileList: ClientModule<ListProps, State> = (props, surface) => {
         const restColor = mix(NAME_COLOR[row.tone], THEME.pill, glow)
         const nameColor = hoverMix(restColor, THEME.accent, levels[index] ?? 0)
         const rest = isLive ? LIVE_BG : glow > 0 ? mix(THEME.surface1, LIVE_BG, glow) : undefined
-        // The row under the pointer lifts its background as its name goes accent.
         const lift = levels[index] ?? 0
         const background = lift > 0 ? hoverMix(rest ?? THEME.surface1, THEME.lifted, lift) : rest
         return (

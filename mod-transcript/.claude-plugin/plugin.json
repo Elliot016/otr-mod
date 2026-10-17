@@ -1,7 +1,7 @@
 {
   "name": "mod-transcript",
   "version": "0.1.0",
-  "description": "Restyles the transcript: your prompts and Claude's replies as chat bubbles, each finished turn folded under its prompt to one summary line (tools, file changes, skills, agents) with the final reply kept, each finished tool row folded to one line, Bash commands in shell colors, and a copy button under each reply. A click unfolds a turn or a call in place",
+  "description": "Restyles the transcript: prompts and replies as chat bubbles, each finished turn folded to one summary line under its prompt (tools, file changes, skills, agents) with the final reply kept, finished tool rows folded to one line, Bash commands in shell colors, and a copy button under each reply. A click unfolds a turn or a call in place",
   "license": "MIT",
   "author": {
     "name": "Vinicius Amorim",
@@ -24,19 +24,19 @@
     "timestamps": {
       "type": "boolean",
       "title": "Show times",
-      "description": "Prompt send time, tool duration. Each prompt shows when you sent it, and each tool line when it started and how long it took. Off, rows show no times",
+      "description": "Prompt send time, tool duration. Each prompt shows when you sent it, each tool line when it started and how long it took. Off, rows show no times",
       "default": true
     },
     "expand_live": {
       "type": "boolean",
       "title": "Show the latest turn in full",
-      "description": "Stays open until your next prompt. The latest turn shows every tool row and result as Claude Code draws them. Off, finished tool calls fold right away",
+      "description": "Stays open until your next prompt, with every tool row and result as Claude Code draws them. Off, finished tool calls fold right away",
       "default": true
     },
     "copy_pill": {
       "type": "boolean",
       "title": "Copy button",
-      "description": "On each finished reply's edge. A copy button sits there: point at it to pick reply, code, text, table or links, then click one. The reply marks what the choice under the pointer copies. Off, the edge stays plain",
+      "description": "On each finished reply's edge. Point at the copy button to pick reply, code, text, table or links, then click. The reply marks what the choice under the pointer copies. Off, the edge stays plain",
       "default": true
     },
     "prompt_numbers": {
@@ -48,13 +48,13 @@
     "animations": {
       "type": "boolean",
       "title": "Animations",
-      "description": "The fold chip and the kind chips fade when the pointer leaves them, a running command's dot blinks, and the tabs and settings fade. Off, they switch at once and the dot stays lit",
+      "description": "Fold and kind chips fade when the pointer leaves, a running command's dot blinks, and the tabs and settings fade. Off, they switch at once and the dot stays lit",
       "default": true
     },
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": [
         "auto",
         "nerd",

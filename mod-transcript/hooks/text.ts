@@ -67,7 +67,7 @@ export default {
   },
   "promptNumber": "#{n}",
   "tipPromptLabel": "Prompt #{n}",
-  "tipPrompt": "this is prompt {n} of the session",
+  "tipPrompt": "prompt {n} of the session",
   "tipTabSettings": "shows this mod's settings",
   "tipToast": { "label": "Dismiss", "text": "hides this message" },
   "status": {
@@ -97,5 +97,5 @@ export default {
   "reportTask": "task {id}",
   "reportType": "type {type}",
   "reportTool": "tool {id}",
-  "settingTips": {"expand_live":"stays open until your next prompt","prompt_numbers":"#N before each of your prompts","copy_pill":"on each finished reply's edge"}
+  "settingTips": {"expand_live":"stays open until your next prompt","prompt_numbers":"#N before each of your prompts","copy_pill":"on each finished reply's edge","animations":"chips and tabs fade, the dot blinks"}
 }

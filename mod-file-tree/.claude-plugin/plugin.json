@@ -1,7 +1,7 @@
 {
   "name": "mod-file-tree",
   "version": "0.1.0",
-  "description": "A sidebar tree of the files Claude touched this session, marked read, edited, written or created with the latest action lit while it works, and a replay that steps through the last turn's edits one diff at a time. Opens from /mod-file-tree or the Files entry in the mod-menu pill",
+  "description": "A sidebar tree of the files Claude touched this session, marked read, edited, written or created, with the current one lit while Claude works. A replay steps through the last turn's edits, one diff at a time. Opens from /mod-file-tree or the Files pill in mod-menu",
   "license": "MIT",
   "author": { "name": "Vinicius Amorim", "url": "https://github.com/v-amorim" },
   "types": "./types/index.d.ts",
@@ -15,7 +15,7 @@
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": [
         "auto",
         "nerd",
@@ -38,7 +38,7 @@
     "recent_turns": {
       "type": "number",
       "title": "Recent view (turns)",
-      "description": "How many latest turns to cover. The middle view of the tree shows them, from 2 to 20",
+      "description": "How many latest turns to cover. The middle view shows them, from 2 to 20",
       "default": 5
     }
   }

@@ -3,7 +3,7 @@
 import text from './text'
 import { fill } from './theme'
 
-// Pure logic of the collision log. `$` never crosses an import, so the register file hands in plain functions.
+// `$` never crosses an import, so the register file hands in plain functions.
 export type Edit = { path: string; session: string; at: number }
 
 export type Io = {

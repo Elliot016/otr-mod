@@ -20,7 +20,6 @@ let iconMode: IconMode = 'auto'
 let enabled = true
 let look = lookFor(false)
 
-// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
   const env = {
@@ -243,7 +242,7 @@ async function numberPrompts($: EngineInterface) {
   // A file that shrank, or another transcript, starts over.
   if (transcript?.path !== path || size < transcript.read) transcript = { path, read: 0, numbers: new PromptNumbers() }
   const cache = transcript
-  // A long session's first read streams the whole file once: one PowerShell per 2 MiB took far longer on a file of hundreds of MB.
+  // A long session's first read streams the whole file once: one process per chunk took far longer on a very large file.
   if (cache.read === 0 && size > WHOLE_READ_BYTES) {
     const isWindows = /^[A-Za-z]:|\\/.test(path)
     // cmd's type rejects forward slashes.
@@ -778,7 +777,7 @@ export const register: Register = (on, options) => {
     const entryPill = (id: string, label: string, subLead: string | undefined, tip: Tip, extra: Partial<EntryProps> = {}) =>
       pill({ Box, Text }, nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd, still, tip, ...(subLead ? { subLead } : {}), ...extra } satisfies EntryProps} />, `${id}-pill`, cardFill())
 
-    // The Prompts look: the selected note in a card on top, with its three actions in one row at the card's foot, and every note in a timeline under it.
+    // The selected note in a card with its actions in one row at the foot, and every note in a timeline under it.
     const noteCard = (found: Note) => {
       const turn = fill(text.turnNumber, { n: found.turn })
       // The card's border and padding take two columns a side; the bullet and its space come before the line.
@@ -871,7 +870,7 @@ export const register: Register = (on, options) => {
 
     const opened = await openIds($)
     const ordered = byTurn(saved.notes).flatMap(group => group.notes)
-    // The list reads oldest first, as Prompts does; the card shows the last note the person picked, or the newest.
+    // The list reads oldest first; the card shows the last note the person picked, or the newest.
     const chronological = [...ordered].sort((a, b) => a.at - b.at)
     const selected = isCardClosed ? undefined : ([...opened].reverse().map(id => ordered.find(found => found.id === id)).find(Boolean) ?? chronological[chronological.length - 1])
     const checkedLine = await lastCheckLine($)

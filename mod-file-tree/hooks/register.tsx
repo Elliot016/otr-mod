@@ -28,7 +28,6 @@ let transcript = ''
 // `/mod-file-tree clear` hides what came before it; the transcript would bring it back otherwise.
 let cleared = { seq: 0, step: 0 }
 let scope: 'turn' | 'recent' | 'session' = 'turn'
-// How many turns the middle view covers, from the recent_turns setting.
 let recentTurns = 5
 let mode: 'tree' | 'replay' = 'tree'
 // null follows the latest turn that edited something.
@@ -128,7 +127,6 @@ async function save($: EngineInterface) {
   $.ui.invalidate('ui.render')
 }
 
-// Claude Code's folder: CLAUDE_CONFIG_DIR when set, otherwise ~/.claude.
 async function configDir($: EngineInterface) {
   const set = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
   if (set) return set
@@ -156,7 +154,7 @@ const pathOf = (kept: unknown) => {
 
 const TRANSCRIPT_KEEP_MS = 30 * 24 * 60 * 60 * 1000
 
-// Entries untouched for 30 days go; a bare string from an older version starts its clock now.
+// A bare string from an older version starts its clock now.
 async function pruneTranscripts($: EngineInterface) {
   try {
     const now = await $.clock.now()
@@ -203,13 +201,11 @@ async function load($: EngineInterface, session: string) {
   $.clock.after(0, () => void save($))
 }
 
-// The log the pane shows: the whole session or the latest turn, without what a clear hid.
 function viewOf(current: Log): Log {
   const scoped = scope === 'turn' ? turnView(current) : scope === 'recent' ? recentView(current, recentTurns) : current
   return { ...scoped, files: scoped.files.filter(file => file.seq > cleared.seq), steps: scoped.steps.filter(step => step.id > cleared.step) }
 }
 
-// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
   const env = {
@@ -347,7 +343,6 @@ async function openWithSystem($: EngineInterface, isWindows: boolean, native: st
   return opened.code === 0 ? opened : launch($, ['xdg-open', native])
 }
 
-// A row's path as the system writes it: joined to the session's folder when relative, with backslashes on Windows.
 async function nativePath($: EngineInterface, path: string) {
   const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
   const full = /^([A-Za-z]:)?\//.test(path) ? path : `${cwd}/${path}`
@@ -374,7 +369,6 @@ async function codeExe($: EngineInterface) {
 // The default app runs these instead of showing them, and a model wrote the name.
 const RUNNABLE = /\.(exe|bat|cmd|com|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|msi|msp|lnk|scr|pif|hta|cpl|reg|jar|app|command|sh|tool)$/i
 
-// VS Code when it is installed, otherwise the system's default app for the file's type; a program or script only gets its folder opened.
 async function openFile($: EngineInterface, path: string) {
   const { isWindows, native } = await nativePath($, path)
   const editor = isWindows ? await codeExe($) : 'code'
@@ -391,7 +385,6 @@ async function openFile($: EngineInterface, path: string) {
   $.ui.invalidate('ui.render')
 }
 
-// Opens the file's latest diff in the replay; a file Claude only read has none.
 async function openDiff($: EngineInterface, path: string) {
   const current = viewOf(await hydrate($))
   const step = latestStepOf(current, path)
@@ -436,7 +429,6 @@ function foldAll($: EngineInterface, current: Log, isShut: boolean) {
 
 const WORD: Record<Kind, { done: string; live: string }> = text.words
 
-// What a file's name color says: added, modified, or only read.
 const STATUS: Record<Kind, { tone: ListRow['tone'] }> = {
   read: { tone: 'read' },
   edit: { tone: 'changed' },
@@ -475,7 +467,6 @@ const landed = new Map<string, { at: number; seq: number }>()
 
 const chunksOf = <T,>(items: T[]) => Array.from({ length: Math.ceil(items.length / LIST_CHUNK) }, (_, n) => items.slice(n * LIST_CHUNK, (n + 1) * LIST_CHUNK))
 
-// The tree's rows as the Client draws them, cut to `width` with the counts and status flush right.
 function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, width: number): ListRow[] {
   const icon = (name: string) => glyphs.glyph.icon[name] ?? ''
   return rows.map(row => {
@@ -490,7 +481,6 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
       : icon(iconOf(row.name))
     // Safe mode has no folder icon, so a trailing slash tells a folder from a file.
     const name = row.isDir && !glyphs.nerd ? `${row.name}/` : row.name
-    // Only the live row carries a word; the others show their status as the name's color.
     const status = entry && isLive ? WORD[entry.last].live : ''
     // A folded folder shows what its files add up to, so folding hides no change.
     const inside = row.isDir && row.isFolded ? current.files.filter(file => file.path.startsWith(`${row.key}/`)) : []
@@ -523,9 +513,7 @@ function listRows(current: Log, rows: ReturnType<typeof rowsOf>, glyphs: Look, w
 
 // True while the pointer is on this mod's pill entry, which then shows its tip under the row.
 let tipShown = false
-// The control under the pointer in the pane, which the footer describes.
 let hoveredTip: Tip | null = null
-// The toast × under the pointer, shown in the band's tip row.
 let toastTip = ''
 
 const toasts = new ToastList('filetree')
@@ -552,7 +540,7 @@ async function openingPane($: EngineInterface) {
   if (!(await isOpen($, PANE))) endOpening($)
 }
 
-// The share of each status color left in its legend pill, as the mod-transcript chips tint their counts.
+// The share of each status color left in its legend pill.
 const LEGEND_WASH = 0.72
 
 // A settings card's click: its row, saved through /config; a saved change reloads this mod.
@@ -564,7 +552,6 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
   $.ui.invalidate('ui.render')
 }
 
-// The panel's title line: the files and their settings as tabs, the shown one open.
 const tabs = (isSettings: boolean, touched: number) => [
   { id: 'filetree-tab', label: text.pill, icon: look.glyph.icon.files ?? look.glyph.title, isOpen: !isSettings, ...(isSettings ? {} : { count: touched }), tip: { glyph: look.glyph.icon.files ?? look.glyph.title, label: text.pill, text: text.filesTabTip } },
   { id: 'filetree-settings', label: text.settingsLabel, icon: look.glyph.gear, isOpen: isSettings, tip: { glyph: look.glyph.gear, label: text.settingsLabel, text: text.settingsTabTip } },
@@ -588,7 +575,6 @@ export const register: Register = (on, options) => {
   wrapDiff = options.wrap_diff !== false
   recentTurns = Math.min(20, Math.max(2, Math.round(Number(options.recent_turns ?? 5)) || 5))
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
@@ -784,7 +770,6 @@ export const register: Register = (on, options) => {
       const message = e.data as EntryMessage
       if (message?.type === 'menu-entry') {
         if (message.id === 'filetree') await openingPane($)
-        // The title line's tabs swap the panel and its settings; the open tab does nothing.
         if (message.id === 'filetree-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
         if (message.id === 'filetree-tab' && !(await isOpen($, PANE))) await togglePane($)
         if (message.id === 'tab-tree' || message.id === 'tab-replay') {
@@ -818,7 +803,6 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // The list reports clicks on a row's text: a folder folds, a file opens its diff.
   on('ui.message', { requestId: PANE }, async ($, e, next) => {
     const message = e.data as ListMessage
     try {
@@ -876,7 +860,6 @@ export const register: Register = (on, options) => {
     const touched = current.files.filter(file => showReads || file.kind !== 'read').length
     const { glyph } = look
 
-    // Tabs and the replay's steppers are entries: text that lights on hover, the active tab on its own surface.
     const entry = (id: string, label: string, isOn: boolean, bg: string = THEME.surface1, extra: Partial<EntryProps> = {}) => (
       <Box key={`${id}-pad`}>
         <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isOn, bg, nerd: look.nerd, still, ...extra }} />
@@ -936,8 +919,7 @@ export const register: Register = (on, options) => {
           </Box>
         )
 
-    // The steppers ride on the heading row, right-aligned, so they stay put whatever the diff's length.
-    // Colors as mod-prompts' pager: secondary, muted at the edge. An edge stepper is plain text, so it neither lights nor posts a tip.
+    // An edge stepper is plain text, so it neither lights nor posts a tip.
     const stepper = (id: string, label: string, isEdge: boolean, hue: string, place: 'lead' | 'trail', mark: string, tipText: string) => {
       const sub = place === 'lead' ? { subLead: mark, subLeadColor: hue } : { badge: { text: mark, color: hue, bg: mix(hue, THEME.surface3, LEGEND_WASH) } }
       const body = isEdge ? (
@@ -1005,7 +987,6 @@ export const register: Register = (on, options) => {
             : null}
         </Box>
         {mode === 'tree' ? section(elements, look, 'tree', '', '', [treeHead, tree]) : section(elements, look, 'replay', '', '', [replayHead, replay])}
-        {/* The footer names what each name color means, once, instead of a letter on every row. */}
         {mode === 'tree' ? <Box key="legend-push" flexGrow={1} /> : null}
         {mode === 'tree' ? (
           <Box key="legend" flexDirection="column">
@@ -1014,7 +995,6 @@ export const register: Register = (on, options) => {
                 pill({ Box, Text }, look.nerd, mix(NAME_COLOR[tone], THEME.bg, LEGEND_WASH), <Text color={NAME_COLOR[tone]}>{look.nerd ? text.legend[tone] : ` ${text.legend[tone]} `}</Text>, `legend-${tone}`, THEME.bg),
               )}
               <Box key="legend-gap" flexGrow={1} />
-              {/* The session's own folder opens from a pill at the footer's right end, with the folder rows' mark. */}
               {pill({ Box, Text }, look.nerd, THEME.surface3, entry('session-reveal', text.sessionFolder, false, THEME.surface3, { subLead: look.glyph.icon.folder ?? look.glyph.reveal, subLeadColor: THEME.folder, tip: { glyph: look.glyph.icon.folder ?? look.glyph.reveal, label: text.sessionFolder, text: text.sessionFolderTip } }), 'session-reveal-pill', THEME.bg)}
             </Box>
           </Box>

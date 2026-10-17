@@ -16,10 +16,10 @@ export const meterCells = (model: string, nerd: boolean) => (nerd ? 2 : 0) + [..
 
 export type MeterMessage = { type: 'set'; effort: string } | { type: 'model-menu' } | { type: 'effort-card' }
 
-// The inside of the Moonlight-claude oh-my-posh model pill.
+// The readout color inside the model pill.
 const PILL_FG = style.colors.pills.readout
 
-// A dialog opening under the pointer can swallow the leave event, so a hover with no pointer event for this long ends on its own.
+// A dialog opening under the pointer can swallow the leave event, so a hover ends after this long without pointer events.
 const HOVER_QUIET_MS = 5000
 
 // lights: each glyph's fade from dark (0) to its level color (HOVER_STEPS).
@@ -30,7 +30,7 @@ const litOf = (props: MeterProps, level: number) => (level >= 0 ? level : props.
 
 const targets = (lit: number) => LEVELS.map((_, index) => (index <= lit ? HOVER_STEPS : 0))
 
-// The ticker reads the latest props from here, since its closure keeps the first ones.
+// The ticker's closure keeps the first props, so it reads the latest from here.
 const latest = new WeakMap<object, MeterProps>()
 
 // The timer runs while a glyph fades or a hover may need ending, and stops at rest, so an idle meter costs no wakeups.
@@ -76,7 +76,6 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
   // A new effort from outside moves the lights too.
   const goalNow = targets(litOf(props, hovered))
   if ((surface.state?.lights ?? goalNow).some((light, index) => light !== goalNow[index])) wake(surface)
-  // At rest the pill shows only the current level; the pointer on it opens every level.
   const isExpanded = Boolean(props.card) || (!compact && hovered !== -2)
   surface.onPointer(event => {
     wake(surface)
@@ -97,7 +96,6 @@ const Meter: ClientModule<MeterProps, Hover> = (props, surface) => {
       return
     }
     if (isClick && level >= 0) surface.post({ type: 'set', effort: LEVELS[level]! } satisfies MeterMessage)
-    // The model name opens the model menu.
     if (isClick && level < 0 && isModel) surface.post({ type: 'model-menu' } satisfies MeterMessage)
   })
   const lights = surface.state?.lights ?? targets(litOf(props, hovered))

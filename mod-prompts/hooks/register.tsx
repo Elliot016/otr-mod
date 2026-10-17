@@ -19,7 +19,6 @@ import text from './text'
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 
-// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
   const env = {
@@ -270,7 +269,6 @@ const tabs = (isSettings: boolean) => [
   { id: 'prompts-settings', label: text.settingsTab, icon: look.glyph.gear, isOpen: isSettings, tip: { glyph: look.glyph.gear, label: text.settingsTab, text: text.settingsTabTip } },
 ]
 
-// Claude Code's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude.
 async function configDir($: EngineInterface) {
   const set = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
   if (set) return set
@@ -557,7 +555,6 @@ export const register: Register = (on, options) => {
     try {
       const message = e.data as EntryMessage
       if (message?.type === 'menu-entry' && message.id === 'prompts') await openingPane($)
-      // The title line's tabs swap the sidebar and its settings; the open tab does nothing.
       if (message?.type === 'menu-entry' && message.id === 'prompts-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
       if (message?.type === 'menu-entry' && message.id === 'prompts-tab' && !(await isOpen($))) await togglePane($)
       if (message?.type === 'menu-entry' && (message.id === 'prompts-page-prev' || message.id === 'prompts-page-next')) {
@@ -579,7 +576,6 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // The timeline reports a click on a stop, which opens that prompt.
   on('ui.message', { requestId: 'prompts' }, async ($, e, next) => {
     const message = e.data as TimelineMessage
     if (message?.type === 'select' && message.index !== selected) {
@@ -668,7 +664,6 @@ export const register: Register = (on, options) => {
     const moreId = `${MORE}${current?.id ?? ''}`
     const moreLabel = isFull ? text.showLess : fill(text.cardMore, { n: rowsNeeded - textRows })
     const moreArrow = isFull ? look.glyph.less : look.glyph.more
-    // The expand standard: the arrow, then a muted label, on the card's fill, pinned right on the last text row.
     const moreControl = (
       <Client key={moreId} module="./entry.tsx" width={[...moreLabel].length + 4} height={1} props={{ id: moreId, label: moreLabel, lead: moreArrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreArrow, label: moreLabel, text: isFull ? text.tipShowLess : text.tipShowAll } } satisfies EntryProps} />
     )
@@ -686,7 +681,6 @@ export const register: Register = (on, options) => {
           ) : null,
           current && hasOpen ? (
             <Box key="open" flexDirection="row" paddingLeft={GUTTER} columnGap={1}>
-              {/* The rail runs on only when a stop follows. */}
               <Text color={THEME.accent}>{after.length > 0 ? MARK.rail : ' '}</Text>
               <Box key="open-stats" flexDirection="row" columnGap={1} flexGrow={1}>
                 {stats}

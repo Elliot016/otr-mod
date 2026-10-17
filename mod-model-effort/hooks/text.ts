@@ -19,7 +19,7 @@ export default {
   "tipTab": "shows this mod's settings",
   "paneName": "Effort",
   "paneSettings": "Settings",
-  "commandDescription": "Open the effort meter's settings panel with `settings`",
+  "commandDescription": "Open the effort settings panel with `settings`",
   "usage": "mod-model-effort: use /mod-model-effort settings",
   "settingsWaiting": "Effort settings waiting: {reason}",
   "statusHint": "Click a setting to change it",

@@ -33,7 +33,6 @@ export function bytesOf(base64: string): Uint8Array {
   return out
 }
 
-// How many bytes the text takes in UTF-8, without building them.
 export function utf8Length(text: string) {
   let bytes = 0
   for (let at = 0; at < text.length; at++) {

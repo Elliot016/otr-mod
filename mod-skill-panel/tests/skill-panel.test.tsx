@@ -136,7 +136,7 @@ test('panel lists skill groups and a press fills the prompt', async ($, on) => {
   expect(tab).toContain(' Skills ')
   expect(tab).toContain('2')
 
-  // The cloud: one row per tag, the tag pill (the icon as a subpill, then the name) then its chips; the card shows the first skill.
+  // One row per tag: its pill, then its chips; the card shows the first skill.
   const cloud = JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))
   expect(cloud).toContain(' ∴ ')
   expect(cloud).toContain('rev')
@@ -148,7 +148,6 @@ test('panel lists skill groups and a press fills the prompt', async ($, on) => {
   expect(box).toBe('please ')
   expect(JSON.stringify(await ui.drawn({ in: 'skills-cloud' }))).toContain('─')
 
-  // The card's title leads with the tag's icon as a subpill.
   expect(await ui.find({ key: 'card-icon' })).toBeDefined()
   // Pointing at a chip shows it in the card and adds nothing.
   await pointing(ui).pointer({ in: 'skills-cloud', type: 'move', x: 16, y: 2 })
@@ -413,7 +412,6 @@ test('its footer entry opens the pane on a press and closes it on the next', asy
 
   const idle = await $.ui.mount(band)
   expect(await idle.find({ type: 'Text', text: 'other mod' })).toBeDefined()
-  // The pointer on the entry shows its tip under the row, and leaving takes it away.
   await pointing(idle).pointer({ type: 'move', x: 1, y: 0, in: 'menu-entry-skills' })
   expect(await idle.find({ type: 'Text', text: 'Skills:', bold: true } as never)).toBeDefined()
   expect(await idle.find({ type: 'Text', text: /^ browse your skills/ })).toBeDefined()

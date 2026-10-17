@@ -53,7 +53,7 @@ export default {
   "tipSimpler": "rewrites this note in simpler words",
   "tipLess": "rewrites this note shorter",
   "tipMore": "rewrites this note with more detail",
-  "commandDescription": "Open the Heads up panel: every note of this session by turn; `settings` opens its settings, `clear` closes the card, `forget` forgets the topics you marked as known",
+  "commandDescription": "Open the Heads up panel with every note by turn; `settings` opens its settings, `clear` closes the card, `forget` clears the topics marked as known",
   "tipToast": {"label":"Dismiss","text":"hides this message"},
   "settingTips": {"enabled":"the side check flags one thing"}
 }

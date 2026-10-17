@@ -42,7 +42,7 @@ async function detectLook($: EngineInterface) {
   return lookFor(await detectNerd(env, host))
 }
 
-// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+// Reading the terminal's settings is slow, so on auto the last answer in the store draws until it returns.
 async function savedLook($: EngineInterface) {
   if (iconMode !== 'auto') return look
   try {
@@ -99,7 +99,7 @@ let snap: Snap | null = null
 // The load in flight, shared, so two hooks never build two snaps and save over each other's changes.
 let snapLoad: Promise<Snap> | null = null
 
-// A /resume or /clear keeps the process and changes the id; asking it on every call would cost a round trip per render, so calls ask after a session.end, or once this long has passed.
+// A /resume or /clear keeps the process and changes the id, but asking on every render costs a round trip, so calls ask at most this often.
 const SESSION_CHECK_MS = 500
 let sessionCheckedAt = 0
 
@@ -162,7 +162,7 @@ async function pruneSnaps($: EngineInterface) {
 // The folder found for a session, kept so later refreshes skip the search.
 let foundGates = { session: '', dir: '' }
 
-// The execute skill's folder for this session, as its gates-dir.mjs resolves it: ~/.claude/gates/<repo>/<session id>.
+// This session's gates folder: <GATES_HOME or ~/.claude/gates>/<repo>/<session id>.
 async function gatesDir($: EngineInterface) {
   const session = String(await $.session.id())
   if (foundGates.session === session) return foundGates.dir
@@ -386,7 +386,6 @@ const tabs = (open: 'list' | 'settings', count: number) => [
 export const register: Register = (on, options) => {
   still = options.animations === false
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
   toasts.isStill = still
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
@@ -405,7 +404,7 @@ export const register: Register = (on, options) => {
       await loadLook($)
       await $.command.register({ name: 'mod-progress', description: text.commandDescription, argumentHint: '[settings]' })
       const current = await loadSnap($)
-      // A plugin reload re-runs this hook in the same process, with a fresh module; $.state is the host's and dies with the process, so an unset marker means a new process, whose shells are gone.
+      // $.state lives as long as the process and survives a plugin reload, so an unset marker means a new process, whose shells are gone.
       if (!(await $.state.get(BOOT_KEY)).value) wipeBg(current)
       await $.state.set(BOOT_KEY, true)
       const usage = await $.session.usage().catch(() => undefined)
@@ -590,7 +589,6 @@ export const register: Register = (on, options) => {
 
   // Tasks come from each loop's own TaskCreate and TaskUpdate; gates files change through Write, Edit or the gate checker run by Bash.
   on('tool.call', async ($, e, next) => {
-    // The step is set before the call runs, so the head row shows what the tool is doing while it works.
     try {
       const current = await loadSnap($)
       applyCall(current, e.agentId, String(e.tool), { ...e })
@@ -660,7 +658,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // A task stopped from /tasks reaches no tool call, no Stop and no prompt hook; its notification row is drawn, and that carries the status.
+  // A task stopped from /tasks reaches no tool call, Stop or prompt hook; only its drawn notification row carries the status.
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     const task = (e.props as { task?: { id?: string; status?: string } }).task
     if (task?.id && task.status) {
@@ -826,7 +824,6 @@ export const register: Register = (on, options) => {
         const shown = isFull ? held : held.slice(-room)
         const moreLabel = isFull ? text.showLess : fill(text.moreLines, { n: hidden })
         const moreArrow = isFull ? look.glyph.less : look.glyph.more
-        // The expand standard: the arrow in accent, then a muted label, pinned right on the last text row.
         const moreProps = { id: OUTPUT_MORE, label: moreLabel, lead: moreArrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreArrow, label: moreLabel, text: isFull ? text.tipShowLess : text.tipShowAll } } satisfies EntryProps
         const moreControl = <Client key="output-more" module="./entry.tsx" width={entryCells(moreProps)} height={1} props={moreProps} />
         outputHidden = hidden
@@ -881,7 +878,6 @@ export const register: Register = (on, options) => {
       $.ui.invalidate('ui.render')
     }
     const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd, viewing: e.props.view.agentId ?? '', folded: current.folded ?? [] })) as LoopsProps
-    // One toggle for every card: Fold all while any list is open, Unfold all once all are folded.
     const withTasks = rows.filter(each => each.tasks.length > 0)
     const isAnyOpen = withTasks.some(each => !(current.folded ?? []).includes(each.id))
     const foldLabel = isAnyOpen ? text.foldAll : text.unfoldAll

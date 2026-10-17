@@ -9,7 +9,7 @@ export type BarProps = { kind: 'turns' | 'tools'; id: string }
 
 export type BarMessage = { type: 'fold' } & BarProps
 
-// The card's left strip, laid over its colored bar: a click anywhere on it folds what the strip runs beside.
+// Per instance, so a tip posts only when hover changes.
 const isTipped = new WeakMap<object, boolean>()
 
 const Bar: ClientModule<BarProps> = (props, surface) => {

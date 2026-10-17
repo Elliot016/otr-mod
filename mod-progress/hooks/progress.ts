@@ -44,7 +44,7 @@ const GATE_RE = /^- \[( |x|X)\] (.*)$/
 const ATTR_RE = /^\s+(CHECK|EXPECT|EVIDENCE):\s?(.*)$/
 const ABANDON_RE = /^ABANDON:\s*(\S+)\s*(.*)$/
 
-// The execute skill's gate format: a box is met only when checked and its EVIDENCE is no longer pending; ABANDON lines give a gate up.
+// A box is met only when checked and its EVIDENCE is no longer pending; ABANDON lines give a gate up.
 export function parseGates(source: string): Gate[] {
   const found: { id: string; text: string; checked: boolean; evidence: string | null }[] = []
   const abandoned = new Set<string>()
@@ -78,7 +78,7 @@ export const isGatesPath = (path: string) => /(^|\/)(GATES\.md|gates\/[^/]+\.md)
 
 export const stemOf = (file: string) => file.replace(/\.md$/i, '')
 
-// The first gates file a brief names: execute's leaf briefs point at gates/<stem>.md.
+// The first gates file a brief names, as gates/<stem>.md.
 export const gatesStemIn = (prompt: string) => prompt.replace(/\\/g, '/').match(/gates\/([^/\s`'")]+)\.md/i)?.[1]
 
 // An agent's gates file: the one its brief names, else gates/<name>.md, else the description's first word ("leaf-1.1.1: ...").
@@ -96,7 +96,7 @@ export function applyStep(snap: Snap, agentId: string | undefined, model: string
   }
 }
 
-// The main session's tasks sit on the snap, an agent's on its loop; one function serves both.
+// The main session's tasks sit on the snap, an agent's on its loop.
 export function applyTask(owner: { tasks?: Task[] }, tool: string, input: Record<string, unknown>, createdId?: string) {
   const tasks = (owner.tasks ??= [])
   if (tool === 'TaskCreate' && createdId) tasks.push({ id: createdId, subject: String(input.subject ?? ''), status: 'pending' })
@@ -387,7 +387,7 @@ const shownDescription = (loop: Loop, status: Status, description: string) => (s
 export function buildRows(snap: Snap, list: AgentLite[], usage: UsageLite | undefined, now: number, mainName: string, mainTask: string, mainModel: string | undefined): Row[] {
   const main = snap.main
   const model = main.model ?? mainModel
-  // The main ledger is GATES.md plus every gates/<name>.md, the way execute splits a run across files.
+  // The main ledger is GATES.md plus every gates/<name>.md.
   const ledger = Object.entries(snap.gates).sort(([a], [b]) => Number(b === MAIN_GATES) - Number(a === MAIN_GATES)).flatMap(([, gates]) => gates)
   const mainGates = gatesFor(ledger, snap.tasks)
   const window = windowFor(model, model, usage?.window)

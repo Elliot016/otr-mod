@@ -168,7 +168,6 @@ test('a check runs on the sixth main step only, once per turn, and never for a s
   await step($, 6, { turnId: 't2' })
   await clock.settle()
   expect(forks.length).toBe(2)
-  // learn: none shows nothing.
   const ui = await band($)
   expect(await ui.find({ key: 'headsup-card' })).toBeUndefined()
   await ui.unmount()
@@ -426,7 +425,6 @@ test('the timeline dot marks what is unread: a filled badge-blue dot, and a read
     const { mark, isUnread, isSelected } = row.props.props
     return [mark.trim(), isUnread, isSelected]
   }
-  // Hollow when read and filled when unread or selected, and the row says unread and selected apart from the mark.
   expect(await dot(1)).toEqual(['○', false, false])
   expect(await dot(2)).toEqual(['●', true, false])
   expect(await dot(3)).toEqual(['●', true, true])
@@ -473,13 +471,11 @@ test('the panel shows the newest note in a card over a timeline of every note, a
   const panel = await pane($)
   const shown = JSON.stringify(await panel.drawn())
   const id = String(shown.match(/"id":"headsup-note-([^"]+)"/)?.[1])
-  // The newest note is in the card without a click; its row sits in the timeline, whose rail and jump belong to the row.
   const card = JSON.stringify(await panel.find({ key: 'note-card' }))
   expect(card).toContain('#1')
   expect(card).toContain('Watch how often people ask follow-ups.')
   expect(shown.split('"key":"note-row-').length - 1).toBe(1)
   expect(shown).toContain('Heads up')
-  // The actions ride in one row inside the card.
   const bar = JSON.stringify(await panel.find({ key: 'headsup-actions' }))
   expect(JSON.stringify(await panel.find({ key: 'note-card' }))).toContain('headsup-actions')
   for (const action of ['understood', 'chat', 'reword']) expect(bar).toContain(`headsup-${action}-${id}`)
@@ -688,7 +684,6 @@ test('Open opens the panel on that note: its turn, the explanation, Chat sends t
   await clock.settle()
   expect(panes().map(each => each.id)).toEqual(['headsup'])
   expect(states.get('mod-heads-up.pane')).toBe(true)
-  // Read on open: no unread count, and the card is gone.
   expect(JSON.stringify(await ui.find({ key: 'menu-entry-headsup' }))).not.toContain('"badge"')
   expect(await ui.find({ key: 'headsup-card' })).toBeUndefined()
   await ui.unmount()

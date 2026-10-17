@@ -9,7 +9,7 @@
     "enabled": {
       "type": "boolean",
       "title": "Check while Claude works",
-      "description": "The side check flags one thing. Every sixth step of a turn, at most once per turn, it reads the session for something worth knowing. Off, no request is made",
+      "description": "Every sixth step of a turn, at most once per turn, a side check reads the session for one thing worth flagging. Off, it makes no request",
       "default": true
     },
     "animations": {
@@ -21,7 +21,7 @@
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": ["auto", "nerd", "safe"],
       "default": "auto"
     }

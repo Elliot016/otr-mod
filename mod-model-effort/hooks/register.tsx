@@ -51,7 +51,7 @@ async function detectLook($: EngineInterface) {
   return lookFor(await detectNerd(env, host))
 }
 
-// Reading the terminal's settings takes a while, so on auto the last answer, kept in this mod's store, draws until it returns.
+// Reading the terminal's settings is slow, so on auto the last answer in the store draws until it returns.
 async function savedLook($: EngineInterface) {
   if (iconMode !== 'auto') return look
   try {
@@ -131,7 +131,6 @@ async function setEffort($: EngineInterface, effort: string) {
   await $.fs.write(path, out)
   override = { effort, before: current.effort }
   await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model: current.model, effort })
-  // The level's word shows only briefly after a click.
   flash = effort
   $.ui.invalidate('ui.render')
   $.clock.after(2000, () => {
@@ -186,7 +185,7 @@ async function followSavedLevel($: EngineInterface) {
 let lastSaved: { model: string; effort: string | null } | undefined
 let isCheckingLevel = false
 
-// Where ConfigChange never reaches a plugin, a render looks for a changed saved level instead. Only a change counts, so a level a request downgraded stays as it went out.
+// ConfigChange never reaches a plugin, so a render looks for a changed saved level. Only a change counts, so a level a request downgraded stays.
 async function followSavedChange($: EngineInterface) {
   const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
   if (!current) return
@@ -195,7 +194,7 @@ async function followSavedChange($: EngineInterface) {
   if (seen?.model === current.model && seen.effort !== lastSaved.effort) await followSavedLevel($)
 }
 
-// The pill part or model menu entry under the pointer, shown in the tip row above the pill row.
+// The pill part or menu entry under the pointer, shown in the tip row.
 let bandTip: TipMessage | null = null
 
 // The settings pane's control under the pointer, shown in its footer.
@@ -213,7 +212,7 @@ let isEffortCardOpen = false
 // Whether Claude is working, as the band's last draw saw it: `/model` run by a click would queue as a prompt.
 let isWorking = false
 
-// The models used here before, newest first, as the menu last drew them; an entry's id is its index.
+// The models used before, newest first, as the menu last drew them; an entry's id is its index.
 let menuModels: string[] = []
 
 // Switches through Claude Code's own `/model`, then shows the pick at once instead of after the next request.
@@ -319,7 +318,6 @@ export const register: Register = (on, options) => {
   still = options.animations === false
   toasts.isStill = still
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
-  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
   // This mod's toasts draw as cards in the band; Claude Code's own box is narrow and cuts them.
   on('ui.toast', async ($, e) => {
@@ -336,7 +334,7 @@ export const register: Register = (on, options) => {
     await loadLook($)
     await $.command.register({ name: 'mod-model-effort', description: text.commandDescription, argumentHint: '[settings]' })
     await $.state.set({ plugin: 'mod-model-effort', key: 'pane' }, await isPaneOpen($))
-    // Before the first request, the session's own model stands in, else the last session's; `--model` can differ from the last one.
+    // Before the first request the session's own model stands in, since `--model` can differ from the last session's.
     const own = await $.session.model().catch(() => undefined)
     const model = typeof own === 'string' && own ? own : await $.store.get('model')
     if (typeof model === 'string') {
@@ -371,7 +369,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Claude Code's own /model and Alt+P picker switch without a request, so the pill follows at once. A failed read keeps the last pill and never blocks the switch.
+  // /model and the Alt+P picker switch without a request, so the pill follows at once. A failed read never blocks the switch.
   on('classic.PostModelSwitch', async ($, e, next) => {
     try {
       await followModel($, e.to_model)
@@ -496,10 +494,10 @@ export const register: Register = (on, options) => {
     const { Box, Client, Text } = $.ui.resolve(e)
     const current = await $.state.get({ plugin: 'mod-model-effort', key: 'current' })
     let shown = current.value
-    // Where an organization keeps classic hooks from plugins, PostModelSwitch never arrives, so the session's own model is the signal.
+    // Some organizations block classic hooks from plugins, so PostModelSwitch never arrives and the session's model is the signal.
     const live = await $.session.model().catch(() => undefined)
     if (typeof live === 'string' && displayName(live) !== live) {
-      // Only a change of the session's model counts: a request on the fallback model leaves it as it was, and the pill shows what went out.
+      // Only a change of the session's model counts: a request on a fallback model leaves the pill as it went out.
       const isSwitched = lastLive !== undefined && live !== lastLive
       lastLive = live
       if (shown && isSwitched && live !== shown.model) {

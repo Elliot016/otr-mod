@@ -29,7 +29,6 @@ export type Turn = {
   command?: string
 }
 
-// The part of a session message (`$.session.messages()`) a guessed turn reads.
 type MessageRow = { role: 'user' | 'assistant'; text: string; toolUses: readonly { tool_use_id: string; tool: string; input: any; result?: unknown; isError?: true }[]; toolResults?: readonly unknown[] }
 
 // Times in epoch ms; thought is the thinking just before the call, empty when it kept no text.
@@ -82,7 +81,6 @@ const userText = (content: unknown) =>
       ? content.filter((block: any) => block?.type === 'text' && typeof block.text === 'string').map((block: any) => block.text).join('\n')
       : ''
 
-// Lines a file edit added and removed, from the result Claude Code stored for it.
 // A failed call changed nothing, so it counts nothing, even a Write whose content never reached the file.
 export function diffStat(name: string, input: any, output: any, isFailed = false): { added: number; removed: number } {
   if (isFailed) return { added: 0, removed: 0 }
@@ -105,11 +103,9 @@ const PREVIEW_LINES = 8
 
 const capped = (lines: PreviewLine[]): Preview => ({ lines: lines.slice(0, PREVIEW_LINES), more: Math.max(0, lines.length - PREVIEW_LINES), rest: lines.slice(PREVIEW_LINES) })
 
-// The text a result block carries: a plain string, or its text parts.
 export const resultText = (content: unknown) =>
   typeof content === 'string' ? content : Array.isArray(content) ? content.filter((part: any) => part?.type === 'text').map((part: any) => String(part.text ?? '')).join('\n') : ''
 
-// The text a drawn row's output holds, for a call whose result the transcript has not given yet.
 const joinText = (parts: unknown[]) => parts.filter((part): part is string => typeof part === 'string' && part.trim() !== '').join('\n')
 
 // A tool with none of the usual fields (ListAgents, SendMessage, ToolSearch, an MCP tool) still shows its text fields.
@@ -317,8 +313,7 @@ export class TurnLog {
     this.calls.delete(toolUseId)
   }
 
-  // The number mod-prompts gives the prompt: its place among the prompts on the live branch (the parent chain from the last row, so /rewind's abandoned rows drop out), oldest first.
-  // A turn the file does not hold yet, such as a prompt drawn live, counts as live; a subagent report has none.
+  // Counts only the live branch (the parent chain from the last row), so /rewind's abandoned prompts drop out.
   numberOf(turn: Turn) {
     if (!this.numbers) {
       const live = new Set<string>()
@@ -341,7 +336,6 @@ export class TurnLog {
     return this.drawnAs.get(key) ?? this.turns.find(turn => rowKey(turn.prompt) === key)
   }
 
-  // A queued prompt's drawn row id -> its turn.
   private drawnAs = new Map<string, Turn>()
 
   // The turns from the session's messages, which the engine holds before the transcript is read; rows join them as they draw.

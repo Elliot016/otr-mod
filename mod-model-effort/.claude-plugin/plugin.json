@@ -1,7 +1,7 @@
 {
   "name": "mod-model-effort",
   "version": "0.1.0",
-  "description": "A clickable effort meter in the prompt footer, five squares from low to max: click one to set that level, saved for the model like Alt+P does",
+  "description": "A clickable effort meter in the prompt footer, five squares from low to max. A click sets that level for the model, as Alt+P does",
   "license": "MIT",
   "author": { "name": "Vinicius Amorim", "url": "https://github.com/v-amorim" },
   "types": "./types/index.d.ts",
@@ -9,7 +9,7 @@
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": ["auto", "nerd", "safe"],
       "default": "auto"
     },

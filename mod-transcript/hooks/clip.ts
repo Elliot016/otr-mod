@@ -2,7 +2,6 @@
 // Extracts a reply's code, text, tables or links from its markdown for copying.
 import { cells } from './cells'
 
-// What the copy pill takes out of a reply's markdown: the whole of it, its code, plain text, its tables or its links.
 export type CopyChoice = 'reply' | 'code' | 'text' | 'table' | 'links'
 
 const FENCE = /^ *(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^ *\1[ \t]*$/gm
@@ -20,7 +19,6 @@ export function pieces(markdown: string) {
   return [...parts, { isCode: false, text: rest, raw: rest }]
 }
 
-// The insides of the fenced code blocks, fences left out, one blank line between blocks.
 export const codeOf = (markdown: string) =>
   pieces(markdown).filter(part => part.isCode && part.text).map(part => part.text).join('\n\n')
 
@@ -119,7 +117,6 @@ export function linkSpans(line: string) {
   return spans.sort((a, b) => a.from - b.from)
 }
 
-// Each URL and file path the prose names, once, in order; code blocks are left out.
 export function linksOf(markdown: string) {
   const found: string[] = []
   for (const part of pieces(markdown)) {

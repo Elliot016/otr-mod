@@ -67,7 +67,7 @@ let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 let wedge: Wedge = FILLED
 type Kind = 'turns' | 'tools'
-// Spike only: each drawn row's component and id, and whether the transcript parse placed it in a turn.
+// For /mod-transcript debug: each drawn row's component and id, and whether it landed in a turn.
 const seen = new Map<string, boolean>()
 // Each task's notice, and the tasks with a report drawn; see taskRow.
 const notices = new Map<string, Notice>()
@@ -251,7 +251,6 @@ const FEED_SLICE = 2000
 // For /mod-transcript debug: how long the last transcript read and feed took.
 let lastRead = ''
 
-// Claude Code's config folder: CLAUDE_CONFIG_DIR when set, else ~/.claude.
 async function configDir($: EngineInterface) {
   const set = ((await $.env.get('CLAUDE_CONFIG_DIR')) ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
   if (set) return set
@@ -270,7 +269,6 @@ async function findTranscript($: EngineInterface) {
   return ''
 }
 
-// The live turn stays open; a turn is done once a later prompt follows it, its duration is stored, or Claude is idle.
 // The turns list holds the turns flipped away from what fold_turns sets for all of them.
 const isTurnOpen = (flipped: string[], turn: Turn) => flipped.includes(turn.prompt) === foldTurns
 
@@ -385,7 +383,6 @@ function frame({ Box, Client }: Bars, key: string, body: unknown, isTop: boolean
   )
 }
 
-// An unfolded finished turn's row, inside the bubble its head opened.
 const cardRow = (parts: Bars, body: unknown, fold: BarProps) => frame(parts, 'toggle-frame', slice(parts, 'toggle-card', THEME.accent, body, fold), false, false)
 
 // Rows draw in no fixed order, so the prompt and duration rows carry the edges; a finished turn's reply closes it.
@@ -399,7 +396,6 @@ const hasTable = (text: string) => /^\s*\|.*\|\s*$/m.test(text) && /^\s*\|?\s*:?
 // A turn has ended once a later prompt follows it, its duration is stored, or Claude went idle after it.
 const hasEnded = (turn: Turn) => turn !== log.turns[log.turns.length - 1] || turn.durationMs !== undefined || turn.prompt === endedPrompt
 
-// The copy pill, once the turn has ended with a reply to copy.
 function copyPill({ Box, Client }: Bars, turn: Turn) {
   const choices = copyChoices(turn.replyText)
   if (!showCopy || !hasEnded(turn) || !choices.length) return null
@@ -428,7 +424,6 @@ function closing(parts: Bars, key: string, turn: Turn | undefined) {
   )
 }
 
-// A control glyph without the brackets and padding it has as a standalone button.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // Chip and label are both Clients, since a Button posts no tip; without caps the chip's ends are a space each, so it takes three cells either way.
@@ -461,7 +456,6 @@ const commandParts = (command: string): LabelPart[] => tokenizeLine(command).map
 
 const partsWidth = (parts: LabelPart[]) => parts.reduce((sum, part) => sum + cells(part.text), 0)
 
-// A tool's one-line label, cut to `width`; a Bash call's command keeps its shell colors.
 function labelParts(name: string, input: any, width: number): LabelPart[] {
   const label = fit(toolLabel(name, input, 0, 0), width)
   if (name !== 'Bash' || !label.startsWith('Bash(')) return [{ text: label }]
@@ -509,8 +503,7 @@ function bashRow({ Box, Client, Text }: Rows, input: any, isRunning: boolean, is
   )
 }
 
-// The reply drawn in pieces while a copy choice is hovered: its copied characters on a background, the rest as Claude Code draws markdown.
-// The gutter stands in for the bullet and the indent Claude Code gives a reply's text.
+// The reply in pieces while a copy choice is hovered: copied characters on a background, the rest as markdown. The gutter stands in for Claude Code's bullet and indent.
 function markedReply({ Box, Markdown, Text }: Pick<Rows, 'Box' | 'Text'> & { Markdown: (props: any) => RenderElement }, pieces: Piece[], isFirst: boolean) {
   return (
     <Box key="toggle-marked" flexDirection="row">
@@ -542,7 +535,6 @@ function markedReply({ Box, Markdown, Text }: Pick<Rows, 'Box' | 'Text'> & { Mar
   )
 }
 
-// An unfolded tool's own row and result, set in under its line.
 const nested = ({ Box, Client }: Bars, key: string, body: unknown, fold: BarProps) => (
   <Box key={key} flexDirection="row">
     <Box key={`${key}-bar`} width={1} flexShrink={0} backgroundColor={THEME.border}>
@@ -571,7 +563,6 @@ function countsPill({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, key: string, adde
   )
 }
 
-// An AskUserQuestion call folds to one line per question: its answer, or the question with no answer yet.
 function questionRows({ Box, Text }: Pick<Rows, 'Box' | 'Text'>, input: unknown, output: unknown, width: number) {
   return (
     <Box key="toggle-questions" flexDirection="column">
@@ -604,7 +595,6 @@ function moreToggle({ Client }: Pick<Rows, 'Client'>, id: string, isOpen: boolea
   )
 }
 
-// A text row with the control pinned at its right end: the text, a flexGrow spacer, then the control.
 function rowWithMore({ Box }: Pick<Rows, 'Box'>, key: string, body: unknown, control: unknown) {
   return (
     <Box key={key} flexDirection="row">
@@ -615,7 +605,6 @@ function rowWithMore({ Box }: Pick<Rows, 'Box'>, key: string, body: unknown, con
   )
 }
 
-// What a notice or a report row reads from its props.
 type TaskProps = { text: string; origin: { kind: string }; from?: { name: string }; task?: { id?: string; status?: string; type?: string; durationMs?: number; toolUseId?: string } }
 
 // A subagent's or teammate's report: a head line with its sender, status, time and first line, then a card of its fields and first lines.
@@ -853,7 +842,6 @@ async function answer($: EngineInterface, args: string) {
   return isAnyOpen ? text.noteFolded : text.noteUnfolded
 }
 
-// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
   const env = {
@@ -941,7 +929,7 @@ function loadLook($: EngineInterface) {
   return lookLoad
 }
 
-// A time as a rounded pill, like the omp transient prompt; plain muted text where the font has no caps.
+// A time as a rounded pill; plain muted text where the font has no caps.
 function timePill({ Box, Text }: { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }, key: string, time: string) {
   if (!look.nerd) return <Box key={key} flexShrink={0} height={1} alignSelf="flex-start"><Text color={THEME.muted}>{`${time} `}</Text></Box>
   // One row tall whatever the line's height: a filled body stretched by a taller row painted the row below.
@@ -1005,7 +993,6 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // A click on a card's strip folds the turn or tool it runs beside.
   on('ui.message', async ($, e, next) => {
     const react = async () => {
       const clicked = e.data as EntryMessage

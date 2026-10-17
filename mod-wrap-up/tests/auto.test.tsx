@@ -118,7 +118,6 @@ test('the restore steps aside only while a manual handoff is fresh; the relatedn
 
 type World = ReturnType<typeof world>
 
-// An in-memory file system, a scripted model and the session facts the automatic handoff reads.
 function world(on: any, files: Map<string, string>, reply: (system: string, prompt: string) => unknown | Promise<unknown>, messages: unknown[] = [{ role: 'user', text: 'hello', toolUses: [] }], env: Record<string, string> = {}) {
   const prompts: { model: string; effort?: string; system: string; prompt: string }[] = []
   const filled: string[] = []
@@ -210,7 +209,6 @@ test('a main turn end runs one Sonnet call at low effort and the ledger and hand
   expect(saved(w).decisions.map(item => item.text)).toEqual(['Use PostgreSQL, not MySQL', 'Cache with Redis'])
 })
 
-// The test above is the unset case: with no CLAUDE_CONFIG_DIR the ledger lands under ~/.claude.
 test('a set CLAUDE_CONFIG_DIR is where the ledger and handoff land', async ($, on) => {
   const inCfg = `C:/cfg/mods-data/mod-wrap-up/${projectSlug('C:/work/proj')}/ledgers/s1.json`
   const w = world(on, new Map([[inCfg, JSON.stringify(seeded())]]), () => UPDATE('HANDOFF-CFG'), undefined, { CLAUDE_CONFIG_DIR: 'C:\\cfg\\' })
@@ -223,7 +221,6 @@ test('a set CLAUDE_CONFIG_DIR is where the ledger and handoff land', async ($, o
 const FULL = { options: { auto_compact: true, icons: 'safe' } } as const
 const COUNTDOWN_LINE = 'Context at 132K (66%), handing off in 5 s'
 
-// Marks crossed, one main turn done and the countdown card drawn.
 async function atTheMark($: any, on: any, files = autoFiles(), reply: () => unknown = () => UPDATE('HANDOFF-TWO')) {
   const w = world(on, files, reply)
   w.flags.percent = 66

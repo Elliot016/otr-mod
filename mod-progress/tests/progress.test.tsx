@@ -42,11 +42,9 @@ const seeded = (): Snap => {
   return snap
 }
 
-// `files` are the gates files the session's folder holds, by path under it; `repo` names the folder the checker filed them under.
-// `session.id` may change mid-test, as a /resume or /clear changes it.
+// `files` are keyed by path under the session's gates folder; `session.id` may change mid-test.
 type World = { now: number; windows: { kind: string; percentUsed: number; resetsAt?: string }[]; files: Record<string, string>; repo: string; empty: string[]; session: { id: string }; storeDown: { is: boolean }; reads: string[] }
 
-// Everything the mod reads from the engine, with the store backed by a map and the clock moved only by the test.
 function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], world: Partial<World> = {}) {
   const store = new Map<string, unknown>([['snap:sid-1', seeded()]])
   const clock = mock.clock(on, { now: world.now ?? 14 * 60 * 1000 })
@@ -72,7 +70,7 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
     store.delete(e.key)
     return { value: undefined } as never
   })
-  // With no HOME set and no repo, the session's own folder is <home ''>/.claude/gates/<cwd's name>/<session id>.
+  // With no HOME and no repo, the folder is /.claude/gates/<cwd name>/<session id>.
   const folder = `/.claude/gates/${world.repo ?? 'w'}/sid-1`
   on('fs.read', (_$, e) => {
     world.reads?.push(neutral(e.path))
@@ -422,7 +420,7 @@ test('hovering the band pill shows its tip in the tip row, and a card shows its 
   await pane.unmount()
 })
 
-// Every StopFailure error kind, its words in the stop line and its tone (alert: the person must act; warn: it may clear).
+// Each StopFailure kind, its stop line words and its tone (alert: act; warn: may clear).
 const STOPS = [
   ['authentication_failed', 'sign-in needed', 'alert'],
   ['oauth_org_not_allowed', 'sign-in needed', 'alert'],

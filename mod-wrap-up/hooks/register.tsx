@@ -182,7 +182,6 @@ async function fillWithRetry($: EngineInterface) {
   return false
 }
 
-// True while a handoff still waits to be filled; false once a fill landed or it went stale.
 async function isPendingLeft($: EngineInterface) {
   try {
     return isFresh(await $.store.get('pending'), await $.clock.now())
@@ -226,7 +225,6 @@ function closeCard($: EngineInterface) {
   $.ui.invalidate('ui.render')
 }
 
-// A click on a card line keeps or drops it.
 function toggleLine($: EngineInterface, id: string) {
   if (!card) return
   const thread = /^wrap-up-thread-(\d+)$/.exec(id)
@@ -486,7 +484,6 @@ async function runAuto($: EngineInterface) {
   }
 }
 
-// The context a prompt carries after a compaction: the ledger's latest handoff and its path.
 async function restoreFrom($: EngineInterface) {
   const dir = await ledgerDir($)
   const ledger = dir ? await loadLedger($, dir) : null
@@ -566,7 +563,6 @@ async function flipChoice($: EngineInterface) {
 
 type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
-// A control glyph without the brackets and padding it carries as a Button label, for drawing as a subpill.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // The pill cut to its icon opens its choices here: one pill of the three side by side, then a × pill, right-aligned over the row.
@@ -589,19 +585,15 @@ function menuCard({ Box, Client, Text }: Elements, options: { id: string; label:
   )
 }
 
-// The band card: each thread and each "also keep" item a line that keeps or drops itself on a click, then what the go does.
 function cardBox({ Box, Client, Text }: Elements, picked: Card) {
-  // A kept item is a surface3 pill, a dropped one surface2 and muted; its mark leads as a subpill, so the state shows by mark and by text.
   const line = (id: string, label: string, isKept: boolean, tip: string) => {
     const bg = isKept ? THEME.surface3 : THEME.surface2
     const mark = isKept ? MARK.stopOpen : MARK.stop
     return pill({ Box, Text }, look.nerd, bg, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: isKept, bg, nerd: look.nerd, still, idle: THEME.muted, subLead: mark, subLeadColor: isKept ? THEME.accent : THEME.muted, tip: { glyph: mark, label, text: tip } } satisfies EntryProps} />, `${id}-pill`, cardFill())
   }
-  // An action pill on surface3; the go leads with its glyph as a subpill.
   const action = (id: string, label: string, lead: Pick<EntryProps, 'subLead'>, tip: string) => (
     pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, nerd: look.nerd, still, tip: { glyph: lead.subLead ?? bare(look.glyph.close), label, text: tip }, ...lead } satisfies EntryProps} />, `${id}-pill`, cardFill())
   )
-  // Threads and Also keep are flat groups in the one card, each under its heading.
   const block = (key: string, icon: string, title: string, body: unknown) => (
     <Box key={key} flexDirection="column" marginTop={1}>
       {heading({ Box, Text }, look, key, icon, title)}
@@ -649,7 +641,6 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
   )
 }
 
-// What the first prompt after a clear did with the earlier work, and a switch that flips it.
 function choiceCard({ Box, Client, Text }: Elements, picked: Choice) {
   const isCarried = picked.carry === 'carried'
   const line = isCarried ? (picked.goal ? fill(text.auto.carried, { goal: shortGoal(picked.goal) }) : text.auto.carriedNoGoal) : text.auto.fresh
@@ -668,7 +659,6 @@ function choiceCard({ Box, Client, Text }: Elements, picked: Choice) {
   )
 }
 
-// The countdown above the prompt: what it will do, the seconds left, and a Cancel pill that lights whole under the pointer.
 function countdownCard({ Box, Button, Text }: Elements & { Button: (props: any) => RenderElement }, shown: Countdown, onCancel: () => void) {
   const line = shown.left > 0 ? fill(text.auto.countdown, { tokens: shown.tokens, percent: shown.percent, seconds: shown.left }) : fill(text.auto.updating, { tokens: shown.tokens, percent: shown.percent })
   const scope = 'wrap-up-countdown-cancel-pill'
@@ -705,7 +695,6 @@ function autoTip() {
   return fill(compactOn ? text.tips.autoOn : text.tips.autoOff, { marks: marksText() })
 }
 
-// A settings card's click: its row, saved through /config; a saved change reloads this mod.
 async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
   const row = (await $.config.list()).find(each => each.key === key)
   if (!row) return
@@ -868,12 +857,10 @@ export const register: Register = (on, options) => {
     const icon = look.nerd ? look.glyph.icon.wrapup : undefined
     const fit = icon && labels !== 'always' ? { icon, cells: choiceCells(text.label, look.nerd), compact: labels === 'never' } : {}
     const body = isRunning ? (
-      // Writing takes a model call; the shimmer shows it is still on its way.
       <Box key="wrap-up-running-pad">
         <Client key="wrap-up-running" module="./entry.tsx" height={1} props={{ id: 'wrap-up-running', label: text.writingStage, isOpen: isIdle, bg: PILL.secondary, isBusy: true, still }} />
       </Box>
     ) : (
-      // Like the effort pill, the pointer opens the options and lifts the one under it, all inside the Client, so nothing waits on a redraw.
       <Box key="wrap-up-choice-pad">
         <Client key="wrap-up-entry" module="./choice.tsx" height={1} props={{ id: 'wrap-up-entry', label: text.label, options, mode: card ? `wrap-up-${card.mode}` : null, isMenuOpen, bg: PILL.secondary, nerd: look.nerd, isIdle, still, tips: [{ glyph: look.glyph.icon.actions ?? look.glyph.title, label: text.label, text: text.tips.head }, { glyph: look.glyph.title, label: text.choice.handoff, text: text.tips.handoff }, { glyph: look.glyph.title, label: text.choice.compact, text: text.tips.compact }, { glyph: autoGlyph, label: text.choice.autoCompact, text: autoTip() }], ...fit } satisfies ChoiceProps} />
       </Box>

@@ -209,7 +209,6 @@ export const register: Register = (on, options) => {
     return { value: undefined }
   })
 
-  // A settings card's click arrives as a message.
   on('ui.message', async ($, e, next) => {
     if (isTipMessage(e.data)) {
       hovered = e.data

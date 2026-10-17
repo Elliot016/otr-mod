@@ -39,7 +39,6 @@ function setup(on: any, reply: () => unknown, below?: (elements: any) => unknown
 const answered = (text: string) => ({ isAnswered: true, text, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
 const mount = ($: any) => $.ui.mount({ plugin: 'mod-next-steps', surface: 'terminal', ...BAND })
 const rowsOf = async (ui: any) => JSON.stringify(await Promise.all([0, 1, 2].map(index => ui.drawn({ in: `steps-row-${index}` }).catch(() => null))))
-// The color a row's label draws in, found in its entry's drawing by the label's text.
 const labelColor = async (ui: any, index: number, label: string) => {
   const find = (node: any): string | undefined => (node?.children?.[0] === label ? node.props?.color : (node?.children ?? []).map(find).find(Boolean))
   return find(await ui.drawn({ in: `steps-row-${index}` }))
@@ -340,7 +339,6 @@ test('a heads-up card drawn below still sits above the suggestions', async ($, o
   const ui = await mount($)
   const tree = JSON.stringify(await ui.drawn())
   expect(tree.indexOf('"headsup-card"') < tree.indexOf('"nextsteps-rows"')).toBe(true)
-  // Rows that are not a heads-up keep their place under the suggestions.
   expect(tree.indexOf('"nextsteps-rows"') < tree.indexOf('"other-row"')).toBe(true)
   expect(tree.split('"headsup-card"').length - 1).toBe(1)
   await ui.unmount()

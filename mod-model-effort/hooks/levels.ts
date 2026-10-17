@@ -4,7 +4,7 @@ import style from './style'
 
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
-// The glyphs and usage colors of the Moonlight-claude oh-my-posh status line, so both read alike.
+// Matches the oh-my-posh status line's glyphs and colors, so both read alike.
 export const LEVEL_LOOK: Record<string, { glyph: string; color: string }> = style.levels
 
 // The model menu lists the models requests have used, newest first; no API lists them, and a fixed list goes stale.
@@ -13,7 +13,7 @@ export const MAX_MODELS = 6
 export const withModel = (models: unknown, id: string | undefined) =>
   [...(id ? [id] : []), ...(Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string' && model !== id) : [])].slice(0, MAX_MODELS)
 
-// `claude-opus-5-5` reads `Opus 5.5`, as the oh-my-posh pill shows it; a trailing date is dropped.
+// `claude-opus-5-5` reads `Opus 5.5`; a trailing date is dropped.
 export const displayName = (model: string) => {
   const match = /^claude-([a-z]+)-(\d+(?:-\d{1,2})*)(?:-\d{8})?$/.exec(model)
   if (!match) return model

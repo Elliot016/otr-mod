@@ -20,7 +20,6 @@ const keyOf = (node: unknown) => String((node as { props?: { key?: unknown } } |
 
 const fit = (line: string, width: number) => (line.length <= width ? line : `${line.slice(0, width - 1)}…`)
 
-// A control glyph without the brackets and padding it carries as a Button label, for drawing inside a pill.
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // The person's settings (userConfig), fixed per activation: a change reloads the mod.
@@ -41,7 +40,6 @@ let actions: Action[] = []
 let previews: Previews | undefined
 let fields: Record<string, Range> | undefined
 
-// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
   const env = {
@@ -108,7 +106,6 @@ const question = (limit: number) =>
   `Each is one line under 80 characters, written the way I would type it. ` +
   `Reply with the prompts only, one per line, no numbering, no quotes, no commentary.`
 
-// One suggestion per line, bullets and numbering stripped, first letter capitalized, long or empty lines dropped.
 function parseSteps(text: string, limit: number) {
   const lines = text
     .split(/\r?\n/)
@@ -118,7 +115,6 @@ function parseSteps(text: string, limit: number) {
   return [...new Set(lines)].slice(0, limit)
 }
 
-// True while the model writes suggestions, so the band shows they are coming.
 let isSuggesting = false
 
 async function suggest($: EngineInterface, mine: number) {
@@ -192,10 +188,8 @@ async function answer($: EngineInterface, args: string) {
 }
 
 const toasts = new ToastList('nextsteps')
-// The animations setting, fixed per activation: off, every entry draws still.
 let still = false
 
-// A settings card's click: its row, saved through /config; a saved change reloads this mod.
 async function saveSetting($: EngineInterface, key: string, value: ConfigValue) {
   const row = (await $.config.list()).find(each => each.key === key)
   if (!row) return
@@ -222,7 +216,6 @@ export const register: Register = (on, options) => {
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   enabled = options.enabled !== false
   count = Math.min(3, Math.max(1, Math.round(Number(options.count ?? 3)) || 3))
-  // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
@@ -355,7 +348,6 @@ export const register: Register = (on, options) => {
     }
     const below = await next(e)
     const room = Math.max(MIN_ROOM, e.props.bodyColumns - ROW_CHROME)
-    // Each suggestion a numbered pill; its digit, typed alone into the empty prompt, fills it through a Button nobody sees.
     const row = (step: string, index: number) => (
       <Box key={`steps-line-${index}`} flexDirection="row">
         {pill({ Box, Text }, look.nerd, THEME.surface2, <Client key={`steps-row-${index}`} module="./entry.tsx" height={1} props={{ id: `steps-row-${index}`, label: fit(step, room), isOpen: false, bg: THEME.surface2, idle: THEME.muted, subLead: String(index + 1), subLeadColor: THEME.muted, nerd: look.nerd, tip: { glyph: bare(look.glyph.go), label: fill(text.tipSuggestionLabel, { n: index + 1 }), text: text.tipSuggestion }, still } satisfies EntryProps} />, `steps-pill-${index}`, cardFill(THEME.border))}
@@ -385,7 +377,6 @@ export const register: Register = (on, options) => {
     // @ts-expect-error The host's types omit Client from a Pane's elements, yet a Pane draws it.
     const { Box, Button, Client, Text } = $.ui.resolve(e)
     const rows = (await $.config.list()).filter(row => row.key.startsWith('mod-next-steps.'))
-    // A saved change reloads this mod, which redraws the panel with the new value.
     const run = async (action: Action) => {
       const said = action.command === 'mod-next-steps' ? answer($, action.args ?? '') : Promise.resolve('')
       note = await said.then(text => `${MARK.ok} ${text || action.label}`).catch(error => `${MARK.warn} ${String(error)}`)

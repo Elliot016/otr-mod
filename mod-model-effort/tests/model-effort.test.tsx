@@ -85,7 +85,7 @@ test('the footer meter follows each request and a click saves that level', async
   await ui.unmount()
 })
 
-// Mounts the meter on a disk that throws for a missing file, clicks the fifth level and returns the files.
+// Mounts the meter on a disk that throws for a missing file, then clicks the fifth level.
 async function clickMax($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], files: Record<string, string>, env: Record<string, string>, check?: (ui: object) => Promise<void>) {
   const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
   on('env.get', (_$, e) => ({ value: env[e.name] }))
@@ -239,7 +239,7 @@ test('a click on the model name lists the models used before, and a pick switche
   await ui.unmount()
 })
 
-test('displayName reads like the oh-my-posh pill', () => {
+test('displayName shortens a model id and drops its date', () => {
   expect(displayName('claude-opus-5-5')).toBe('Opus 5.5')
   expect(displayName('claude-haiku-4-5-20251001')).toBe('Haiku 4.5')
   expect(displayName('Opus 5.5')).toBe('Opus 5.5')
@@ -305,7 +305,6 @@ test('icons=nerd draws the pill with rounded caps', { options: { icons: 'nerd' }
   on('store.get', () => ({ value: undefined }))
   const ui = await $.ui.mount(BAND)
   expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(CAP)
-  // The model menu's subpills take the Nerd ✓ and go glyphs, bare and capped.
   await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 2, y: 0 })
   const current = JSON.stringify(await ui.drawn({ in: 'effort-model-0' }))
   expect(current).toContain(`"${String.fromCodePoint(0xeab2)}"`)
@@ -368,7 +367,7 @@ test('the settings pane footer shows the tip of the hovered tab', { options: { i
 // What Claude Code passes its classic PostModelSwitch hook when /model or the picker moves to `to`.
 const switched = (to: string) => ({ from_model: 'claude-opus-5-5', to_model: to, requested_model: to, source: 'command', context_tokens: 0, prompt_cache_warm: false, cache_ttl: '5m', estimated_cache_write_usd: 0, pricing: 'catalog' }) as never
 
-// One request on a model and level, which leaves the pill on them as a first request does. It registers its own turn.step, so the other stubs go first.
+// One request on a model and level, which leaves the pill on them. It registers its own turn.step, so the other stubs go first.
 async function firstRequest($: any, on: any, model: string, effort: string) {
   on('turn.step', async function* ($$: any, e: any) {
     yield { kind: 'text', index: 0, text: 'ok' }

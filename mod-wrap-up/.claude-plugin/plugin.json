@@ -30,13 +30,13 @@
     "auto_handoff": {
       "type": "boolean",
       "title": "Automatic handoff",
-      "description": "After a turn, Sonnet keeps a ledger of decisions and tasks and a fresh handoff in the background. /compact is given the handoff, and the next prompt after a compaction or a related /clear carries it. Off, only the Wrap up pill hands off",
+      "description": "Keeps a handoff ready each turn. After a turn, Sonnet updates a ledger of decisions and tasks and a fresh handoff in the background. /compact is given the handoff, and the next prompt after a compaction or a related /clear carries it. Off, only the Wrap up pill hands off",
       "default": true
     },
     "auto_every": {
       "type": "number",
       "title": "Update every (turns)",
-      "description": "Turns between automatic handoff updates, at least 1",
+      "description": "Turns between handoff updates. At least 1",
       "default": 1,
       "min": 1,
       "max": 50
@@ -44,13 +44,13 @@
     "auto_compact": {
       "type": "boolean",
       "title": "Auto handoff at the mark",
-      "description": "Once either mark below is reached, a 5 second countdown card appears between turns; unless you cancel, type a draft or start a turn, the ledger is brought up to date, the chat is cleared and Claude continues the open task from the handoff (with no open task, the handoff is filled into the prompt instead). Replaces the old auto compact. Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on",
+      "description": "Clears and hands off at the mark. Once either mark below is reached, a 5 second countdown card appears between turns. Unless you cancel, type a draft or start a turn, the ledger is brought up to date, the chat is cleared and Claude continues the open task from the handoff (with no open task, the handoff is filled into the prompt instead). Meant for sessions with Claude Code's own auto-compact off. Needs Automatic handoff on",
       "default": false
     },
     "compact_at": {
       "type": "number",
       "title": "Hand off at (%)",
-      "description": "Context percent at which the auto handoff counts down between turns. Guards small windows; the token mark comes first on large ones",
+      "description": "Context % that starts the countdown. Guards small windows; the token mark comes first on large ones",
       "default": 65,
       "min": 50,
       "max": 95
@@ -58,7 +58,7 @@
     "compact_at_tokens": {
       "type": "number",
       "title": "Hand off at (tokens)",
-      "description": "Context tokens at which the auto handoff counts down between turns, whichever of the two marks comes first",
+      "description": "Tokens that start the countdown. Whichever mark comes first, tokens or percent, starts it",
       "default": 400000,
       "min": 50000,
       "max": 1000000
@@ -66,7 +66,7 @@
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": [
         "auto",
         "nerd",

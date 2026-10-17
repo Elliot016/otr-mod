@@ -1,7 +1,7 @@
 {
   "name": "mod-progress",
   "version": "0.1.0",
-  "description": "A live view of this session's work: the main session and every subagent with model, effort, context fill, tokens, elapsed time and gate progress, plus the background shells and monitors each one started, whose full command and live output open on a click, in a pill and a pane",
+  "description": "A pill and a pane showing the main session and every subagent with model, effort, context fill, tokens, time and gate progress, plus the background shells and monitors each one started. A click opens a task's full command and live output",
   "license": "MIT",
   "author": {
     "name": "Vinicius Amorim",
@@ -12,7 +12,7 @@
     "icons": {
       "type": "string",
       "title": "Icons",
-      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font, read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole, and safe Unicode glyphs elsewhere. nerd and safe force one",
+      "description": "auto picks Nerd Font or safe glyphs. It uses Nerd Font icons when the terminal's font is a Nerd Font (read from Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal or Konsole) and safe Unicode glyphs elsewhere. nerd and safe force one",
       "options": ["auto", "nerd", "safe"],
       "default": "auto"
     },

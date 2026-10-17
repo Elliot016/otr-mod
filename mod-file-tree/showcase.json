@@ -2,8 +2,8 @@
   "tagline": "What Claude touched, and a replay of what it changed",
   "features": [
     { "title": "File tree", "detail": "Only the files Claude read, edited, wrote or created this session, in folders you can fold, with +/- line counts for edits." },
-    { "title": "Live marker", "detail": "While Claude works, the file it is on right now is lit and says what it is doing: reading, editing, writing, creating." },
-    { "title": "Replay", "detail": "Steps through the edits of the last turn one diff at a time with Prev and Next; a click on a file in the tree opens its latest diff." }
+    { "title": "Live marker", "detail": "The file Claude is on lights up and says what it is doing: reading, editing, writing or creating." },
+    { "title": "Replay", "detail": "Prev and Next step through the last turn's edits, one diff at a time. Click a file in the tree to open its latest diff." }
   ],
   "actions": [
     { "label": "Clear the tree and the replay", "command": "mod-file-tree", "args": "clear" }

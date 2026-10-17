@@ -9,7 +9,6 @@ export const clampWords = (value: unknown) => {
   return Math.min(2000, Math.max(100, words))
 }
 
-// The skill file without its front matter.
 export const skillBody = (text: string) => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim()
 
 export const buildPrompt = (skillText: string, words: number, ledgerPath = '') =>
@@ -95,7 +94,6 @@ export type AlsoId = (typeof ALSO_KEEP)[number]['id']
 
 const listed = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
 
-// The instruction added to the handoff prompt; empty when everything carries over.
 export function scopeNote(threads: Thread[], kept: Thread[], also: Record<AlsoId, boolean>) {
   const dropped = threads.filter(thread => !kept.includes(thread))
   const alsoDropped = ALSO_KEEP.filter(item => !also[item.id]).map(item => item.phrase)

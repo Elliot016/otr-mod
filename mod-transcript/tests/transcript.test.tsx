@@ -258,7 +258,7 @@ test('the running turn shows its tool rows in full, then folds once it ends', as
   const { tool } = await mountTimed($, on, LIVE, true)
   expect(await tool.find({ key: 'bash-row' })).toBeDefined()
   expect(await tool.find({ key: 'toggle-tool-colored' })).toBeUndefined()
-  // turn-fold draws the Bash row itself, so the command keeps blast-radius's shell colors: the command word bold blue, a plain word in the text color.
+  // The mod draws the Bash row itself: the command word bold blue, a plain word in the text color.
   const word = await tool.find({ type: 'Text', text: /^claude$/ })
   expect(word?.props).toMatchObject({ color: '#7386D0', bold: true })
   expect((await tool.find({ type: 'Text', text: /^\.$/ }))?.props.color).toBe('#EEEEFA')
@@ -1054,7 +1054,7 @@ test('pointing at the number shows its tip in the band tip row, and leaving clea
   const tip = async () => (await band.find({ type: 'Text', text: /of the session/ }))?.text
   expect(await tip()).toBeUndefined()
   await first.pointer({ in: 'toggle-prompt-number', type: 'enter', button: 'left', x: 1, y: 1 })
-  expect(await tip()).toBe(' this is prompt 1 of the session')
+  expect(await tip()).toBe(' prompt 1 of the session')
   expect(await band.find({ type: 'Text', text: /Prompt #1/ })).toBeDefined()
   await first.pointer({ in: 'toggle-prompt-number', type: 'leave', button: 'left', x: 1, y: 1 })
   expect(await tip()).toBeUndefined()
@@ -1097,7 +1097,7 @@ test('a prompt sent mid-turn with an image takes its own place and number, and i
     said(2, [{ type: 'text', text: 'Committing.' }]),
     QUEUED_IMAGE(3, '[Image #1] the header still overlaps here?'),
     said(4, [{ type: 'text', text: 'Fixed.' }]),
-    row(5, 'user', { message: { role: 'user', content: 'push the mods repo' } }),
+    row(5, 'user', { message: { role: 'user', content: 'push the branch' } }),
   ].join('\n') + '\n')
   expect(log.turns.map(turn => log.numberOf(turn))).toEqual([1, 2, 3])
   // The engine draws the queued prompt under an id of its own.

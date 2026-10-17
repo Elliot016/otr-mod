@@ -23,7 +23,6 @@ const configDir = async ($: EngineInterface) => ((await $.env.get('CLAUDE_CONFIG
 let iconMode: IconMode = 'auto'
 let look = lookFor(false)
 
-// Nerd glyphs when the setting asks for them, or on auto when the terminal's font is a Nerd Font.
 async function detectLook($: EngineInterface) {
   if (iconMode !== 'auto') return lookFor(iconMode === 'nerd')
   const env = {

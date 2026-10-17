@@ -17,8 +17,7 @@ const PANE = { plugin: 'mod-progress', surface: 'terminal', component: 'Pane', r
 
 const NOTIFY = (id: string, status: string) => `<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n<summary>Background command done</summary>\n</task-notification>`
 
-// The engine reads this mod makes, with the store backed by a map and the clock moved only by the test.
-// `files` holds what each output file contains; `reads` counts how often the mod stats one.
+// `files` holds each output file's content; `reads.stat` counts how often the mod stats one.
 function stubEngine(on: On, agents: unknown[] = [], files: Record<string, string> = {}) {
   const states = new Map<string, unknown>()
   const ids = { sid: 'sid-1' }
@@ -59,7 +58,6 @@ function stubEngine(on: On, agents: unknown[] = [], files: Record<string, string
     states.set(`${e.plugin}.${e.key}`, e.value)
     return { value: undefined } as never
   })
-  // The host answers a background start with the task id in the result and its text.
   let started = 0
   on('tool.call', async (_$, e) => {
     if (took.ms) await clock.advance(took.ms)

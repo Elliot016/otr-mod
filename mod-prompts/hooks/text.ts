@@ -31,6 +31,6 @@ export default {
   "pagePrev": "‹ Prev",
   "pageNext": "Next ›",
   "tip": "Prompts: every prompt this session, click one to jump to it",
-  "commandDescription": "Open the prompts sidebar: every prompt of this session, click one to jump to it; `settings` opens its settings panel",
+  "commandDescription": "Open the prompts sidebar; `settings` opens its settings panel",
   "tipToast": {"label":"Dismiss","text":"hides this message"}
 }

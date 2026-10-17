@@ -85,7 +85,6 @@ const OPTION_X = { safe: { handoff: 10, compact: 20 }, nerd: { handoff: 12, comp
 const choose = (band: Band, option: 'handoff' | 'compact', icons: 'safe' | 'nerd' = 'safe') =>
   band.pointer({ type: 'down', x: OPTION_X[icons][option], y: 0, button: 'left', in: 'wrap-up-entry' } as never)
 
-// The pointer opens the pill; Handoff opens the card and its go writes the handoff.
 async function handOff(band: Band) {
   await click(band, 'wrap-up-entry')
   await choose(band, 'handoff')
@@ -137,7 +136,7 @@ test('Cancel closes the card and runs nothing', async ($, on) => {
   await band.unmount()
 })
 
-test('Yes forks, clears, then fills the handoff without sending it', async ($, on) => {
+test('Handoff forks, clears, then fills the handoff without sending it', async ($, on) => {
   const w = world(on, answered)
   const band = await $.ui.mount(BAND())
   await handOff(band)
@@ -325,7 +324,6 @@ test('the typed command opens the card, in Compact mode with `compact`', async (
   const band = await $.ui.mount(BAND())
   expect(await label(band, 'wrap-up-entry')).toContain(THEME.lifted)
   expect(await label(band, 'wrap-up-go')).toContain(' Fill prompt ')
-  // Fill prompt and Cancel are pills on surface3, the go led by its glyph as a subpill; Threads and Also keep are bordered boxes with their headings.
   expect(await label(band, 'wrap-up-go')).toContain('" ↵ "')
   expect(await label(band, 'wrap-up-go')).toContain(THEME.surface3)
   expect(await label(band, 'wrap-up-go')).not.toContain(THEME.lifted)
@@ -469,7 +467,6 @@ test('icons=nerd keeps the Wrap up labels plain, with no icon', { options: { ico
   await band.pointer({ type: 'move', x: 32, y: 0, in: 'wrap-up-entry' } as never)
   expect(await label(band, 'wrap-up-entry')).toContain(' Handoff ')
   expect(await label(band, 'wrap-up-entry')).toContain(CAPS.right)
-  // The card's blocks lead their headings with an icon subpill; its go leads with the go glyph as one.
   await choose(band, 'handoff', 'nerd')
   expect(await band.find({ type: 'Text', text: String.fromCodePoint(0xf005) })).toBeDefined()
   expect(await band.find({ type: 'Text', text: String.fromCodePoint(0xf075) })).toBeDefined()
@@ -570,7 +567,6 @@ test('a hovered pill part and card control show their tip in the tip row, and cl
   expect(await band.find({ type: 'Text', text: ' opens the pick card to fill a /compact' })).toBeDefined()
   await band.pointer({ type: 'leave', x: 0, y: 0, in: 'wrap-up-entry' } as never)
   expect(await band.find({ type: 'Text', text: ' opens the pick card to fill a /compact' })).toBeUndefined()
-  // A control of the card names itself the same way.
   await click(band, 'wrap-up-entry')
   await choose(band, 'handoff')
   await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-go' } as never)

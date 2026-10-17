@@ -11,7 +11,7 @@ export type LabelPart = { text: string; color?: string; bold?: boolean }
 
 export type LabelProps = BarProps & { parts: LabelPart[]; isDim: boolean; hover: string; tip?: { label: string; text: string } }
 
-// A fold line's label with colored parts; a Button label is one plain string, so a colored one is a Client that folds on click.
+// A Button label is one plain string, so a colored label is a Client that folds on click.
 const Label: ClientModule<LabelProps, boolean> = (props, surface) => {
   const { Text } = surface.elements
   surface.onPointer(event => {

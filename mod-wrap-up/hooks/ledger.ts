@@ -29,7 +29,6 @@ const clean = (value: unknown) => (typeof value === 'string' ? value.replace(/\s
 
 const list = (value: unknown) => (Array.isArray(value) ? value.map(clean).filter(Boolean) : [])
 
-// A ledger read from disk, or null when the file is missing or is not one.
 export function readLedger(raw: unknown): Ledger | null {
   let data: any = raw
   if (typeof raw === 'string') {
@@ -108,7 +107,6 @@ export const autoPrompt = (skillText: string, words: number, ledger: Ledger, tur
 
 export type Update = { delta: Delta; handoff: string }
 
-// The model's reply as an update, or null when it holds no handoff.
 export function parseUpdate(reply: string): Update | null {
   const start = reply.indexOf('{')
   const end = reply.lastIndexOf('}')
@@ -126,7 +124,6 @@ export function parseUpdate(reply: string): Update | null {
   return { handoff, delta: { goal: clean(delta.goal) || undefined, runState: clean(delta.runState) || undefined, decisions: list(delta.decisions), superseded, done: list(delta.done), opened: list(delta.opened) } }
 }
 
-// The handoff cut to the cap, for a model that wrote past it.
 export function capWords(handoff: string, words: number) {
   const lines = handoff.split('\n')
   const kept: string[] = []
@@ -149,7 +146,6 @@ export const clampEvery = (value: unknown) => {
   return Math.min(50, Math.max(1, turns))
 }
 
-// Whether the turn that just ended is one the update runs on.
 export const isDue = (turnsSince: number, every: number) => turnsSince >= every
 
 // The same range plugin.json declares, low enough for a compaction to still have room.
@@ -195,7 +191,6 @@ export const projectSlug = (cwd: string) => {
   return `${tail || 'project'}-${hashOf(path)}`
 }
 
-// The compaction's instructions: what the person typed comes first, then the handoff and the ledger path.
 export function mergeInstructions(typed: string | undefined, handoff: string, ledgerPath: string) {
   const own = `Keep this handoff in the summary. The full ledger is at ${ledgerPath}.\n${handoff}`
   return typed?.trim() ? `${typed.trim()}\n\n${own}` : own
@@ -241,6 +236,5 @@ export function parseRelated(reply: string) {
   }
 }
 
-// The first words of a goal for the card line.
 export const shortGoal = (goal: string, max = 80) => (goal.length > max ? `${goal.slice(0, max - 1).trimEnd()}…` : goal)
 

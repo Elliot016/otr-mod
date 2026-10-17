@@ -21,7 +21,6 @@ export function statusesOf(call: { isInterrupted: boolean; isDeclined: boolean; 
 
 export type Question = { question: string; answer: string | undefined }
 
-// Each question of an AskUserQuestion call, with the answer its result gives it, if any.
 export function questionsOf(input: unknown, output: unknown): Question[] {
   const questions = (input as { questions?: unknown } | undefined)?.questions
   const answers = ((output as { answers?: Record<string, unknown> } | undefined)?.answers ?? {}) as Record<string, unknown>
@@ -73,7 +72,6 @@ export function senderTaskOf(origin: unknown): string | undefined {
   return typeof id === 'string' && id ? id : undefined
 }
 
-// A report with its task's notice: the notice's status and time, since the report row carries neither.
 export function withNotice(report: Report, notice: Notice | undefined): Report {
   return { ...report, status: notice?.status ?? report.status, durationMs: notice?.durationMs ?? report.durationMs }
 }

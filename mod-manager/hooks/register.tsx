@@ -576,7 +576,6 @@ export const register: Register = (on, options) => {
     if (message?.type === 'menu-entry' && message.id.startsWith('icons-')) await setAllIcons($, message.id.slice('icons-'.length))
     if (message?.type === 'menu-entry' && message.id === 'manager-apply') await applyChanges($)
     if (message?.type === 'menu-entry' && message.id.startsWith('card-')) await cardClick($, message.id)
-    // The Mods tab on a mod's page goes back to the list; the open tab does nothing.
     if (message?.type === 'menu-entry' && message.id === 'manager-tab' && page >= 0) openPage($, -1)
     const change = settingChoice(e.data)
     if (change) await saveSetting($, change.key, change.value)
@@ -584,7 +583,6 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // A click on a mod's name opens its page.
   on('ui.message', { requestId: 'manager' }, async ($, e, next) => {
     const message = e.data as ListMessage | PickMessage
     // A click posts only its own message, so a toggle also says which row the pointer is on.
@@ -661,7 +659,7 @@ export const register: Register = (on, options) => {
           </Box>
         ),
       )
-      // The expand standard: the arrow, then a muted label, on the card's own fill, at the right end of the last feature row.
+      // Arrow then muted label, at the right end of the last feature row.
       const label = featuresOpen ? text.featuresLess : text.featuresAll
       const arrow = featuresOpen ? look.glyph.less : look.glyph.more
       const more = isCut ? (
@@ -798,7 +796,6 @@ export const register: Register = (on, options) => {
     const iconRows = await iconRowsOf($)
     const iconValues = new Set(iconRows.map(row => String(row.value)))
     const iconsNow = iconValues.size === 1 ? [...iconValues][0] : ''
-    // A choice bar as the settings cards draw one.
     const iconChoices = ICON_MODES.map(mode => ({
       key: `icons-${mode}`,
       isOn: iconsNow === mode,
@@ -832,7 +829,6 @@ export const register: Register = (on, options) => {
           )
         : null
 
-    // Catalog mods with no copy anywhere: the tick marks one for install.
     const notInstalled = cats.filter(cat => cat.canInstall)
     const pickList = (kind: PickProps['kind'], rows: PickProps['rows'], tickedLabel: string, tip: string) => (
       <Client
@@ -893,7 +889,7 @@ export const register: Register = (on, options) => {
       </Box>,
     )
 
-    // Last, and only while something is pending: what was checked, every line Apply will run in full, and one control.
+    // Only while something is pending: what was checked, every line Apply runs, and the Apply control.
     const checks = checkedOf({ version: ccVersion, market, hasCatalog: catalogEntries.length > 0, fontFound })
     const goLead = { subLead: bare(look.glyph.go), subLeadColor: THEME.accent }
     const applyCard =

@@ -7,7 +7,6 @@ import { subpill } from './look'
 import text from './text'
 import { CAPS, fill, THEME } from './theme'
 
-// A click on a choice: the turn and what to copy from its reply.
 export type CopyMessage = { type: 'copy'; id: string; what: string }
 
 // The choice whose characters the reply row marks while it is hovered or just copied; `what` is null when none is.
@@ -39,7 +38,6 @@ type Surface = Parameters<ClientModule<CopyProps, State>>[1]
 const markOf = (props: Pick<CopyProps, 'choices'>, state: State) =>
   state.note && Date.now() - state.noteAt < NOTE_MS ? (state.noteWhat ?? '') : state.over >= 0 ? (props.choices[state.over]?.what ?? '') : ''
 
-// The hover message for a state, or null when the reply row already has that choice.
 const markChange = (surface: Surface, props: Pick<CopyProps, 'id' | 'choices'>, state: State): CopyHoverMessage | null => {
   const what = markOf(props, state)
   if (what === (marked.get(surface) ?? '')) return null
@@ -47,7 +45,6 @@ const markChange = (surface: Surface, props: Pick<CopyProps, 'id' | 'choices'>, 
   return { type: 'copy-hover', id: props.id, what: what || null }
 }
 
-// A tip message the pill posts, with the mark change that arrives beside it.
 const tipMessage = (id: string, tip: Tip | null, mark: CopyHoverMessage | null): CopyTipMessage => ({
   ...(tip ? { type: 'tip', id, glyph: tip.glyph, label: tip.label, text: tip.text } : { type: 'tip', id: null }),
   ...(mark ? { mark } : {}),
@@ -98,7 +95,6 @@ const Copy: ClientModule<CopyProps, State> = (props, surface) => {
 
   if (!surface.state) surface.setState(state)
 
-  // The choice at cell x, in drawn order: the lead, the left cap, the choices side by side, then the icon.
   const choiceAt = (x: number) => {
     let start = lead + (props.nerd ? 1 : 0)
     for (const [index, choice] of props.choices.entries()) {

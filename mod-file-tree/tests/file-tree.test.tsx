@@ -151,10 +151,10 @@ test('a wide file name too long for its cells is cut on a cell boundary', async 
 
 test('the tree starts at the shared folder and merges single-folder chains, like VS Code', () => {
   let log = touch(emptyLog(), 'C:/Users/A/.claude/projects/p/memory/m.md', 'edit')
-  log = touch(log, 'C:/Users/A/.claude/skills/mb/refs/r.md', 'new')
+  log = touch(log, 'C:/Users/A/.claude/skills/x/refs/r.md', 'new')
   expect(rootOf(log, true)).toBe('C:/Users/A/.claude')
-  expect(rowsOf(log, [], true).map(row => `${row.depth}${row.isDir ? 'd' : 'f'}:${row.name}`)).toEqual(['0d:projects/p/memory', '1f:m.md', '0d:skills/mb/refs', '1f:r.md'])
-  expect(rowsOf(log, ['C:/Users/A/.claude/projects/p/memory'], true).map(row => row.name)).toEqual(['projects/p/memory', 'skills/mb/refs', 'r.md'])
+  expect(rowsOf(log, [], true).map(row => `${row.depth}${row.isDir ? 'd' : 'f'}:${row.name}`)).toEqual(['0d:projects/p/memory', '1f:m.md', '0d:skills/x/refs', '1f:r.md'])
+  expect(rowsOf(log, ['C:/Users/A/.claude/projects/p/memory'], true).map(row => row.name)).toEqual(['projects/p/memory', 'skills/x/refs', 'r.md'])
   expect([iconOf('a.tsx'), iconOf('b.JSON'), iconOf('LICENSE')]).toEqual(['ext-react', 'ext-json', 'file'])
 })
 
@@ -226,7 +226,7 @@ test('tool calls fill the tree live, a click opens the diff in the replay, Prev 
 test('Windows paths outside the working folder draw from their shared folder', async ($, on) => {
   stubs(on)
   await $.tool.call({ tool: 'Edit', file_path: 'C:\\Users\\A\\.claude\\projects\\p\\memory\\m.md', old_string: 'a', new_string: 'b' } as never)
-  await $.tool.call({ tool: 'Edit', file_path: 'C:\\Users\\A\\.claude\\skills\\mb\\refs\\recipes.md', old_string: 'a', new_string: 'b' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: 'C:\\Users\\A\\.claude\\skills\\x\\refs\\recipes.md', old_string: 'a', new_string: 'b' } as never)
   const ui = await $.ui.mount(PANE)
   expect(JSON.stringify(await ui.drawn({ in: 'filetree-tab' }))).toContain('2')
   const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
@@ -276,7 +276,7 @@ const textOf = (node: unknown): string =>
 
 test('a row fills the section exactly: the pane less its padding, the section border and its padding', async ($, on) => {
   stubs(on)
-  await $.tool.call({ tool: 'Read', file_path: '/w/block-destructive-with-askuser.py' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/w/guard.py' } as never)
   const ui = await $.ui.mount(PANE)
   // A row one cell too wide makes the host clip the last letter of a long name.
   expect(cells(textOf(await ui.drawn({ in: 'list-0' })))).toBe(64)
@@ -1006,7 +1006,7 @@ test('the open mark fades out in steps after the pointer leaves, and at once wit
   expect(still.surface.state.marks[0]).toBeUndefined()
 })
 
-test('a stepper at its edge does not light or post a tip; an enabled one does, in mod-prompts colors', async ($, on) => {
+test('a stepper at its edge does not light or post a tip; an enabled one does, in secondary color', async ($, on) => {
   stubs(on)
   await $.tool.call({ tool: 'Edit', file_path: '/w/a.ts', old_string: 'x', new_string: 'y' } as never)
   await $.tool.call({ tool: 'Edit', file_path: '/w/b.ts', old_string: 'x', new_string: 'y' } as never)

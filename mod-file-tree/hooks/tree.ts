@@ -24,7 +24,6 @@ const STRENGTH: Record<Kind, number> = { read: 0, edit: 1, write: 2, new: 3 }
 
 export const norm = (path: string) => path.replace(/\\/g, '/')
 
-// Paths inside the working folder are shown relative to it; others keep their full path.
 export function relPath(cwd: string, path: string) {
   const file = norm(path)
   const root = norm(cwd).replace(/\/+$/, '')
@@ -154,7 +153,6 @@ export function rootOf(log: Log, showReads: boolean) {
   return shared.join('/')
 }
 
-// Flat rows below the root, folders first; single-folder chains merge into one row, like VS Code's compact folders.
 // While Claude is on a file, every folder that doesn't hold it folds, so the live file is always in view; null when nothing is live.
 export function liveFolds(log: Log, showReads: boolean): string[] | null {
   const live = log.working ? log.files.filter(file => file.seq === log.seq) : []
@@ -164,6 +162,7 @@ export function liveFolds(log: Log, showReads: boolean): string[] | null {
     .map(row => row.key)
 }
 
+// Flat rows below the root, folders first; single-folder chains merge into one row, like VS Code's compact folders.
 export function rowsOf(log: Log, collapsed: string[], showReads: boolean): Row[] {
   const rootPath = rootOf(log, showReads)
   const root: Node = { name: '', key: rootPath, dirs: new Map(), files: [] }

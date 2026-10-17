@@ -13,7 +13,6 @@ const DONE = { answer: 'All done.', durationMs: 5, isAborted: false, turnId: 't1
 const REPLY = 'add a test for the empty case\nrun the full suite\ncommit the fix'
 const usage = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 
-// The suggestion card as the band draws it after a turn.
 async function suggestions($: any, on: any) {
   const clock = mock.clock(on)
   on('model.fork', () => ({ value: { isAnswered: true, text: REPLY, usage } }))

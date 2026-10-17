@@ -536,7 +536,7 @@ test('the transcript is looked up under CLAUDE_CONFIG_DIR when set', async ($, o
   expect(await listedFolders($, on, { USERPROFILE: '/home/u', CLAUDE_CONFIG_DIR: '/cfg/' })).toContain('/cfg/projects')
 })
 
-test('without CLAUDE_CONFIG_DIR the transcript is looked up under ~/.claude as before', async ($, on) => {
+test('without CLAUDE_CONFIG_DIR the transcript is looked up under ~/.claude',async ($, on) => {
   expect(await listedFolders($, on, { USERPROFILE: '/home/u' })).toContain('/home/u/.claude/projects')
 })
 
