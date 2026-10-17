@@ -203,9 +203,10 @@ test('pane: open /plugin runs the command on a press, and holds while Claude wor
   await $.turn.start({ turnId: 't1' } as never)
   await ui.redraw()
   expect(await ui.find({ type: 'Button', key: 'open-plugin' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /Open \/plugin · Claude is working, available once it is idle$/ })).toBeDefined()
-  // The busy line stacks over the hint, which side by side was squeezed to one column.
-  expect((await ui.find({ key: 'updates-auto-row' }))?.props.flexDirection).toBe('column')
+  // The instruction stays whole on its row; the busy note gets a line of its own under it.
+  expect((await ui.find({ key: 'updates-auto-row' }))?.props.flexDirection).toBe('row')
+  expect(await ui.find({ type: 'Text', text: 'Marketplaces tab, then claude-mods' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Claude is working, Open /plugin is available once it is idle' })).toBeDefined()
   await stop()
 })
 

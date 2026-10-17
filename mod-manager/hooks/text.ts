@@ -28,7 +28,7 @@ export default {
   "autoUpdateOff": "Auto-update is off by default for this marketplace",
   "openPlugin": "Open /plugin",
   "pluginHint": "Marketplaces tab, then {market}",
-  "pluginBusy": "{label} {sep} Claude is working, available once it is idle",
+  "pluginBusy": "Claude is working, {label} is available once it is idle",
   "checkedTitle": "Checked",
   "checkVersion": "Claude Code {version}",
   "checkVersionUnknown": "Claude Code version not read",

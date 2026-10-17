@@ -899,7 +899,7 @@ export const register: Register = (on, options) => {
     const updatable = cats.filter(cat => cat.canUpdate)
     const arrow = look.glyph.icon.arrow ?? ''
     const pluginControl = isBusy ? (
-      <Text key="open-plugin" color={THEME.muted}>{fill(text.pluginBusy, { label: `${look.glyph.go} ${text.openPlugin}`, sep: MARK.sep })}</Text>
+      <Text key="open-plugin" color={THEME.muted}>{`${look.glyph.go} ${text.openPlugin}`}</Text>
     ) : (
       // A pill around a plain Button, since opening /plugin needs the person's press behind it; the glyph rides in the label so the whole pill lights.
       pill(
@@ -926,12 +926,13 @@ export const register: Register = (on, options) => {
         )}
         <Box key="updates-auto" flexDirection="column" marginTop={updatable.length ? 1 : 0}>
           <Text color={THEME.muted}>{text.autoUpdateOff}</Text>
-          {/* The busy line is as long as the row, so it sits above the hint; side by side it squeezed the hint to one column. */}
-          <Box key="updates-auto-row" flexDirection={isBusy ? 'column' : 'row'} columnGap={1}>
+          <Box key="updates-auto-row" flexDirection="row" columnGap={1}>
             {/* The hint wraps in a narrow pane; the pill never does. */}
             <Box key="open-plugin-cell" flexShrink={0} alignSelf="flex-start">{pluginControl}</Box>
             <Text color={THEME.muted} wrap="wrap">{fill(text.pluginHint, { market })}</Text>
           </Box>
+          {/* Its own line, so the busy note never reads as part of the Open /plugin instruction. */}
+          {isBusy ? <Text key="open-plugin-busy" color={THEME.muted}>{fill(text.pluginBusy, { label: text.openPlugin })}</Text> : null}
         </Box>
       </Box>,
     )
