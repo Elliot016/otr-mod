@@ -64,7 +64,7 @@ Each mod works alone, with or without mod-manager.
 
 | Every terminal mod in 133 seconds |
 | --- |
-| https://github.com/user-attachments/assets/3d22e732-40f9-4a5e-857c-7af29199dbdb |
+| https://github.com/user-attachments/assets/78c68f3a-735e-426e-8951-63c61826dea8 |
 
 <details>
 <summary>Narration</summary>
@@ -198,11 +198,11 @@ Click a mod to open its video and a link to its full page.
 </details>
 
 <details>
-<summary><b>mod-manager</b>: Hover a mod to read about it, switch every mod's icons at once, and apply a toggle.</summary>
+<summary><b>mod-manager</b>: Start from the first-run card, read what a mod's model calls cost, and apply a toggle.</summary>
 
-| Hover a mod, switch the icons |
+| The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/a4b7d9f0-4b46-42af-9fe6-4ec9581c1e7f |
+| https://github.com/user-attachments/assets/e9ebf31a-a612-4f14-8946-1f8439d46391 |
 
 [Full page][doc-mod-manager]
 

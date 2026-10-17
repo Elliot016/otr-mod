@@ -26,13 +26,13 @@ The gear pill, or `/mod-manager`.
 
 ## See it
 
-| Auto (Nerd Font) | Plain | A mod's page and its settings |
+| Icons on Auto (Nerd Font) | Icons on Plain | A mod's page: its spend and its settings |
 | --- | --- | --- |
 | ![][img-manager-icons-auto] | ![][img-manager-icons-plain] | ![][img-manager-page] |
 
-| Hover a mod, switch the icons |
+| The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/a4b7d9f0-4b46-42af-9fe6-4ec9581c1e7f |
+| https://github.com/user-attachments/assets/e9ebf31a-a612-4f14-8946-1f8439d46391 |
 
 ## Settings
 
