@@ -1,5 +1,5 @@
 // hooks/pills.tsx, by v-amorim
-// Shared pill row. Copy unchanged into every mod that draws in the row.
+// Shared pill row; every mod that draws in the row carries the same copy.
 import type { RenderElement } from 'claude-code'
 
 import { entryCells, mix, type EntryProps, type Tip } from './entry'
@@ -84,7 +84,6 @@ const cellsOf = (node: unknown): number => {
   return kids.reduce((sum: number, each) => sum + cellsOf(each), Number((node as Node)?.props?.columnGap ?? 0) * Math.max(0, kids.length - 1))
 }
 
-// Every Client that marked itself `compact: false` draws its icon alone instead.
 const compacted = (node: unknown): unknown => {
   if (Array.isArray(node)) return node.map(compacted)
   if (!node || typeof node !== 'object') return node
@@ -93,7 +92,7 @@ const compacted = (node: unknown): unknown => {
   return kids ? { ...node, children: kids.map(compacted) } : node
 }
 
-// A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open panel's entry is a pill of its own inside the group.
+// A panel's entry in the menu group, keyed `menu-pad-<id>` for the row's order; the open one is a pill of its own.
 export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, id: string, { labels, ...props }: Omit<EntryProps, 'id' | 'bg' | 'tight'> & { labels?: LabelsMode }) {
   // The open panel reads as selected, like an On switch: ok text on ok washed into the group fill.
   const bg = props.isOpen ? mix(THEME.ok, PILL.primary, WASH) : PILL.primary
@@ -114,7 +113,7 @@ export function menuEntry({ Box, Client, Text }: Elements & { Client: (props: an
 // The band above the prompt: what else it holds (Claude Code's own effort line), then the pill row, so the pills sit on the input.
 export function pillRow(elements: Elements & { Client?: (props: any) => RenderElement }, nerd: boolean, group: unknown[], row: unknown[], rest: unknown[], tip: unknown = null, columns?: number) {
   const { Box, Client, Text } = elements
-  // Mods draw in load order, which an install or a toggle changes, so entries sort by a fixed rank instead.
+  // Load order changes with an install or a toggle, so entries sort by a fixed rank.
   const rank = (entry: unknown) => {
     const at = ENTRY_ORDER.indexOf(String(keyOf(entry) ?? '').replace(/^menu-pad-/, ''))
     return at < 0 ? ENTRY_ORDER.length : at
@@ -145,7 +144,7 @@ export function pillRow(elements: Elements & { Client?: (props: any) => RenderEl
 // One chip per view of a panel (its list, its settings), standing in for the title: id, label, icon glyph, an optional count and an optional hover tip.
 export type Tab = { id: string; label: string; icon: string; isOpen: boolean; count?: number; tip?: Tip }
 
-// A panel's title line: the open view on surface3 and bold, the others on surface2 and muted, each icon and count a subpill; a click swaps the view.
+// A panel's title line: the open view on surface3 and bold, the others on surface2 and muted; a click swaps the view.
 export function tabRow({ Box, Client, Text }: Elements & { Client: (props: any) => RenderElement }, nerd: boolean, tabs: Tab[], still: boolean) {
   return (
     <Box key="tab-row" flexDirection="row" columnGap={1}>

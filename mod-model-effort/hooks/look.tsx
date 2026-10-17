@@ -119,7 +119,7 @@ function terminalFace(env: TerminalEnv, host: Host) {
   return terminal ? configFace(terminal, host) : Promise.resolve(undefined)
 }
 
-// Every mod looks up the font at once on start, so a lookup can fail by chance; a third failure throws so the caller keeps its saved answer.
+// Every mod looks up the font on start at once, so a lookup can fail by chance; a third failure throws and the caller keeps its saved answer.
 async function retried<T>(attempt: () => Promise<T>, tries = 3): Promise<T> {
   for (let left = tries - 1; ; left--) {
     try {
@@ -222,7 +222,7 @@ export function heading(elements: Elements, look: Look, key: string, icon: strin
   )
 }
 
-// A card's fill: surface1 washed lightly toward its hue, under a neutral border (picked 2026-10-15). Pills on the card sit on it.
+// A card's fill: surface1 washed lightly toward its hue, under a neutral border. Pills on the card sit on it.
 export const cardFill = (hue: string = THEME.accent) => mix(THEME.surface1, hue, 0.06)
 
 // The row above a card, painted on bg so a scrolled card above never shows through the gap.

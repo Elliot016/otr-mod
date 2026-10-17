@@ -121,7 +121,7 @@ export function settingChoice(data: unknown): { key: string; value: ConfigValue 
   }
 }
 
-// A control glyph without the brackets and padding it has as a standalone button (safe `[↻]`), since a pill already frames it.
+// A pill already frames the glyph, so drop the brackets and padding of the standalone button (safe `[↻]`).
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
 // A pill on the card's tint, capped where the font has the caps; `hover` lights the caps with a Button scoped to the pill's key.
@@ -163,12 +163,12 @@ export const actionReveals = (actions: Action[], look: Look, working: boolean): 
     working && !action.isLocal ? [] : [{ scope: actionScope(index), tip: { glyph: bare(look.glyph.go), label: action.label, text: fill(style.text.runsCommand, { command: [action.command, action.args].filter(Boolean).join(' ') }) } }],
   )
 
-// Changes the row in place: on/off is one pill that flips, a choice a bar with the chosen option as its own pill, a number steps by one; text is edited in /config.
+// Edits the row in place: on/off flips, a choice is a bar, a number steps; text is edited in /config.
 function control(elements: Elements, look: Look, row: ConfigRow, index: number, still: boolean, tips?: Record<string, string>, fields?: Record<string, Range>) {
   const { Box, Client, Text } = elements
   const key = `setting-${index}`
   const text = tips?.[row.key.slice(row.key.indexOf('.') + 1)] ?? (row.description ? descriptionTip(row.description) : '')
-  // Client props refuse an undefined value, so a setting with no tip text leaves the key out.
+  // Client props refuse an undefined value, so no tip text means no key.
   const tipFor = (glyph: string) => (text ? { tip: { glyph: bare(glyph), label: splitTitle(row.label).name, text } satisfies Tip } : {})
   const entry = (suffix: string, label: string, value: ConfigValue, bg: string, color: string, isOpen: boolean, glyph = look.glyph.cycle) => (
     <Client key={`${key}-${suffix}`} module="./entry.tsx" height={1} props={{ id: settingId(row, value), label, isOpen, bg, color, idle: color, still, ...tipFor(glyph) } satisfies EntryProps} />
@@ -221,7 +221,7 @@ export function settingsBody(elements: Elements, look: Look, { rows, actions, wo
     working && !action.isLocal ? (
       <Text key={`action-${index}`} color={THEME.muted}>{`${look.glyph.go} ${action.label} ${MARK.sep} ${style.text.idleOnly}`}</Text>
     ) : (
-      // A pill around a plain Button, since an action needs the person's press behind it; the glyph rides in the label so the whole pill lights.
+      // A plain Button so the action needs a real press; the glyph sits in the label so the whole pill lights.
       pillOn(
         elements,
         look,

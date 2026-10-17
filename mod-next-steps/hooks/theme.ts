@@ -1,5 +1,5 @@
 // hooks/theme.ts, by v-amorim
-// Shared mod theme; every mod carries the same copy. Colors, marks and glyphs live in style.ts.
+// Shared theme; every mod carries the same copy. Colors, marks and glyphs live in style.ts.
 import style from './style'
 
 export const THEME = style.colors.theme
@@ -10,7 +10,7 @@ export const SYNTAX = style.colors.syntax
 // One cell each and never an emoji: ⚠ switches to its emoji form in some fonts and draws two cells wide.
 export const MARK = style.marks
 
-// style.ts writes Nerd glyphs as {U+XXXX}: Write and Edit drop private-use characters typed into a file.
+// style.ts writes Nerd glyphs as {U+XXXX}, since private-use characters do not survive many editors and tools.
 const decode = (text: string) => text.replace(/\{U\+([0-9A-F]+)\}/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
 
 export function decodeAll<T>(value: T): T {

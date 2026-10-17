@@ -1,5 +1,5 @@
 // hooks/style.ts, by v-amorim
-// Shared style; every mod carries the same copy. Edit values to change the theme or the icons; keep the keys. {U+XXXX} is a Nerd Font code point.
+// Shared style; every mod carries the same copy. Change values freely, keep the keys. {U+XXXX} is a Nerd Font code point.
 export default {
   "colors": {
     "theme": {

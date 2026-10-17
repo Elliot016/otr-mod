@@ -1,5 +1,5 @@
 // hooks/entry.tsx, by v-amorim
-// Shared pill entry. Master in mod-menu; copy unchanged into every mod that draws a menu entry.
+// Shared pill entry; every mod that draws a menu entry carries the same copy.
 import type { ClientModule, ClientSurface } from 'claude-code'
 
 import style from './style'
@@ -121,7 +121,7 @@ const startFade = (surface: ClientSurface<State>) => {
 // The ticker reads the latest props from here, since its closure keeps the first ones.
 const latest = new WeakMap<object, EntryProps>()
 
-// Each instance's running tick: it starts when there is a shimmer to move or a hover to watch, and stops at rest, since every pill ticking idle cost a wakeup each.
+// Each instance's running tick: it runs only while a shimmer moves or a hover is watched, so idle pills cost no wakeups.
 const ticks = new WeakMap<object, () => void>()
 
 const startTick = (surface: ClientSurface<State>) => {
@@ -189,7 +189,6 @@ const Entry: ClientModule<EntryProps, State> = (props, surface) => {
   )
   if (!props.lead && !props.subLead && !props.badge) return isShimmering ? <Box flexDirection="row">{label}</Box> : label
 
-  // A rounded subpill on the entry's own fill: caps where the font has them, padded otherwise.
   const sub = (key: string, text: string, color: string, bg: string) => (
     <Box key={key} flexDirection="row">
       {props.nerd ? <Text key={`${key}-left`} color={bg} backgroundColor={props.bg}>{CAPS.left}</Text> : null}

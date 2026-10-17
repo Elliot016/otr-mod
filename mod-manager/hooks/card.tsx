@@ -1,5 +1,5 @@
 // hooks/card.tsx, by v-amorim
-// Shared sticky card. Copy unchanged into every mod whose pane has a card.
+// Shared sticky card; every mod whose pane has a card carries the same copy.
 import type { RenderElement } from 'claude-code'
 
 import { cardFill } from './look'
@@ -10,7 +10,7 @@ export const HEAD_ROWS = 3
 
 type Elements = { Box: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
-// The space the card holds in the pane's flow, and the one blank row under it, so the list starts clear of the border.
+// The card's space in the pane's flow plus one blank row, so the list starts clear of the border.
 export const cardSpace = ({ Box }: Pick<Elements, 'Box'>, rows: number) => <Box key="card-space" height={rows + 1} marginTop={1} flexShrink={0} />
 
 // Drawn last over the list at the top of the view; the painted row under it keeps a scrolled row off the border.

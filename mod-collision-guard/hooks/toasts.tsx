@@ -1,5 +1,5 @@
 // hooks/toasts.tsx, by v-amorim
-// Shared toast cards. Master in mod-menu; copy unchanged into every mod that toasts.
+// Shared toast cards; every mod that toasts carries the same copy.
 import type { RenderElement } from 'claude-code'
 
 import type { Tip } from './entry'
@@ -8,12 +8,11 @@ import { CAPS, MARK, mix, THEME } from './theme'
 
 type Elements = { Box: (props: any) => RenderElement; Client: (props: any) => RenderElement; Text: (props: any) => RenderElement }
 
-// The part of a mod's look.tsx Look the cards read; mod-menu carries no look.tsx, so it is typed here.
+// The slice of a mod's Look the cards read, typed here because mod-menu has no look.tsx.
 type ToastLook = { nerd: boolean; glyph: { close: string } }
 
 export const TOAST_MS = 4000
 
-// What the × says when the caller passes no tip of its own.
 const DISMISS_TIP = { label: 'Dismiss', text: 'hides this message' }
 const MAX_TOASTS = 3
 
@@ -44,10 +43,10 @@ export class ToastList {
   }
 }
 
-// A control glyph without the brackets and padding it has as a standalone button (safe `[×]`), since a pill already frames it.
+// A pill already frames the glyph, so drop the brackets and padding of the standalone button (safe `[×]`).
 const bare = (glyph: string) => glyph.replace(/[[\]\s]/g, '')
 
-// The tone a toast's text opens with, so callers keep writing `✓ Saved` or `! Failed` and the card draws the mark.
+// Callers write `✓ Saved` or `! Failed`; the card draws the mark.
 function toneOf(text: string) {
   for (const [mark, color, bold] of [[MARK.ok, THEME.ok, false], [MARK.warn, THEME.alert, true]] as const) {
     if (text.startsWith(mark)) return { mark, color, bold, text: text.slice(mark.length).trimStart() }
@@ -55,15 +54,14 @@ function toneOf(text: string) {
   return { mark: MARK.bullet, color: THEME.accent, bold: false, text }
 }
 
-// Each toast as a card the width of the band: its status mark, its text wrapped, and a × pill to dismiss it.
-// closeTip: the × hover tip's label and text, the same for every card; the owning mod's ui.message answers the tip post.
+// Each toast as a band-wide card: status mark, wrapped text, and a × pill to dismiss it.
+// closeTip: the × hover tip, the same on every card; the owning mod's ui.message answers the tip post.
 export const toastCards = ({ Box, Client, Text }: Elements, list: ToastList, look?: ToastLook, closeTip: Pick<Tip, 'label' | 'text'> = DISMISS_TIP) =>
   list.items.map(toast => {
     const id = `toast-${list.prefix}-${toast.id}`
     const tone = toneOf(toast.text)
     const nerd = look?.nerd === true
     const close = bare(look?.glyph.close ?? style.glyphs.safe.close)
-    // The card's fill tinted lightly toward its tone, under a neutral border.
     const fill = mix(THEME.surface1, tone.color, 0.06)
     return (
       <Box key={id} flexDirection="row" columnGap={1} paddingX={1} borderStyle="round" borderColor={THEME.border} backgroundColor={fill}>
