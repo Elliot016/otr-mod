@@ -5,6 +5,8 @@ import { fill } from './theme'
 import text from './text'
 
 const LABELS = ['auto', 'always', 'never']
+// The mods that draw an entry in the band; each lists its settings rows in config.list once installed and enabled.
+const PANEL_MODS = ['mod-file-tree', 'mod-heads-up', 'mod-manager', 'mod-model-effort', 'mod-progress', 'mod-prompts', 'mod-skill-panel', 'mod-wrap-up']
 const BOOT_KEY = { plugin: 'mod-menu', key: 'booted' } as const
 const LABELS_KEY = { plugin: 'mod-menu', key: 'labels' } as const
 
@@ -63,6 +65,9 @@ export const register: Register = (on, options) => {
       return { text: fill(text.labelsSet, { mode }) }
     }
     if (word) return { text: text.usage }
+
+    const rows = await $.config.list().catch(() => [])
+    if (!rows.some(row => PANEL_MODS.some(mod => row.key.startsWith(`${mod}.`)))) return { text: text.noPanels }
 
     await restore($, labels)
     const hidden = (await $.state.get({ plugin: 'mod-menu', key: 'hidden' })).value !== true

@@ -674,7 +674,7 @@ test('a subagent with no gates file shows its own task list as gates, and the ma
   const open = JSON.stringify(await pane.drawn({ in: 'loops' }))
   expect(open).toContain('#1 scan files')
   expect(open).toContain('#2 write summary')
-  expect(open).not.toContain('No gates for this agent yet')
+  expect(open).not.toContain('No gates yet')
   await pane.unmount()
 })
 

@@ -12,6 +12,7 @@ export default {
   "statusOn": "On",
   "statusOff": "Off",
   "statusLine": "{state}, {minutes} min window. /mod-collision-guard settings opens the panel",
+  "statusWatching": "Watching for edits from other sessions. {line}",
   "askHeader": "Collision",
   "choiceProceed": "Proceed",
   "choiceWorktree": "Move to a worktree",

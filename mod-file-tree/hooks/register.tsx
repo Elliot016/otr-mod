@@ -50,6 +50,7 @@ function startLog(session: string, path = '') {
   log = undefined
   loading = null
   loadFailed = false
+  loadError = ''
   changes = []
   cleared = { seq: 0, step: 0 }
   replayTurn = null
@@ -79,6 +80,10 @@ let loading: { session: string; done: Promise<void> } | null = null
 let changes: ((current: Log) => Log)[] = []
 // A read that failed leaves the log partial, so the next hydrate reads again, keeping the changes made since.
 let loadFailed = false
+// The short reason the last failed read gave, kept until a read succeeds so the empty state can name it.
+let loadError = ''
+let readFailure = ''
+const reasonOf = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim().slice(0, 80)
 
 // A hook waits this long at most for the read, so a long session's transcript never holds up the start or the pane.
 const LOAD_WAIT_MS = 300
@@ -100,10 +105,11 @@ async function hydrate($: EngineInterface) {
     loadFailed = false
     const started: NonNullable<typeof loading> = {
       session,
-      done: load($, session).catch(() => {
+      done: load($, session).catch(error => {
         if (loading !== started) return
         loading = null
         loadFailed = true
+        loadError = readFailure || reasonOf(error)
       }),
     }
     loading = started
@@ -177,8 +183,9 @@ async function load($: EngineInterface, session: string) {
   if (session !== logSession) return
   transcript = path
   let raw = ''
+  readFailure = ''
   if (path) {
-    raw = String(await $.fs.read(path).catch(() => ''))
+    raw = String(await $.fs.read(path).catch(error => (readFailure = reasonOf(error), '')))
     if (!raw) {
       const isWindows = /^[A-Za-z]:|\\/.test(path)
       // cmd's type rejects forward slashes.
@@ -187,6 +194,7 @@ async function load($: EngineInterface, session: string) {
         if (chunk.stream === 'stdout') raw += chunk.text
       }
     }
+    if (!raw && readFailure) throw new Error(readFailure)
   }
   // A switch while the file was read makes it another session's.
   if (session !== logSession) return
@@ -196,6 +204,7 @@ async function load($: EngineInterface, session: string) {
   log = changes.reduce((current, change) => change(current), { ...parsed.log, working: false })
   changes = []
   loading = null
+  loadError = ''
   $.ui.invalidate('ui.render')
   // A pane render can be what started the read, and a render may not write state.
   $.clock.after(0, () => void save($))
@@ -875,11 +884,12 @@ export const register: Register = (on, options) => {
         props: { id: option.id, label: option.label, still, ...(option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}), tip: { glyph: look.glyph.icon[option.icon ?? ''] ?? look.glyph.title, label: option.label, text: option.tip } },
       })))
 
+    const emptyText = (legit: string) => (loadError ? fill(text.unreadableWhy, { reason: loadError }) : legit)
     // The pane pads one column on both sides, the section its border and one more column.
     const width = Math.max(20, e.props.bodyColumns - 6)
     const tree =
       rows.length === 0
-        ? <Text key="tree-empty" color={THEME.muted}>{text.treeEmpty}</Text>
+        ? <Text key="tree-empty" color={THEME.muted}>{emptyText(text.treeEmpty)}</Text>
         : (
             <Box key="lists" flexDirection="column">
               {chunksOf(listRows(current, rows, look, width)).map((chunk, n) => (
@@ -895,7 +905,7 @@ export const register: Register = (on, options) => {
     const step = steps[at]
     const color = (op: Line['op']) => (op === '+' ? THEME.good : op === '-' ? THEME.alert : THEME.muted)
     const replay = !step
-      ? <Text key="replay-empty" color={THEME.muted}>{text.replayEmpty}</Text>
+      ? <Text key="replay-empty" color={THEME.muted}>{emptyText(text.replayEmpty)}</Text>
       : (
           <Box key="replay-body" flexDirection="column">
             <Box key="replay-file" flexDirection="row" marginTop={1}>

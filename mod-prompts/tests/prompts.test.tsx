@@ -558,8 +558,31 @@ test('a transcript that cannot be read says so instead of "No prompts yet."', as
   mock.clock(on)
   await $.command.run({ command: 'mod-prompts' } as never)
   const ui = await paneOf($)
-  expect(await ui.find({ type: 'Text', text: 'Could not read the transcript.' })).toBeDefined()
+  const shown = JSON.stringify(await ui.drawn())
+  // The test engine words a throwing handler itself, so only the lead and that a reason follows it are fixed.
+  expect(shown).toMatch(/Can't read this session's transcript: \S/)
   expect(await ui.find({ type: 'Text', text: 'No prompts yet.' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('an empty transcript file is a legitimately empty session: "No prompts yet.", no error', async ($, on) => {
+  on('store.get', () => ({ value: { path: '/t/s4.jsonl', at: 0 } }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 's4' }))
+  on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
+  on('fs.read', () => ({ value: '' }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
+  mock.env(on, {})
+  mock.clock(on)
+  await $.command.run({ command: 'mod-prompts' } as never)
+  const ui = await paneOf($)
+  expect(await ui.find({ type: 'Text', text: 'No prompts yet.' })).toBeDefined()
+  expect(JSON.stringify(await ui.drawn())).not.toContain("Can't read")
   await ui.unmount()
 })
 

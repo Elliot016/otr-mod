@@ -18,6 +18,7 @@ export default {
   "agentTools": "{count} tools",
   "agentAllTools": "all tools",
   "noAgents": "No agents in {folders} yet.",
+  "noSkills": "No skills yet. Add one at ~/.claude/skills/<name>/SKILL.md",
   "noAgentDescription": "This agent has no description.",
   "hint": "Click a skill to add it {sep} point at one to read it",
   "settingsHint": "Click a setting to change it {sep} The mod reloads",

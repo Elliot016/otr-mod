@@ -14,6 +14,7 @@ const states = (on: any) => {
   })
   on('state.get', (_$: any, e: any) => ({ value: { value: written.get(`${e.plugin}.${e.key}`) } }) as never)
   mock.store(on)
+  on('config.list', () => ({ value: [{ key: 'mod-skill-panel.icons' }] }) as never)
   return written
 }
 

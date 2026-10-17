@@ -9,7 +9,8 @@ type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => u
 const BAND = { plugin: 'mod-menu', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never
 
 // The store and the state backed by maps; the test clears the state map the way the host does on a /clear.
-function stubEngine(on: On) {
+function stubEngine(on: On, installed = ['mod-skill-panel.icons']) {
+  on('config.list', () => ({ value: installed.map(key => ({ key })) }) as never)
   const states = new Map<string, unknown>()
   const store = new Map<string, unknown>()
   on('store.get', (_$, e) => ({ value: store.get(e.key) }))
@@ -38,6 +39,16 @@ test('/mod-menu flips hidden and stores it for the next session', async ($, on) 
   expect(store.get('hidden')).toBe(true)
   await $.command.run({ command: 'mod-menu' } as never)
   expect(store.get('hidden')).toBe(false)
+})
+
+test('with no panel mods installed the toggle says so and changes nothing', async ($, on) => {
+  const { states, store } = stubEngine(on, ['mod-menu.labels', 'mod-blast-radius.icons'])
+
+  const res = await $.command.run({ command: 'mod-menu' } as never)
+  expect(JSON.stringify(res)).toContain('No panel mods installed')
+  expect(JSON.stringify(res)).not.toContain('Menu hidden')
+  expect(states.has('mod-menu.hidden')).toBe(false)
+  expect(store.has('hidden')).toBe(false)
 })
 
 test('an unknown word prints usage and changes nothing', async ($, on) => {

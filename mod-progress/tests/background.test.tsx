@@ -297,7 +297,7 @@ test('a click on the card outside the task line still toggles its gates, and the
   const pane = await $.ui.mount(PANE)
   await pointerOn(pane, { in: 'loops', type: 'down', x: 3, y: 0, button: 'left' })
   expect(states.get('mod-progress.task')).toBeUndefined()
-  expect(JSON.stringify(await pane.drawn({ in: 'loops' }))).toContain('No gates for this agent yet')
+  expect(JSON.stringify(await pane.drawn({ in: 'loops' }))).toContain('No gates yet. Add a GATES.md')
   await pointerOn(pane, { in: 'loops', type: 'move', x: 3, y: TASK_LINE, button: 'left' })
   expect((await pane.find({ type: 'Text', text: /opens this task/ }))?.text).toContain('opens this task\'s command and output')
   await pane.unmount()
@@ -731,7 +731,7 @@ test('each card folds its shells to a count and unfolds them again, and the fold
   // A click left of the toggle still opens the gates, not the fold.
   await clickIn(pane, 'loops', 3, AGENT_PILLS)
   await pane.redraw()
-  expect(await drawnIn(pane, 'loops')).toContain('No gates for this agent yet')
+  expect(await drawnIn(pane, 'loops')).toContain('No gates yet')
   expect(await drawnIn(pane, 'loops')).not.toContain('npm test')
 
   await pane.redraw()

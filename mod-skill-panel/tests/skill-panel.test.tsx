@@ -86,6 +86,8 @@ test('describe marks personal skills and leaves other commands alone', async ($,
 
   expect((await describe('mod-manager', 'mod-manager')).description).toContain('\x1b[38;2;93;203;255m')
   expect((await describe('mod-manager', 'mod-manager@inline')).description).toContain('\x1b[38;2;93;203;255m')
+  // Installed from the marketplace, a mod has no folder under ~/.claude/mods.
+  expect((await describe('mod-wrap-up', 'mod-wrap-up@claude-mods')).description).toContain('\x1b[38;2;93;203;255m')
   expect((await describe('other', 'someone-elses-plugin')).description).toBe('Does X')
 
   expect((await describe('plain')).description).toContain('\x1b[38;2;155;163;196m')
@@ -298,6 +300,21 @@ test('with no agents the panel names the folders it checked, under the config di
   const ui = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
   await pointing(ui).pointer({ in: 'skills-agents', type: 'down', button: 'left', x: 1, y: 0 })
   expect(await ui.find({ type: 'Text', text: 'No agents in /cfg/agents or C:/p/.claude/agents yet.' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('with no skills the Skills tab says how to add one', async ($, on) => {
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
+  on('fs.list', () => ({ value: [] }))
+  on('fs.read', () => ({ value: '' }))
+  stubSession(on)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('state.set', () => ({ value: undefined }) as never)
+
+  await $.session.start({ cwd: 'C:\\p' } as never)
+  const ui = await $.ui.mount({ plugin: 'mod-skill-panel', surface: 'terminal', component: 'Pane', requestId: 'skill-panel', props: { title: 'Skills', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never)
+  expect(await ui.find({ type: 'Text', text: 'No skills yet. Add one at ~/.claude/skills/<name>/SKILL.md' })).toBeDefined()
+  expect(await ui.find({ type: 'Client', key: 'skills-cloud' })).toBeUndefined()
   await ui.unmount()
 })
 

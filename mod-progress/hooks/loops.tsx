@@ -197,7 +197,7 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
     }
 
     if (line.kind === 'empty') {
-      return frame(<Text key={`${key}-empty`} color={THEME.muted}>{`   ${text.noGates}`}</Text>)
+      return frame(<Text key={`${key}-empty`} color={THEME.muted} wrap="truncate-end">{`   ${text.noGates}`}</Text>)
     }
 
     const gate = row.gates[line.gate!]!

@@ -102,6 +102,9 @@ let fedBytes = 0
 let carry = ''
 // A file that could not be read at this size is not read again until it grows.
 let failedSize = -1
+// The short reason the last failed read gave, for the empty state.
+let readError = ''
+const reasonOf = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim().slice(0, 80)
 // Read in full once, then in part; prompts drawn in between come from the rows Claude Code draws.
 let isLoaded = false
 // A turn ended, so the next read takes what it added.
@@ -128,6 +131,7 @@ function startList(session: string, path = '') {
   fedBytes = 0
   carry = ''
   failedSize = -1
+  readError = ''
   isLoaded = false
   isStale = false
   prompts = []
@@ -190,7 +194,7 @@ const WHOLE_READ_BYTES = 4 * 1024 * 1024
 // The file's text from byte `from` on; past one fs.read, only the first read streams the whole file, later ones take the new bytes.
 async function readFrom($: EngineInterface, path: string, from: number, size: number) {
   if (size <= WHOLE_READ_BYTES) {
-    const whole = String(await $.fs.read(path).catch(() => ''))
+    const whole = String(await $.fs.read(path).catch(error => (readError ||= reasonOf(error), '')))
     if (whole) return from ? new TextDecoder().decode(new TextEncoder().encode(whole).subarray(from)) : whole
   }
   if (from > 0) {
@@ -227,7 +231,8 @@ async function readMore($: EngineInterface) {
     carry = ''
   }
   const from = fedBytes
-  const fresh = await readFrom($, path, from, size).catch(() => '')
+  readError = ''
+  const fresh = await readFrom($, path, from, size).catch(error => (readError ||= reasonOf(error), ''))
   if (session !== listSession || path !== transcript) return
   // A failed read leaves the transcript unloaded until the file grows, so a draw does not read it again and again.
   if (!fresh) {
@@ -235,6 +240,8 @@ async function readMore($: EngineInterface) {
     $.ui.invalidate('ui.render')
     return
   }
+  failedSize = -1
+  readError = ''
   carry = transcriptRows.append(carry + fresh)
   fedBytes = from + utf8Length(fresh)
   isLoaded = true
@@ -673,7 +680,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(false), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{note || fill(text.hint, { sep: MARK.sep })}</Text>
-        {prompts.length === 0 ? <Text color={THEME.muted}>{failedSize >= 0 ? text.unreadable : text.empty}</Text> : null}
+        {prompts.length === 0 ? <Text color={THEME.muted}>{failedSize > 0 ? (readError ? fill(text.unreadableWhy, { reason: readError }) : text.unreadable) : text.empty}</Text> : null}
         {current ? cardSpace({ Box }, cardRows) : null}
         {section({ Box, Text }, look, 'timeline', '', '', [
           before.length > 0 ? (

@@ -144,11 +144,21 @@ async function answer($: EngineInterface, args: string) {
     await clearOwn(ioOf($), await logDir($), await $.session.id())
     return text.cleared
   }
-  return fill(text.statusLine, { state: enabled ? text.statusOn : text.statusOff, minutes: windowMinutes })
+  const line = fill(text.statusLine, { state: enabled ? text.statusOn : text.statusOff, minutes: windowMinutes })
+  return enabled ? fill(text.statusWatching, { line }) : line
 }
 
 const worktreeReason = (path: string) =>
   `The user chose to move to a worktree because another open session is editing ${path}. Call EnterWorktree, then redo this edit there.`
+
+// A worktree needs a git repo: a .git entry in the file's folder or one above it.
+async function isInRepo($: EngineInterface, path: string) {
+  const parts = path.replace(/\\/g, '/').split('/').slice(0, -1)
+  for (; parts.length > 0; parts.pop()) {
+    if (await $.fs.exists(`${parts.join('/') || '/'}/.git`).catch(() => false)) return true
+  }
+  return false
+}
 
 // The question, the dialog's choices and what each means for the call: undefined lets it run.
 async function decide($: EngineInterface, path: string, at: number, now: number) {
@@ -162,7 +172,8 @@ async function decide($: EngineInterface, path: string, at: number, now: number)
   void Promise.resolve().then(() => $.ui.notify(fill(text.notifyPaused, { file: path.split(/[\\/]/).pop() }), { title: text.notifyTitle })).catch(() => undefined)
   let picked = text.choiceCancel
   try {
-    picked = await $.ui.ask(question, { options: CHOICES, header: text.askHeader })
+    const options = (await isInRepo($, path)) ? CHOICES : CHOICES.filter(choice => choice !== text.choiceWorktree)
+    picked = await $.ui.ask(question, { options, header: text.askHeader })
   } catch {
     // Dismissed or "Chat about this": refuse, the safe answer.
   }

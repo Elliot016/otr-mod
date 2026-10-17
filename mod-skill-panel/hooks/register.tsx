@@ -273,7 +273,9 @@ export const register: Register = (on, options) => {
 
   on('command.describe', async ($, e, next) => {
     const answer = await next(e)
-    const tag = skills.find(skill => skill.name === e.command)?.tag ?? (mods.has(e.provider.plugin.split('@')[0]!) ? 'mods' : undefined)
+    // A mod is a folder under ~/.claude/mods or an install from this repo's marketplace.
+    const [plugin, market] = e.provider.plugin.split('@')
+    const tag = skills.find(skill => skill.name === e.command)?.tag ?? (mods.has(plugin!) || market === 'claude-mods' ? 'mods' : undefined)
     if (!tag) return answer
 
     return { ...answer, description: markDescription(answer.description, tag, look.nerd) }
@@ -437,14 +439,16 @@ export const register: Register = (on, options) => {
     // Pane padding, then the section's border and padding.
     const width = e.props.bodyColumns - 2 - 4
     const empty = view === 'agents' && agents.length === 0
+    const noSkills = view === 'skills' && listed().length === 0
 
     return (
       <Box flexDirection="column" backgroundColor={THEME.bg} paddingX={1} minHeight={e.props.scroll.bodyRows}>
         {tabRow({ Box, Client, Text }, look.nerd, tabs(view), still)}
         <Text wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(view === 'agents' ? text.agentsHint : text.hint, { sep: MARK.sep })}</Text>
         {empty ? <Text color={THEME.muted}>{fill(text.noAgents, { folders: agentFolders.join(' or ') })}</Text> : null}
+        {noSkills ? <Text color={THEME.muted}>{text.noSkills}</Text> : null}
         {card ? cardSpace({ Box }, CARD_ROWS) : null}
-        {section({ Box, Text }, look, 'cloud', '', '', (
+        {noSkills ? null : section({ Box, Text }, look, 'cloud', '', '', (
           <Client key={`${view}-cloud`} module="./cloud.tsx" height={layoutCloud(cloud, width).rows.length} props={{ groups: cloud, width, selected: view === 'agents' ? selectedAgent : selected, nerd: look.nerd, still } satisfies CloudProps} />
         ))}
         {card

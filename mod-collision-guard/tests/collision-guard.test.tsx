@@ -18,6 +18,8 @@ function world(on: any, files: Record<string, string>, answerWith: string | (() 
   const asked: { question: string; options: string[] }[] = []
   const ran: string[] = []
   const mtimes: Record<string, number> = {}
+  const listed: string[] = []
+  const writes: string[] = []
   on('fs.read', (_$: unknown, e: { path: string }) => {
     const path = neutral(e.path)
     if (path.endsWith('/showcase.json')) return { value: JSON.stringify({ actions: [{ label: "Forget this session's recorded edits", command: 'mod-collision-guard', args: 'clear' }] }) }
@@ -25,13 +27,20 @@ function world(on: any, files: Record<string, string>, answerWith: string | (() 
     return { value: files[path]! }
   })
   on('fs.write', (_$: unknown, e: { path: string; text: string }) => {
+    writes.push(neutral(e.path))
     files[neutral(e.path)] = e.text
     return { value: undefined }
   })
   on('fs.list', (_$: unknown, e: { path: string }) => {
     const dir = neutral(e.path).replace(/\/$/, '')
-    return { value: Object.keys(files).filter(path => path.startsWith(`${dir}/`)).map(path => ({ name: path.slice(dir.length + 1), kind: 'file', size: 0, mtimeMs: mtimes[path] ?? 0, isLink: false })) }
+    listed.push(dir)
+    const inside = Object.keys(files).filter(path => path.startsWith(`${dir}/`))
+    // A folder holding no file does not exist yet, as on a clean profile.
+    if (inside.length === 0) throw new Error('ENOENT')
+    return { value: inside.map(path => ({ name: path.slice(dir.length + 1), kind: 'file', size: 0, mtimeMs: mtimes[path] ?? 0, isLink: false })) }
   })
+  // /work is a git repo; /scratch is not.
+  on('fs.exists', (_$: unknown, e: { path: string }) => ({ value: neutral(e.path) === '/work/.git' }))
   on('env.get', (_$: unknown, e: { name: string }) => {
     if (env.throws) throw new Error('env is gone')
     return { value: e.name === 'USERPROFILE' ? '/h' : e.name === 'CLAUDE_CONFIG_DIR' ? env.configDir : undefined }
@@ -48,7 +57,7 @@ function world(on: any, files: Record<string, string>, answerWith: string | (() 
     ran.push(`${e.tool} ${e.file_path ?? e.notebook_path}`)
     return { result: { text: 'ok' } }
   })
-  return { files, asked, ran, clock, mtimes }
+  return { files, asked, ran, clock, mtimes, listed, writes }
 }
 
 const call = ($: any, tool = 'Edit', path = FILE) => $.tool.call(tool === 'NotebookEdit' ? { tool, notebook_path: path, new_source: 'x' } : { tool, file_path: path, old_string: 'a', new_string: 'b', content: 'b' })
@@ -83,6 +92,12 @@ test('other-session recent edit asks, with relative and clock time and the four 
   expect(w.asked).toHaveLength(1)
   expect(w.asked[0]!.question).toMatch(/^Another open session edited \/work\/app\.ts 4 min ago \(\d\d:\d\d\)\. Edit it anyway\?$/)
   expect(w.asked[0]!.options).toEqual(['Proceed', 'Move to a worktree', 'Cancel'])
+})
+
+test('outside a git repo the dialog offers no worktree', async ($, on) => {
+  const w = world(on, { [`${DIR}/other.json`]: edit('other', 4, '/scratch/notes.ts') })
+  await call($, 'Edit', '/scratch/notes.ts')
+  expect(w.asked[0]!.options).toEqual(['Proceed', 'Cancel'])
 })
 
 test('a corrupt log file is ignored and never blocks the edit', async ($, on) => {
@@ -242,6 +257,30 @@ test('session.end empties the session log, and clear does the same on request', 
   await call($)
   await $.command.run({ command: 'mod-collision-guard', args: 'clear' } as never)
   expect(w.files[`${DIR}/mine.json`]).toBe('[]')
+})
+
+test('the status reply says it is watching, and not when the guard is off', async ($, on) => {
+  world(on, {})
+  on('command.register', () => ({ value: undefined }) as never)
+  const reply = JSON.stringify(await $.command.run({ command: 'mod-collision-guard', args: '' } as never))
+  expect(reply).toContain('Watching for edits from other sessions')
+  expect(reply).toContain('On, 30 min window')
+})
+
+test('with the guard off the status reply does not claim to watch', { options: { enabled: false } }, async ($, on) => {
+  world(on, {})
+  const reply = JSON.stringify(await $.command.run({ command: 'mod-collision-guard', args: '' } as never))
+  expect(reply).not.toContain('Watching')
+  expect(reply).toContain('Off, 30 min window')
+})
+
+test('on a clean profile the sessions folder is missing: the check finds nothing, the edit runs, and the first record writes into the folder', async ($, on) => {
+  const w = world(on, {})
+  await call($)
+  expect(w.listed).toEqual([DIR])
+  expect(w.asked).toEqual([])
+  expect(w.ran).toEqual([`Edit ${FILE}`])
+  expect(w.writes).toEqual([`${DIR}/mine.json`])
 })
 
 const paneOf = async ($: any, on: any) => {

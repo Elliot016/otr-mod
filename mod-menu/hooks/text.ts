@@ -6,5 +6,6 @@ export default {
   "labelsUsage": "Usage: /mod-menu labels auto|always|never",
   "labelsSet": "Menu labels: {mode}",
   "menuHidden": "Menu hidden",
-  "menuShown": "Menu shown"
+  "menuShown": "Menu shown",
+  "noPanels": "No panel mods installed"
 }

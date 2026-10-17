@@ -41,7 +41,7 @@ const SHELL_DIFF = {
 const isTranscript = (path: string) => path.replace(/\\/g, '/').endsWith('/s1.jsonl')
 
 // `transcript.text` is the session's .jsonl, which a test may grow between events.
-const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }, placed: string[] = [], seen: { store?: Map<string, unknown>; now?: number; stateFails?: { left: number }; env?: (name: string) => string | undefined; listed?: string[]; exists?: (path: string) => boolean } = {}) => {
+const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = { text: '', reads: 0 }, placed: string[] = [], seen: { store?: Map<string, unknown>; now?: number; stateFails?: { left: number }; env?: (name: string) => string | undefined; listed?: string[]; exists?: (path: string) => boolean; readFails?: string } = {}) => {
   on('session.cwd', () => ({ value: '/w' }))
   on('session.id', () => ({ value: 's1' }))
   on('env.get', (_$, e) => ({ value: seen.env ? seen.env(e.name) : e.name === 'USERPROFILE' ? '/h' : undefined }))
@@ -77,6 +77,7 @@ const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = 
   on('fs.stat', (_$, e) => ({ value: { kind: 'file', size: isTranscript(e.path) ? transcript.text.length : 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', (_$, e) => {
     if (isTranscript(e.path)) transcript.reads += 1
+    if (seen.readFails && isTranscript(e.path)) throw new Error(seen.readFails)
     return { value: isTranscript(e.path) ? transcript.text : 'one\ntwo\nthree\n' }
   })
   on('ui.panes', () => ({ value: placed.map(id => ({ id, isPlaced: true })) }) as never)
@@ -1118,6 +1119,22 @@ test('a failed load is not kept: the next tool call reads the transcript again',
   await pointing(ui).pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'scope-session' } as never)
   const drawn = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   for (const name of ['old.ts', 'first.ts', 'second.ts']) expect(drawn).toContain(name)
+  await ui.unmount()
+})
+
+test('a transcript that cannot be read says so in the pane instead of "No files touched yet"', async ($, on) => {
+  stubs(on, [], { text: [prompt('first'), ''].join('\n'), reads: 0 }, [], { readFails: 'permission denied' })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /^Can't read this session's transcript: \S/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^No files touched yet/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a session with no transcript yet keeps the plain empty look', async ($, on) => {
+  stubs(on, [], { text: '', reads: 0 })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /^No files touched yet/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Can't read/ })).toBeUndefined()
   await ui.unmount()
 })
 

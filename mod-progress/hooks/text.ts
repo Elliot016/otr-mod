@@ -48,7 +48,7 @@ export default {
   "unfoldAll": "Unfold all",
   "tipFoldAll": "folds every agent's background tasks to a count",
   "tipUnfoldAll": "shows every agent's background tasks",
-  "noGates": "No gates for this agent yet",
+  "noGates": "No gates yet. Add a GATES.md",
   "stepRead": "Reading {what}",
   "stepEdit": "Editing {what}",
   "stepWrite": "Writing {what}",
