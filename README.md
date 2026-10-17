@@ -64,9 +64,9 @@ This marketplace doesn't update on its own. Claude Code turns auto-update on onl
 
 ## See them in action
 
-| Every terminal mod in 140 seconds |
+| Every terminal mod in 133 seconds |
 | --- |
-| https://github.com/user-attachments/assets/0463b8f7-251a-4b92-b5b9-10844ae0a226 |
+| https://github.com/user-attachments/assets/d2fd0a54-b9ac-489b-830d-72833fa6e85c |
 
 | Without mods | With mods |
 | --- | --- |
@@ -287,7 +287,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/c9732f5e-be9d-4513-b0a6-a879c186ee2f |
+| https://github.com/user-attachments/assets/4339b8da-f37d-4ad3-ba5a-2bd5f93b9e76 |
 
 [Full page][doc-mod-progress]
 
