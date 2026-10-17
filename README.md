@@ -359,8 +359,6 @@ Click a mod to open its video and a link to its full page.
 3. Test it with `claude plugin test <clone>/<name>`.
 4. Try it with `claude --plugin-dir <clone>/<name>`, then add its folder to `CLAUDE_CODE_PLUGIN_DIRS`.
 
-`showcase/tools/` is maintainer-only tooling for the videos and stills. It needs Windows, and no mod uses it.
-
 Each mod's folder:
 
 ```

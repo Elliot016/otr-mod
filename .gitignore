@@ -1,9 +1,11 @@
 # Claude Code writes each mod's TypeScript types here every time it loads the mod.
 .claude-plugin/types/
 
-# Videos live as GitHub attachments (showcase/videos.json); renders stay local.
-showcase/*.mp4
-showcase/gif/
+# Local tooling, kept out of this repo.
+showcase/
+scripts/
+justfile
+mod-heads-up/tools/
 
 # Python bytecode.
 __pycache__/

@@ -1,4 +1,4 @@
-// tests/previews-kit.ts, by v-amorim: a drawn tree as the literal example lines of showcase.json, which `just previews` rewrites.
+// tests/previews-kit.ts, by v-amorim: a drawn tree as the literal example lines of showcase.json and tests/previews.snapshot.ts.
 import { THEME } from '../hooks/theme'
 
 export type Span = { text: string; color?: string; bg?: string; bold?: boolean }
@@ -305,12 +305,12 @@ export const written = (...lines: Span[][]): Captured => ({
   lines: lines.flatMap(spans => (spans.length === 1 ? wrap(spans[0]!.text, EXAMPLE_COLUMNS - 1).map(text => [{ ...spans[0]!, text }]) : [spans])).map(spans => ({ spans: [{ text: ' ' }, ...spans] })),
 })
 
-// Passes when the drawing equals the committed example; else fails with a line `just previews` reads.
+// Passes when the drawing equals the committed example; else fails with the new example as a @@PREVIEW line.
 export function expectPreview(snapshot: Snapshot, field: string, value: string, mode: Mode, got: Captured) {
   const widest = Math.max(0, ...got.lines.map(line => line.spans.reduce((sum, span) => sum + Array.from(span.text).length, 0)))
   if (widest > EXAMPLE_COLUMNS) throw new Error(`the ${mode} example of ${field}=${value} is ${widest} cells wide, over the ${EXAMPLE_COLUMNS} a settings card holds; draw it narrower`)
   const want = snapshot[field]?.[value]
   const same = want && JSON.stringify(want[mode]) === JSON.stringify(got.lines) && JSON.stringify(want.frame ?? null) === JSON.stringify(got.frame ?? null)
   if (same) return
-  throw new Error(`the ${mode} example of ${field}=${value} differs from showcase.json; run \`just previews\`\n@@PREVIEW ${JSON.stringify({ field, value, mode, frame: got.frame, lines: got.lines })}`)
+  throw new Error(`the ${mode} example of ${field}=${value} differs from showcase.json; copy the @@PREVIEW line below into its previews and tests/previews.snapshot.ts\n@@PREVIEW ${JSON.stringify({ field, value, mode, frame: got.frame, lines: got.lines })}`)
 }

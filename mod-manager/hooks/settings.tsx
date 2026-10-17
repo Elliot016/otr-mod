@@ -67,7 +67,7 @@ export type PreviewSpan = { text: string; color?: string; bg?: string; bold?: bo
 export type PreviewLine = { spans: PreviewSpan[] }
 export type Preview = { frame?: { border: string; bg: string }; nerd: PreviewLine[]; safe: PreviewLine[] }
 
-// showcase.json's "previews", written by `just previews`: per setting field, per value as text ("true", "false", an option), the card in each icon mode.
+// showcase.json's "previews", kept in step with tests/previews.snapshot.ts: per setting field, per value as text ("true", "false", an option), the card in each icon mode.
 export type Previews = Record<string, Record<string, Preview>>
 
 const shade = (color: string | undefined) => (color === undefined ? undefined : color in THEME ? THEME[color as ThemeColor] : color)
