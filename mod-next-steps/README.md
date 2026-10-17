@@ -32,7 +32,7 @@ Automatic.
 
 | Picking one by its digit |
 | --- |
-| https://github.com/user-attachments/assets/5dbf9ecc-a89a-4528-b09b-cb05c2fdf84e |
+| https://github.com/user-attachments/assets/c6eba33e-5ebf-4e3f-b30d-514da45b0319 |
 
 ## Features
 

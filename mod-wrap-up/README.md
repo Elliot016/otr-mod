@@ -36,11 +36,11 @@ Wrap up pill.
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/79c3e6bd-84f0-4d55-b8a0-edc8b969f62f |
+| https://github.com/user-attachments/assets/1d4a0d56-3999-42f4-b990-8428403b9db0 |
 
 | Auto handoff at the mark: countdown, clear, carry on |
 | --- |
-| https://github.com/user-attachments/assets/ab60369a-5192-4192-84a7-77be42c21fe5 |
+| https://github.com/user-attachments/assets/124db9fa-76f6-4a4b-8117-904c42a7bdb8 |
 
 ## Features
 

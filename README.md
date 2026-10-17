@@ -188,7 +188,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Hovering an entry shows its tip |
 | --- |
-| https://github.com/user-attachments/assets/8d4c20fa-d8b9-4eda-ac52-1ad6f878dfc0 |
+| https://github.com/user-attachments/assets/b385c49e-a298-4594-98fd-8e620150e3e2 |
 
 [Full page][doc-mod-menu]
 
@@ -199,7 +199,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Hover a mod, switch the icons |
 | --- |
-| https://github.com/user-attachments/assets/38187e8d-4b4b-45e5-99e7-48e56db6ccc4 |
+| https://github.com/user-attachments/assets/3eb36efb-13ef-4859-86e9-592eeb9f6060 |
 
 [Full page][doc-mod-manager]
 
@@ -210,7 +210,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/14d81301-566d-430f-8f58-81f7578e2cf0 |
+| https://github.com/user-attachments/assets/da738c8d-4dda-4ed3-a6a3-fb6d2e8fe72e |
 
 [Full page][doc-mod-file-tree]
 
@@ -221,7 +221,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Picking one by its digit |
 | --- |
-| https://github.com/user-attachments/assets/5dbf9ecc-a89a-4528-b09b-cb05c2fdf84e |
+| https://github.com/user-attachments/assets/c6eba33e-5ebf-4e3f-b30d-514da45b0319 |
 
 [Full page][doc-mod-next-steps]
 
@@ -232,7 +232,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Pick a prompt to read it |
 | --- |
-| https://github.com/user-attachments/assets/4d5ebd99-724c-46de-8b99-a87817f42c12 |
+| https://github.com/user-attachments/assets/94884a8e-62d4-4605-af19-591ab12e8adb |
 
 [Full page][doc-mod-prompts]
 
@@ -243,7 +243,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
-| https://github.com/user-attachments/assets/827f92d0-898c-4a47-bfee-4e3dfe490d2f |
+| https://github.com/user-attachments/assets/c26f35ef-db0a-4450-8dc0-f4972a9eba89 |
 
 [Full page][doc-mod-skill-panel]
 
@@ -254,7 +254,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/54d5f0e0-e018-4304-ae72-0b43830b88df |
+| https://github.com/user-attachments/assets/f4310ccc-c80d-48b4-ae0d-9a6f0fad2efe |
 
 [Full page][doc-mod-transcript]
 
@@ -265,7 +265,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/50bb1548-fe7b-423c-8b08-a403a1193f55 |
+| https://github.com/user-attachments/assets/6eb5747c-7a7d-4546-b8d0-512a0464c96d |
 
 [Full page][doc-mod-model-effort]
 
@@ -276,7 +276,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/dceda84c-cec9-419e-913c-7043256e9878 |
+| https://github.com/user-attachments/assets/39ddfb43-7ad3-4e98-a3c1-4e6fa8a44c23 |
 
 [Full page][doc-mod-heads-up]
 
@@ -287,7 +287,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/723714a0-74d8-44e5-9564-6c620e53d4f3 |
+| https://github.com/user-attachments/assets/c9732f5e-be9d-4513-b0a6-a879c186ee2f |
 
 [Full page][doc-mod-progress]
 
@@ -298,7 +298,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | A risky command held |
 | --- |
-| https://github.com/user-attachments/assets/a3dfb603-3060-465a-ab15-ec0aaecf6728 |
+| https://github.com/user-attachments/assets/e98ac88c-e06f-4bc5-a2b6-a690009d9208 |
 
 [Full page][doc-mod-blast-radius]
 
@@ -320,11 +320,11 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/79c3e6bd-84f0-4d55-b8a0-edc8b969f62f |
+| https://github.com/user-attachments/assets/1d4a0d56-3999-42f4-b990-8428403b9db0 |
 
 | Auto handoff at the mark: countdown, clear, carry on |
 | --- |
-| https://github.com/user-attachments/assets/ab60369a-5192-4192-84a7-77be42c21fe5 |
+| https://github.com/user-attachments/assets/124db9fa-76f6-4a4b-8117-904c42a7bdb8 |
 
 [Full page][doc-mod-wrap-up]
 

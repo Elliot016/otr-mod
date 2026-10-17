@@ -32,7 +32,7 @@ The model pill.
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/50bb1548-fe7b-423c-8b08-a403a1193f55 |
+| https://github.com/user-attachments/assets/6eb5747c-7a7d-4546-b8d0-512a0464c96d |
 
 ## Settings
 
