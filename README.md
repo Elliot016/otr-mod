@@ -4,7 +4,7 @@
 
 # moonlight-claude-mods
 
-Add-ons for the Claude Code terminal that add panels, safety checks and pills (small clickable labels in a row above the prompt). One more mod styles the desktop app. They need Claude Code 2.1.287 or newer, and they are tested on Windows Terminal and macOS iTerm2.
+Add-ons for the Claude Code terminal: panels, safety checks and pills (small clickable labels in a row above the prompt). They need Claude Code 2.1.287 or newer, and they are tested on Windows Terminal and macOS iTerm2.
 
 ## Install
 
@@ -17,7 +17,7 @@ Not sure which ones you want? Start with mod-manager. It lists every mod, instal
 claude plugin install mod-manager --marketplace v-amorim/moonlight-claude-mods
 ```
 
-Then start Claude Code, and click Open setup on the card above the prompt, or the gear pill.
+It adds the marketplace too. Then start Claude Code, and click Open setup on the card above the prompt, or the gear pill.
 
 One mod, inside Claude Code, using any name from [the list of mods][doc-mods]:
 
@@ -27,10 +27,10 @@ One mod, inside Claude Code, using any name from [the list of mods][doc-mods]:
 /reload-plugins
 ```
 
-`/plugin install` asks where to install the mod. Keep Install for you (user scope) and press Enter, then press Esc to leave the plugin screen before `/reload-plugins`.
+`/plugin install` asks where to install the mod. Choose Install for you (user scope) and press Enter. Press Esc to close the plugin screen, then run `/reload-plugins`.
 
 <details>
-<summary>All of them at once, from your terminal</summary>
+<summary>All 13 mods at once, from your terminal</summary>
 
 1. Add this repo as a plugin marketplace:
 
@@ -52,21 +52,26 @@ One mod, inside Claude Code, using any name from [the list of mods][doc-mods]:
    'mod-menu','mod-manager','mod-skill-panel','mod-prompts','mod-file-tree','mod-transcript','mod-model-effort','mod-heads-up','mod-progress','mod-next-steps','mod-wrap-up','mod-blast-radius','mod-collision-guard' | ForEach-Object { claude plugin install "$_@claude-mods" --scope user }
    ```
 
-   Each install may print how many of the mod's settings are not set yet. You can ignore that: every setting has a default.
+   Ignore any note about settings not set yet: every setting has a default.
 
 3. Run `/reload-plugins` in an open session, or start a new one.
 
 </details>
 
-Each mod works alone. Add `mod-manager` too if you want the gear pill, which installs, turns on and off, and updates mods, and opens every mod's settings in one place.
-
-This marketplace doesn't update on its own. Claude Code turns auto-update on only for official marketplaces. mod-manager shows a card when mods have updates, or turn auto-update on in `/plugin`, under Marketplaces, then `claude-mods`.
+Each mod works alone, with or without mod-manager.
 
 ## See them in action
 
 | Every terminal mod in 133 seconds |
 | --- |
 | https://github.com/user-attachments/assets/d2fd0a54-b9ac-489b-830d-72833fa6e85c |
+
+<details>
+<summary>Narration</summary>
+
+This is Claude Code. Now with Moonlight. Moonlight mods add what the terminal never had: a row of panels, right under the prompt. Forget the skill names. Start typing and the right one finds you. Then Claude goes to work. A turn full of tool calls, and the answer still stays on top. Name a color, and you see it. Every file it touches shows up as it happens. Click one to replay it. Agents in the background report in, with their gates and live output. If something important slips past while you're busy, a quiet note catches it. A risky command stops before it runs, and Haiku explains, in plain words, what it would do. When the turn ends, the next step is one key away. Don't like one? Switch it off. Your session keeps going. And when the context fills up, the work carries over to a fresh session. Ten mods. Use one, or all of them. Find them on GitHub.
+
+</details>
 
 | Without mods | With mods |
 | --- | --- |
@@ -86,7 +91,7 @@ Click a name for its screenshots, features and settings.
 | [`mod-transcript`][doc-mod-transcript] | Chat bubbles for you and Claude, each finished turn folded to one line you can open, Bash commands in shell colors | Automatic |
 | [`mod-model-effort`][doc-mod-model-effort] | Shows the model and effort level; a click changes either | The model pill |
 | [`mod-heads-up`][doc-mod-heads-up] | Now and then flags one thing you should know but might miss, kept by turn in a panel | Automatic, or the Heads up pill |
-| [`mod-progress`][doc-mod-progress] | The main session, every subagent and every agent of a workflow run: model, effort, context fill, tokens, time, and gate progress when a skill writes a `GATES.md` under `~/.claude/gates/<repo>/<session id>`, plus the background shells and monitors each one started, with their live output | Progress pill |
+| [`mod-progress`][doc-mod-progress] | The main session, every subagent and every agent of a workflow run: model, effort, context fill, tokens, time and gate progress, plus the background shells and monitors each one started, with their live output | Progress pill |
 | [`mod-next-steps`][doc-mod-next-steps] | Suggests up to three next prompts after each turn | Automatic |
 | [`mod-wrap-up`][doc-mod-wrap-up] | Hands off to a fresh session, or fills `/compact` with what to keep | Wrap up pill |
 | [`mod-blast-radius`][doc-mod-blast-radius] | Holds a risky shell command until you choose Cancel or Run | Automatic |
@@ -167,19 +172,17 @@ The mods draw safe Unicode symbols, so they work in any terminal. With a Nerd Fo
 | --- | --- |
 | ![][img-icons-plain] | ![][img-icons-nerd] |
 
-With the font, pills are round and every tab has a real icon.
-
 A Nerd Font is a programming font with thousands of icons added to it. To use one:
 
 1. Download one from [nerdfonts.com][nerd-fonts], such as JetBrainsMono Nerd Font, and install it.
-2. Set it as your terminal's font. In Windows Terminal, that's Settings, then your profile, Appearance, Font face.
+2. Set it as your terminal's font. In Windows Terminal, that's Settings, then your profile, Appearance, Font face; other terminals keep it in their profile or font settings.
 3. Start a new Claude Code session.
 
-The mods find the font on their own in Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal and Konsole. In any other terminal, set the Icons setting from `auto` to `nerd`: for all mods at once from the gear pill, or per mod with `/mod-<name> settings`.
+The mods find the font on their own in Windows Terminal, iTerm2, VS Code, Ghostty, kitty, WezTerm, Alacritty, GNOME Terminal and Konsole. In any other terminal, set the Icons setting from `auto` to `nerd`: for all mods at once from the gear pill (mod-manager), or per mod with `/mod-<name> settings`.
 
 ## Each mod up close
 
-Click a mod to open its screenshots and video. Each block ends with a link to the mod's full page.
+Click a mod to open its video and a link to its full page.
 
 <!-- showcase:start -->
 
@@ -239,7 +242,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 </details>
 
 <details>
-<summary><b>mod-skill-panel</b>: Your skills grouped by color; click one to add it to the prompt.</summary>
+<summary><b>mod-skill-panel</b>: Your skills and agents in one panel; click one to add it to the prompt.</summary>
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
@@ -250,7 +253,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 </details>
 
 <details>
-<summary><b>mod-transcript</b>: Each finished turn folds to one line; open it to see every step, or copy a reply from its bottom edge, which marks what each choice takes. A reply that names hex colors shows them.</summary>
+<summary><b>mod-transcript</b>: Each finished turn folds to one line; open it to see every step. A button on a reply's edge copies it, and hex colors in a reply show as swatches.</summary>
 
 | Unfolding a turn |
 | --- |
@@ -336,16 +339,15 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Goal | How |
 | --- | --- |
-| Turn one off, or change its settings | The gear pill, or `/mod-<name> settings` |
+| Turn one off | The gear pill (mod-manager), or `claude plugin disable <name>@claude-mods` |
+| Change its settings | The gear pill, or `/mod-<name> settings` |
+| Remove one | `claude plugin uninstall <name>@claude-mods` |
 | Apply changes in an open session | `/reload-plugins` |
-| Update to the latest version | `claude plugin update <name>@claude-mods` |
+| Update to the latest version | `claude plugin update <name>@claude-mods`, or Update on the card mod-manager shows |
+| Update on their own | Auto-update is off for unofficial marketplaces; turn it on in `/plugin`, under Marketplaces, then `claude-mods` |
 | Try one mod without installing it | `git clone https://github.com/v-amorim/moonlight-claude-mods`, then `claude --plugin-dir ./moonlight-claude-mods/mod-transcript` |
 | Load the clone in every session | Add each mod folder of the clone to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `;` on Windows and `:` elsewhere |
 | Pass a slash command from Git Bash | `MSYS_NO_PATHCONV=1 claude "/mod-<name> settings"`, since Git Bash rewrites `/x` into a Windows path |
-
-## License and credits
-
-Made by [Vinicius Amorim][author] and released under the [MIT license][license]. Bug reports and pull requests are welcome, especially from Linux terminals, which are untested.
 
 ## Build your own
 
@@ -443,6 +445,10 @@ sequenceDiagram
 ```
 
 </details>
+
+## License and credits
+
+Made by [Vinicius Amorim][author] and released under the [MIT license][license]. Bug reports and pull requests are welcome, especially from Linux terminals, which are untested.
 
 [author]: https://github.com/v-amorim
 [license]: LICENSE
