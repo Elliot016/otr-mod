@@ -797,7 +797,12 @@ export const register: Register = (on, options) => {
           note = ''
           $.ui.invalidate('ui.render')
         }
-        if (message.id === 'fold-all' || message.id === 'unfold-all') foldAll($, viewOf(await hydrate($)), message.id === 'fold-all')
+        if (message.id === 'fold-all' || message.id === 'unfold-all') {
+          const isFolding = message.id === 'fold-all'
+          foldAll($, viewOf(await hydrate($)), isFolding)
+          // The click swaps the toggle for its opposite under the pointer, and the old one never posts its leave.
+          hoveredTip = isFolding ? { glyph: look.glyph.more, label: text.unfoldAll, text: text.unfoldAllTip } : { glyph: look.glyph.less, label: text.foldAll, text: text.foldAllTip }
+        }
         if (message.id === 'session-reveal') {
           const cwd = String((await $.session.cwd().catch(() => '')) ?? '').replace(/\\/g, '/')
           await openFolder($, cwd, cwd.split('/').pop() || text.rootFallback)

@@ -937,6 +937,17 @@ test('the fold toggle shows its tip in the pane footer either way, and draws no 
   await ui.unmount()
 })
 
+test('a click on the fold toggle swaps the footer tip to the control now under the pointer, with no move', async ($, on) => {
+  stubs(on)
+  await FOLDERS($)
+  const ui = await $.ui.mount(PANE)
+  await pointing(ui).pointer({ in: 'fold-all', type: 'move', x: 1, y: 0 })
+  await pointing(ui).pointer({ in: 'fold-all', type: 'down', button: 'left', x: 2, y: 0 })
+  expect(await ui.find({ type: 'Text', text: ' · opens every folder in the tree' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' · folds every folder in the tree' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('icons=nerd draws the fold toggle with the caret arrows', { options: { icons: 'nerd' } }, async ($, on) => {
   stubs(on)
   await FOLDERS($)
