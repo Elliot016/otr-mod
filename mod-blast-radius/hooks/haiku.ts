@@ -3,7 +3,7 @@
 import type { Report } from './preview'
 import text from './text'
 
-// What Haiku may change: the heading, the plain sentence, the undo line, one sentence per risky step, what it touches, and its verdict, which the rules can still overrule.
+// What Haiku may change: the heading, the sentence, the undo line, one sentence per risky step, what it touches, and a verdict the rules can overrule.
 export type Described = { verb: string; does: string; undo: string; steps: string[]; targets: string; verdict: 'ok' | 'check'; why: string }
 
 export const SYSTEM = [
@@ -54,7 +54,7 @@ const clean = (value: unknown, max: number) => {
   return line && line.length <= max ? line : null
 }
 
-// The answer, or null when any field is missing or too long. Steps are kept only when there is one per risky step; with any other count their order can't be trusted, so every step is empty and the rule's own sentences show.
+// The answer, or null when a field is missing or too long. Steps count only when there is one per risky step; otherwise their order can't be trusted, so they stay empty and the rule's own sentences show.
 export function parseDescribed(reply: string, stepCount: number): Described | null {
   const start = reply.indexOf('{')
   const end = reply.lastIndexOf('}')

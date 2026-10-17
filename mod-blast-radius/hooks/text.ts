@@ -26,7 +26,7 @@ export default {
   },
   "atLeast": "at least ",
   "orMore": " or more",
-  "noUndoRm": "No. Deleted files skip the Recycle Bin.",
+  "noUndoRm": "No. Deleted files skip the trash.",
   "noUndoGitLoss": "Uncommitted changes are lost for good.",
   "byLabel": {
     "git stash": { "verb": "Delete stashed changes", "run": "Delete stash", "does": "Removes work you saved with git stash. No undo.", "undo": "No. Stashed work is deleted for good." },
@@ -43,9 +43,9 @@ export default {
     "secret read": { "verb": "Show a secret on screen", "run": "Show the secret", "does": "Prints a file that can hold passwords or keys into this chat.", "undo": "The secret is exposed. Change it if it matters." },
     "credential read": { "verb": "Show a credential file", "run": "Show the file", "does": "Prints a file that holds access keys into this chat.", "undo": "The credentials are exposed. Change them if it matters." },
     "mv /dev/null": { "verb": "Throw files away", "run": "Throw files away", "does": "Moves files into /dev/null, which discards them.", "undo": "No. The files are gone." },
-    "xargs rm": { "verb": "Delete files piped in from another command", "run": "Delete piped files", "does": "Deletes whatever files the earlier command prints.", "undo": "No. Deleted files skip the Recycle Bin." },
-    "rm": { "verb": "Delete files", "run": "Delete files", "does": "Removes files for good.", "undo": "No. Deleted files skip the Recycle Bin." },
-    "rm -r": { "verb": "Delete folders", "run": "Delete folders", "does": "Removes folders and everything inside them. No undo.", "undo": "No. Deleted files skip the Recycle Bin." }
+    "xargs rm": { "verb": "Delete files piped in from another command", "run": "Delete piped files", "does": "Deletes whatever files the earlier command prints.", "undo": "No. Deleted files skip the trash." },
+    "rm": { "verb": "Delete files", "run": "Delete files", "does": "Removes files for good.", "undo": "No. Deleted files skip the trash." },
+    "rm -r": { "verb": "Delete folders", "run": "Delete folders", "does": "Removes folders and everything inside them. No undo.", "undo": "No. Deleted files skip the trash." }
   },
   "plain": {
     "deleteWhat": "Delete {what}",
@@ -104,7 +104,7 @@ export default {
     "gitForce": "It rewrites history or throws away your changes."
   },
   "source": {
-    "hook": "Built-in rule (from your destructive-command hook).",
+    "hook": "Built-in rule (core check).",
     "blast": "Built-in rule (from blast radius).",
     "rules": "Your rule, from ~/.claude/mods-data/mod-blast-radius/rules.json.",
     "error": "Blast radius could not read this command, so it holds it to be safe."
@@ -145,7 +145,6 @@ export default {
     "gitStash": "git stash drop/clear destroys local work permanently",
     "gitPushDelete": "git push --delete removes a remote branch or tag permanently",
     "makeDeploy": "Application or bundle deploy to production",
-    "makeMigrate": "Database migration or pipeline run in production",
     "bundleDestroy": "databricks bundle destroy removes every bundle resource from the environment",
     "deployProd": "Deploy or operation in production (gcloud/generic)",
     "gcloudDelete": "Destructive cloud operation (GCP bucket or resource deletion)",
@@ -187,7 +186,7 @@ export default {
     "targets": "Targets: {targets}",
     "andFolders": " and {folders}",
     "notFound": "{paths} not found.",
-    "recycleNote": "Deleted files skip the recycle bin.",
+    "recycleNote": "Deleted files skip the trash.",
     "deleteSummary": "delete {files}{folders} ({capped}{size})",
     "wouldBeDeleted": "Would be deleted",
     "wouldDelete": "Would delete",
@@ -305,5 +304,5 @@ export default {
   "tipTabDetails": "shows the command held right now",
   "tipTabSettings": "shows this mod's settings",
   "tipToast": {"label":"Dismiss","text":"hides this message"},
-  "settingTips": {"enabled":"risky Bash waits for your choice","explain":"Haiku words the card; off, no model call is made"}
+  "settingTips": {"enabled":"risky Bash waits for your choice","explain":"Haiku words the card; off, no call"}
 }

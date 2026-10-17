@@ -168,7 +168,6 @@ async function loadRules($: EngineInterface): Promise<Rules> {
 
 const judge = async ($: EngineInterface, value: unknown) => evaluate(value, (await loadRules($)).rules)
 
-// VS Code chat, -p and SDK sessions list no surface that draws a pane or a band.
 // Haiku rewrites the card's words once per command; the rule's own text shows until it answers, and stays when it fails.
 const describedCache = new Map<string, Described>()
 
@@ -204,19 +203,20 @@ async function describe($: EngineInterface, mine: Held) {
   $.ui.invalidate('ui.render')
 }
 
+// VS Code chat, -p and SDK sessions list no surface that draws a pane or a band.
 async function canDraw($: EngineInterface) {
   const surfaces = await $.session.surfaces().catch(() => ['terminal' as const])
   return surfaces.some(surface => surface === 'terminal' || surface === 'desktop')
 }
 
-// What Run approved, by tool_use_id, so the settings hook's own prompt is not asked a second time; command text only stands in when the check carries no id.
+// What Run approved, by tool_use_id, so a PreToolUse hook's ask is not repeated; command text only stands in when the check carries no id.
 const approved = new Set<string>()
 const approvedCommands = new Set<string>()
 
 const hasId = (id: unknown) => typeof id === 'string' && id !== ''
 const isApproved = (id: unknown, command: unknown) => (hasId(id) ? approved.has(id as string) : approvedCommands.has(String(command)))
 
-// The settings hook's ask, wherever the engine carries it; matched loosely because a prefix may precede its text.
+// A PreToolUse hook's ask with this reason, wherever the engine carries it; matched loosely because a prefix may precede its text.
 const isDestructiveAsk = (ask: unknown) => typeof ask === 'string' && ask.includes(DESTRUCTIVE_ASK)
 
 const isPaneOpen = async ($: EngineInterface, id: string) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
@@ -387,7 +387,6 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
   })
   const fill = cardFill(THEME.alert)
   // The entry draws the action; a Button nobody sees carries its digit, since only a Button takes a hotkey and a visible one inverts under the pointer.
-  // Each action is a numbered pill: its digit in a subpill before the label.
   const entry = (id: string, label: string, hotkey: string, tipLabel: string, tipBody: string, tipGlyph: string, color?: string) => (
     <Box key={`${id}-pad`} flexDirection="row">
       {pill({ Box, Text }, look.nerd, THEME.surface3, <Client key={id} module="./entry.tsx" height={1} props={{ id, label, isOpen: true, bg: THEME.surface3, subLead: hotkey, nerd: look.nerd, tip: { glyph: tipGlyph, label: tipLabel, text: tipBody }, ...(color ? { color } : {}), still }} />, `${id}-pill`, fill)}
@@ -486,7 +485,6 @@ async function holdRisky($: EngineInterface, e: { tool_use_id?: unknown }, next:
     if (held === mine) held = null
     hovered = null
     await $.state.set({ plugin: 'mod-blast-radius', key: 'holding' }, false).catch(() => undefined)
-    // The list pane belongs to the hold: when the hold ends it goes too.
     if (await isPaneOpen($, LIST_PANE).catch(() => false)) {
       await $.ui.close({ id: LIST_PANE }).catch(() => undefined)
       await $.state.set({ plugin: 'mod-blast-radius', key: 'pane' }, false).catch(() => undefined)
@@ -575,12 +573,11 @@ export const register: Register = (on, options) => {
     return outcome === 'run' ? next(e) : outcome
   })
 
-  // The settings hook's ask arrives here as the verdict; with no surface that draws, a hold cannot be answered, so the permission system asks.
+  // A PreToolUse hook's ask arrives here as the verdict; with no surface that draws, a hold cannot be answered, so the permission system asks.
   on('tool.check', { tool: 'Bash' }, async ($, e, next) => {
     const verdict = await next(e)
     const command = (e.input as { command?: unknown } | null)?.command
     const answered = isApproved(e.tool_use_id, command) && verdict.decision === 'ask' && isDestructiveAsk(verdict.reason)
-    // What Run approved is not asked again.
     if (answered) return { decision: 'allow' }
     if (!isEnabled || verdict.decision === 'deny' || (await canDraw($))) return verdict
     const { risk } = await judge($, command)
@@ -643,7 +640,6 @@ export const register: Register = (on, options) => {
       const { shown, rest } = stepsView(segmentsOf(command, rules))
       // Haiku's step sentences line up with the risky steps only, so a shown step maps to its place among them.
       const riskyIndex = (index: number) => shown.slice(0, index).filter(step => step.risk).length
-      // Risky steps and scripts get a row each; the harmless rest is one muted line.
       const does = [
         ...shown.map((step, index) => (
           <Box key={`does-${index}`} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
@@ -659,7 +655,7 @@ export const register: Register = (on, options) => {
       const fullShown = everyRow.slice(0, isFull ? FULL_ROWS_OPEN : FULL_ROWS)
       const moreLabel = isFull ? text.ui.showLess : fill(text.ui.moreLines, { n: hidden })
       const moreArrow = isFull ? look.glyph.less : look.glyph.more
-      // The expand standard: the arrow, then a muted label, on the section's fill, pinned right on the last text row.
+      // The expand standard: arrow, then a muted label, pinned right on the last text row.
       const moreControl = (
         <Client key="blast-more" module="./entry.tsx" width={[...moreLabel].length + 4} height={1} props={{ id: MORE, label: moreLabel, lead: moreArrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreArrow, label: moreLabel, text: isFull ? text.ui.tipShowLess : text.ui.tipShowAll } } satisfies EntryProps} />
       )
@@ -673,7 +669,7 @@ export const register: Register = (on, options) => {
           </Box>
         ) : line
       })
-      // One pill per role, in a wash of its color, as mod-file-tree's footer names its colors.
+      // One pill per role, in a wash of its color.
       const legend = LEGEND.map(span => {
         const hue = roleProps(span.role).color
         return pill({ Box, Text }, look.nerd, mix(hue, THEME.bg, WASH), <Text color={hue}>{look.nerd ? span.text : ` ${span.text} `}</Text>, `legend-${span.role}`, THEME.bg)
@@ -686,7 +682,6 @@ export const register: Register = (on, options) => {
         const color = NOT_LOST.includes(group.title) ? THEME.onSurface : THEME.alert
         touches.push(plainText(`touch-${index}-title`, group.title, THEME.muted, { bold: true }))
         if (group.entries) {
-          // Grouped by folder, in the order the preview found them.
           const byDir = new Map<string, { name: string; detail: string }[]>()
           for (const entry of group.entries) byDir.set(entry.dir, [...(byDir.get(entry.dir) ?? []), entry])
           let drawn = 0

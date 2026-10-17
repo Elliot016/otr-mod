@@ -5,7 +5,7 @@ import { expect, test } from 'claude-code/testing'
 import { capLines, segmentsOf, stepsView } from '../hooks/explain'
 import { CHECKS, classify, evaluate, compileRules, isSafeTempPath, stripTempSafeDeletes } from '../hooks/risk'
 
-// [command, kind or null for "runs untouched", the reason it is held with]. One block per check of the settings hook, in its order.
+// [command, kind or null for "runs untouched", the reason it is held with]. One block per check, in order.
 type Row = [string, string | null, string?]
 
 const ROOT = 'Recursive deletion of a root, home or parent directory'
@@ -34,26 +34,11 @@ const TABLE: Row[] = [
   ['rm -rf .github', 'rm', CRITICAL],
   ['rm -rf .claude', 'rm', CRITICAL],
   ['rm -rf .vscode', 'rm', CRITICAL],
-  ['rm -rf raw', 'rm', CRITICAL],
-  ['rm -rf staging', 'rm', CRITICAL],
-  ['rm -rf curated', 'rm', CRITICAL],
   ['rm -rf helpers', 'rm', CRITICAL],
-  ['rm -rf governance', 'rm', CRITICAL],
-  ['rm -rf dashboards', 'rm', CRITICAL],
-  ['rm -rf agent_tools', 'rm', CRITICAL],
   ['rm -rf resources', 'rm', CRITICAL],
   ['rm -rf tests/', 'rm', CRITICAL],
-  ['rm -rf scripts', 'rm', CRITICAL],
-  ['rm -rf fixtures', 'rm', CRITICAL],
-  ['rm -rf spaces', 'rm', CRITICAL],
-  ['rm -rf chatbot', 'rm', CRITICAL],
-  ['rm -rf warehouse', 'rm', CRITICAL],
-  ['rm -rf supabase', 'rm', CRITICAL],
-  ['rm -R bundle', 'rm', CRITICAL],
-  ['rm -rf pipeline', 'rm', CRITICAL],
-  ['rm -rf factory', 'rm', CRITICAL],
-  ['rm -rf linkedService', 'rm', CRITICAL],
-  ['rm --recursive dataset', 'rm', CRITICAL],
+  ['rm -R scripts', 'rm', CRITICAL],
+  ['rm --recursive fixtures', 'rm', CRITICAL],
   ['rm -rf srcs', 'rm', RECURSIVE],
   // recursive, then plain file deletion
   ['rm -rf build', 'rm', RECURSIVE],
@@ -192,16 +177,13 @@ const TABLE: Row[] = [
   ['git push origin --delete old', 'rule', 'git push --delete removes a remote branch or tag permanently'],
   ['git push --delete origin v1', 'rule', 'git push --delete removes a remote branch or tag permanently'],
   // production deploys and migrations
-  ['make deploy STAGE=prod', 'rule', 'Application or bundle deploy to production'],
+  ['make deploy TARGET=prod', 'rule', 'Application or bundle deploy to production'],
   ['make bundle-deploy TARGET=production', 'rule', 'Application or bundle deploy to production'],
   ['make app-deploy ENV=prod', 'rule', 'Application or bundle deploy to production'],
   ['make app-deploy', 'rule', 'Application or bundle deploy to production'],
   ['make deploy ENV=dev', null],
   ['make bundle-deploy TARGET=dev', null],
   ['make test', null],
-  ['make warehouse-migrate', 'rule', 'Database migration or pipeline run in production'],
-  ['make pipeline TARGET=prod', 'rule', 'Database migration or pipeline run in production'],
-  ['make pipeline TARGET=dev', null],
   // databricks bundle, deploy and gcloud
   ['databricks bundle destroy', 'rule', 'databricks bundle destroy removes every bundle resource from the environment'],
   ['databricks bundle deploy', null],
@@ -277,7 +259,7 @@ const TABLE: Row[] = [
   ['ls /tmp | xargs rm -f', 'rm', 'xargs rm (potential mass deletion)'],
   ['find . -name x | xargs rm -rf', 'rm', RECURSIVE],
   ['ls | xargs echo', null],
-  // the hook's last check: a code file truncated with >
+  // last check: a code file truncated with >
   ['echo x > main.py', 'redirect', REDIRECT],
   ['echo x > src/app.ts', 'redirect', REDIRECT],
   ['cat a > conf.yaml', 'redirect', REDIRECT],
@@ -289,7 +271,7 @@ const TABLE: Row[] = [
   ['cmd 2>/dev/null', null],
   ['cmd > /dev/null 2>&1', null],
   ['echo "a > b.py"', null],
-  // checks the hook has no word for: other redirects, mv, Windows deletion, cmdlets
+  // beyond the core checks: other redirects, mv, Windows deletion, cmdlets
   ['echo hi > out.txt', null],
   ['echo hi >> out.txt', null],
   ['for d in a b; do echo "x" > dir/$d-1.txt; done', null],
@@ -328,7 +310,7 @@ const TABLE: Row[] = [
   ['echo "rm -rf /"', null],
 ]
 
-test('hook port table: every check holds what the settings hook asks about, with its reason, and lets the rest through', () => {
+test('check table: every check holds what it should, with its reason, and lets the rest through', () => {
   for (const [command, kind, reason] of TABLE) {
     const risk = classify(command)
     expect(risk?.kind ?? null, `kind of ${command}`).toBe(kind)
@@ -336,13 +318,13 @@ test('hook port table: every check holds what the settings hook asks about, with
   }
 })
 
-test('every check of the hook is covered by a table row that names its reason', () => {
+test('every check is covered by a table row that names its reason', () => {
   const named = new Set(TABLE.map(([, , reason]) => reason))
   for (const check of CHECKS) expect(named.has(check.reason), check.reason).toBe(true)
-  expect(CHECKS).toHaveLength(23)
+  expect(CHECKS).toHaveLength(22)
 })
 
-test('the order of the hook decides: the sharper reason wins', () => {
+test('the order of the checks decides: the sharper reason wins', () => {
   expect(classify('rm -rf ~/src')!.reason).toBe(ROOT)
   expect(classify('rm -rf src')!.reason).toBe(CRITICAL)
   expect(classify('rm -rf build')!.reason).toBe(RECURSIVE)
@@ -352,14 +334,14 @@ test('the order of the hook decides: the sharper reason wins', () => {
   expect(classify('echo x > a.py; make app-deploy')!.reason).toBe('Application or bundle deploy to production')
 })
 
-test(';&| split a command into lines the way the hook does, so a later risky part is still found', () => {
+test(';&| split a command into lines, so a later risky part is still found', () => {
   expect(classify('ls && git push --force')!.reason).toBe(FORCE)
   expect(classify('ls || rm file')!.reason).toBe(FILE)
   expect(classify('true & git stash clear')!.reason).toBe('git stash drop/clear destroys local work permanently')
   expect(classify('ls;ls;git branch -D x')!.reason).toBe(GIT)
 })
 
-test('temp paths: the helper accepts the spellings the hook accepts and never ".."', () => {
+test('temp paths: the helper accepts the usual temp spellings and never ".."', () => {
   for (const path of ['/tmp/x', '/private/tmp/x', '$TMPDIR/x', '${TMPDIR}', '%TEMP%\\x', '$TMP/x', 'C:\\Users\\me\\AppData\\Local\\Temp\\x', 'c:/users/Me/appdata/local/temp/x', '/c/Users/me/AppData/Local/Temp/x']) {
     expect(isSafeTempPath(path), path).toBe(true)
   }
@@ -368,7 +350,7 @@ test('temp paths: the helper accepts the spellings the hook accepts and never ".
   }
 })
 
-test('stripping temp deletions keeps everything else and tracks cd like the hook', () => {
+test('stripping temp deletions keeps everything else and tracks cd', () => {
   expect(stripTempSafeDeletes('rm -rf /tmp/a\nls\nrm -rf build')).toBe('ls\nrm -rf build')
   expect(stripTempSafeDeletes('cd /tmp/w\nrm -rf out')).toBe('cd /tmp/w')
   expect(stripTempSafeDeletes('cd /tmp/w\ncd /home/me\nrm -rf out')).toBe('cd /tmp/w\ncd /home/me\nrm -rf out')
@@ -464,7 +446,7 @@ test('quotes and heredoc text do not split steps, and the harmless rest is one s
 
 test('a redirection is not a step and not a deletion target', () => {
   expect(segmentsOf('ls "$TEMP/x" 2>&1 | head -1 &>log').map(step => step.text)).toEqual(['ls "$TEMP/x" 2>&1', 'head -1 &>log'])
-  // The live case: a quoted temp folder with its errors sent to /dev/null is temp cleanup, as the hook treats it.
+  // The live case: a quoted temp folder with its errors sent to /dev/null is temp cleanup.
   expect(evaluate('date +%H:%M; rm -rf "$TEMP/pick-dividers" 2>/dev/null; ls "$TEMP/pick-dividers" 2>&1 | head -1').risk).toBeNull()
   expect(evaluate('rm -rf "$TEMP/x" ~/real 2>/dev/null').risk).not.toBeNull()
 })

@@ -232,7 +232,7 @@ test('other kinds speak plainly: overwrite, drop table, and a check with no prev
   const { seen } = world(on)
   expect(seen.ran).toBe(0)
   const cases: [string, RegExp, string][] = [
-    ['make deploy STAGE=prod', /Deploy to production/, ' Deploy to production '],
+    ['make deploy TARGET=prod', /Deploy to production/, ' Deploy to production '],
     ['psql -c "DROP TABLE users"', /Drop table users/, ' Drop table users '],
     ['git stash drop', /Delete stashed changes/, ' Delete stash '],
   ]
@@ -598,11 +598,11 @@ test('Details sections: each piece of the command, why it was held, what it touc
   expect(await textOf(pane, /^rm -r blast-radius-demo$/)).toBe('rm -r blast-radius-demo')
   expect(await textOf(pane, /^Deletes the folder/)).toBe('Deletes the folder blast-radius-demo and everything in it')
   expect(await textOf(pane, /^It deletes folders/)).toBeUndefined()
-  expect(await textOf(pane, /^Held by: /)).toBe('Held by: Built-in rule (from your destructive-command hook)')
+  expect(await textOf(pane, /^Held by: /)).toBe('Held by: Built-in rule (core check)')
   expect(await textOf(pane, /^Would delete/)).toBe('Would delete \u00b7 2 files \u00b7 300 B')
   expect(await textOf(pane, /^~\/blast-radius-demo\/$/)).toBe('~/blast-radius-demo/')
   expect(await textOf(pane, /b\.txt/)).toBe('  b.txt  200 B')
-  expect(await textOf(pane, /^No\. Deleted files skip/)).toBe('No. Deleted files skip the Recycle Bin.')
+  expect(await textOf(pane, /^No\. Deleted files skip/)).toBe('No. Deleted files skip the trash.')
   expect(await textOf(pane, new RegExp(`^cd ~ && rm -r`))).toBe(command)
   await pane.unmount()
   await click(band, 'blast-cancel')
@@ -743,7 +743,7 @@ test('a preview that cannot be computed still holds, and says so', async ($, on)
 })
 
 test('a check without a preview of its own holds and explains itself', async ($, on) => {
-  await withCard($, on, 'make deploy STAGE=prod', {}, async band => {
+  await withCard($, on, 'make deploy TARGET=prod', {}, async band => {
     expect(await textOf(band, /Deploy to production/)).toBe('\! Deploy to production')
     expect(await textOf(band, /real users/)).toBe('Puts a new version live for real users.')
   })
@@ -820,7 +820,7 @@ test('where a surface draws, tool.check leaves the verdict alone', async ($, on)
   expect(verdict.decision).toBe('allow')
 })
 
-test('one prompt: the settings hook\u2019s ask, carried as the tool.check verdict, is answered after Run and not before', async ($, on) => {
+test('one prompt: a hook\u2019s ask, carried as the tool.check verdict, is answered after Run and not before', async ($, on) => {
   const { seen } = world(on, { verdict: 'ask', verdictReason: ASK })
   const before = await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })
   expect(before.decision).toBe('ask')
@@ -836,8 +836,8 @@ test('one prompt: the settings hook\u2019s ask, carried as the tool.check verdic
   expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf elsewhere' } })).decision).toBe('ask')
 })
 
-test('one prompt: another ask, such as the secret guard, is never answered', async ($, on) => {
-  const { seen } = world(on, { verdict: 'ask', verdictReason: 'Blocked: retrieving the VALUE of a secret is not allowed.' })
+test('one prompt: an ask with any other reason is never answered', async ($, on) => {
+  const { seen } = world(on, { verdict: 'ask', verdictReason: 'Blocked: this command is not allowed.' })
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
@@ -906,7 +906,7 @@ test('/mod-blast-radius answers with what it holds', async ($, on) => {
   world(on)
   const result = await $.command.run({ command: 'mod-blast-radius', args: '' } as never)
 
-  expect(JSON.stringify(result)).toContain('Blast radius is on: 23 built-in checks')
+  expect(JSON.stringify(result)).toContain('Blast radius is on: 22 built-in checks')
 })
 
 test('the card: its title in bold alert, a check verdict with an alert mark and muted words', async ($, on) => {

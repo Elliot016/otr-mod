@@ -31,11 +31,11 @@ export type Risk = {
   dest?: string
   statements?: string[]
   pattern?: string
-  // A command a check of the hook port already covers: it only lends its operands to the preview.
+  // A built-in check already covers it: it only lends its operands to the preview.
   isPreviewOnly?: boolean
   // The matcher itself failed, so the command is held without a verdict.
   isError?: boolean
-  // Where the rule comes from: the settings hook, this mod's own extras (the default), the person's rules.json, or an error.
+  // Where the rule comes from: the built-in checks, this mod's own extras (the default), the person's rules.json, or an error.
   source?: 'hook' | 'blast' | 'rules' | 'error'
 }
 
@@ -357,7 +357,7 @@ const REASON: Record<RiskKind, string> = {
   rule: words.reasons.kindRule,
 }
 
-// ---- Port of block-destructive-with-askuser.py: temp-safe deletion logic ----
+// ---- Temp-safe deletion logic ----
 
 const TEMP_SAFE_PREFIXES = ['/tmp/', '/private/tmp/', '$TMPDIR', '${TMPDIR}']
 const WINDOWS_TEMP_VARS = ['%TEMP%', '%TMP%', '$TEMP', '${TEMP}', '$TMP', '${TMP}']
@@ -471,7 +471,7 @@ export function stripTempSafeDeletes(text: string) {
   return kept.join('\n')
 }
 
-// ---- Port of the hook's CHECKS, in the hook's order so the sharper reason wins ----
+// ---- Built-in CHECKS, in order so the sharper reason wins ----
 
 // cmd: the command word a check applies to; unmasked: it reads quoted operands, which are its targets.
 type Check = { label: string; pattern: RegExp; reason: string; source: 'normalized' | 'raw' | 'temp'; kinds: RiskKind[]; kind?: RiskKind; cmd?: RegExp; viaXargs?: boolean; unmasked?: boolean }
@@ -479,12 +479,7 @@ type Check = { label: string; pattern: RegExp; reason: string; source: 'normaliz
 // Directories that should never be recursively deleted, grouped as the hook groups them.
 const CRITICAL_DIR_NAMES = [
   String.raw`\.git`, String.raw`\.github`, String.raw`\.claude`, String.raw`\.vscode`,
-  'src', 'raw', 'staging', 'curated', 'helpers', 'governance', 'dashboards', 'agent_tools',
-  'resources', 'tests', 'scripts', 'fixtures',
-  'spaces', 'chatbot',
-  'warehouse', 'supabase',
-  'bundle',
-  'pipeline', 'factory', 'linkedService', 'dataset',
+  'src', 'helpers', 'resources', 'tests', 'scripts', 'fixtures',
 ]
 const CRITICAL_DIRS = CRITICAL_DIR_NAMES.join('|')
 
@@ -572,17 +567,8 @@ export const CHECKS: Check[] = [
     // Bare `make app-deploy` counts too, because its default target is unknown.
     label: 'make deploy',
     cmd: /^make$/,
-    pattern: /\bmake\s+(bundle-deploy|app-deploy|deploy)\b.*(STAGE|TARGET|ENV)=(prod|production)\b|\bmake\s+app-deploy\b/i,
+    pattern: /\bmake\s+(bundle-deploy|app-deploy|deploy)\b.*(TARGET|ENV)=(prod|production)\b|\bmake\s+app-deploy\b/i,
     reason: words.reasons.makeDeploy,
-    source: 'normalized',
-    kinds: [],
-  },
-  {
-    // warehouse-migrate changes the database schema, and pipeline TARGET=prod transforms prod data.
-    label: 'make migrate',
-    cmd: /^make$/,
-    pattern: /\bmake\s+warehouse-migrate\b|\bmake\s+pipeline\b.*\bTARGET=prod\b/i,
-    reason: words.reasons.makeMigrate,
     source: 'normalized',
     kinds: [],
   },
@@ -597,7 +583,7 @@ export const CHECKS: Check[] = [
   {
     label: 'deploy to prod',
     cmd: /deploy|^gcloud$/,
-    pattern: /\bdeploy.*--env[= ](prod|production)\b|\bgcloud.*--project[= ]acme-prod\b/i,
+    pattern: /\bdeploy.*--env[= ](prod|production)\b|\bgcloud.*--project[= ][\w-]*-prod\b/i,
     reason: words.reasons.deployProd,
     source: 'normalized',
     kinds: [],
@@ -686,10 +672,10 @@ export const CHECKS: Check[] = [
   },
 ]
 
-// The hook's last check: a code file the command truncates with a single >.
+// Last check: a code file the command truncates with a single >.
 const CODE_REDIRECT = /(?<!>)>(?!>)\s*([^>&|\s]+\.(py|js|ts|jsx|tsx|json|yaml|yml|toml|md|sh|sql))(?=\s|$)/
 
-// ---- Structural reading of the command, for the preview and for what the hook lacks ----
+// ---- Structural reading of the command, for the preview and for what the checks lack ----
 
 function structural(command: string, temp: TempContext, startDir: string | null, depth = 0): Risk | null {
   let dir = startDir
@@ -856,7 +842,7 @@ function innerOf(step: Step) {
   return undefined
 }
 
-// The first risky thing in a command line, or null: the hook's checks, then what shells run, then this mod's extras, then the person's rules.
+// The first risky thing in a command line, or null: the built-in checks, then what shells run, then this mod's extras, then the person's rules.
 export function classify(original: string, rules: UserRule[] = [], depth = 0): Risk | null {
   const command = stripHeredocs(original)
   // Temp logic reads whole lines, so `$(mktemp -d)` stays in one piece; the checks read the steps with substitutions split out.
@@ -894,7 +880,7 @@ export function classify(original: string, rules: UserRule[] = [], depth = 0): R
   }
 
   const code = CODE_REDIRECT.exec(maskQuoted(command))
-  // A target built from a shell variable or a glob is never held: it is not a file the hook could name.
+  // A target built from a shell variable or a glob is never held: it is not a file a check could name.
   if (code && !/[$`*?]/.test(code[1]!)) return { kind: 'redirect', label: 'redirect >', reason: REASON.redirect, targets: [code[1]!], args: [code[1]!], dir: found?.dir ?? null, source: 'hook' }
 
   if (found && !found.isPreviewOnly) return found
