@@ -2,11 +2,11 @@
 // Registers the mod: wires the band pill, pane, settings, stop line and loop tracking.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
-import { isTipMessage, tipText, type EntryMessage, type Tip, type TipMessage } from './entry'
-import { detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
-import { layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
+import { entryCells, isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
+import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
+import { foldTip, layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
 import { labelsOf, menuEntry, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
-import { addBg, appendTail, applyCall, applyStep, applyTask, bandSummary, bgIdOf, bgOutputOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, finishAgent, findBg, firstLine, gatesStemIn, hasRunningBg, isGatesPath, MAIN_GATES, outputRoom, pageOf, parseGates, resyncBg, settle, stemOf, TAIL_LINES, wipeBg, type AgentLite, type BgTask, type Gate, type Snap, type Tail, type Usage, type UsageLite } from './progress'
+import { addBg, appendTail, applyCall, applyStep, applyTask, bandSummary, bgIdOf, bgOutputOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, finishAgent, findBg, firstLine, gatesStemIn, HELD_LINES, hasRunningBg, isGatesPath, MAIN_GATES, outputRoom, pageOf, parseGates, resyncBg, settle, stemOf, TAIL_LINES, wipeBg, type AgentLite, type BgTask, type Gate, type Snap, type Tail, type Usage, type UsageLite } from './progress'
 import { stopLine, stopOf } from './stop'
 import { settingChoice, settingsBody } from './settings'
 import text from './text'
@@ -80,6 +80,9 @@ function loadLook($: EngineInterface) {
 }
 
 const PANE = 'progress'
+const OUTPUT_MORE = 'output-more'
+// Lines the open page hides while closed, kept from its last draw for the tip that replaces the control on a click.
+let outputHidden = 0
 const SETTINGS = 'progress-settings'
 
 let note = ''
@@ -249,6 +252,9 @@ async function saveBackground($: EngineInterface, current: Snap) {
 // The task whose page is open, kept in $.state so a reload keeps it; empty is the list.
 const BOOT_KEY = { plugin: 'mod-progress', key: 'booted' } as const
 const TASK_KEY = { plugin: 'mod-progress', key: 'task' } as const
+// The task whose page shows every held line instead of the last ones.
+const OUTPUT_KEY = { plugin: 'mod-progress', key: 'output-open' } as const
+const isOutputOpen = async ($: EngineInterface, id: string) => (await $.state.get(OUTPUT_KEY)).value === id
 const openTask = async ($: EngineInterface) => String((await $.state.get(TASK_KEY)).value ?? '')
 
 // What each task's output holds, read from its file; a reload reads it again from the start.
@@ -274,7 +280,7 @@ async function pumpOutput($: EngineInterface, id: string, path: string) {
   const whole = await $.fs.read(path).then(String, () => null)
   if (whole === null) return false
   const bytes = new TextEncoder().encode(whole)
-  tails.set(id, appendTail(tail, new TextDecoder().decode(bytes.subarray(tail.from)), bytes.length))
+  tails.set(id, appendTail(tail, new TextDecoder().decode(bytes.subarray(tail.from)), bytes.length, HELD_LINES))
   return true
 }
 
@@ -720,9 +726,30 @@ export const register: Register = (on, options) => {
     // The title line's tabs swap the list and the settings; the open tab does nothing.
     if (clicked?.type === 'menu-entry' && clicked.id === 'progress-settings' && !(await isOpen($, SETTINGS))) await toggleSettings($)
     if (clicked?.type === 'menu-entry' && clicked.id === 'progress-tab' && !(await isOpen($))) await togglePane($)
+    if (clicked?.type === 'menu-entry' && clicked.id === OUTPUT_MORE) {
+      const id = await openTask($)
+      const isOpening = !(await isOutputOpen($, id))
+      await $.state.set(OUTPUT_KEY, isOpening ? id : '')
+      // The click swaps the control for its opposite under the pointer, and the old one never posts its leave.
+      const label = isOpening ? text.showLess : fill(text.moreLines, { n: outputHidden })
+      paneTip = { type: 'tip', id: OUTPUT_MORE, glyph: isOpening ? look.glyph.less : look.glyph.more, label, text: isOpening ? text.tipShowLess : text.tipShowAll }
+      $.ui.invalidate('ui.render')
+    }
+    if (clicked?.type === 'menu-entry' && (clicked.id === 'fold-all' || clicked.id === 'unfold-all')) {
+      const current = await loadSnap($)
+      const isFolding = clicked.id === 'fold-all'
+      const { rows } = await currentRows($)
+      current.folded = isFolding ? rows.filter(each => each.tasks.length > 0).map(each => each.id) : []
+      await saveSnap($)
+      paneTip = isFolding ? { type: 'tip', id: 'unfold-all', glyph: look.glyph.more, label: text.unfoldAll, text: text.tipUnfoldAll } : { type: 'tip', id: 'fold-all', glyph: look.glyph.less, label: text.foldAll, text: text.tipFoldAll }
+      $.ui.invalidate('ui.render')
+    }
     if (clicked?.type === 'menu-entry' && clicked.id === 'progress-back') {
+      await $.state.set(OUTPUT_KEY, '')
       await $.state.set(TASK_KEY, '')
       await syncOutput($)
+      // Back gives way to the list without posting its leave.
+      paneTip = null
       $.ui.invalidate('ui.render')
     }
     const change = settingChoice(e.data)
@@ -740,9 +767,25 @@ export const register: Register = (on, options) => {
       await saveSnap($)
       $.ui.invalidate('ui.render')
     }
+    if (message?.type === 'fold') {
+      const current = await loadSnap($)
+      const isFolded = (current.folded ?? []).includes(message.id)
+      current.folded = isFolded ? (current.folded ?? []).filter(id => id !== message.id) : [...(current.folded ?? []), message.id]
+      await saveSnap($)
+      // The card keeps its toggle under the pointer, but its tip now says the opposite.
+      const row = (await currentRows($)).rows.find(each => each.id === message.id)
+      if (row) {
+        const tip = foldTip(row, !isFolded, !isFolded ? look.glyph.collapsed : look.glyph.expanded)
+        paneTip = { type: 'tip', id: 'loops', ...tip }
+      }
+      $.ui.invalidate('ui.render')
+    }
     if (message?.type === 'task') {
+      await $.state.set(OUTPUT_KEY, '')
       await $.state.set(TASK_KEY, message.id)
       await syncOutput($)
+      // The list that held the pointer gives way to the shell's page without posting its leave.
+      paneTip = null
       $.ui.invalidate('ui.render')
     }
 
@@ -777,7 +820,16 @@ export const register: Register = (on, options) => {
         const tail = tails.get(pageId)
         // Only as many of the held lines as the pane has room for, so the last one is never cut by the pane's edge.
         const room = Math.min(TAIL_LINES, outputRoom(e.props.scroll.bodyRows, e.props.bodyColumns, page.command, text.commandLead, FOOTER_ROWS))
-        const shown = tail ? [...tail.lines, ...(tail.partial ? [tail.partial] : [])].slice(-room) : []
+        const held = tail ? [...tail.lines, ...(tail.partial ? [tail.partial] : [])] : []
+        const hidden = Math.max(0, held.length - room)
+        const isFull = hidden > 0 && (await isOutputOpen($, pageId))
+        const shown = isFull ? held : held.slice(-room)
+        const moreLabel = isFull ? text.showLess : fill(text.moreLines, { n: hidden })
+        const moreArrow = isFull ? look.glyph.less : look.glyph.more
+        // The expand standard: the arrow in accent, then a muted label, pinned right on the last text row.
+        const moreProps = { id: OUTPUT_MORE, label: moreLabel, lead: moreArrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreArrow, label: moreLabel, text: isFull ? text.tipShowLess : text.tipShowAll } } satisfies EntryProps
+        const moreControl = <Client key="output-more" module="./entry.tsx" width={entryCells(moreProps)} height={1} props={moreProps} />
+        outputHidden = hidden
         const status = fill(text.taskStatus, { kind: page.kind === 'shell' ? text.taskShell : text.taskMonitor, sep: MARK.sep, status: page.status === 'running' ? text.taskRunning : page.status === 'done' ? text.taskDone : text.taskFailed, elapsed: page.elapsed })
         const back = [{ id: 'progress-back', label: text.paneTitle, icon: look.glyph.back, isOpen: false, tip: { glyph: look.glyph.back, label: text.paneTitle, text: text.tipBack } }]
         const empty = !page.output ? text.noOutputFile : unreadable.has(pageId) ? text.outputUnreadable : text.noOutputYet
@@ -796,7 +848,16 @@ export const register: Register = (on, options) => {
             ))}
             {section({ Box, Text }, look, 'task-output', '', '', (
               <Box key="task-output-lines" flexDirection="column">
-                {shown.length === 0 ? <Text key="output-empty" color={THEME.muted}>{empty}</Text> : shown.map((line, at) => <Text key={`output-${at}`} wrap="truncate-end" color={THEME.muted}>{line || ' '}</Text>)}
+                {shown.length === 0 ? <Text key="output-empty" color={THEME.muted}>{empty}</Text> : shown.map((line, at) => {
+                  const row = <Text key={`output-${at}`} wrap="truncate-end" color={THEME.muted}>{line || ' '}</Text>
+                  return hidden > 0 && at === shown.length - 1 ? (
+                    <Box key="output-last-row" flexDirection="row">
+                      <Box key="output-last-text" flexShrink={1}>{row}</Box>
+                      <Box key="output-last-gap" flexGrow={1} />
+                      <Box key="output-last-more" flexShrink={0}>{moreControl}</Box>
+                    </Box>
+                  ) : row
+                })}
               </Box>
             ))}
             <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />
@@ -819,7 +880,14 @@ export const register: Register = (on, options) => {
       if (shown.deny) $.ui.toast(shown.deny)
       $.ui.invalidate('ui.render')
     }
-    const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd, viewing: e.props.view.agentId ?? '' })) as LoopsProps
+    const props = JSON.parse(JSON.stringify({ rows, width, expanded: current.expanded, nerd: look.nerd, viewing: e.props.view.agentId ?? '', folded: current.folded ?? [] })) as LoopsProps
+    // One toggle for every card: Fold all while any list is open, Unfold all once all are folded.
+    const withTasks = rows.filter(each => each.tasks.length > 0)
+    const isAnyOpen = withTasks.some(each => !(current.folded ?? []).includes(each.id))
+    const foldLabel = isAnyOpen ? text.foldAll : text.unfoldAll
+    const foldArrow = isAnyOpen ? look.glyph.less : look.glyph.more
+    const foldProps = { id: isAnyOpen ? 'fold-all' : 'unfold-all', label: foldLabel, lead: foldArrow, leadColor: THEME.accent, isOpen: false, bg: THEME.bg, idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: foldArrow, label: foldLabel, text: isAnyOpen ? text.tipFoldAll : text.tipUnfoldAll } } satisfies EntryProps
+    const foldToggle = withTasks.length === 0 ? null : <Client key="fold-toggle" module="./entry.tsx" width={entryCells(foldProps)} height={1} props={foldProps} />
 
     return (
       <Box flexDirection="column" paddingX={1} minHeight={e.props.scroll.bodyRows} backgroundColor={THEME.bg}>
@@ -838,9 +906,14 @@ export const register: Register = (on, options) => {
           ) : null}
         </Box>
         {/* A blank row of the same height while no stop shows, so the list below does not move when one appears. */}
-        <Text key="stop-line" wrap="truncate-end" color={stop?.tone === 'alert' ? THEME.alert : THEME.warn}>{stop ? withMark(look, `${MARK.warn} ${stop.line}`) : ' '}</Text>
+        <Box key="stop-row" flexDirection="row" columnGap={1}>
+          <Box key="stop-text" flexGrow={1} flexShrink={1}>
+            <Text key="stop-line" wrap="truncate-end" color={stop?.tone === 'alert' ? THEME.alert : THEME.warn}>{stop ? withMark(look, `${MARK.warn} ${stop.line}`) : ' '}</Text>
+          </Box>
+          {foldToggle}
+        </Box>
         {section({ Box, Text }, look, 'loops', '', '', (
-          <Client key="loops" module="./loops.tsx" height={layoutLoops(rows, current.expanded).length} props={props} />
+          <Client key="loops" module="./loops.tsx" height={layoutLoops(rows, current.expanded, current.folded ?? []).length} props={props} />
         ))}
         {rows.length === 1 ? <Text color={THEME.muted}>{text.noAgents}</Text> : null}
         <Box key="footer-space" height={FOOTER_ROWS} flexShrink={0} />

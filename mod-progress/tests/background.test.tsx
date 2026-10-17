@@ -278,6 +278,20 @@ test('a click on a task line opens its page with the full command, and the back 
   await pane.unmount()
 })
 
+test('the task line\'s tip goes when its click opens the page, since the list never posts its leave', async ($, on) => {
+  stubEngine(on, [], { '/tmp/bg1.output': 'built\n' })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('sleep 30'))
+  const pane = await $.ui.mount(PANE)
+  await pointerOn(pane, { in: 'loops', type: 'move', x: 3, y: TASK_LINE, button: 'left' })
+  expect(await pane.find({ type: 'Text', text: /opens this task/ })).toBeDefined()
+  await pointerOn(pane, { in: 'loops', type: 'down', x: 3, y: TASK_LINE, button: 'left' })
+  await pane.redraw()
+  expect(await pane.find({ type: 'Text', text: /^shell · running/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /opens this task/ })).toBeUndefined()
+  await pane.unmount()
+})
+
 test('a click on the card outside the task line still toggles its gates, and the task line has its own tip', async ($, on) => {
   const { states } = stubEngine(on)
   await $.session.start({ cwd: '/w' } as never)
@@ -621,5 +635,195 @@ test('while an agent is in view the pill reads Back to main and presses ui.view 
   expect((await pane.find({ type: 'Button' }))?.text).toBe(' ↗ Back to main ')
   await pressOn(pane, 'view-switch')
   expect(views).toEqual([{}])
+  await pane.unmount()
+})
+
+// The drawn text in order: a hovered entry draws its label one letter per Text, so only the joined string reads whole.
+const drawnIn = async (mounted: unknown, key: string) => {
+  const json = JSON.stringify(await (mounted as { drawn: (target: { in: string }) => Promise<unknown> }).drawn({ in: key }))
+  return [...json.matchAll(/"children":\["((?:[^"\\]|\\.)*)"\]/g)].map(match => JSON.parse(`"${match[1]}"`) as string).join('')
+}
+const clickIn = (mounted: unknown, key: string, x = 1, y = 0) => pointerOn(mounted, { in: key, type: 'down', x, y, button: 'left' })
+const hoverIn = (mounted: unknown, key: string, x = 1, y = 0) => pointerOn(mounted, { in: key, type: 'move', x, y, button: 'left' })
+
+test('a page with more output than rows shows "N more lines", every line after a click, then Show less', async ($, on) => {
+  const { states } = stubEngine(on, [], { '/tmp/bg1.output': numbered(30) })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('sleep 30'))
+  const pane = await $.ui.mount(PANE)
+  await clickIn(pane, 'loops', 3, TASK_LINE)
+  await pane.redraw()
+  const lines = async () => (await pane.findAll({ type: 'Text', text: /^line \d+$/ })).map(node => node.text)
+  expect(await lines()).toHaveLength(20)
+  expect(await drawnIn(pane, 'output-more')).toContain('10 more lines')
+  expect(await drawnIn(pane, 'output-more')).toContain('▾')
+
+  await hoverIn(pane, 'output-more')
+  expect((await pane.find({ type: 'Text', text: /shows every line/ }))?.text).toContain('shows every line')
+
+  await clickIn(pane, 'output-more')
+  await pane.redraw()
+  expect(states.get('mod-progress.output-open')).toBe('bg1')
+  const open = await lines()
+  expect(open).toHaveLength(30)
+  expect(open[0]).toBe('line 1')
+  expect(await drawnIn(pane, 'output-more')).toContain('Show less')
+  expect(await drawnIn(pane, 'output-more')).toContain('▴')
+  // The click swapped the control, which never posts its leave: the footer already shows the new one.
+  expect((await pane.find({ type: 'Text', text: /shows the last lines only/ }))?.text).toContain('shows the last lines only')
+
+  await clickIn(pane, 'output-more')
+  await pane.redraw()
+  expect(await lines()).toHaveLength(20)
+  expect(await drawnIn(pane, 'output-more')).toContain('10 more lines')
+  expect((await pane.find({ type: 'Text', text: /shows every line/ }))?.text).toContain('shows every line')
+  await pane.unmount()
+})
+
+test('an open page keeps following new output, and a short output has no control', async ($, on) => {
+  const files: Record<string, string> = { '/tmp/bg1.output': numbered(30) }
+  const { clock } = stubEngine(on, [], files)
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('sleep 30'))
+  const pane = await $.ui.mount(PANE)
+  await clickIn(pane, 'loops', 3, TASK_LINE)
+  await pane.redraw()
+  await clickIn(pane, 'output-more')
+  files['/tmp/bg1.output'] += 'line 31\nline 32\n'
+  await clock.advance(1000)
+  await pane.redraw()
+  expect(await pane.findAll({ type: 'Text', text: /^line \d+$/ })).toHaveLength(32)
+  await clickIn(pane, 'progress-back', 2)
+  files['/tmp/bg1.output'] = numbered(3)
+  await clickIn(pane, 'loops', 3, TASK_LINE)
+  await pane.redraw()
+  expect(await pane.find({ key: 'output-more' })).toBeUndefined()
+  await pane.unmount()
+})
+
+const SHELLS = async ($: Parameters<Parameters<typeof test>[1]>[0], on: On) => {
+  const stub = stubEngine(on, [AGENT])
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('make main-job'))
+  await $.tool.call(shellCall('npm test', 'a1'))
+  await $.tool.call(shellCall('npm run lint', 'a1'))
+  return stub
+}
+// Main head 0, pills 1, task 2, gap 3, agent head 4, pills 5, tasks 6 and 7 while open.
+const MAIN_PILLS = 1
+const AGENT_PILLS = 5
+const TOGGLE_X = 70
+
+test('each card folds its shells to a count and unfolds them again, and the fold survives a redraw', async ($, on) => {
+  const { store } = await SHELLS($, on)
+  const pane = await $.ui.mount(PANE)
+  expect(await drawnIn(pane, 'loops')).toContain('npm test')
+  expect(await drawnIn(pane, 'loops')).toContain('2 shells')
+
+  await hoverIn(pane, 'loops', TOGGLE_X, AGENT_PILLS)
+  expect((await pane.find({ type: 'Text', text: /hides this agent's background tasks/ }))?.text).toContain('hides this agent')
+  await clickIn(pane, 'loops', TOGGLE_X, AGENT_PILLS)
+  await pane.redraw()
+  const folded = await drawnIn(pane, 'loops')
+  expect(folded).not.toContain('npm test')
+  expect(folded).toContain('2 shells')
+  expect(folded).toContain('make main-job')
+  expect(JSON.stringify([...store.values()])).toContain('"folded":["a1"]')
+  expect((await pane.find({ type: 'Text', text: /shows this agent's background tasks/ }))?.text).toContain('shows this agent')
+  // A click left of the toggle still opens the gates, not the fold.
+  await clickIn(pane, 'loops', 3, AGENT_PILLS)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'loops')).toContain('No gates for this agent yet')
+  expect(await drawnIn(pane, 'loops')).not.toContain('npm test')
+
+  await pane.redraw()
+  expect(await drawnIn(pane, 'loops')).not.toContain('npm test')
+  await clickIn(pane, 'loops', TOGGLE_X, AGENT_PILLS)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'loops')).toContain('npm test')
+  await pane.unmount()
+})
+
+test('Fold all and Unfold all flip every card, and the footer tip follows the swapped control without a pointer move', async ($, on) => {
+  await SHELLS($, on)
+  const pane = await $.ui.mount(PANE)
+  expect(await drawnIn(pane, 'fold-toggle')).toContain('Fold all')
+  await hoverIn(pane, 'fold-toggle')
+  expect((await pane.find({ type: 'Text', text: /folds every agent/ }))?.text).toContain('folds every agent')
+
+  await clickIn(pane, 'fold-toggle')
+  await pane.redraw()
+  const all = await drawnIn(pane, 'loops')
+  expect(all).not.toContain('make main-job')
+  expect(all).not.toContain('npm test')
+  expect(await drawnIn(pane, 'fold-toggle')).toContain('Unfold all')
+  expect((await pane.find({ type: 'Text', text: /shows every agent's background tasks/ }))?.text).toContain('shows every agent')
+  expect(await pane.find({ type: 'Text', text: /folds every agent/ })).toBeUndefined()
+
+  await clickIn(pane, 'fold-toggle')
+  await pane.redraw()
+  expect(await drawnIn(pane, 'loops')).toContain('make main-job')
+  expect(await drawnIn(pane, 'loops')).toContain('npm run lint')
+  expect(await drawnIn(pane, 'fold-toggle')).toContain('Fold all')
+  expect((await pane.find({ type: 'Text', text: /folds every agent/ }))?.text).toContain('folds every agent')
+
+  // Folding each card by hand flips the toggle once the last open list closes.
+  await clickIn(pane, 'loops', TOGGLE_X, AGENT_PILLS)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'fold-toggle')).toContain('Fold all')
+  await clickIn(pane, 'loops', TOGGLE_X, MAIN_PILLS)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'fold-toggle')).toContain('Unfold all')
+  await pane.unmount()
+})
+
+test('no fold toggle while no card has a shell', async ($, on) => {
+  stubEngine(on, [AGENT])
+  await $.session.start({ cwd: '/w' } as never)
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ key: 'fold-toggle' })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('icons=nerd draws the Nerd arrows on the output control, the fold toggle and the card toggle', { options: { icons: 'nerd' } }, async ($, on) => {
+  stubEngine(on, [AGENT], { '/tmp/bg1.output': numbered(30) })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('make main-job'))
+  const pane = await $.ui.mount(PANE)
+  expect(await drawnIn(pane, 'fold-toggle')).toContain(String.fromCodePoint(0xf0d8))
+  expect(await drawnIn(pane, 'loops')).toContain(String.fromCodePoint(0xeab4))
+  await clickIn(pane, 'loops', TOGGLE_X, MAIN_PILLS)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'fold-toggle')).toContain(String.fromCodePoint(0xf0d7))
+  expect(await drawnIn(pane, 'loops')).toContain(String.fromCodePoint(0xeab6))
+  await clickIn(pane, 'loops', TOGGLE_X, MAIN_PILLS)
+  await clickIn(pane, 'loops', 3, TASK_LINE)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'output-more')).toContain(String.fromCodePoint(0xf0d7))
+  await clickIn(pane, 'output-more')
+  await pane.redraw()
+  expect(await drawnIn(pane, 'output-more')).toContain(String.fromCodePoint(0xf0d8))
+  await pane.unmount()
+})
+
+test('icons=safe draws plain arrows on the output control, the fold toggle and the card toggle', { options: { icons: 'safe' } }, async ($, on) => {
+  stubEngine(on, [AGENT], { '/tmp/bg1.output': numbered(30) })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('make main-job'))
+  const pane = await $.ui.mount(PANE)
+  expect(await drawnIn(pane, 'fold-toggle')).toContain('▴')
+  expect(await drawnIn(pane, 'loops')).toContain('▾ 1 shell')
+  await clickIn(pane, 'loops', TOGGLE_X, MAIN_PILLS)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'fold-toggle')).toContain('▾')
+  expect(await drawnIn(pane, 'loops')).toContain('▸')
+  await clickIn(pane, 'loops', TOGGLE_X, MAIN_PILLS)
+  await clickIn(pane, 'loops', 3, TASK_LINE)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'output-more')).toContain('▾')
+  expect(await drawnIn(pane, 'output-more')).toContain('10 more lines')
+  await clickIn(pane, 'output-more')
+  await pane.redraw()
+  expect(await drawnIn(pane, 'output-more')).toContain('▴')
   await pane.unmount()
 })

@@ -10,18 +10,28 @@ import style from './style'
 import text from './text'
 import { CAPS, decodeAll, fill, MARK, THEME } from './theme'
 
-export type LoopsProps = { rows: Row[]; width: number; expanded: string; nerd: boolean; viewing: string }
-export type LoopsMessage = { type: 'toggle'; id: string } | { type: 'task'; id: string }
+export type LoopsProps = { rows: Row[]; width: number; expanded: string; nerd: boolean; viewing: string; folded?: string[] }
+export type LoopsMessage = { type: 'toggle'; id: string } | { type: 'task'; id: string } | { type: 'fold'; id: string }
+
+// The count a folded card shows, and the toggle's label on an open one: shells when every task is one.
+export const tasksLabel = (tasks: Row['tasks']) => {
+  const isShells = tasks.every(task => task.kind === 'shell')
+  const n = tasks.length
+  return n === 1 ? (isShells ? text.shellOne : text.taskOne) : fill(isShells ? text.shellMany : text.taskMany, { n })
+}
+
+// The tip of a card's task toggle.
+export const foldTip = (row: Row, isFolded: boolean, glyph: string) => ({ glyph, label: tasksLabel(row.tasks), text: isFolded ? text.tipFoldShut : text.tipFoldOpen })
 
 type Line = { kind: 'head' | 'pills' | 'task' | 'gate' | 'empty' | 'gap' | 'run'; loop: number; gate?: number; task?: number; run?: string }
 
 // The rows top to bottom: a line naming the workflow run where its agents start, then head, pills, a line per background task, the gates of the open loop, and a gap before the next card.
-export function layoutLoops(rows: Row[], expanded: string) {
+export function layoutLoops(rows: Row[], expanded: string, folded: string[] = []) {
   const lines: Line[] = []
   rows.forEach((row, loop) => {
     if (row.run && row.run !== rows[loop - 1]?.run) lines.push({ kind: 'run', loop: -1, run: row.run })
     lines.push({ kind: 'head', loop }, { kind: 'pills', loop })
-    row.tasks.forEach((_, task) => lines.push({ kind: 'task', loop, task }))
+    if (!folded.includes(row.id)) row.tasks.forEach((_, task) => lines.push({ kind: 'task', loop, task }))
     if (row.id === expanded) {
       if (row.gates.length === 0) lines.push({ kind: 'empty', loop })
       row.gates.forEach((_, gate) => lines.push({ kind: 'gate', loop, gate }))
@@ -37,30 +47,42 @@ const LEVELS = style.levels as Record<string, { glyph: string; color: string }>
 const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
   const { Box, Text } = surface.elements
   const { rows, width, expanded, nerd, viewing } = props
+  const folded = props.folded ?? []
   const look = lookFor(nerd)
   const own = decodeAll(marks.glyphs)[nerd ? 'nerd' : 'safe']
-  const lines = layoutLoops(rows, expanded)
-  // The state is the line under the pointer: a task line is its own target, any other line stands for its card.
-  const hoveredAt = surface.state ?? -1
+  const lines = layoutLoops(rows, expanded, folded)
+  // The state is the line under the pointer, times two, plus one over a card's task toggle: a task line is its own target, any other line stands for its card.
+  const hoveredAt = surface.state !== undefined && surface.state >= 0 ? Math.floor(surface.state / 2) : -1
+  const isFoldHover = surface.state !== undefined && surface.state >= 0 && surface.state % 2 === 1
   const taskOf = (at: number) => {
     const line = lines[at]
     return line?.kind === 'task' ? rows[line.loop]?.tasks[line.task!] : undefined
   }
-  const targetOf = (at: number) => (taskOf(at) ? `task:${taskOf(at)!.id}` : `loop:${lines[at]?.loop ?? -1}`)
+  const foldText = (row: Row) => `${folded.includes(row.id) ? look.glyph.collapsed : look.glyph.expanded} ${tasksLabel(row.tasks)} `
+  // The toggle sits at the right end of the card's second row, when the card has background tasks.
+  const isFoldAt = (at: number, x: number) => {
+    const line = lines[at]
+    const row = line?.kind === 'pills' ? rows[line.loop] : undefined
+    return row !== undefined && row.tasks.length > 0 && x >= width - [...foldText(row)].length
+  }
+  const targetOf = (at: number, isFold: boolean) => (taskOf(at) ? `task:${taskOf(at)!.id}` : `${isFold ? 'fold' : 'loop'}:${lines[at]?.loop ?? -1}`)
 
   surface.onPointer(event => {
     const at = event.type === 'leave' || (lines[event.y]?.loop ?? -1) < 0 ? -1 : event.y
-    if (at !== hoveredAt) {
-      surface.setState(at)
-      if (targetOf(at) !== targetOf(hoveredAt)) {
+    const isFold = at >= 0 && isFoldAt(at, event.x)
+    const next = at < 0 ? -1 : at * 2 + (isFold ? 1 : 0)
+    if (next !== (surface.state ?? -1)) {
+      surface.setState(next)
+      if (targetOf(at, isFold) !== targetOf(hoveredAt, isFoldHover)) {
         const task = taskOf(at)
         const row = rows[lines[at]?.loop ?? -1]
-        postTip(surface, 'loops', task ? { glyph: task.kind === 'shell' ? look.glyph.icon.Bash ?? look.glyph.expanded : look.glyph.expanded, label: task.kind === 'shell' ? text.taskShell : text.taskMonitor, text: text.tipTask } : row ? { glyph: row.id === expanded ? look.glyph.expanded : look.glyph.collapsed, label: row.name, text: text.tipLoop } : null)
+        postTip(surface, 'loops', task ? { glyph: task.kind === 'shell' ? look.glyph.icon.Bash ?? look.glyph.expanded : look.glyph.expanded, label: task.kind === 'shell' ? text.taskShell : text.taskMonitor, text: text.tipTask } : row && isFold ? foldTip(row, folded.includes(row.id), folded.includes(row.id) ? look.glyph.collapsed : look.glyph.expanded) : row ? { glyph: row.id === expanded ? look.glyph.expanded : look.glyph.collapsed, label: row.name, text: text.tipLoop } : null)
       }
     }
     if (event.type !== 'down' || event.button !== 'left' || at < 0) return
     const task = taskOf(at)
     if (task) surface.post({ type: 'task', id: task.id } satisfies LoopsMessage)
+    else if (isFold) surface.post({ type: 'fold', id: rows[lines[at]!.loop]!.id } satisfies LoopsMessage)
     else surface.post({ type: 'toggle', id: rows[lines[at]!.loop]!.id } satisfies LoopsMessage)
   })
 
@@ -121,7 +143,9 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
       const cells = gates.done > 0 && gates.done < gates.total ? Math.min(marks.barCells - 1, Math.max(1, filled)) : filled
       const doneColor = gates.done === gates.total ? THEME.ok : THEME.secondary
       const gauge = row.percent === undefined ? 0 : Math.round((row.percent / 100) * marks.gaugeCells)
+      const isFoldOver = isHover && isFoldHover
       return frame(
+        <Box key={`${key}-row`} flexDirection="row" flexGrow={1}>
         <Box key={`${key}-body`} flexDirection="row" columnGap={1} paddingLeft={2}>
           {row.model ? pill(`${key}-model`, on, (
             <Text color={info.hue} bold>
@@ -139,6 +163,16 @@ const Loops: ClientModule<LoopsProps, number> = (props, surface) => {
               <Text color={THEME.muted}>{` ${fill(text.gatesCount, { done: gates.done, total: gates.total })}${row.isPhaseDone ? ` ${MARK.sep} ${text.phaseDone}` : ''}`}</Text>
             </Text>
           )) : null}
+        </Box>
+        <Box key={`${key}-gap`} flexGrow={1} />
+        {row.tasks.length === 0 ? null : (
+          <Box key={`${key}-fold`} flexShrink={0}>
+            <Text>
+              <Text color={THEME.accent}>{folded.includes(row.id) ? look.glyph.collapsed : look.glyph.expanded}</Text>
+              <Text color={isFoldOver ? THEME.accent : THEME.muted}>{` ${tasksLabel(row.tasks)} `}</Text>
+            </Text>
+          </Box>
+        )}
         </Box>,
       )
     }

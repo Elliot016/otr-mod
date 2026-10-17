@@ -2,7 +2,7 @@
 // Declares the mod's plugin state type and the menu mod's shared state.
 declare module 'claude-code' {
   interface PluginState {
-    'mod-progress': { pane: boolean; task: string; booted: boolean }
+    'mod-progress': { pane: boolean; task: string; 'output-open': string; booted: boolean }
     'mod-menu': { hidden: boolean; labels: 'always' | 'never'; nerd: boolean }
   }
 }

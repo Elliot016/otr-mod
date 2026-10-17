@@ -31,6 +31,8 @@ export type Snap = {
   tasks: Task[]
   gates: Record<string, Gate[]>
   expanded: string
+  // The cards whose background tasks are folded to their count; the rest show them.
+  folded?: string[]
   stop?: Stop
 }
 
@@ -245,6 +247,8 @@ export const findBg = (snap: Snap, id: string) => [snap.main, ...Object.values(s
 
 // The lines a task's output keeps, and what it holds of a line still being written.
 export const TAIL_LINES = 20
+// What a page holds while it is open: every line up to this many, the last ones when the output is longer.
+export const HELD_LINES = 400
 export type Tail = { from: number; lines: string[]; partial: string }
 
 // Output is the program's own text: escapes and control characters never reach the screen.
@@ -257,10 +261,10 @@ export const stripControl = (value: string) =>
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
 
 // Adds what was written since the last read, keeping the last TAIL_LINES lines; `size` is the file's length in bytes.
-export function appendTail(tail: Tail, chunk: string, size: number): Tail {
+export function appendTail(tail: Tail, chunk: string, size: number, keep = TAIL_LINES): Tail {
   const parts = (tail.partial + chunk.replace(/\r\n?/g, '\n')).split('\n')
   const partial = parts.pop() ?? ''
-  const lines = [...tail.lines, ...parts.map(stripControl)].slice(-TAIL_LINES)
+  const lines = [...tail.lines, ...parts.map(stripControl)].slice(-keep)
   return { from: size, lines, partial: stripControl(partial) }
 }
 
