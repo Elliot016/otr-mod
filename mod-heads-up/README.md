@@ -1,5 +1,5 @@
 <!-- mod-heads-up / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-heads-up
 
 Part of [moonlight-claude-mods][doc-root].
@@ -32,7 +32,7 @@ Automatic, or the Heads up pill.
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/e77e957d-8ca1-478c-a1ed-11b9c0da11b9 |
+| https://github.com/user-attachments/assets/b653d9d1-0811-4c33-8778-b5328cdd09ad |
 
 ## Features
 
@@ -68,5 +68,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-heads-up-card]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/heads-up-card.png
-[img-heads-up-note]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/heads-up-note.png
+[img-heads-up-card]: https://github.com/user-attachments/assets/c0d4cca6-7640-4446-a2ad-8bb71bb133ec
+[img-heads-up-note]: https://github.com/user-attachments/assets/e39e05c7-4cf7-4064-9593-697591c9d51f

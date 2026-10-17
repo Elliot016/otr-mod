@@ -1,5 +1,5 @@
 <!-- mod-file-tree / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-file-tree
 
 Part of [moonlight-claude-mods][doc-root].
@@ -32,7 +32,7 @@ Files pill.
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/3dcc0840-9944-43c7-a07e-609d37bb05bf |
+| https://github.com/user-attachments/assets/53e4b9d1-2516-4cd3-93ef-e13fb4023c07 |
 
 ## Features
 
@@ -62,5 +62,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-file-tree-folded]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/file-tree-folded.png
-[img-file-tree-panel]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/file-tree-panel.png
+[img-file-tree-folded]: https://github.com/user-attachments/assets/e388f6c3-8136-4659-99f9-d9881189f0a4
+[img-file-tree-panel]: https://github.com/user-attachments/assets/74e1e383-95a7-44a5-9df7-b664421e6a01

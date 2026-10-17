@@ -1,5 +1,5 @@
 <!-- mod-next-steps / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-next-steps
 
 Part of [moonlight-claude-mods][doc-root].
@@ -32,7 +32,7 @@ Automatic.
 
 | Picking one by its digit |
 | --- |
-| https://github.com/user-attachments/assets/a7ac7b78-b812-4c20-9e30-3bc8dba54b8b |
+| https://github.com/user-attachments/assets/dabc4de8-e3b5-4f00-9239-75c9f95f6722 |
 
 ## Features
 
@@ -69,4 +69,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-next-steps]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/next-steps.png
+[img-next-steps]: https://github.com/user-attachments/assets/a8048dee-3c8c-4b69-bf02-b93510a49244

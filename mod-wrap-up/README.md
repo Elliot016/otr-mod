@@ -1,5 +1,5 @@
 <!-- mod-wrap-up / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-wrap-up
 
 Part of [moonlight-claude-mods][doc-root].
@@ -36,11 +36,11 @@ Wrap up pill.
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/2543e5ef-f24c-4871-b5c0-e7f66977d4ac |
+| https://github.com/user-attachments/assets/f17be850-8682-437d-96af-fb1d182d65bc |
 
 | Auto handoff at the mark: countdown, clear, carry on |
 | --- |
-| https://github.com/user-attachments/assets/746ef30c-7f53-4274-aa4c-07e6ec06b883 |
+| https://github.com/user-attachments/assets/94811bdb-bb80-4f72-a00e-f27605cca671 |
 
 ## Features
 
@@ -94,7 +94,7 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-wrap-up-card]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/wrap-up-card.png
-[img-wrap-up-carried]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/wrap-up-carried.png
-[img-wrap-up-compact]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/wrap-up-compact.png
-[img-wrap-up-countdown]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/wrap-up-countdown.png
+[img-wrap-up-card]: https://github.com/user-attachments/assets/a9fb302d-1d7e-48f9-a7a0-bee84a8255a2
+[img-wrap-up-carried]: https://github.com/user-attachments/assets/6d7aa59d-dfed-4e46-b2b3-83c02cd46e4f
+[img-wrap-up-compact]: https://github.com/user-attachments/assets/1d307f51-b3bb-4473-8e8e-2379c778b77b
+[img-wrap-up-countdown]: https://github.com/user-attachments/assets/0dcea46f-6634-46f2-a7a4-fd4f28ff139a

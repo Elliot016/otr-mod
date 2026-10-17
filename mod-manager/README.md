@@ -1,5 +1,5 @@
 <!-- mod-manager / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-manager
 
 Part of [moonlight-claude-mods][doc-root].
@@ -32,7 +32,7 @@ The gear pill, or `/mod-manager`.
 
 | The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/e9ebf31a-a612-4f14-8946-1f8439d46391 |
+| https://github.com/user-attachments/assets/66cc8104-9682-490d-ad7f-ce29f81a8dbe |
 
 ## Settings
 
@@ -53,6 +53,6 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-manager-icons-auto]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/manager-icons-auto.png
-[img-manager-icons-plain]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/manager-icons-plain.png
-[img-manager-page]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/manager-page.png
+[img-manager-icons-auto]: https://github.com/user-attachments/assets/d06fa8a8-771d-4ea5-b465-ec2ce057a97d
+[img-manager-icons-plain]: https://github.com/user-attachments/assets/df7d1b19-28ab-4858-ad8c-24d3382a7a30
+[img-manager-page]: https://github.com/user-attachments/assets/af05d156-c54e-4340-9216-bbcc85d08025

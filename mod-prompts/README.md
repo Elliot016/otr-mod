@@ -1,5 +1,5 @@
 <!-- mod-prompts / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-prompts
 
 Part of [moonlight-claude-mods][doc-root].
@@ -28,7 +28,7 @@ Prompts pill.
 
 | Pick a prompt to read it |
 | --- |
-| https://github.com/user-attachments/assets/c62c8e6b-5549-46c9-bd3c-6aa85bceee93 |
+| https://github.com/user-attachments/assets/fdd6f36d-a5c7-417c-b17b-2a6310212831 |
 
 ## Settings
 

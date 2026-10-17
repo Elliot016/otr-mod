@@ -1,5 +1,5 @@
 <!-- mod-progress / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-progress
 
 Part of [moonlight-claude-mods][doc-root].
@@ -36,7 +36,7 @@ Progress pill.
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/a68525f6-40eb-4cbf-b048-8054ab5e81b9 |
+| https://github.com/user-attachments/assets/84e2d72a-126f-4925-8e3f-a8b8cd51fce6 |
 
 ## Features
 
@@ -62,7 +62,7 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-progress-panel]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/progress-panel.png
-[img-progress-pill]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/progress-pill.png
-[img-progress-shell]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/progress-shell.png
-[img-progress-transcript]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/progress-transcript.png
+[img-progress-panel]: https://github.com/user-attachments/assets/febe4fc8-9033-46e7-a78d-c60bf08aaf7c
+[img-progress-pill]: https://github.com/user-attachments/assets/83483bbf-fc0f-4ed7-aa68-247742995ba3
+[img-progress-shell]: https://github.com/user-attachments/assets/48c4e821-7f67-482d-af75-a605dbad5df6
+[img-progress-transcript]: https://github.com/user-attachments/assets/f2a9bcd3-568c-44aa-bac0-12decf9e45dc

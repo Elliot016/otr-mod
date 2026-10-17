@@ -1,5 +1,5 @@
 <!-- mod-transcript / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-transcript
 
 Part of [moonlight-claude-mods][doc-root].
@@ -36,7 +36,7 @@ Automatic.
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/940b7369-106c-4916-9121-4b791948e59d |
+| https://github.com/user-attachments/assets/9a20d253-2ff1-4861-9458-f3d07140bb46 |
 
 ## Features
 
@@ -70,7 +70,7 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-transcript-colors]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/transcript-colors.png
-[img-transcript-copy]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/transcript-copy.png
-[img-transcript-folded]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/transcript-folded.png
-[img-transcript-open]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/transcript-open.png
+[img-transcript-colors]: https://github.com/user-attachments/assets/7738419f-c383-4e5a-a878-6953954261ba
+[img-transcript-copy]: https://github.com/user-attachments/assets/92e65258-cc8a-4ec7-82fd-4c4ab9786106
+[img-transcript-folded]: https://github.com/user-attachments/assets/4eca75cd-23d1-4f43-b686-7347c56618bb
+[img-transcript-open]: https://github.com/user-attachments/assets/9d847af9-de5b-4589-8eea-b6da84f1815b

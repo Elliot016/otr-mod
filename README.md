@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="showcase/logo.png" alt="" width="640">
+  <img src="https://github.com/user-attachments/assets/062ff4d1-b9b3-4d92-8556-b64c8b80520f" alt="" width="640">
 </div>
 
 # moonlight-claude-mods
@@ -64,7 +64,7 @@ Each mod works alone, with or without mod-manager.
 
 | Every terminal mod in 133 seconds |
 | --- |
-| https://github.com/user-attachments/assets/78c68f3a-735e-426e-8951-63c61826dea8 |
+| https://github.com/user-attachments/assets/710df297-f17a-430b-b87f-df5942663260 |
 
 <details>
 <summary>Narration</summary>
@@ -191,7 +191,7 @@ Click a mod to open its video and a link to its full page.
 
 | Hovering an entry shows its tip |
 | --- |
-| https://github.com/user-attachments/assets/2e6b876d-4b02-4930-8eef-05ec66a85bc7 |
+| https://github.com/user-attachments/assets/3c7094dd-d77f-4651-b6c0-22cfdc623bc2 |
 
 [Full page][doc-mod-menu]
 
@@ -202,7 +202,7 @@ Click a mod to open its video and a link to its full page.
 
 | The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/e9ebf31a-a612-4f14-8946-1f8439d46391 |
+| https://github.com/user-attachments/assets/66cc8104-9682-490d-ad7f-ce29f81a8dbe |
 
 [Full page][doc-mod-manager]
 
@@ -213,7 +213,7 @@ Click a mod to open its video and a link to its full page.
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/3dcc0840-9944-43c7-a07e-609d37bb05bf |
+| https://github.com/user-attachments/assets/53e4b9d1-2516-4cd3-93ef-e13fb4023c07 |
 
 [Full page][doc-mod-file-tree]
 
@@ -224,7 +224,7 @@ Click a mod to open its video and a link to its full page.
 
 | Picking one by its digit |
 | --- |
-| https://github.com/user-attachments/assets/a7ac7b78-b812-4c20-9e30-3bc8dba54b8b |
+| https://github.com/user-attachments/assets/dabc4de8-e3b5-4f00-9239-75c9f95f6722 |
 
 [Full page][doc-mod-next-steps]
 
@@ -235,7 +235,7 @@ Click a mod to open its video and a link to its full page.
 
 | Pick a prompt to read it |
 | --- |
-| https://github.com/user-attachments/assets/c62c8e6b-5549-46c9-bd3c-6aa85bceee93 |
+| https://github.com/user-attachments/assets/fdd6f36d-a5c7-417c-b17b-2a6310212831 |
 
 [Full page][doc-mod-prompts]
 
@@ -246,7 +246,7 @@ Click a mod to open its video and a link to its full page.
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
-| https://github.com/user-attachments/assets/eb28c54a-75e6-4aeb-b48f-eb56d3574c90 |
+| https://github.com/user-attachments/assets/8328a2dd-6a25-4569-925a-72aec1579cf9 |
 
 [Full page][doc-mod-skill-panel]
 
@@ -257,7 +257,7 @@ Click a mod to open its video and a link to its full page.
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/940b7369-106c-4916-9121-4b791948e59d |
+| https://github.com/user-attachments/assets/9a20d253-2ff1-4861-9458-f3d07140bb46 |
 
 [Full page][doc-mod-transcript]
 
@@ -268,7 +268,7 @@ Click a mod to open its video and a link to its full page.
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/1e58f376-4df6-4cb0-a1c4-a016d1e4d47f |
+| https://github.com/user-attachments/assets/a4402cb0-b9dc-4a38-b0ca-d19bc988bf75 |
 
 [Full page][doc-mod-model-effort]
 
@@ -279,7 +279,7 @@ Click a mod to open its video and a link to its full page.
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/e77e957d-8ca1-478c-a1ed-11b9c0da11b9 |
+| https://github.com/user-attachments/assets/b653d9d1-0811-4c33-8778-b5328cdd09ad |
 
 [Full page][doc-mod-heads-up]
 
@@ -290,7 +290,7 @@ Click a mod to open its video and a link to its full page.
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/a68525f6-40eb-4cbf-b048-8054ab5e81b9 |
+| https://github.com/user-attachments/assets/84e2d72a-126f-4925-8e3f-a8b8cd51fce6 |
 
 [Full page][doc-mod-progress]
 
@@ -301,7 +301,7 @@ Click a mod to open its video and a link to its full page.
 
 | A risky command held |
 | --- |
-| https://github.com/user-attachments/assets/35476b51-6e57-4735-b2cd-2da649aeae62 |
+| https://github.com/user-attachments/assets/803092d9-2a66-4db8-b110-af1afebfdbd0 |
 
 [Full page][doc-mod-blast-radius]
 
@@ -323,11 +323,11 @@ Click a mod to open its video and a link to its full page.
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/2543e5ef-f24c-4871-b5c0-e7f66977d4ac |
+| https://github.com/user-attachments/assets/f17be850-8682-437d-96af-fb1d182d65bc |
 
 | Auto handoff at the mark: countdown, clear, carry on |
 | --- |
-| https://github.com/user-attachments/assets/746ef30c-7f53-4274-aa4c-07e6ec06b883 |
+| https://github.com/user-attachments/assets/94811bdb-bb80-4f72-a00e-f27605cca671 |
 
 [Full page][doc-mod-wrap-up]
 
@@ -466,13 +466,13 @@ Made by [Vinicius Amorim][author] and released under the [MIT license][license].
 [doc-mod-wrap-up]: mod-wrap-up/README.md
 [doc-mods]: #what-each-mod-does
 
-[img-icons-nerd]: showcase/icons-nerd.png
-[img-icons-plain]: showcase/icons-plain.png
-[img-plain]: showcase/plain.png
-[img-with-mods]: showcase/transcript-folded.png
+[img-icons-nerd]: https://github.com/user-attachments/assets/b2fc93af-1ae0-43e7-b64b-b448a64ee1dc
+[img-icons-plain]: https://github.com/user-attachments/assets/7d6a931c-818a-44ac-9528-d94bf58cac3d
+[img-plain]: https://github.com/user-attachments/assets/cb38144b-1855-49c0-a0f6-76ce4f246a95
+[img-with-mods]: https://github.com/user-attachments/assets/4eca75cd-23d1-4f43-b686-7347c56618bb
 
 <!-- showcase-links:start -->
-[img-collision-guard]: showcase/collision-guard.png
+[img-collision-guard]: https://github.com/user-attachments/assets/572eb12a-2d4e-4439-8513-c774c84b2467
 <!-- showcase-links:end -->
 
 [nerd-fonts]: https://www.nerdfonts.com/font-downloads

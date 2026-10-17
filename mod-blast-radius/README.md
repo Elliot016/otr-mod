@@ -1,5 +1,5 @@
 <!-- mod-blast-radius / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-blast-radius
 
 Part of [moonlight-claude-mods][doc-root].
@@ -32,7 +32,7 @@ Automatic.
 
 | A risky command held |
 | --- |
-| https://github.com/user-attachments/assets/35476b51-6e57-4735-b2cd-2da649aeae62 |
+| https://github.com/user-attachments/assets/803092d9-2a66-4db8-b110-af1afebfdbd0 |
 
 ## Features
 
@@ -70,5 +70,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-blast-radius-card]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/blast-radius-card.png
-[img-blast-radius-details]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/blast-radius-details.png
+[img-blast-radius-card]: https://github.com/user-attachments/assets/9e956348-42ed-46a1-bb34-84adf0f49a9a
+[img-blast-radius-details]: https://github.com/user-attachments/assets/5624e633-15f9-4440-8834-5f5cc2e8dc4c

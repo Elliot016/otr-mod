@@ -1,5 +1,5 @@
 <!-- mod-collision-guard / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-collision-guard
 
 Part of [moonlight-claude-mods][doc-root].
@@ -57,4 +57,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-collision-guard]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/collision-guard.png
+[img-collision-guard]: https://github.com/user-attachments/assets/572eb12a-2d4e-4439-8513-c774c84b2467

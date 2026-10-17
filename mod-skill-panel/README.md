@@ -1,5 +1,5 @@
 <!-- mod-skill-panel / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-skill-panel
 
 Part of [moonlight-claude-mods][doc-root].
@@ -36,7 +36,7 @@ Skills pill.
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
-| https://github.com/user-attachments/assets/eb28c54a-75e6-4aeb-b48f-eb56d3574c90 |
+| https://github.com/user-attachments/assets/8328a2dd-6a25-4569-925a-72aec1579cf9 |
 
 ## Features
 
@@ -62,7 +62,7 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-skill-panel-added]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/skill-panel-added.png
-[img-skill-panel-settings]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/skill-panel-settings.png
-[img-skill-panel-slash]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/skill-panel-slash.png
-[img-skill-panel]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/skill-panel.png
+[img-skill-panel-added]: https://github.com/user-attachments/assets/341bcf57-1a3a-429f-b725-7d59576e977b
+[img-skill-panel-settings]: https://github.com/user-attachments/assets/b4e238d6-7f5f-4af2-b2f2-2d7adb95dcc9
+[img-skill-panel-slash]: https://github.com/user-attachments/assets/6e559d05-8a2f-4019-b27b-74be9b77f6bb
+[img-skill-panel]: https://github.com/user-attachments/assets/4d91b5b0-8f79-4443-86a6-310d25bc1943

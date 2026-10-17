@@ -1,5 +1,5 @@
 <!-- mod-model-effort / README.md, by v-amorim -->
-<!-- Written by showcase/tools/play.py readme from the root README, plugin.json, showcase.json and the scene; edit those. -->
+<!-- Generated from the root README, plugin.json and showcase.json; edit those. -->
 # mod-model-effort
 
 Part of [moonlight-claude-mods][doc-root].
@@ -32,7 +32,7 @@ The model pill.
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/1e58f376-4df6-4cb0-a1c4-a016d1e4d47f |
+| https://github.com/user-attachments/assets/a4402cb0-b9dc-4a38-b0ca-d19bc988bf75 |
 
 ## Settings
 
@@ -53,4 +53,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-model-effort-panel]: https://raw.githubusercontent.com/v-amorim/moonlight-claude-mods/main/showcase/model-effort-panel.png
+[img-model-effort-panel]: https://github.com/user-attachments/assets/553da178-9c80-4304-88a5-edaee43700a8
