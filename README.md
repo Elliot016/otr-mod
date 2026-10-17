@@ -199,7 +199,7 @@ Click a mod to open its screenshots and video. Each block ends with a link to th
 
 | Hover a mod, switch the icons |
 | --- |
-| https://github.com/user-attachments/assets/3eb36efb-13ef-4859-86e9-592eeb9f6060 |
+| https://github.com/user-attachments/assets/a984edc8-dd89-40df-81aa-7fe35de13e7e |
 
 [Full page][doc-mod-manager]
 
