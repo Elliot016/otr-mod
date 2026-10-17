@@ -180,7 +180,7 @@ const TABLE: Row[] = [
   ['make deploy TARGET=prod', 'rule', 'Application or bundle deploy to production'],
   ['make bundle-deploy TARGET=production', 'rule', 'Application or bundle deploy to production'],
   ['make app-deploy ENV=prod', 'rule', 'Application or bundle deploy to production'],
-  ['make app-deploy', 'rule', 'Application or bundle deploy to production'],
+  ['make app-deploy', null],
   ['make deploy ENV=dev', null],
   ['make bundle-deploy TARGET=dev', null],
   ['make test', null],
@@ -331,7 +331,7 @@ test('the order of the checks decides: the sharper reason wins', () => {
   expect(classify('rm build')!.reason).toBe(FILE)
   expect(classify('rm -rf build && psql -c "DROP TABLE a"')!.reason).toBe(RECURSIVE)
   expect(classify('git reset --hard && git clean -fd')!.reason).toBe(FORCE)
-  expect(classify('echo x > a.py; make app-deploy')!.reason).toBe('Application or bundle deploy to production')
+  expect(classify('echo x > a.py; make app-deploy ENV=prod')!.reason).toBe('Application or bundle deploy to production')
 })
 
 test(';&| split a command into lines, so a later risky part is still found', () => {

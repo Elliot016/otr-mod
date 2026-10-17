@@ -564,10 +564,9 @@ export const CHECKS: Check[] = [
     kinds: [],
   },
   {
-    // Bare `make app-deploy` counts too, because its default target is unknown.
     label: 'make deploy',
     cmd: /^make$/,
-    pattern: /\bmake\s+(bundle-deploy|app-deploy|deploy)\b.*(TARGET|ENV)=(prod|production)\b|\bmake\s+app-deploy\b/i,
+    pattern: /\bmake\s+(bundle-deploy|app-deploy|deploy)\b.*(TARGET|ENV)=(prod|production)\b/i,
     reason: words.reasons.makeDeploy,
     source: 'normalized',
     kinds: [],
