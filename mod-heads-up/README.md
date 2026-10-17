@@ -32,7 +32,7 @@ Automatic, or the Heads up pill.
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/b653d9d1-0811-4c33-8778-b5328cdd09ad |
+| https://github.com/user-attachments/assets/6600f825-6a46-4f1d-91bb-0d3e00a7fc24 |
 
 ## Features
 
@@ -68,5 +68,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-heads-up-card]: https://github.com/user-attachments/assets/c0d4cca6-7640-4446-a2ad-8bb71bb133ec
-[img-heads-up-note]: https://github.com/user-attachments/assets/e39e05c7-4cf7-4064-9593-697591c9d51f
+[img-heads-up-card]: https://github.com/user-attachments/assets/b2bceff6-75d7-4aad-ae41-f12b6c0f140f
+[img-heads-up-note]: https://github.com/user-attachments/assets/bf89c91c-2e50-4fde-b93c-d0e01e5207e3

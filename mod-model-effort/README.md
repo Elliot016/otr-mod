@@ -32,7 +32,7 @@ The model pill.
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/a4402cb0-b9dc-4a38-b0ca-d19bc988bf75 |
+| https://github.com/user-attachments/assets/f3eee15b-8130-43c5-b120-f7445ef7510f |
 
 ## Settings
 
@@ -53,4 +53,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-model-effort-panel]: https://github.com/user-attachments/assets/553da178-9c80-4304-88a5-edaee43700a8
+[img-model-effort-panel]: https://github.com/user-attachments/assets/532e7fab-48db-4633-b7da-50ccbb6b69a4

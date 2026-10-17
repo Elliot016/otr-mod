@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/062ff4d1-b9b3-4d92-8556-b64c8b80520f" alt="" width="640">
+  <img src="https://github.com/user-attachments/assets/30d961db-271a-4512-8c4b-e651a65e9c3b" alt="" width="640">
 </div>
 
 # moonlight-claude-mods
@@ -64,12 +64,12 @@ Each mod works alone, with or without mod-manager.
 
 | Every terminal mod in 133 seconds |
 | --- |
-| https://github.com/user-attachments/assets/710df297-f17a-430b-b87f-df5942663260 |
+| https://github.com/user-attachments/assets/7fd3fef8-d252-4357-b84b-fbbace50faf4 |
 
 <details>
 <summary>Narration</summary>
 
-This is Claude Code. Now with Moonlight. Moonlight mods add what the terminal never had: a row of panels, right under the prompt. Forget the skill names. Start typing and the right one finds you. Then Claude goes to work. A turn full of tool calls, and the answer still stays on top. Name a color, and you see it. Every file it touches shows up as it happens. Click one to replay it. Agents in the background report in, with their gates and live output. If something important slips past while you're busy, a quiet note catches it. A risky command stops before it runs, and Haiku explains, in plain words, what it would do. When the turn ends, the next step is one key away. Don't like one? Switch it off. Your session keeps going. And when the context fills up, the work carries over to a fresh session. Ten mods. Use one, or all of them. Find them on GitHub.
+This is Claude Code. Now with Moonlight. Moonlight mods add what the terminal never had: a row of panels, right under the prompt. Forget the skill names. Start typing and the right one finds you. Then Claude goes to work. A turn full of tool calls, and the answer still stays on top. Name a color, and you see it. Every file it touches shows up as it happens. Click one to replay it. Agents in the background report in, with their gates and live output. If something important slips past while you're busy, a quiet note catches it. A risky command stops before it runs, and Haiku explains, in plain words, what it would do. When the turn ends, the next step is one key away. Don't like one? Switch it off. Your session keeps going. And when the context fills up, the work carries over to a fresh session. Thirteen mods. Use one, or all of them. Find them on GitHub.
 
 </details>
 
@@ -191,7 +191,7 @@ Click a mod to open its video and a link to its full page.
 
 | Hovering an entry shows its tip |
 | --- |
-| https://github.com/user-attachments/assets/3c7094dd-d77f-4651-b6c0-22cfdc623bc2 |
+| https://github.com/user-attachments/assets/f0bb82f3-55aa-4e9e-b195-1744ce13e03f |
 
 [Full page][doc-mod-menu]
 
@@ -202,7 +202,7 @@ Click a mod to open its video and a link to its full page.
 
 | The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/66cc8104-9682-490d-ad7f-ce29f81a8dbe |
+| https://github.com/user-attachments/assets/0b6e9237-5ee7-4640-a150-dea2b42d0b3b |
 
 [Full page][doc-mod-manager]
 
@@ -213,7 +213,7 @@ Click a mod to open its video and a link to its full page.
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/53e4b9d1-2516-4cd3-93ef-e13fb4023c07 |
+| https://github.com/user-attachments/assets/7f7e1d6b-52f2-471a-92df-f333cf6b8efb |
 
 [Full page][doc-mod-file-tree]
 
@@ -224,7 +224,7 @@ Click a mod to open its video and a link to its full page.
 
 | Picking one by its digit |
 | --- |
-| https://github.com/user-attachments/assets/dabc4de8-e3b5-4f00-9239-75c9f95f6722 |
+| https://github.com/user-attachments/assets/d89e12c2-c107-421e-ba16-653f2ae55deb |
 
 [Full page][doc-mod-next-steps]
 
@@ -235,7 +235,7 @@ Click a mod to open its video and a link to its full page.
 
 | Pick a prompt to read it |
 | --- |
-| https://github.com/user-attachments/assets/fdd6f36d-a5c7-417c-b17b-2a6310212831 |
+| https://github.com/user-attachments/assets/0cf0064f-0498-4f0a-85cc-18e5256cfcd3 |
 
 [Full page][doc-mod-prompts]
 
@@ -246,7 +246,7 @@ Click a mod to open its video and a link to its full page.
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
-| https://github.com/user-attachments/assets/8328a2dd-6a25-4569-925a-72aec1579cf9 |
+| https://github.com/user-attachments/assets/9dc338ca-887f-4cc3-881e-e3967c364d59 |
 
 [Full page][doc-mod-skill-panel]
 
@@ -257,7 +257,7 @@ Click a mod to open its video and a link to its full page.
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/9a20d253-2ff1-4861-9458-f3d07140bb46 |
+| https://github.com/user-attachments/assets/2e8a454d-59f1-49c6-8ab6-1cf272702fe0 |
 
 [Full page][doc-mod-transcript]
 
@@ -268,7 +268,7 @@ Click a mod to open its video and a link to its full page.
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/a4402cb0-b9dc-4a38-b0ca-d19bc988bf75 |
+| https://github.com/user-attachments/assets/f3eee15b-8130-43c5-b120-f7445ef7510f |
 
 [Full page][doc-mod-model-effort]
 
@@ -279,7 +279,7 @@ Click a mod to open its video and a link to its full page.
 
 | The panel and a note opened |
 | --- |
-| https://github.com/user-attachments/assets/b653d9d1-0811-4c33-8778-b5328cdd09ad |
+| https://github.com/user-attachments/assets/6600f825-6a46-4f1d-91bb-0d3e00a7fc24 |
 
 [Full page][doc-mod-heads-up]
 
@@ -290,7 +290,7 @@ Click a mod to open its video and a link to its full page.
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/84e2d72a-126f-4925-8e3f-a8b8cd51fce6 |
+| https://github.com/user-attachments/assets/8fea424e-bb34-4132-8d4b-f72c64602f85 |
 
 [Full page][doc-mod-progress]
 
@@ -301,7 +301,7 @@ Click a mod to open its video and a link to its full page.
 
 | A risky command held |
 | --- |
-| https://github.com/user-attachments/assets/803092d9-2a66-4db8-b110-af1afebfdbd0 |
+| https://github.com/user-attachments/assets/511d4e1b-98f7-4d31-a3bf-a88f821dcc52 |
 
 [Full page][doc-mod-blast-radius]
 
@@ -323,11 +323,11 @@ Click a mod to open its video and a link to its full page.
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/f17be850-8682-437d-96af-fb1d182d65bc |
+| https://github.com/user-attachments/assets/dc39f29c-a76c-4868-97d1-4901e02c1527 |
 
 | Auto handoff at the mark: countdown, clear, carry on |
 | --- |
-| https://github.com/user-attachments/assets/94811bdb-bb80-4f72-a00e-f27605cca671 |
+| https://github.com/user-attachments/assets/a9740889-69ca-4e2c-a89d-da1efda56407 |
 
 [Full page][doc-mod-wrap-up]
 
@@ -466,13 +466,13 @@ Made by [Vinicius Amorim][author] and released under the [MIT license][license].
 [doc-mod-wrap-up]: mod-wrap-up/README.md
 [doc-mods]: #what-each-mod-does
 
-[img-icons-nerd]: https://github.com/user-attachments/assets/b2fc93af-1ae0-43e7-b64b-b448a64ee1dc
-[img-icons-plain]: https://github.com/user-attachments/assets/7d6a931c-818a-44ac-9528-d94bf58cac3d
-[img-plain]: https://github.com/user-attachments/assets/cb38144b-1855-49c0-a0f6-76ce4f246a95
-[img-with-mods]: https://github.com/user-attachments/assets/4eca75cd-23d1-4f43-b686-7347c56618bb
+[img-icons-nerd]: https://github.com/user-attachments/assets/241865bb-5a8f-466c-9348-57ff215d58fe
+[img-icons-plain]: https://github.com/user-attachments/assets/4217268e-a9ee-4491-aacf-f347677bb21c
+[img-plain]: https://github.com/user-attachments/assets/dce9785d-0c85-4cb2-ad70-9b01a153bc13
+[img-with-mods]: https://github.com/user-attachments/assets/43152a99-5f09-42ad-9daa-7ddf24d6b53f
 
 <!-- showcase-links:start -->
-[img-collision-guard]: https://github.com/user-attachments/assets/572eb12a-2d4e-4439-8513-c774c84b2467
+[img-collision-guard]: https://github.com/user-attachments/assets/5034753f-819f-4683-b8ec-68cb0da18b66
 <!-- showcase-links:end -->
 
 [nerd-fonts]: https://www.nerdfonts.com/font-downloads

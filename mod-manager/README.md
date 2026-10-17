@@ -32,7 +32,7 @@ The gear pill, or `/mod-manager`.
 
 | The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/66cc8104-9682-490d-ad7f-ce29f81a8dbe |
+| https://github.com/user-attachments/assets/0b6e9237-5ee7-4640-a150-dea2b42d0b3b |
 
 ## Settings
 
@@ -53,6 +53,6 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-manager-icons-auto]: https://github.com/user-attachments/assets/d06fa8a8-771d-4ea5-b465-ec2ce057a97d
-[img-manager-icons-plain]: https://github.com/user-attachments/assets/df7d1b19-28ab-4858-ad8c-24d3382a7a30
-[img-manager-page]: https://github.com/user-attachments/assets/af05d156-c54e-4340-9216-bbcc85d08025
+[img-manager-icons-auto]: https://github.com/user-attachments/assets/bb4107d9-8ce0-4400-8fda-d6c386f401e6
+[img-manager-icons-plain]: https://github.com/user-attachments/assets/ec418df4-5d28-4fea-8945-e82a40727922
+[img-manager-page]: https://github.com/user-attachments/assets/ed44304f-0c05-433c-9a31-f17b1db623fd

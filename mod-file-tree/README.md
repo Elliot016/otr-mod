@@ -32,7 +32,7 @@ Files pill.
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/53e4b9d1-2516-4cd3-93ef-e13fb4023c07 |
+| https://github.com/user-attachments/assets/7f7e1d6b-52f2-471a-92df-f333cf6b8efb |
 
 ## Features
 
@@ -62,5 +62,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-file-tree-folded]: https://github.com/user-attachments/assets/e388f6c3-8136-4659-99f9-d9881189f0a4
-[img-file-tree-panel]: https://github.com/user-attachments/assets/74e1e383-95a7-44a5-9df7-b664421e6a01
+[img-file-tree-folded]: https://github.com/user-attachments/assets/742b5e1f-2eb6-434e-8875-768e442e833a
+[img-file-tree-panel]: https://github.com/user-attachments/assets/e5c648ac-8e39-4e82-8eda-e0f13987ea7a

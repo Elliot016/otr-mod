@@ -32,7 +32,7 @@ Automatic.
 
 | Picking one by its digit |
 | --- |
-| https://github.com/user-attachments/assets/dabc4de8-e3b5-4f00-9239-75c9f95f6722 |
+| https://github.com/user-attachments/assets/d89e12c2-c107-421e-ba16-653f2ae55deb |
 
 ## Features
 
@@ -69,4 +69,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-next-steps]: https://github.com/user-attachments/assets/a8048dee-3c8c-4b69-bf02-b93510a49244
+[img-next-steps]: https://github.com/user-attachments/assets/82b8aa72-46c1-4e78-9c39-94423d61d977

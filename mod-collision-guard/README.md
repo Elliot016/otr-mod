@@ -57,4 +57,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-collision-guard]: https://github.com/user-attachments/assets/572eb12a-2d4e-4439-8513-c774c84b2467
+[img-collision-guard]: https://github.com/user-attachments/assets/5034753f-819f-4683-b8ec-68cb0da18b66

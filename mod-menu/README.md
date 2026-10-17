@@ -32,7 +32,7 @@ To install every mod at once, see [Install][doc-install]. For sharper icons, see
 
 | Hovering an entry shows its tip |
 | --- |
-| https://github.com/user-attachments/assets/3c7094dd-d77f-4651-b6c0-22cfdc623bc2 |
+| https://github.com/user-attachments/assets/f0bb82f3-55aa-4e9e-b195-1744ce13e03f |
 
 ## Settings
 
@@ -52,5 +52,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-menu-band]: https://github.com/user-attachments/assets/a5ca950a-04aa-4c98-9461-57574c8f77ec
-[img-menu-icons]: https://github.com/user-attachments/assets/e2daa60a-6319-497c-988b-13ddf80d32a0
+[img-menu-band]: https://github.com/user-attachments/assets/8c2ca805-0d18-4a6d-bb62-6473649540fb
+[img-menu-icons]: https://github.com/user-attachments/assets/338a7d58-f331-4109-bd80-fd2b7bb2267d

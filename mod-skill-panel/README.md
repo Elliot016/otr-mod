@@ -36,7 +36,7 @@ Skills pill.
 
 | Tags while typing /, add a skill, then the settings |
 | --- |
-| https://github.com/user-attachments/assets/8328a2dd-6a25-4569-925a-72aec1579cf9 |
+| https://github.com/user-attachments/assets/9dc338ca-887f-4cc3-881e-e3967c364d59 |
 
 ## Features
 
@@ -62,7 +62,7 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-skill-panel-added]: https://github.com/user-attachments/assets/341bcf57-1a3a-429f-b725-7d59576e977b
-[img-skill-panel-settings]: https://github.com/user-attachments/assets/b4e238d6-7f5f-4af2-b2f2-2d7adb95dcc9
-[img-skill-panel-slash]: https://github.com/user-attachments/assets/6e559d05-8a2f-4019-b27b-74be9b77f6bb
-[img-skill-panel]: https://github.com/user-attachments/assets/4d91b5b0-8f79-4443-86a6-310d25bc1943
+[img-skill-panel-added]: https://github.com/user-attachments/assets/f23354f8-77f8-41ee-bbde-1d37c1582dd9
+[img-skill-panel-settings]: https://github.com/user-attachments/assets/30559e4a-e9b7-4d27-ac4a-6d36dbf37c99
+[img-skill-panel-slash]: https://github.com/user-attachments/assets/ac6c844b-8638-473e-807d-2f31b992b9c9
+[img-skill-panel]: https://github.com/user-attachments/assets/c11fe973-679a-49a3-8457-0f0ddd3d1c52

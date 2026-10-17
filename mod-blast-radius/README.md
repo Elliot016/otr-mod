@@ -32,7 +32,7 @@ Automatic.
 
 | A risky command held |
 | --- |
-| https://github.com/user-attachments/assets/803092d9-2a66-4db8-b110-af1afebfdbd0 |
+| https://github.com/user-attachments/assets/511d4e1b-98f7-4d31-a3bf-a88f821dcc52 |
 
 ## Features
 
@@ -70,5 +70,5 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-blast-radius-card]: https://github.com/user-attachments/assets/9e956348-42ed-46a1-bb34-84adf0f49a9a
-[img-blast-radius-details]: https://github.com/user-attachments/assets/5624e633-15f9-4440-8834-5f5cc2e8dc4c
+[img-blast-radius-card]: https://github.com/user-attachments/assets/e127ef7b-9fdf-4213-a0ee-b2435b1aeabf
+[img-blast-radius-details]: https://github.com/user-attachments/assets/f6719fe9-322e-412f-9cb0-f70e50bafa76
