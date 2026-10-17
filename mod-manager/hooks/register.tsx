@@ -926,7 +926,8 @@ export const register: Register = (on, options) => {
         )}
         <Box key="updates-auto" flexDirection="column" marginTop={updatable.length ? 1 : 0}>
           <Text color={THEME.muted}>{text.autoUpdateOff}</Text>
-          <Box key="updates-auto-row" flexDirection="row" columnGap={1}>
+          {/* The busy line is as long as the row, so it sits above the hint; side by side it squeezed the hint to one column. */}
+          <Box key="updates-auto-row" flexDirection={isBusy ? 'column' : 'row'} columnGap={1}>
             {/* The hint wraps in a narrow pane; the pill never does. */}
             <Box key="open-plugin-cell" flexShrink={0} alignSelf="flex-start">{pluginControl}</Box>
             <Text color={THEME.muted} wrap="wrap">{fill(text.pluginHint, { market })}</Text>
