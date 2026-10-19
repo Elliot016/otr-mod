@@ -20,14 +20,14 @@ function world(on: any, failWrite = false) {
   on('session.messages', () => ({ value: [] }))
   on('model.fork', () => ({ value: { isAnswered: true, text: 'Goal: ship it.', usage } }))
   on('fs.read', (_$: unknown, e: { path: string }) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = e.path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '')
     if (path.endsWith('skills/session-handoff/SKILL.md')) return { value: SKILL }
     if (path.endsWith('/showcase.json')) return { value: JSON.stringify({ actions: [] }) }
     throw new Error('ENOENT')
   })
   on('fs.write', (_$: unknown, e: { path: string; text: string }) => {
     if (failWrite) throw new Error('disk full')
-    writes.push({ path: e.path.replace(/\\/g, '/'), text: e.text })
+    writes.push({ path: e.path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, ''), text: e.text })
     return { value: undefined }
   })
   on('command.run', () => ({ text: '' }))

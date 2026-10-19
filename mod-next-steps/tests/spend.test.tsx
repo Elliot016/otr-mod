@@ -18,12 +18,12 @@ function world(on: any, options: { failWrite?: boolean; existing?: string } = {}
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? 'C:\\cfg' : undefined }))
   on('session.model', () => ({ value: 'claude-sonnet-5-5' }))
   on('fs.read', (_$: unknown, e: { path: string }) => {
-    if (e.path.replace(/\\/g, '/') === PATH && options.existing !== undefined) return { value: options.existing }
+    if (e.path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '') === PATH &&options.existing !== undefined) return { value: options.existing }
     throw new Error('ENOENT')
   })
   on('fs.write', (_$: unknown, e: { path: string; text: string }) => {
     if (options.failWrite) throw new Error('disk full')
-    writes.push({ path: e.path.replace(/\\/g, '/'), text: e.text })
+    writes.push({ path: e.path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, ''), text: e.text })
     return { value: undefined }
   })
   on('model.fork', () => ({ value: { isAnswered: true, text: 'add a test', usage } }))

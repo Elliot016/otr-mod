@@ -984,7 +984,7 @@ function spendWorld(on: any, failWrite = false) {
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? 'C:\\cfg' : undefined }))
   on('fs.write', (_$: unknown, e: { path: string; text: string }) => {
     if (failWrite) throw new Error('disk full')
-    writes.push({ path: e.path.replace(/\\/g, '/'), text: e.text })
+    writes.push({ path: e.path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, ''), text: e.text })
     return { value: undefined }
   })
   return { ...world, writes }

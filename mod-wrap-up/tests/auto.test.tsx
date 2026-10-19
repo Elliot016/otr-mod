@@ -124,6 +124,8 @@ test('the restore steps aside only while a manual handoff is fresh; the relatedn
 
 type World = ReturnType<typeof world>
 
+const drivePath = (path: string) => path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '')
+
 function world(on: any, files: Map<string, string>, reply: (system: string, prompt: string, model: string) => unknown | Promise<unknown>, messages: unknown[] = [{ role: 'user', text: 'hello', toolUses: [] }], env: Record<string, string> = {}) {
   const prompts: { model: string; effort?: string; system: string; prompt: string }[] = []
   const filled: string[] = []
@@ -135,20 +137,20 @@ function world(on: any, files: Map<string, string>, reply: (system: string, prom
   const flags: { messages: unknown[]; percent?: number; tokens?: number; id: string; draft: string; onClear?: () => Promise<unknown>; clearFails: boolean } = { messages, id: 's1', draft: '', clearFails: false }
   on('session.usage', () => ({ value: { startedAt: 0, context: { percent: flags.percent, tokens: flags.tokens }, rateLimits: {}, cost: {} } }))
   on('fs.read', (_$: unknown, e: { path: string }) => {
-    const path = e.path.replace(/\\/g, '/')
+    const path = drivePath(e.path)
     if (path.endsWith('skills/session-handoff/SKILL.md')) return { value: SKILL }
     const found = files.get(path)
     if (found === undefined) throw new Error('ENOENT')
     return { value: found }
   })
   on('fs.write', (_$: unknown, e: { path: string; text: string }) => {
-    files.set(e.path.replace(/\\/g, '/'), e.text)
+    files.set(drivePath(e.path), e.text)
     return { value: undefined }
   })
   on('session.cwd', () => ({ value: 'C:/work/proj' }))
   on('session.id', () => ({ value: flags.id }))
   on('fs.list', (_$: unknown, e: { path: string }) => {
-    const dir = e.path.replace(/\\/g, '/').replace(/\/$/, '')
+    const dir = drivePath(e.path).replace(/\/$/, '')
     return { value: [...files.keys()].filter(path => path.startsWith(`${dir}/`) && !path.slice(dir.length + 1).includes('/')).map(path => ({ name: path.slice(dir.length + 1), kind: 'file', size: 1 })) }
   })
   on('session.messages', () => ({ value: flags.messages }))

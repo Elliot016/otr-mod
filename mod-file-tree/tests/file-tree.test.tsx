@@ -73,7 +73,7 @@ const stubs = (on: Parameters<TestBody>[1], opened: string[] = [], transcript = 
     seen.listed?.push(e.path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, ''))
     return { value: transcript.text ? [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] : [] }
   })
-  on('fs.exists', (_$, e) => ({ value: (isTranscript(e.path) && transcript.text !== '') || seen.exists?.(e.path.replace(/\\/g, '/')) === true }))
+  on('fs.exists', (_$, e) => ({ value: (isTranscript(e.path) && transcript.text !== '') || seen.exists?.(e.path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '')) === true }))
   on('fs.stat', (_$, e) => ({ value: { kind: 'file', size: isTranscript(e.path) ? transcript.text.length : 0, mtimeMs: 0, isLink: false } }))
   on('fs.read', (_$, e) => {
     if (isTranscript(e.path)) transcript.reads += 1
