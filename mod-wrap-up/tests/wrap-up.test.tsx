@@ -2,7 +2,7 @@
 // Tests handoff prompt building, word clamping, thread parsing and the wrap-up band's drawing.
 import { expect, mock, test } from 'claude-code/testing'
 
-import { buildPrompt, clampWords, compactNote, isFresh, parseThreads, scopeNote, skillBody } from '../hooks/handoff'
+import { buildPrompt, clampWords, compactNote, isFresh, parseNames, parseThreads, scopeNote, skillBody } from '../hooks/handoff'
 import { CAPS, THEME } from '../hooks/theme'
 import Choice from '../hooks/choice'
 import { showNumber, stepNumber, stepOf } from '../hooks/settings'
@@ -20,12 +20,13 @@ const BAND = (isWorking = false) =>
 
 // Stubs every op the flow reaches and records the order they were called in.
 // threads is Haiku's reply for the picker. The kit answers no $.ui.ask, so a picker that gets that far sees it dismissed.
-function world(on: any, fork: unknown, runClear: ($: any) => unknown = () => ({ text: '' }), messages: unknown[] = [], threads: unknown = answered, fillThrows = false, fillFailsFirst = 0) {
+function world(on: any, fork: unknown, runClear: ($: any, e: { command: string }) => unknown = () => ({ text: '' }), messages: unknown[] = [], threads: unknown = answered, fillThrows = false, fillFailsFirst = 0) {
   const calls: string[] = []
   const filled: string[] = []
   const forks: string[] = []
   const toasts: string[] = []
   const completes: string[] = []
+  const renames: string[] = []
   on('ui.toast', (_$: unknown, e: { text: string }) => {
     toasts.push(e.text)
     return { value: undefined }
@@ -50,9 +51,10 @@ function world(on: any, fork: unknown, runClear: ($: any) => unknown = () => ({ 
     calls.push('fork')
     return { value: fork }
   })
-  on('command.run', (_$: any, e: { command: string }) => {
+  on('command.run', (_$: any, e: { command: string; args?: string }) => {
     calls.push(`run:${e.command}`)
-    return runClear(_$)
+    if (e.command === 'rename') renames.push(e.args ?? '')
+    return runClear(_$, e)
   })
   on('prompt.fill', (_$: unknown, e: { text: string }) => {
     calls.push('fill')
@@ -69,7 +71,7 @@ function world(on: any, fork: unknown, runClear: ($: any) => unknown = () => ({ 
   const clock = mock.clock(on)
   mock.store(on)
   mock.env(on, {})
-  return { calls, filled, forks, toasts, completes, clock }
+  return { calls, filled, forks, toasts, completes, renames, clock }
 }
 
 const answered = { isAnswered: true, text: '  Goal: ship it.  ', usage: USAGE }
@@ -254,8 +256,90 @@ test('pick_threads off reads no threads and keeps everything', { options: { pick
   expect(await band.find({ type: 'Text', text: 'Threads' })).toBeUndefined()
   await click(band, 'wrap-up-go')
 
-  expect(w.calls).toEqual(['fork', 'run:clear', 'fill'])
+  // The read still runs, for the names.
+  expect(w.calls).toEqual(['threads', 'fork', 'run:clear', 'fill'])
   expect(w.forks[0]).not.toContain('Carry over only')
+  await band.unmount()
+})
+
+const NAMED = {
+  isAnswered: true,
+  usage: USAGE,
+  text: '{"threads":[{"label":"Build fix","detail":"The failing build."},{"label":"Deploy","detail":"The deploy plan."}],"names":{"this":"EP-1 build fix","next":"EP-2 deploy"}}',
+}
+
+test('names are trimmed, and one past 16 characters or missing is no name', () => {
+  expect(parseNames(NAMED.text)).toEqual({ this: 'EP-1 build fix', next: 'EP-2 deploy' })
+  expect(parseNames('{"names":{"this":"  EP-1   fix ","next":"EP-2 a name far too long"}}')).toEqual({ this: 'EP-1 fix', next: '' })
+  expect(parseNames('{"threads":[]}')).toEqual({ this: '', next: '' })
+  expect(parseNames('not json')).toEqual({ this: '', next: '' })
+})
+
+test('Handoff shows both names; Go renames this session, clears, then renames the fresh one before the fill', { options: { icons: 'safe' } }, async ($, on) => {
+  const w = world(on, answered, undefined, SESSION, NAMED)
+  const band = await $.ui.mount(BAND())
+  await click(band, 'wrap-up-entry')
+  await choose(band, 'handoff')
+  await w.clock.advance(10)
+
+  expect(await band.find({ type: 'Text', text: 'Rename' })).toBeDefined()
+  expect(await label(band, 'wrap-up-name-this')).toContain(' EP-1 build fix ')
+  expect(await label(band, 'wrap-up-name-next')).toContain(' EP-2 deploy ')
+  expect(await band.find({ type: 'Text', text: '· this session' })).toBeDefined()
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-name-this' } as never)
+  expect(await band.find({ type: 'Text', text: ' renames this session before the clear, click to skip' })).toBeDefined()
+
+  await click(band, 'wrap-up-go')
+  expect(w.calls).toEqual(['threads', 'fork', 'run:rename', 'run:clear', 'run:rename', 'fill'])
+  expect(w.renames).toEqual(['EP-1 build fix', 'EP-2 deploy'])
+  expect(w.filled).toEqual(['Goal: ship it.'])
+  await band.unmount()
+})
+
+test('a name clicked off is skipped, and Compact shows no names', { options: { icons: 'safe' } }, async ($, on) => {
+  const w = world(on, answered, undefined, SESSION, NAMED)
+  const band = await $.ui.mount(BAND())
+  await click(band, 'wrap-up-entry')
+  await choose(band, 'compact')
+  await w.clock.advance(10)
+  expect(await band.find({ key: 'wrap-up-names' })).toBeUndefined()
+
+  await choose(band, 'handoff')
+  expect(await label(band, 'wrap-up-name-this')).toContain('●')
+  await click(band, 'wrap-up-name-this')
+  expect(await label(band, 'wrap-up-name-this')).toContain('○')
+  await click(band, 'wrap-up-go')
+  expect(w.calls).toEqual(['threads', 'fork', 'run:clear', 'run:rename', 'fill'])
+  expect(w.renames).toEqual(['EP-2 deploy'])
+  await band.unmount()
+})
+
+test('a refused /rename still clears and fills, and the toast names the line to type', { options: { icons: 'safe' } }, async ($, on) => {
+  const w = world(on, answered, (_$, e) => {
+    if (e.command === 'rename') throw new Error('unknown command')
+    return { text: '' }
+  }, SESSION, NAMED)
+  const band = await $.ui.mount(BAND())
+  await click(band, 'wrap-up-entry')
+  await choose(band, 'handoff')
+  await w.clock.advance(10)
+  await click(band, 'wrap-up-go')
+
+  expect(w.filled).toEqual(['Goal: ship it.'])
+  expect(await band.find({ type: 'Text', text: /Could not rename the earlier session to EP-1 build fix/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /type \/rename EP-2 deploy/ })).toBeDefined()
+  await band.unmount()
+})
+
+test('a session with no names says so on the card and renames nothing', { options: { icons: 'safe' } }, async ($, on) => {
+  const w = world(on, answered, undefined, SESSION, THREADS)
+  const band = await $.ui.mount(BAND())
+  await click(band, 'wrap-up-entry')
+  await choose(band, 'handoff')
+  await w.clock.advance(10)
+  expect(await band.find({ type: 'Text', text: 'No names proposed, nothing is renamed' })).toBeDefined()
+  await click(band, 'wrap-up-go')
+  expect(w.renames).toEqual([])
   await band.unmount()
 })
 

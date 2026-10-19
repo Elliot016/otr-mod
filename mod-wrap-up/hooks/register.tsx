@@ -3,7 +3,7 @@
 import type { ConfigValue, EngineInterface, ModelCompleteRequest, ModelCompleteResult, ModelForkResult, Register, RenderElement } from 'claude-code'
 
 import { AUTO_SYSTEM, autoPrompt, capWords, clampCompactAt, clampCompactTokens, clampEvery, emptyLedger, flip, isDue, mergeDelta, mergeInstructions, parseRelated, parseUpdate, projectSlug, readLedger, RELATED_SYSTEM, relatedPrompt, restoreContext, shortGoal, shouldCompact, yieldsToManual, type Carry, type CompactMarks, type Ledger } from './ledger'
-import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Thread } from './handoff'
+import { ALSO_KEEP, buildPrompt, clampWords, compactNote, FORK_FAILURES, isFresh, parseNames, parseThreads, scopeNote, threadsPrompt, THREADS_SYSTEM, transcriptText, type AlsoId, type Names, type Thread } from './handoff'
 import { cardFill, detectNerd, FOOTER_ROWS, heading, lookFor, paneFooter, subpill, type IconMode, withMark } from './look'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { choiceCells, type ChoiceProps } from './choice'
@@ -60,8 +60,11 @@ let pickThreads = true
 let note = ''
 
 type Mode = 'handoff' | 'compact'
-// The card that picks what carries over; threads is null while Haiku still reads the session.
-type Card = { mode: Mode; threads: Thread[] | null; kept: boolean[]; also: Record<AlsoId, boolean>; token: number }
+type NameId = keyof Names
+const NAME_IDS: NameId[] = ['this', 'next']
+const NO_NAMES: Names = { this: '', next: '' }
+// The card that picks what carries over; threads and names are null while Haiku still reads the session.
+type Card = { mode: Mode; threads: Thread[] | null; kept: boolean[]; also: Record<AlsoId, boolean>; names: Names | null; useNames: Record<NameId, boolean>; token: number }
 
 let card: Card | null = null
 // The choices card a pill cut to its icon opens above the row.
@@ -191,13 +194,13 @@ async function isPendingLeft($: EngineInterface) {
   }
 }
 
-// Haiku splits the session into threads the card can keep or drop; none when it fails or finds nothing to choose between.
-async function readThreads($: EngineInterface): Promise<Thread[]> {
+// Haiku splits the session into threads the card can keep or drop and names both sessions; none when it fails or finds nothing to choose between.
+async function readSession($: EngineInterface): Promise<{ threads: Thread[]; names: Names }> {
   const messages = await $.session.messages().catch(() => [])
-  if (!Array.isArray(messages) || messages.length === 0) return []
+  if (!Array.isArray(messages) || messages.length === 0) return { threads: [], names: NO_NAMES }
   const reply = await $.model.complete({ model: 'haiku', system: THREADS_SYSTEM, prompt: threadsPrompt(transcriptText(messages, 150_000)), maxTokens: 600, timeoutMs: 30000 }).catch(() => null)
   recordSpend($, 'haiku', reply)
-  return reply?.isAnswered ? parseThreads(reply.text) : []
+  return reply?.isAnswered ? { threads: parseThreads(reply.text), names: parseNames(reply.text) } : { threads: [], names: NO_NAMES }
 }
 
 const defaultAlso = () => Object.fromEntries(ALSO_KEEP.map(item => [item.id, item.isKept])) as Record<AlsoId, boolean>
@@ -210,12 +213,11 @@ function openCard($: EngineInterface, mode: Mode) {
     return
   }
   const token = (cardToken += 1)
-  card = { mode, threads: pickThreads ? null : [], kept: [], also: defaultAlso(), token }
+  card = { mode, threads: pickThreads ? null : [], kept: [], also: defaultAlso(), names: null, useNames: { this: true, next: true }, token }
   $.ui.invalidate('ui.render')
-  if (!pickThreads) return
-  void readThreads($).then(threads => {
+  void readSession($).then(({ threads, names }) => {
     if (card?.token !== token) return
-    card = { ...card, threads, kept: threads.map(() => true) }
+    card = { ...card, names, ...(pickThreads ? { threads, kept: threads.map(() => true) } : {}) }
     $.ui.invalidate('ui.render')
   })
 }
@@ -233,10 +235,14 @@ function toggleLine($: EngineInterface, id: string) {
   if (thread) card = { ...card, kept: card.kept.map((isKept, at) => (at === Number(thread[1]) ? !isKept : isKept)) }
   const also = ALSO_KEEP.find(item => id === `wrap-up-also-${item.id}`)
   if (also) card = { ...card, also: { ...card.also, [also.id]: !card.also[also.id] } }
+  const name = NAME_IDS.find(each => id === `wrap-up-name-${each}`)
+  if (name) card = { ...card, useNames: { ...card.useNames, [name]: !card.useNames[name] } }
   $.ui.invalidate('ui.render')
 }
 
 const keptThreads = (picked: Card) => (picked.threads ?? []).filter((_, at) => picked.kept[at])
+
+const chosenNames = (picked: Card): Names => ({ this: picked.useNames.this ? (picked.names?.this ?? '') : '', next: picked.useNames.next ? (picked.names?.next ?? '') : '' })
 
 // The card's go: Compact fills /compact with the picks for review, Handoff writes, clears and fills the handoff.
 async function finishCard($: EngineInterface) {
@@ -244,7 +250,7 @@ async function finishCard($: EngineInterface) {
   const picked = card
   closeCard($)
   if (picked.mode === 'handoff') {
-    await startHandoff($, scopeNote(picked.threads ?? [], keptThreads(picked), picked.also))
+    await startHandoff($, scopeNote(picked.threads ?? [], keptThreads(picked), picked.also), chosenNames(picked))
     return
   }
   const instructions = compactNote(picked.threads ?? [], keptThreads(picked), picked.also, autoOn ? await ledgerFile($) : '')
@@ -284,8 +290,17 @@ async function summarizeTranscript($: EngineInterface, prompt: string): Promise<
   })
 }
 
+// A refused /rename never stops the handoff; the toast says what to type instead.
+async function rename($: EngineInterface, name: string, failed: string) {
+  try {
+    await $.command.run({ command: 'rename', args: name })
+  } catch {
+    $.ui.toast(fill(failed, { name }))
+  }
+}
+
 // Summarize through a hidden fork, run /clear, fill the handoff into the new prompt. Nothing is sent. scope is what the card dropped.
-async function startHandoff($: EngineInterface, scope: string) {
+async function startHandoff($: EngineInterface, scope: string, names: Names = NO_NAMES) {
   if (isRunning) return
   if (working) {
     say($, `${MARK.warn} ${text.claudeWorking}`)
@@ -314,6 +329,7 @@ async function startHandoff($: EngineInterface, scope: string) {
       say($, `${MARK.warn} ${text.startedWorking}`)
       return
     }
+    if (names.this) await rename($, names.this, text.renameOldFailed)
     manualAt = await $.clock.now()
     await $.store.set('pending', { text: summary, at: manualAt })
     try {
@@ -324,6 +340,7 @@ async function startHandoff($: EngineInterface, scope: string) {
       say($, `${MARK.warn} ${text.clearFailed}`)
       return
     }
+    if (names.next) await rename($, names.next, text.renameFailed)
     // A /clear can reach session.end first, which fills the prompt itself: warn only when the handoff is still waiting.
     if (!(await fillWithRetry($)) && (await isPendingLeft($))) say($, `${MARK.warn} ${text.clearedNotFilled}`)
   } catch (error) {
@@ -633,6 +650,17 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
             <Text key={`wrap-up-thread-detail-${at}`} color={THEME.muted} wrap="truncate-end">{`${MARK.sep} ${thread.detail}`}</Text>
           </Box>
         ))
+  const shownNames = picked.names
+  const names = shownNames === null
+    ? <Text key="wrap-up-names-reading" color={THEME.muted}>{text.card.reading}</Text>
+    : !shownNames.this && !shownNames.next
+      ? <Text key="wrap-up-names-none" color={THEME.muted}>{text.card.noNames}</Text>
+      : NAME_IDS.filter(id => shownNames[id]).map(id => (
+          <Box key={`wrap-up-name-row-${id}`} flexDirection="row">
+            <Box key={`wrap-up-name-pad-${id}`} flexShrink={0}>{line(`wrap-up-name-${id}`, shownNames[id], picked.useNames[id], text.tips.name[id])}</Box>
+            <Text key={`wrap-up-name-detail-${id}`} color={THEME.muted} wrap="truncate-end">{`${MARK.sep} ${text.card.name[id]}`}</Text>
+          </Box>
+        ))
   const instructions = compactNote(picked.threads ?? [], keptThreads(picked), picked.also, autoOn ? ledgerPath : '')
   const foot = picked.mode === 'compact' ? (
     <Box key="wrap-up-foot" flexDirection="row">
@@ -654,6 +682,7 @@ function cardBox({ Box, Client, Text }: Elements, picked: Card) {
           {ALSO_KEEP.map(item => <Box key={`wrap-up-also-pad-${item.id}`} flexShrink={0}>{line(`wrap-up-also-${item.id}`, text.alsoKeep[item.id], picked.also[item.id], text.tips.also)}</Box>)}
         </Box>
       ))}
+      {picked.mode === 'handoff' ? block('wrap-up-names', 'Edit', text.card.names, names) : null}
       <Box key="wrap-up-gap" height={1} />
       {foot}
       <Box key="wrap-up-actions" flexDirection="row" justifyContent="flex-end" columnGap={1}>

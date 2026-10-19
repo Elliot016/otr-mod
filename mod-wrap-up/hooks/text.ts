@@ -19,6 +19,10 @@ export default {
     "autoNeedsHandoff": "off, needs Automatic handoff on in the settings",
     "thread": "keeps or drops this thread",
     "also": "keeps or drops this item",
+    "name": {
+      "this": "renames this session before the clear, click to skip",
+      "next": "renames the fresh session after the clear, click to skip"
+    },
     "go": {
       "handoff": "writes the handoff and starts a fresh session",
       "compact": "fills /compact into your prompt"
@@ -60,6 +64,12 @@ export default {
     "also": "Also keep",
     "reading": "Reading the session…",
     "noThreads": "No threads found, the whole session counts",
+    "names": "Rename",
+    "name": {
+      "this": "this session",
+      "next": "next session"
+    },
+    "noNames": "No names proposed, nothing is renamed",
     "handoffFoot": "Writes a handoff of what stays, clears the chat and fills it into the prompt",
     "go": {
       "handoff": "Hand off",
@@ -83,6 +93,8 @@ export default {
   "startedWorking": "Claude started working, nothing was cleared",
   "clearFailed": "Could not run /clear, press Enter to clear and the handoff fills in after",
   "clearedNotFilled": "Cleared, but the handoff could not be filled in",
+  "renameFailed": "Could not rename the session, type /rename {name}",
+  "renameOldFailed": "Could not rename the earlier session to {name}",
   "forkFailures": {
     "nothingToFork": "Nothing to hand off yet, send a message first",
     "apiError": "The summary request failed",
