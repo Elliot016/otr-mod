@@ -2,6 +2,7 @@
 // Registers the heads up pane, pill, commands and side check flow with the engine.
 import type { ConfigValue, EngineInterface, Register, SessionMessage } from 'claude-code'
 
+import { bridgeOn, endBridge, startBridge, type BridgeRecord } from './bridge'
 import { checkPrompt, parseCheck, parseRecheck, parseRewrite, recheckPrompt, rewritePrompt, type Direction } from './ask'
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode, type Reveal } from './look'
@@ -180,6 +181,14 @@ async function save($: EngineInterface) {
 async function transcriptOf($: EngineInterface) {
   const named = pathOf(await $.store.get(`transcript:${await $.session.id()}`).catch(() => undefined))
   return named || findTranscript($)
+}
+
+// Only the SessionStart record names the transcript, and the bridge delivers it; the store keeps it per session, as mod-transcript does.
+async function sessionStarted($: EngineInterface, record: BridgeRecord) {
+  const session = String(record.session_id ?? '')
+  const path = String(record.transcript_path ?? '')
+  if (!session || !path) return
+  await $.store.set(`transcript:${session}`, { path, at: await $.clock.now() }).catch(() => {})
 }
 
 // A transcript path is kept with the time it was named; an older bare string counts as a path with no age yet.
@@ -579,6 +588,8 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     isInteractive = e.isInteractive
+    bridgeOn('SessionStart', record => sessionStarted($, record))
+    await startBridge($, 'mod-heads-up')
     await loadLook($)
     await $.command.register({ name: 'mod-heads-up', description: text.commandDescription, argumentHint: '[settings|clear|forget]' })
     await ensureLoaded($)
@@ -631,9 +642,9 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Only SessionStart names the transcript file; the store keeps it per session, as mod-transcript does.
-  on('classic.SessionStart', async ($, e, next) => {
-    await $.store.set(`transcript:${e.session_id}`, { path: e.transcript_path, at: await $.clock.now() }).catch(() => {})
+  // A /resume or /clear ends this session; what its bridge file still holds is delivered first.
+  on('session.end', async ($, e, next) => {
+    await endBridge($, e.sessionId)
 
     return next(e)
   })

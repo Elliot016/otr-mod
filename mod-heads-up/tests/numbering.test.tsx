@@ -65,7 +65,10 @@ function setup(on: any, isBig = false, configDir?: string) {
   on('fs.exists', () => ({ value: true }))
   const bytes = new TextEncoder().encode(TRANSCRIPT_TEXT).length
   on('fs.stat', () => ({ value: { kind: 'file', size: isBig ? bytes + 5 * 1024 * 1024 : bytes, mtimeMs: 0, isLink: false } }))
-  on('fs.read', (_$: unknown, e: { as?: string }) => {
+  const bridge = { text: '' }
+  on('session.start', () => ({ cwd: '/w' }))
+  on('fs.read', (_$: unknown, e: { as?: string; path: string }) => {
+    if (e.path.replace(/\\/g, '/').endsWith('/mod-heads-up/bridge/s1.jsonl')) return { value: bridge.text }
     if (isBig) throw new Error('over 4 MiB')
     return { value: e.as === 'bytes' ? { base64: btoa(TRANSCRIPT_TEXT) } : TRANSCRIPT_TEXT }
   })
@@ -78,7 +81,6 @@ function setup(on: any, isBig = false, configDir?: string) {
     runs.push(e.argv)
     return { value: { exitCode: 0, stdout: '', stderr: '' } }
   })
-  on('classic.SessionStart', () => ({}))
   on('turn.step', async function* (_$: unknown, e: { turnId: string; index: number }) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage: null }
   })
@@ -86,7 +88,7 @@ function setup(on: any, isBig = false, configDir?: string) {
     const { Text } = $.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  return { clock, store, runs, listed }
+  return { clock, store, runs, listed, bridge }
 }
 
 async function step($: any, index: number, extra: object = {}) {
@@ -128,8 +130,10 @@ test('a long session\'s transcript is streamed once, not read 2 MiB at a time, a
 })
 
 test('the same note when the session start named the transcript', async ($, on) => {
-  const { clock, store } = setup(on)
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: TRANSCRIPT, source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  const { clock, store, bridge } = setup(on)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  bridge.text = `${JSON.stringify({ session_id: 's1', transcript_path: TRANSCRIPT, source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' })}\n`
+  await clock.advance(250)
   await $.prompt.submit({ text: 'Add tests' } as never)
   await $.prompt.submit({ text: 'Use the other approach' } as never)
   await $.prompt.submit({ text: 'Also check the docs' } as never)
