@@ -28,6 +28,10 @@ export default {
   "skillsWaiting": "Skills panel waiting: {reason}",
   "settingsWaiting": "Settings panel waiting: {reason}",
   "noDescription": "This skill has no description.",
+  "showAll": "Show all",
+  "showLess": "Show less",
+  "tipShowAll": "shows the whole description",
+  "tipShowLess": "cuts it back to six lines",
   "commandDescription": "Open the skills sidebar; `settings` opens its settings panel",
   "tagNames": {
     "router": "router",

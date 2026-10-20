@@ -41,6 +41,7 @@ Skills pill.
 ## Features
 
 - **Skills and agents:** Lists your skills and agents, personal and the open project's: skills grouped by tag, agents by model. A click adds one to the prompt.
+- **Hover cards:** Pointing at a skill or agent shows its description cut to six lines. Show all grows the card to the full description, and Show less cuts it back.
 - **Color tags:** Give a skill a `color-tag: <tag>` line in its SKILL.md frontmatter to group it under that tag and badge it in the slash typeahead. The tags are router, start, debug, review, interface, writing, utility and mods; a skill without one, or with another name, lands under personal.
 
 ## Settings
