@@ -1,6 +1,6 @@
 // mod-wrap-up / hooks/ledger.ts, by v-amorim
 // The run ledger: an append-only record of goal, decisions and tasks, plus the prompts and decisions of the automatic handoff.
-import { skillBody } from './handoff'
+import { NAMES_RULE, parseNames, sessionName, skillBody, type Names } from './handoff'
 
 export type LedgerDecision = { id: string; text: string; at: number; supersededBy?: string }
 export type LedgerTask = { id: string; text: string; status: 'open' | 'done'; at: number }
@@ -13,6 +13,8 @@ export type Ledger = {
   tasks: LedgerTask[]
   handoff: string
   handoffAt: number
+  // The /rename names the automatic handoff gives the session it leaves and the fresh one.
+  names: Names
   sessions: string[]
   startedAt: number
   updatedAt: number
@@ -21,7 +23,7 @@ export type Ledger = {
 // What one update adds. Decisions and tasks are only ever added; done and superseded are marks on what exists.
 export type Delta = { goal?: string; runState?: string; decisions: string[]; superseded: { id: string; by: string }[]; done: string[]; opened: string[] }
 
-export const emptyLedger = (now: number, sessionId: string): Ledger => ({ version: 1, goal: '', runState: '', decisions: [], tasks: [], handoff: '', handoffAt: 0, sessions: sessionId ? [sessionId] : [], startedAt: now, updatedAt: now })
+export const emptyLedger = (now: number, sessionId: string): Ledger => ({ version: 1, goal: '', runState: '', decisions: [], tasks: [], handoff: '', handoffAt: 0, names: { this: '', next: '' }, sessions: sessionId ? [sessionId] : [], startedAt: now, updatedAt: now })
 
 const MAX_TEXT = 400
 
@@ -48,6 +50,7 @@ export function readLedger(raw: unknown): Ledger | null {
     tasks: data.tasks.filter((item: any) => item && clean(item.text) && typeof item.id === 'string').map((item: any) => ({ id: item.id, text: clean(item.text), status: item.status === 'done' ? 'done' : 'open', at: Number(item.at) || 0 })),
     handoff: typeof data.handoff === 'string' ? data.handoff : '',
     handoffAt: Number(data.handoffAt) || 0,
+    names: { this: sessionName(data.names?.this), next: sessionName(data.names?.next) },
     sessions: Array.isArray(data.sessions) ? data.sessions.filter((id: unknown) => typeof id === 'string') : [],
     updatedAt: Number(data.updatedAt) || 0,
   }
@@ -87,7 +90,7 @@ export const AUTO_SYSTEM = [
 ].join(' ')
 
 const SCHEMA = [
-  '{ "delta": { "goal": "only if it changed, else leave out", "runState": "only if it changed, else leave out", "decisions": ["each new decision, with its reason"], "superseded": [ { "id": "an id from the ledger", "by": "the decision that replaces it" } ], "opened": ["each new task"], "done": ["ids of ledger tasks now finished"] }, "handoff": "the handoff text" }',
+  '{ "delta": { "goal": "only if it changed, else leave out", "runState": "only if it changed, else leave out", "decisions": ["each new decision, with its reason"], "superseded": [ { "id": "an id from the ledger", "by": "the decision that replaces it" } ], "opened": ["each new task"], "done": ["ids of ledger tasks now finished"] }, "handoff": "the handoff text", "names": { "this": "name for this session", "next": "name for the next session" } }',
 ].join('\n')
 
 // Ledger plus the turns since the last handoff; the skill's template shapes the handoff field.
@@ -98,6 +101,7 @@ export const autoPrompt = (skillText: string, words: number, ledger: Ledger, tur
     '',
     'First list what the turns changed in the ledger: new decisions, decisions they replace, tasks opened or finished, and the goal or run state if either moved. Leave the ledger alone where the turns say nothing.',
     `Then write the handoff for the whole session from the ledger and the turns, in the "handoff" field. Follow this template and these rules, except for the reply format, which is the JSON below. The cap is ${words} words, which replaces any other cap.`,
+    `Last, ${NAMES_RULE} Put them in the "names" field.`,
     '',
     skillBody(skillText),
     '',
@@ -105,7 +109,7 @@ export const autoPrompt = (skillText: string, words: number, ledger: Ledger, tur
     SCHEMA,
   ].join('\n')
 
-export type Update = { delta: Delta; handoff: string }
+export type Update = { delta: Delta; handoff: string; names: Names }
 
 export function parseUpdate(reply: string): Update | null {
   const start = reply.indexOf('{')
@@ -121,7 +125,7 @@ export function parseUpdate(reply: string): Update | null {
   if (!handoff) return null
   const delta = raw?.delta ?? {}
   const superseded = (Array.isArray(delta.superseded) ? delta.superseded : []).map((item: any) => ({ id: clean(item?.id), by: clean(item?.by) })).filter((item: { id: string }) => item.id)
-  return { handoff, delta: { goal: clean(delta.goal) || undefined, runState: clean(delta.runState) || undefined, decisions: list(delta.decisions), superseded, done: list(delta.done), opened: list(delta.opened) } }
+  return { handoff, names: parseNames(reply), delta: { goal: clean(delta.goal) || undefined, runState: clean(delta.runState) || undefined, decisions: list(delta.decisions), superseded, done: list(delta.done), opened: list(delta.opened) } }
 }
 
 export function capWords(handoff: string, words: number) {
@@ -189,11 +193,6 @@ export const projectSlug = (cwd: string) => {
   const path = normalizeCwd(cwd)
   const tail = path.split('/').filter(part => part && !/^[a-z]:$/i.test(part)).slice(-2).join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, MAX_TAIL).replace(/-+$/, '')
   return `${tail || 'project'}-${hashOf(path)}`
-}
-
-export function mergeInstructions(typed: string | undefined, handoff: string, ledgerPath: string) {
-  const own = `Keep this handoff in the summary. The full ledger is at ${ledgerPath}.\n${handoff}`
-  return typed?.trim() ? `${typed.trim()}\n\n${own}` : own
 }
 
 // What the next prompt carries after a compaction or a carried clear, stated as facts.

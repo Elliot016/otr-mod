@@ -29,7 +29,9 @@ export default {
     },
     "cancel": "closes this card, changes nothing",
     "tab": "shows this mod's settings",
-    "toFresh": "stops carrying the earlier work: its ledger stays on disk and this session starts its own",
+    "toFresh": "the handoff was already sent with your first prompt, so starting fresh only changes what the mod tracks from now on: this session starts its own ledger and the earlier one stays on disk",
+    "showAll": "shows the whole goal",
+    "showLess": "cuts the goal to one line",
     "toCarry": "brings the earlier work back: this session rejoins its ledger and the next prompt carries its handoff",
     "dismissAuto": "hides this card, keeps the choice"
   },
@@ -43,8 +45,11 @@ export default {
     "carriedNoGoal": "Carried over the earlier handoff",
     "fresh": "Fresh start",
     "toFresh": "Start fresh",
-    "toCarry": "Carry in"
+    "toCarry": "Carry in",
+    "showAll": "Show all",
+    "showLess": "Show less"
   },
+  "link": "←",
   "writingStage": "Writing handoff…",
   "choice": {
     "handoff": "Handoff",

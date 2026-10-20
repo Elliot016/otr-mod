@@ -268,9 +268,10 @@ const NAMED = {
   text: '{"threads":[{"label":"Build fix","detail":"The failing build."},{"label":"Deploy","detail":"The deploy plan."}],"names":{"this":"EP-1 build fix","next":"EP-2 deploy"}}',
 }
 
-test('names are trimmed, and one past 16 characters or missing is no name', () => {
+test('names are trimmed, one past 16 characters is cut at its last separator, and one with no separator to cut at or missing is no name', () => {
   expect(parseNames(NAMED.text)).toEqual({ this: 'EP-1 build fix', next: 'EP-2 deploy' })
-  expect(parseNames('{"names":{"this":"  EP-1   fix ","next":"EP-2 a name far too long"}}')).toEqual({ this: 'EP-1 fix', next: '' })
+  expect(parseNames('{"names":{"this":"  EP-1   fix ","next":"EP-2 a name far too long"}}')).toEqual({ this: 'EP-1 fix', next: 'EP-2 a name far' })
+  expect(parseNames('{"names":{"this":"EP-12 build -- deploy","next":"averyveryverylongword"}}')).toEqual({ this: 'EP-12 build', next: '' })
   expect(parseNames('{"threads":[]}')).toEqual({ this: '', next: '' })
   expect(parseNames('not json')).toEqual({ this: '', next: '' })
 })
@@ -291,7 +292,7 @@ test('Handoff shows both names; Go renames this session, clears, then renames th
 
   await click(band, 'wrap-up-go')
   expect(w.calls).toEqual(['threads', 'fork', 'run:rename', 'run:clear', 'run:rename', 'fill'])
-  expect(w.renames).toEqual(['EP-1 build fix', 'EP-2 deploy'])
+  expect(w.renames).toEqual(['EP-1 build fix', 'EP-1 build fix ← EP-2 deploy'])
   expect(w.filled).toEqual(['Goal: ship it.'])
   await band.unmount()
 })
@@ -327,7 +328,7 @@ test('a refused /rename still clears and fills, and the toast names the line to 
 
   expect(w.filled).toEqual(['Goal: ship it.'])
   expect(await band.find({ type: 'Text', text: /Could not rename the earlier session to EP-1 build fix/ })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: /type \/rename EP-2 deploy/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /type \/rename EP-1 build fix ← EP-2 deploy/ })).toBeDefined()
   await band.unmount()
 })
 

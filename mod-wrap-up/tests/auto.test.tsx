@@ -2,7 +2,9 @@
 import { expect, mock, test as kitTest } from 'claude-code/testing'
 
 import { compactNote } from '../hooks/handoff'
-import { autoPrompt, capWords, clampCompactAt, clampCompactTokens, clampEvery, digest, emptyLedger, flip, isDue, mergeDelta, mergeInstructions, parseRelated, parseUpdate, normalizeCwd, projectSlug, readLedger, restoreContext, shouldCompact, yieldsToManual } from '../hooks/ledger'
+import { latestTitle, lateNext, planNames, remember } from '../hooks/titles'
+import { bytesOf, scanTail, textOf } from '../hooks/tail'
+import { autoPrompt, capWords, clampCompactAt, clampCompactTokens, clampEvery, digest, emptyLedger, flip, isDue, mergeDelta, parseRelated, parseUpdate, normalizeCwd, projectSlug, readLedger, restoreContext, shouldCompact, yieldsToManual } from '../hooks/ledger'
 
 // Automatic handoff is opt-in, so these tests turn it on unless a test sets its own value.
 const test = ((name: string, first: any, second?: any) => {
@@ -74,7 +76,7 @@ test('the handoff prompt is built from the ledger plus the turns since the last 
 
 test('the reply parses into a delta and a handoff; a reply with no handoff is none', () => {
   const reply = '```json\n{ "delta": { "goal": " New goal ", "decisions": ["A", ""], "superseded": [{ "id": "d1", "by": "A" }, { "by": "x" }], "opened": ["T"], "done": ["t1"] }, "handoff": " Goal: x\\n\\nNext step: y " }\n```'
-  expect(parseUpdate(reply)).toEqual({ handoff: 'Goal: x\n\nNext step: y', delta: { goal: 'New goal', runState: undefined, decisions: ['A'], superseded: [{ id: 'd1', by: 'A' }], opened: ['T'], done: ['t1'] } })
+  expect(parseUpdate(reply)).toEqual({ handoff: 'Goal: x\n\nNext step: y', names: { this: '', next: '' }, delta: { goal: 'New goal', runState: undefined, decisions: ['A'], superseded: [{ id: 'd1', by: 'A' }], opened: ['T'], done: ['t1'] } })
   expect(parseUpdate('{ "delta": {} }')).toBeNull()
   expect(parseUpdate('no json')).toBeNull()
   expect(parseUpdate('{ broken')).toBeNull()
@@ -103,12 +105,7 @@ test('the cap cuts a long handoff to its words, and the settings clamp holds', (
   expect(projectSlug('C:\\Work\\My Proj')).toMatch(/^work-my-proj-[0-9a-f]{8}$/)
 })
 
-test('the compaction instructions keep what the person typed first, and the restore reads as facts with the ledger path', () => {
-  const merged = mergeInstructions('focus on the schema', 'HANDOFF', '/d/ledger.json')
-  expect(merged.startsWith('focus on the schema')).toBe(true)
-  expect(merged).toContain('HANDOFF')
-  expect(merged).toContain('/d/ledger.json')
-  expect(mergeInstructions(undefined, 'HANDOFF', '/d/ledger.json').startsWith('Keep this handoff')).toBe(true)
+test('the restore reads as facts with the ledger path', () => {
   const context = restoreContext('HANDOFF', '/d/ledger.json')
   expect(context).toContain('The full ledger is at /d/ledger.json; read it before acting on older decisions.')
   expect(context).not.toMatch(/ignore|disregard|override/i)
@@ -126,15 +123,14 @@ type World = ReturnType<typeof world>
 
 const drivePath = (path: string) => path.replace(/\\/g, '/').replace(/^.*?(?=[A-Za-z]:\/)/, '')
 
-function world(on: any, files: Map<string, string>, reply: (system: string, prompt: string, model: string) => unknown | Promise<unknown>, messages: unknown[] = [{ role: 'user', text: 'hello', toolUses: [] }], env: Record<string, string> = {}) {
+function world(on: any, files: Map<string, string>, reply: (system: string, prompt: string, model: string) => unknown | Promise<unknown>, messages: unknown[] = [{ role: 'user', text: 'hello', toolUses: [] }], env: Record<string, string> = {}, kept: Record<string, unknown> = {}) {
   const prompts: { model: string; effort?: string; system: string; prompt: string }[] = []
   const filled: string[] = []
-  const compacted: (string | undefined)[] = []
   const submitted: (readonly string[] | undefined)[] = []
   const submittedText: string[] = []
   const clears: string[] = []
   const forks: string[] = []
-  const flags: { messages: unknown[]; percent?: number; tokens?: number; id: string; draft: string; onClear?: () => Promise<unknown>; clearFails: boolean } = { messages, id: 's1', draft: '', clearFails: false }
+  const flags: { messages: unknown[]; percent?: number; tokens?: number; id: string; draft: string; onClear?: () => Promise<unknown>; clearFails: boolean; renameFails: boolean; started: boolean } = { messages, id: 's1', draft: '', clearFails: false, renameFails: false, started: false }
   on('session.usage', () => ({ value: { startedAt: 0, context: { percent: flags.percent, tokens: flags.tokens }, rateLimits: {}, cost: {} } }))
   on('fs.read', (_$: unknown, e: { path: string }) => {
     const path = drivePath(e.path)
@@ -163,20 +159,16 @@ function world(on: any, files: Map<string, string>, reply: (system: string, prom
     forks.push(e.prompt)
     return { value: { isAnswered: true, text: 'MANUAL HANDOFF', usage: USAGE } }
   })
-  on('command.run', async (_$: unknown, e: { command: string }) => {
-    if (flags.clearFails) throw new Error('refused')
-    clears.push(e.command)
-    await flags.onClear?.()
+  on('command.run', async (_$: unknown, e: { command: string; args?: string }) => {
+    if (flags.clearFails || (flags.renameFails && e.command === 'rename')) throw new Error('refused')
+    clears.push(e.args ? `${e.command} ${e.args}` : e.command)
+    if (e.command === 'clear') await flags.onClear?.()
     return { text: '' }
   })
   on('prompt.read', () => ({ value: { text: flags.draft, cursor: flags.draft.length } }))
   on('prompt.fill', (_$: unknown, e: { text: string }) => {
     filled.push(e.text)
     return { isFilled: true }
-  })
-  on('session.compact', (_$: unknown, e: { instructions?: string }) => {
-    compacted.push(e.instructions)
-    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] }
   })
   on('prompt.submit', (_$: unknown, e: { text: string; context?: readonly string[] }) => {
     submitted.push(e.context)
@@ -194,9 +186,16 @@ function world(on: any, files: Map<string, string>, reply: (system: string, prom
     return <Text key="base">idle</Text>
   })
   const clock = mock.clock(on)
-  mock.store(on)
+  const stored = new Map<string, unknown>(Object.entries(kept))
+  on('store.get', (_$: unknown, e: { key: string }) => ({ value: stored.get(e.key) }))
+  on('store.set', (_$: unknown, e: { key: string; value: unknown }) => {
+    stored.set(e.key, JSON.parse(JSON.stringify(e.value)))
+    return { value: undefined }
+  })
+  on('store.delete', (_$: unknown, e: { key: string }) => ({ value: stored.delete(e.key) }))
+  on('store.keys', () => ({ value: [...stored.keys()] }))
   mock.env(on, { USERPROFILE: 'C:/home', ...env })
-  return { prompts, filled, compacted, submitted, submittedText, clears, forks, files, clock, flags }
+  return { prompts, filled, submitted, submittedText, clears, forks, files, clock, flags, stored }
 }
 
 const UPDATE = (handoff: string, delta: Record<string, unknown> = {}) => ({ isAnswered: true, text: JSON.stringify({ delta, handoff }), usage: USAGE })
@@ -268,8 +267,8 @@ test('a rate limit on Sonnet is not retried on another model', async ($, on) => 
 const FULL = { options: { auto_compact: true, icons: 'safe' } } as const
 const COUNTDOWN_LINE = 'Context at 132K (66%), handing off in 5 s'
 
-async function atTheMark($: any, on: any, files = autoFiles(), reply: () => unknown = () => UPDATE('HANDOFF-TWO')) {
-  const w = world(on, files, reply)
+async function atTheMark($: any, on: any, files = autoFiles(), reply: () => unknown = () => UPDATE('HANDOFF-TWO'), kept: Record<string, unknown> = {}) {
+  const w = world(on, files, reply, undefined, {}, kept)
   w.flags.percent = 66
   w.flags.tokens = 132_000
   w.flags.onClear = async () => {
@@ -397,10 +396,75 @@ test('a ledger with no handoff is never cleared', FULL, async ($, on) => {
   await band.unmount()
 })
 
-test('the auto path never compacts: the mark leads to a clear, not session.compact', FULL, async ($, on) => {
+const NAMES = { this: 'DTP-1 cache', next: 'DTP-1 deploy' }
+const NAMED = () => ({ isAnswered: true, text: JSON.stringify({ delta: {}, handoff: 'HANDOFF-TWO', names: NAMES }), usage: USAGE })
+const namedFiles = () => autoFiles({ ...seeded(), names: NAMES })
+
+test('the update carries both names, a name past 16 characters is cut at its last separator, and a ledger file from before names reads as none', () => {
+  expect(autoPrompt(SKILL, 300, seeded(), 'turns')).toContain('name two sessions for /rename')
+  expect(parseUpdate(NAMED().text)!.names).toEqual(NAMES)
+  const long = JSON.stringify({ handoff: 'H', names: { this: 'a name that runs past sixteen', next: 'mods-history-rewrite' } })
+  expect(parseUpdate(long)!.names).toEqual({ this: 'a name that runs', next: 'mods-history' })
+  const { names: _dropped, ...before } = seeded()
+  expect(readLedger(JSON.stringify(before))!.names).toEqual({ this: '', next: '' })
+})
+
+test('the countdown renames this session before the clear and the fresh one right after it', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on, autoFiles(), NAMED)
+  expect(saved(w).names).toEqual(NAMES)
+  await w.clock.advance(5000)
+  await w.clock.advance(1)
+  expect(w.clears).toEqual(['rename DTP-1 cache', 'clear', 'rename DTP-1 cache ← DTP-1 deploy'])
+  expect(w.submittedText).toHaveLength(1)
+  await band.unmount()
+})
+
+test('an update with no names keeps the last pair', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on, namedFiles())
+  expect(saved(w).names).toEqual(NAMES)
+  await band.unmount()
+})
+
+test('a ledger with no names renames nothing at the mark', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on)
+  await w.clock.advance(5000)
+  await w.clock.advance(1)
+  expect(w.clears).toEqual(['clear'])
+  await band.unmount()
+})
+
+test('a refused /rename at the mark still clears and carries on', FULL, async ($, on) => {
+  const { w, band } = await atTheMark($, on, namedFiles())
+  w.flags.renameFails = true
+  await w.clock.advance(5000)
+  await w.clock.advance(1)
+  expect(w.clears).toEqual(['clear'])
+  expect(w.submittedText).toHaveLength(1)
+  await band.unmount()
+})
+
+test('after a manual clear, a related first prompt renames the fresh session', async ($, on) => {
+  const w = world(on, namedFiles(), (system: string) => (system.includes('compare') ? RELATED(true) : UPDATE('X')))
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+  w.flags.id = 's2'
+  await $.prompt.submit({ text: 'what did we decide for storage?', wait: false, origin: COMPOSER } as never)
+  // A rename inside the submit is refused, so it lands only once the clock lets the submit finish.
+  expect(w.clears).toEqual([])
+  await w.clock.advance(1)
+  expect(w.clears).toEqual(['rename DTP-1 deploy'])
+})
+
+test('after a manual clear, an unrelated first prompt renames nothing', async ($, on) => {
+  const w = world(on, namedFiles(), (system: string) => (system.includes('compare') ? RELATED(false) : UPDATE('X')))
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+  w.flags.id = 's2'
+  await $.prompt.submit({ text: 'something else entirely', wait: false, origin: COMPOSER } as never)
+  expect(w.clears).toEqual([])
+})
+
+test('the auto path never compacts: the mark leads to a clear', FULL, async ($, on) => {
   const { w, band } = await atTheMark($, on)
   await w.clock.advance(6000)
-  expect(w.compacted).toHaveLength(0)
   expect(w.clears).toHaveLength(1)
   await band.unmount()
 })
@@ -467,9 +531,10 @@ test('auto_handoff off runs nothing and leaves compaction alone', { options: { a
   const w = world(on, autoFiles(), () => UPDATE('X'))
   await $.turn.complete(MAIN_TURN)
   await w.clock.advance(1)
-  await $.session.compact({ trigger: 'manual', instructions: 'typed', messages: [{ role: 'user', text: 'm', toolUses: [] }] } as never)
+  await compacted($, w)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
   expect(w.prompts).toHaveLength(0)
-  expect(w.compacted).toEqual(['typed'])
+  expect(w.submitted[0]).toBeUndefined()
 })
 
 test('auto_every 2 updates on every second turn', { options: { auto_every: 2 } }, async ($, on) => {
@@ -517,26 +582,18 @@ test('the second run reads only the turns after the first, never the handoff it 
   expect(w.prompts[1].prompt).not.toContain('HANDOFF-TWO')
 })
 
-test('a compaction gets the handoff after what the person typed, with no model call', async ($, on) => {
+test('a compaction hands the ledger\'s handoff to the next prompt, with no model call', async ($, on) => {
   const w = world(on, autoFiles(), () => UPDATE('X'))
-  await $.session.compact({ trigger: 'manual', instructions: 'focus on the schema', messages: [{ role: 'user', text: 'm', toolUses: [] }] } as never)
-  expect(w.compacted[0]?.startsWith('focus on the schema')).toBe(true)
-  expect(w.compacted[0]).toContain('HANDOFF-ONE: orders API on PostgreSQL')
-  expect(w.compacted[0]).toContain(LEDGER_FILE)
+  await compacted($, w)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[0]?.[0]).toContain('HANDOFF-ONE: orders API on PostgreSQL')
+  expect(w.submitted[0]?.[0]).toContain(LEDGER_FILE)
   expect(w.prompts).toHaveLength(0)
-  await $.session.compact({ trigger: 'auto', messages: [{ role: 'user', text: 'm', toolUses: [] }] } as never)
-  expect(w.compacted[1]).toContain('HANDOFF-ONE')
-})
-
-test('the precompute pass and an empty ledger pass the compaction through untouched', async ($, on) => {
-  const w = world(on, autoFiles(), () => UPDATE('X'))
-  await $.session.compact({ trigger: 'precompute', instructions: 'typed', messages: [{ role: 'user', text: 'm', toolUses: [] }] } as never)
-  expect(w.compacted).toEqual(['typed'])
 })
 
 test('the next prompt after a compaction carries the handoff and the ledger path once', async ($, on) => {
   const w = world(on, autoFiles(), () => UPDATE('X'))
-  await $.session.compact({ trigger: 'auto', messages: [{ role: 'user', text: 'm', toolUses: [] }] } as never)
+  await compacted($, w)
   await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
   await $.prompt.submit({ text: 'and again', wait: false, origin: COMPOSER } as never)
   expect(w.submitted[0]?.[0]).toContain('HANDOFF-ONE')
@@ -551,12 +608,12 @@ test('compactions in a row each carry every decision the ledger holds', async ($
     w.flags.messages = [...w.flags.messages, { role: 'user', text: `round ${round}`, toolUses: [] }]
     await $.turn.complete(MAIN_TURN)
     await w.clock.advance(1)
-    await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'm', toolUses: [] }] } as never)
+    await compacted($, w)
     await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
   }
   const texts = saved(w).decisions.map(item => item.text)
   expect(texts).toEqual(['Use PostgreSQL, not MySQL', 'Decision 1', 'Decision 2', 'Decision 3'])
-  expect(w.compacted).toHaveLength(3)
+  expect(w.submitted).toHaveLength(3)
   expect(w.submitted.every(context => context?.[0]?.includes(LEDGER_FILE))).toBe(true)
 })
 
@@ -639,15 +696,17 @@ test('two sessions in one folder keep separate ledgers: a new session never touc
   w.flags.id = 's3'
   await $.session.start({ cwd: '/w' } as never)
   await w.clock.advance(1)
+  w.flags.started = true
   w.flags.messages = [{ role: 'user', text: 'fix login', toolUses: [] }]
   await $.turn.complete(MAIN_TURN)
   await w.clock.advance(1)
   expect(saved(w).decisions.map(item => item.text)).toEqual(['Use PostgreSQL, not MySQL'])
   expect(saved(w).handoff).toContain('HANDOFF-ONE')
   expect(saved(w, 's3').decisions.map(item => item.text)).toEqual(['Use OAuth'])
-  await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'm', toolUses: [] }] } as never)
-  expect(w.compacted.at(-1)).toContain('HANDOFF-B')
-  expect(w.compacted.at(-1)).not.toContain('HANDOFF-ONE')
+  await compacted($, w)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted.at(-1)?.[0]).toContain('HANDOFF-B')
+  expect(w.submitted.at(-1)?.[0]).not.toContain('HANDOFF-ONE')
 })
 
 test('a clear with nothing in the ledger, or a failed relatedness call, never blocks the prompt', async ($, on) => {
@@ -692,6 +751,319 @@ test('a resume picks up the chain that lists the session, even one that joined i
   await $.session.start({ cwd: '/w' } as never)
   await w.clock.advance(1)
   expect(w.files.has(fileOf('s2'))).toBe(false)
-  await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'm', toolUses: [] }] } as never)
-  expect(w.compacted.at(-1)).toContain('HANDOFF-ONE')
+  w.flags.started = true
+  await compacted($, w)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted.at(-1)?.[0]).toContain('HANDOFF-ONE')
+})
+
+const SUMMARY = { role: 'user', text: 'SUMMARY-OF-EARLIER', toolUses: [] }
+const bridgeFile = (id: string) => `C:/home/.claude/mods-data/mod-wrap-up/bridge/${id}.jsonl`
+const startRecord = (id: string, source: string) => `${JSON.stringify({ session_id: id, transcript_path: `/t/${id}.jsonl`, cwd: '/w', hook_event_name: 'SessionStart', source })}\n`
+
+// A finished compaction reaches the mod as the SessionStart record the command hook appended, read by the next poll.
+async function compacted($: any, w: World) {
+  w.flags.messages = [SUMMARY]
+  if (!w.flags.started) {
+    await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+    w.flags.started = true
+  }
+  w.files.set(bridgeFile(w.flags.id), (w.files.get(bridgeFile(w.flags.id)) ?? '') + startRecord(w.flags.id, 'compact'))
+  await w.clock.advance(250)
+}
+
+test('after a compaction the next automatic update reads only the turns after the summary', async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('HANDOFF-TWO'), [{ role: 'user', text: 'hello', toolUses: [] }, { role: 'assistant', text: 'hi', toolUses: [] }])
+  await compacted($, w)
+  w.flags.messages = [SUMMARY, { role: 'user', text: 'second ask', toolUses: [] }, { role: 'assistant', text: 'second answer', toolUses: [] }]
+  await $.turn.complete(MAIN_TURN)
+  await w.clock.advance(1)
+  expect(w.prompts).toHaveLength(1)
+  expect(w.prompts[0].prompt).toContain('second ask')
+  expect(w.prompts[0].prompt).not.toContain('SUMMARY-OF-EARLIER')
+  expect(w.prompts[0].prompt).not.toContain('hello')
+})
+
+test('an update still running when the compaction lands is dropped', async ($, on) => {
+  const w = world(on, autoFiles(), async () => {
+    await w.clock.sleep(5000)
+    return UPDATE('STALE-HANDOFF')
+  })
+  await $.turn.complete(MAIN_TURN)
+  await w.clock.advance(1)
+  await compacted($, w)
+  await w.clock.advance(6000)
+  expect(w.prompts).toHaveLength(1)
+  expect(saved(w).handoff).toBe('HANDOFF-ONE: orders API on PostgreSQL')
+})
+
+test('with the automatic handoff off a compaction leaves the next prompt untouched', { options: { auto_handoff: false } }, async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('X'))
+  await compacted($, w)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[0]).toBeUndefined()
+})
+
+test('a compaction with no handoff in the ledger carries nothing, and the restore is spent', async ($, on) => {
+  const w = world(on, autoFiles({ ...seeded(), handoff: '' }), () => UPDATE('X'))
+  await compacted($, w)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[0]).toBeUndefined()
+})
+
+test('the restore waits for a person\'s prompt: a prompt inside a turn or from a hook leaves it', async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('X'))
+  await compacted($, w)
+  await $.prompt.submit({ text: 'mid turn', wait: false, origin: COMPOSER, turnId: 't9' } as never)
+  await $.prompt.submit({ text: 'from a hook', wait: false, origin: { kind: 'hook' } } as never)
+  expect(w.submitted[0]).toBeUndefined()
+  expect(w.submitted[1]).toBeUndefined()
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[2]?.[0]).toContain('HANDOFF-ONE')
+  expect(w.submitted[2]?.[0]).toContain(`The full ledger is at ${LEDGER_FILE}`)
+})
+
+test('a second compaction restores again; two prompts between them carry once', async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('X'))
+  await compacted($, w)
+  await $.prompt.submit({ text: 'one', wait: false, origin: COMPOSER } as never)
+  await $.prompt.submit({ text: 'two', wait: false, origin: COMPOSER } as never)
+  await compacted($, w)
+  await $.prompt.submit({ text: 'three', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted.map(context => Boolean(context?.[0]))).toEqual([true, false, true])
+})
+
+test('a compact record from before a reload is replayed once and restores nothing; the next one does', async ($, on) => {
+  const old = new Map([[LEDGER_FILE, JSON.stringify(seeded())], [bridgeFile('s1'), startRecord('s1', 'startup') + startRecord('s1', 'compact')]])
+  const w = world(on, old, () => UPDATE('X'))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  w.flags.started = true
+  await w.clock.advance(1000)
+  await $.prompt.submit({ text: 'after the reload', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[0]).toBeUndefined()
+  await compacted($, w)
+  await $.prompt.submit({ text: 'after a new compaction', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[1]?.[0]).toContain('HANDOFF-ONE')
+})
+
+test('a startup or a resume record names the transcript and restores nothing', async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('X'))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  w.files.set(bridgeFile('s1'), startRecord('s1', 'startup') + startRecord('s1', 'resume'))
+  await w.clock.advance(250)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[0]).toBeUndefined()
+  expect(w.stored.get('transcript:s1')).toMatchObject({ path: '/t/s1.jsonl' })
+})
+
+test('a compact record the poll has not read when the session ends is delivered first, so the end resets it', async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('X'))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  w.files.set(bridgeFile('s1'), startRecord('s1', 'compact'))
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+  w.flags.id = 's2'
+  await $.prompt.submit({ text: 'first after the clear', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[0]?.[0]).toBeUndefined()
+})
+
+test('a compaction in another session\'s file never restores this one', async ($, on) => {
+  const w = world(on, autoFiles(), () => UPDATE('X'))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  w.files.set(bridgeFile('s9'), startRecord('s9', 'compact'))
+  await w.clock.advance(1000)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: COMPOSER } as never)
+  expect(w.submitted[0]).toBeUndefined()
+})
+
+// Linked names: a session's name holds only its direct parent, and a title the person wrote is never overwritten.
+const titleRow = (title: string, id = 's1') => `${JSON.stringify({ type: 'custom-title', customTitle: title, sessionId: id })}\n`
+const TRANSCRIPT = 'C:/t/s1.jsonl'
+const named = (rows: string, applied: string[] = []) => {
+  const files = namedFiles()
+  files.set(TRANSCRIPT, rows)
+  return { files, kept: { 'transcript:s1': { path: TRANSCRIPT, at: 0 }, 'titles-applied': applied } }
+}
+async function handOffAt($: any, on: any, setup: ReturnType<typeof named>) {
+  const { w, band } = await atTheMark($, on, setup.files, undefined, setup.kept)
+  await w.clock.advance(5000)
+  await w.clock.advance(1)
+  await band.unmount()
+  return w
+}
+
+test('at the mark the old session becomes `its parent ← this` and the fresh one `its own name ← next`', FULL, async ($, on) => {
+  const w = await handOffAt($, on, named(titleRow('Billing ← DTP-1 old'), ['Billing ← DTP-1 old']))
+  expect(w.clears).toEqual(['rename Billing ← DTP-1 cache', 'clear', 'rename DTP-1 cache ← DTP-1 deploy'])
+})
+
+test('a session with no title and no parent gets just its name, and the fresh one links to it', FULL, async ($, on) => {
+  const w = await handOffAt($, on, named(''))
+  expect(w.clears).toEqual(['rename DTP-1 cache', 'clear', 'rename DTP-1 cache ← DTP-1 deploy'])
+})
+
+test('a name the person wrote stays on the old session, and the fresh one links to it', FULL, async ($, on) => {
+  const w = await handOffAt($, on, named(titleRow('Billing')))
+  expect(w.clears).toEqual(['clear', 'rename Billing ← DTP-1 deploy'])
+})
+
+test('a name that already holds arrows gives only its part after the last one, so no name has two arrows', FULL, async ($, on) => {
+  const w = await handOffAt($, on, named(titleRow('Alpha ← Beta ← Gamma')))
+  expect(w.clears).toEqual(['clear', 'rename Gamma ← DTP-1 deploy'])
+})
+
+test('a session the person renamed after the mod named it is linked by that name at the next handoff', FULL, async ($, on) => {
+  const mine = 'DTP-1 cache ← DTP-1 deploy'
+  const w = await handOffAt($, on, named(titleRow(mine) + titleRow('Payments'), [mine]))
+  expect(w.clears).toEqual(['clear', 'rename Payments ← DTP-1 deploy'])
+})
+
+test('only the latest title of this session counts, and rows of another session or half a row are skipped', () => {
+  const rows = titleRow('first') + titleRow('other', 's9') + titleRow('latest') + titleRow('foreign', 's9') + '{"type":"custom-title","customTitle":"half'
+  expect(latestTitle(rows, 's1')).toBe('latest')
+  expect(latestTitle('{"type":"user"}\n', 's1')).toBe('')
+  expect(latestTitle('', 's1')).toBe('')
+})
+
+test('the plan keeps one arrow per name whoever wrote the parts', () => {
+  const names = { this: 'DTP-1 cache', next: 'DTP-1 deploy' }
+  expect(planNames('', [], names)).toEqual({ old: 'DTP-1 cache', next: 'DTP-1 cache ← DTP-1 deploy', oldOwn: 'DTP-1 cache', nextOwn: 'DTP-1 deploy' })
+  expect(planNames('X ← Y ← Z', ['X ← Y ← Z'], names).old).toBe('Y ← DTP-1 cache')
+  expect(planNames('Mine', [], names)).toEqual({ old: '', next: 'Mine ← DTP-1 deploy', oldOwn: 'Mine', nextOwn: 'DTP-1 deploy' })
+  expect(planNames('P ← Q', ['P ← Q'], { this: '', next: 'N' })).toEqual({ old: '', next: 'Q ← N', oldOwn: 'Q', nextOwn: 'N' })
+  expect(planNames('', [], { this: 'A ← B', next: 'C' }).next).toBe('B ← C')
+  expect(planNames('', [], { this: '', next: '' })).toEqual({ old: '', next: '', oldOwn: '', nextOwn: '' })
+  expect(lateNext('Me ← Mine', names)).toEqual({ old: '', next: 'Mine ← DTP-1 deploy', oldOwn: 'Mine', nextOwn: 'DTP-1 deploy' })
+  expect(remember(Array.from({ length: 45 }, (_, at) => `t${at}`), ['new', '']).length).toBe(40)
+})
+
+const bytesFrom = (value: string) => new TextEncoder().encode(value)
+function base64Of(bytes: Uint8Array) {
+  const table = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+  const parts: string[] = []
+  for (let at = 0; at < bytes.length; at += 3) {
+    const n = (bytes[at]! << 16) | ((bytes[at + 1] ?? 0) << 8) | (bytes[at + 2] ?? 0)
+    const left = bytes.length - at
+    parts.push(table[(n >> 18) & 63]! + table[(n >> 12) & 63]! + (left > 1 ? table[(n >> 6) & 63]! : '=') + (left > 2 ? table[n & 63]! : '='))
+  }
+  return parts.join('')
+}
+
+test('a transcript past what $.fs.read takes is read from its end in byte chunks, across a line longer than a chunk, with no findstr', FULL, async ($, on) => {
+  const setup = named('')
+  setup.files.delete(TRANSCRIPT)
+  const long = `${JSON.stringify({ type: 'user', text: 'x'.repeat(1.5 * 1024 * 1024) })}\n`
+  const file = bytesFrom(titleRow('Billing ← old') + long + titleRow('foreign', 's9') + long.slice(0, 700 * 1024) + '\n')
+  const argvs: string[][] = []
+  on('fs.stat', () => ({ value: { kind: 'file', size: file.length, mtimeMs: 0, isLink: false } }))
+  on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    argvs.push(e.argv)
+    const [, from, length] = /Seek\((\d+).*::new\((\d+)\)/.exec(e.argv.join(' ')) ?? []
+    const chunk = file.subarray(Number(from), Number(from) + Number(length))
+    return { value: { exitCode: 0, stdout: base64Of(chunk), stderr: '' } }
+  })
+  const w = await handOffAt($, on, setup)
+  expect(argvs.length).toBeGreaterThan(1)
+  expect(argvs.every(argv => argv[0] === 'powershell')).toBe(true)
+  expect(w.clears).toEqual(['clear', 'rename old ← DTP-1 deploy'])
+})
+
+test('the tail scan stops at the first chunk that holds a title and decodes multibyte text whole', async () => {
+  const file = bytesFrom(`${JSON.stringify({ type: 'user', text: 'é'.repeat(900 * 1024) })}\n${titleRow('Cobrança ← pix')}${JSON.stringify({ type: 'user', text: 'ü'.repeat(100 * 1024) })}\n`)
+  const reads: number[] = []
+  const found = await scanTail(file.length, 8, async (from, length) => {
+    reads.push(from)
+    return new Uint8Array(file.subarray(from, from + length))
+  }, chunk => latestTitle(chunk, 's1') || undefined)
+  expect(found).toBe('Cobrança ← pix')
+  expect(reads.length).toBeLessThan(3)
+  const sample = bytesFrom('Cobrança ← pix é ü 😀')
+  expect(textOf(bytesOf(base64Of(sample)))).toBe('Cobrança ← pix é ü 😀')
+})
+
+test('after a clear the person ran, the fresh session links to the old one\'s name, which the mod cannot rename any more', async ($, on) => {
+  const setup = named(titleRow('Billing'))
+  const w = world(on, setup.files, (system: string) => (system.includes('compare') ? RELATED(true) : UPDATE('X')), undefined, {}, setup.kept)
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+  w.flags.id = 's2'
+  await $.prompt.submit({ text: 'what did we decide for storage?', wait: false, origin: COMPOSER } as never)
+  await w.clock.advance(1)
+  expect(w.clears).toEqual(['rename Billing ← DTP-1 deploy'])
+})
+
+const LONG_GOAL = 'Build the orders API on PostgreSQL with UUID v7 ids, a Redis cache in front, and a nightly job that archives shipped orders to cold storage'
+
+// A related first prompt after a clear the person ran, then the band drawn: the carried card.
+async function carriedCard($: any, on: any, options: { goal?: string; title?: string; names?: { this: string; next: string } }) {
+  const ledger = { ...seeded(), goal: options.goal ?? seeded().goal, names: options.names ?? NAMES }
+  const files = autoFiles(ledger)
+  files.set(TRANSCRIPT, options.title ? titleRow(options.title) : '')
+  const w = world(on, files, (system: string) => (system.includes('compare') ? RELATED(true) : UPDATE('X')), undefined, {}, { 'transcript:s1': { path: TRANSCRIPT, at: 0 } })
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as never)
+  w.flags.id = 's2'
+  await $.prompt.submit({ text: 'what did we decide for storage?', wait: false, origin: COMPOSER } as never)
+  await w.clock.advance(1)
+  return { w, band: await $.ui.mount(BAND as never) }
+}
+
+const drawn = async (band: any, key: string) => JSON.stringify(await band.drawn({ in: key }))
+const MORE = { safe: { more: '▾', less: '▴' }, nerd: { more: '', less: '' } }
+
+test('the carried card heads with `previous ← current` from the two sessions\' names', { options: { icons: 'safe' } }, async ($, on) => {
+  const { band } = await carriedCard($, on, { title: 'Billing' })
+  expect(await band.find({ type: 'Text', text: 'Billing ← DTP-1 deploy' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'Carried over: Build the orders API' })).toBeDefined()
+  await band.unmount()
+})
+
+test('with only the fresh name the header shows it alone', { options: { icons: 'safe' } }, async ($, on) => {
+  const { band } = await carriedCard($, on, {})
+  expect(await band.find({ type: 'Text', text: 'DTP-1 deploy' })).toBeDefined()
+  await band.unmount()
+})
+
+test('with neither name the carried card has no header', { options: { icons: 'safe' } }, async ($, on) => {
+  const { band } = await carriedCard($, on, { names: { this: '', next: '' } })
+  expect(await band.find({ key: 'wrap-up-choice-names' })).toBeUndefined()
+  expect(await band.find({ type: 'Text', text: 'Carried over: Build the orders API' })).toBeDefined()
+  await band.unmount()
+})
+
+for (const icons of ['safe', 'nerd'] as const) {
+  test(`a cut goal shows ${MORE[icons].more} Show all on the action row and ${MORE[icons].less} Show less once opened (${icons})`, { options: { icons } }, async ($, on) => {
+    const { band } = await carriedCard($, on, { goal: LONG_GOAL, title: 'Billing' })
+    const cut = `Carried over: ${LONG_GOAL.slice(0, 79).trimEnd()}…`
+    expect(await band.find({ type: 'Text', text: cut })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: `Carried over: ${LONG_GOAL}` })).toBeUndefined()
+    expect(await drawn(band, 'wrap-up-choice-more')).toContain('Show all')
+    expect(await drawn(band, 'wrap-up-choice-more')).toContain(MORE[icons].more)
+    const actions = JSON.stringify(await band.find({ key: 'wrap-up-choice-actions' }))
+    expect(actions.indexOf('wrap-up-choice-more')).toBeGreaterThan(-1)
+    expect(actions.indexOf('wrap-up-choice-more')).toBeLessThan(actions.indexOf('wrap-up-switch'))
+    await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-choice-more' } as never)
+    expect(await band.find({ type: 'Text', text: ' shows the whole goal' })).toBeDefined()
+
+    await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'wrap-up-choice-more' } as never)
+    expect(await band.find({ type: 'Text', text: `Carried over: ${LONG_GOAL}` })).toBeDefined()
+    expect(await drawn(band, 'wrap-up-choice-more')).toContain('Show less')
+    expect(await drawn(band, 'wrap-up-choice-more')).toContain(MORE[icons].less)
+
+    await band.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'wrap-up-choice-more' } as never)
+    expect(await band.find({ type: 'Text', text: cut })).toBeDefined()
+    await band.unmount()
+  })
+}
+
+test('a goal that fits draws no Show all and keeps the pills on its row', { options: { icons: 'safe' } }, async ($, on) => {
+  const { band } = await carriedCard($, on, {})
+  expect(await band.find({ key: 'wrap-up-choice-more' })).toBeUndefined()
+  expect(await band.find({ key: 'wrap-up-choice-actions' })).toBeUndefined()
+  expect(await band.find({ key: 'wrap-up-switch' })).toBeDefined()
+  await band.unmount()
+})
+
+test('the Start fresh tip says the handoff was already sent with the first prompt', { options: { icons: 'safe' } }, async ($, on) => {
+  const { band } = await carriedCard($, on, {})
+  await band.pointer({ type: 'move', x: 1, y: 0, in: 'wrap-up-switch' } as never)
+  expect(await band.find({ type: 'Text', text: / was already sent with your first prompt, so starting fresh only changes what the mod tracks from now on/ })).toBeDefined()
+  await band.unmount()
 })

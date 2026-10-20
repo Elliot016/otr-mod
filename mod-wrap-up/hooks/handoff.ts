@@ -57,7 +57,7 @@ export const threadsPrompt = (transcript: string) =>
     `<transcript>\n${transcript}\n</transcript>`,
     '',
     'Group what is worth carrying over (goals, decisions, open tasks, files in play, constraints) into 2 to 4 threads, most important first.',
-    `Then name two sessions for /rename: "this" is the work this session did, "next" is the work a fresh session picks up. Each name starts with the ticket key when the session names one, then one or two words in the session's language, at most ${NAME_MAX} characters.`,
+    `Then ${NAMES_RULE}`,
     'Fill this template:',
     '{ "threads": [ { "label": "a short name, at most 5 words, no commas", "detail": "what the thread covers, one sentence, at most 25 words" } ], "names": { "this": "name for this session", "next": "name for the next session" } }',
   ].join('\n')
@@ -66,6 +66,9 @@ const MAX_THREADS = 4
 
 // Above this a session name wraps in the taskbar strip.
 export const NAME_MAX = 16
+
+// The card and the automatic handoff ask for names with the same words.
+export const NAMES_RULE = `name two sessions for /rename: "this" is the work this session did, "next" is the work a fresh session picks up. Each name starts with the issue key when the session names one, then one or two words in the session's language, at most ${NAME_MAX} characters.`
 
 // The /rename names for the session being left and the fresh one; empty when Haiku proposed none that fits.
 export type Names = { this: string; next: string }
@@ -81,9 +84,12 @@ const replyJson = (reply: string): any => {
   }
 }
 
-const sessionName = (value: unknown) => {
+export const sessionName = (value: unknown) => {
   const name = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
-  return name.length <= NAME_MAX ? name : ''
+  if (name.length <= NAME_MAX) return name
+  // Haiku often runs a little long; the words before the last space or hyphen that fits still name the work.
+  const head = name.slice(0, NAME_MAX + 1)
+  return head.slice(0, Math.max(head.lastIndexOf(' '), head.lastIndexOf('-'), 0)).replace(/[\s-]+$/, '')
 }
 
 export function parseNames(reply: string): Names {
