@@ -414,7 +414,7 @@ test('the countdown renames this session before the clear and the fresh one righ
   expect(saved(w).names).toEqual(NAMES)
   await w.clock.advance(5000)
   await w.clock.advance(1)
-  expect(w.clears).toEqual(['rename DTP-1 cache', 'clear', 'rename DTP-1 cache ← DTP-1 deploy'])
+  expect(w.clears).toEqual(['rename DTP-1 cache', 'clear', 'rename DTP-1 cache <- DTP-1 deploy'])
   expect(w.submittedText).toHaveLength(1)
   await band.unmount()
 })
@@ -891,30 +891,30 @@ async function handOffAt($: any, on: any, setup: ReturnType<typeof named>) {
   return w
 }
 
-test('at the mark the old session becomes `its parent ← this` and the fresh one `its own name ← next`', FULL, async ($, on) => {
-  const w = await handOffAt($, on, named(titleRow('Billing ← DTP-1 old'), ['Billing ← DTP-1 old']))
-  expect(w.clears).toEqual(['rename Billing ← DTP-1 cache', 'clear', 'rename DTP-1 cache ← DTP-1 deploy'])
+test('at the mark the old session becomes `its parent <- this` and the fresh one `its own name <- next`', FULL, async ($, on) => {
+  const w = await handOffAt($, on, named(titleRow('Billing <- DTP-1 old'), ['Billing <- DTP-1 old']))
+  expect(w.clears).toEqual(['rename Billing <- DTP-1 cache', 'clear', 'rename DTP-1 cache <- DTP-1 deploy'])
 })
 
 test('a session with no title and no parent gets just its name, and the fresh one links to it', FULL, async ($, on) => {
   const w = await handOffAt($, on, named(''))
-  expect(w.clears).toEqual(['rename DTP-1 cache', 'clear', 'rename DTP-1 cache ← DTP-1 deploy'])
+  expect(w.clears).toEqual(['rename DTP-1 cache', 'clear', 'rename DTP-1 cache <- DTP-1 deploy'])
 })
 
 test('a name the person wrote stays on the old session, and the fresh one links to it', FULL, async ($, on) => {
   const w = await handOffAt($, on, named(titleRow('Billing')))
-  expect(w.clears).toEqual(['clear', 'rename Billing ← DTP-1 deploy'])
+  expect(w.clears).toEqual(['clear', 'rename Billing <- DTP-1 deploy'])
 })
 
 test('a name that already holds arrows gives only its part after the last one, so no name has two arrows', FULL, async ($, on) => {
-  const w = await handOffAt($, on, named(titleRow('Alpha ← Beta ← Gamma')))
-  expect(w.clears).toEqual(['clear', 'rename Gamma ← DTP-1 deploy'])
+  const w = await handOffAt($, on, named(titleRow('Alpha <- Beta <- Gamma')))
+  expect(w.clears).toEqual(['clear', 'rename Gamma <- DTP-1 deploy'])
 })
 
 test('a session the person renamed after the mod named it is linked by that name at the next handoff', FULL, async ($, on) => {
-  const mine = 'DTP-1 cache ← DTP-1 deploy'
+  const mine = 'DTP-1 cache <- DTP-1 deploy'
   const w = await handOffAt($, on, named(titleRow(mine) + titleRow('Payments'), [mine]))
-  expect(w.clears).toEqual(['clear', 'rename Payments ← DTP-1 deploy'])
+  expect(w.clears).toEqual(['clear', 'rename Payments <- DTP-1 deploy'])
 })
 
 test('only the latest title of this session counts, and rows of another session or half a row are skipped', () => {
@@ -926,13 +926,16 @@ test('only the latest title of this session counts, and rows of another session 
 
 test('the plan keeps one arrow per name whoever wrote the parts', () => {
   const names = { this: 'DTP-1 cache', next: 'DTP-1 deploy' }
-  expect(planNames('', [], names)).toEqual({ old: 'DTP-1 cache', next: 'DTP-1 cache ← DTP-1 deploy', oldOwn: 'DTP-1 cache', nextOwn: 'DTP-1 deploy' })
-  expect(planNames('X ← Y ← Z', ['X ← Y ← Z'], names).old).toBe('Y ← DTP-1 cache')
-  expect(planNames('Mine', [], names)).toEqual({ old: '', next: 'Mine ← DTP-1 deploy', oldOwn: 'Mine', nextOwn: 'DTP-1 deploy' })
-  expect(planNames('P ← Q', ['P ← Q'], { this: '', next: 'N' })).toEqual({ old: '', next: 'Q ← N', oldOwn: 'Q', nextOwn: 'N' })
-  expect(planNames('', [], { this: 'A ← B', next: 'C' }).next).toBe('B ← C')
+  expect(planNames('', [], names)).toEqual({ old: 'DTP-1 cache', next: 'DTP-1 cache <- DTP-1 deploy', oldOwn: 'DTP-1 cache', nextOwn: 'DTP-1 deploy' })
+  expect(planNames('X <- Y <- Z', ['X <- Y <- Z'], names).old).toBe('Y <- DTP-1 cache')
+  expect(planNames('Mine', [], names)).toEqual({ old: '', next: 'Mine <- DTP-1 deploy', oldOwn: 'Mine', nextOwn: 'DTP-1 deploy' })
+  expect(planNames('P <- Q', ['P <- Q'], { this: '', next: 'N' })).toEqual({ old: '', next: 'Q <- N', oldOwn: 'Q', nextOwn: 'N' })
+  expect(planNames('', [], { this: 'A <- B', next: 'C' }).next).toBe('B <- C')
   expect(planNames('', [], { this: '', next: '' })).toEqual({ old: '', next: '', oldOwn: '', nextOwn: '' })
-  expect(lateNext('Me ← Mine', names)).toEqual({ old: '', next: 'Mine ← DTP-1 deploy', oldOwn: 'Mine', nextOwn: 'DTP-1 deploy' })
+  expect(lateNext('Me <- Mine', names)).toEqual({ old: '', next: 'Mine <- DTP-1 deploy', oldOwn: 'Mine', nextOwn: 'DTP-1 deploy' })
+  // A name linked with the old `←` still splits, and either arrow counts as the last one.
+  expect(lateNext('Me ← Mine', names).next).toBe('Mine <- DTP-1 deploy')
+  expect(planNames('A ← B <- C', ['A ← B <- C'], names).old).toBe('B <- DTP-1 cache')
   expect(remember(Array.from({ length: 45 }, (_, at) => `t${at}`), ['new', '']).length).toBe(40)
 })
 
@@ -964,7 +967,7 @@ test('a transcript past what $.fs.read takes is read from its end in byte chunks
   const w = await handOffAt($, on, setup)
   expect(argvs.length).toBeGreaterThan(1)
   expect(argvs.every(argv => argv[0] === 'powershell')).toBe(true)
-  expect(w.clears).toEqual(['clear', 'rename old ← DTP-1 deploy'])
+  expect(w.clears).toEqual(['clear', 'rename old <- DTP-1 deploy'])
 })
 
 test('the tail scan stops at the first chunk that holds a title and decodes multibyte text whole', async () => {
@@ -987,7 +990,7 @@ test('after a clear the person ran, the fresh session links to the old one\'s na
   w.flags.id = 's2'
   await $.prompt.submit({ text: 'what did we decide for storage?', wait: false, origin: COMPOSER } as never)
   await w.clock.advance(1)
-  expect(w.clears).toEqual(['rename Billing ← DTP-1 deploy'])
+  expect(w.clears).toEqual(['rename Billing <- DTP-1 deploy'])
 })
 
 const LONG_GOAL = 'Build the orders API on PostgreSQL with UUID v7 ids, a Redis cache in front, and a nightly job that archives shipped orders to cold storage'
@@ -1008,9 +1011,9 @@ async function carriedCard($: any, on: any, options: { goal?: string; title?: st
 const drawn = async (band: any, key: string) => JSON.stringify(await band.drawn({ in: key }))
 const MORE = { safe: { more: '▾', less: '▴' }, nerd: { more: '', less: '' } }
 
-test('the carried card heads with `previous ← current` from the two sessions\' names', { options: { icons: 'safe' } }, async ($, on) => {
+test('the carried card heads with `previous <- current` from the two sessions\' names', { options: { icons: 'safe' } }, async ($, on) => {
   const { band } = await carriedCard($, on, { title: 'Billing' })
-  expect(await band.find({ type: 'Text', text: 'Billing ← DTP-1 deploy' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'Billing <- DTP-1 deploy' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: 'Carried over: Build the orders API' })).toBeDefined()
   await band.unmount()
 })

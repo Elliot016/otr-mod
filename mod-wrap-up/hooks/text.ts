@@ -49,7 +49,7 @@ export default {
     "showAll": "Show all",
     "showLess": "Show less"
   },
-  "link": "←",
+  "link": "<-",
   "writingStage": "Writing handoff…",
   "choice": {
     "handoff": "Handoff",

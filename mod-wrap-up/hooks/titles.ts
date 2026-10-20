@@ -4,15 +4,23 @@ import text from './text'
 
 const ARROW = text.link
 
+// Names linked before the arrow became ASCII still split at their `←`.
+function lastArrow(title: string) {
+  return [ARROW, '←'].reduce((last, arrow) => {
+    const at = title.lastIndexOf(arrow)
+    return at > last.at ? { at, length: arrow.length } : last
+  }, { at: -1, length: 0 })
+}
+
 // The part after the last arrow: the name a session goes by in the chain.
 export function ownName(title: string) {
-  const at = title.lastIndexOf(ARROW)
-  return (at < 0 ? title : title.slice(at + ARROW.length)).trim()
+  const { at, length } = lastArrow(title)
+  return (at < 0 ? title : title.slice(at + length)).trim()
 }
 
 // The part before the last arrow: the parent a title the mod set links to.
 export function parentName(title: string) {
-  const at = title.lastIndexOf(ARROW)
+  const { at } = lastArrow(title)
   return at < 0 ? '' : title.slice(0, at).trim()
 }
 

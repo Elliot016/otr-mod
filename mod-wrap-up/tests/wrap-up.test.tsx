@@ -292,7 +292,7 @@ test('Handoff shows both names; Go renames this session, clears, then renames th
 
   await click(band, 'wrap-up-go')
   expect(w.calls).toEqual(['threads', 'fork', 'run:rename', 'run:clear', 'run:rename', 'fill'])
-  expect(w.renames).toEqual(['EP-1 build fix', 'EP-1 build fix ← EP-2 deploy'])
+  expect(w.renames).toEqual(['EP-1 build fix', 'EP-1 build fix <- EP-2 deploy'])
   expect(w.filled).toEqual(['Goal: ship it.'])
   await band.unmount()
 })
@@ -328,7 +328,7 @@ test('a refused /rename still clears and fills, and the toast names the line to 
 
   expect(w.filled).toEqual(['Goal: ship it.'])
   expect(await band.find({ type: 'Text', text: /Could not rename the earlier session to EP-1 build fix/ })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: /type \/rename EP-1 build fix ← EP-2 deploy/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /type \/rename EP-1 build fix <- EP-2 deploy/ })).toBeDefined()
   await band.unmount()
 })
 
