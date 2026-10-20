@@ -64,7 +64,7 @@ Each mod works alone, with or without mod-manager.
 
 | Every terminal mod in 133 seconds |
 | --- |
-| https://github.com/user-attachments/assets/7fd3fef8-d252-4357-b84b-fbbace50faf4 |
+| https://github.com/user-attachments/assets/f5d44706-ee09-484c-8b7f-43c8d98898a9 |
 
 <details>
 <summary>Narration</summary>
@@ -202,7 +202,7 @@ Click a mod to open its video and a link to its full page.
 
 | The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/0b6e9237-5ee7-4640-a150-dea2b42d0b3b |
+| https://github.com/user-attachments/assets/26d06be9-429b-4cd3-8c1c-47b116ee2354 |
 
 [Full page][doc-mod-manager]
 
@@ -213,7 +213,7 @@ Click a mod to open its video and a link to its full page.
 
 | Live while Claude works |
 | --- |
-| https://github.com/user-attachments/assets/7f7e1d6b-52f2-471a-92df-f333cf6b8efb |
+| https://github.com/user-attachments/assets/92fb4b27-e977-4ea1-a553-32bc9e695040 |
 
 [Full page][doc-mod-file-tree]
 
@@ -257,7 +257,7 @@ Click a mod to open its video and a link to its full page.
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/2e8a454d-59f1-49c6-8ab6-1cf272702fe0 |
+| https://github.com/user-attachments/assets/4acef8c7-d1a0-48c1-bd01-d2a38c73cfb2 |
 
 [Full page][doc-mod-transcript]
 
@@ -268,7 +268,7 @@ Click a mod to open its video and a link to its full page.
 
 | Effort on hover, models on click |
 | --- |
-| https://github.com/user-attachments/assets/f3eee15b-8130-43c5-b120-f7445ef7510f |
+| https://github.com/user-attachments/assets/bc90d5e3-6bf5-4981-8bdd-410abb7465c8 |
 
 [Full page][doc-mod-model-effort]
 
@@ -290,7 +290,7 @@ Click a mod to open its video and a link to its full page.
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/8fea424e-bb34-4132-8d4b-f72c64602f85 |
+| https://github.com/user-attachments/assets/248259f2-7cc2-4b5c-b237-a68fc09490c4 |
 
 [Full page][doc-mod-progress]
 
@@ -323,11 +323,11 @@ Click a mod to open its video and a link to its full page.
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/dc39f29c-a76c-4868-97d1-4901e02c1527 |
+| https://github.com/user-attachments/assets/d0d12e0a-4206-4dd2-a63c-dacc3a7200d2 |
 
 | Auto handoff at the mark: countdown, clear, carry on |
 | --- |
-| https://github.com/user-attachments/assets/a9740889-69ca-4e2c-a89d-da1efda56407 |
+| https://github.com/user-attachments/assets/8f6c31b4-03c9-44c4-aebe-19d5b93c5e1e |
 
 [Full page][doc-mod-wrap-up]
 

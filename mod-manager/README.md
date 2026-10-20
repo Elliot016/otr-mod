@@ -32,7 +32,7 @@ The gear pill, or `/mod-manager`.
 
 | The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/0b6e9237-5ee7-4640-a150-dea2b42d0b3b |
+| https://github.com/user-attachments/assets/26d06be9-429b-4cd3-8c1c-47b116ee2354 |
 
 ## Features
 
@@ -60,4 +60,4 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 
 [img-manager-icons-auto]: https://github.com/user-attachments/assets/bb4107d9-8ce0-4400-8fda-d6c386f401e6
 [img-manager-icons-plain]: https://github.com/user-attachments/assets/ec418df4-5d28-4fea-8945-e82a40727922
-[img-manager-page]: https://github.com/user-attachments/assets/ed44304f-0c05-433c-9a31-f17b1db623fd
+[img-manager-page]: https://github.com/user-attachments/assets/7274bf91-5a76-4a27-9153-f131be3ca2c0

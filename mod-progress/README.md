@@ -36,7 +36,7 @@ Progress pill.
 
 | Two agents running, opened from the pill |
 | --- |
-| https://github.com/user-attachments/assets/8fea424e-bb34-4132-8d4b-f72c64602f85 |
+| https://github.com/user-attachments/assets/248259f2-7cc2-4b5c-b237-a68fc09490c4 |
 
 ## Features
 
@@ -64,7 +64,7 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-progress-panel]: https://github.com/user-attachments/assets/811ac06b-c3cc-4c39-bd17-168503adef0b
-[img-progress-pill]: https://github.com/user-attachments/assets/42ddc20e-3b34-430d-a82a-3ffca022da67
-[img-progress-shell]: https://github.com/user-attachments/assets/376a0f70-d9ec-468c-97aa-ce3cea0ebf86
-[img-progress-transcript]: https://github.com/user-attachments/assets/48072a82-e9f0-487c-8df5-6e8ae12b4612
+[img-progress-panel]: https://github.com/user-attachments/assets/cd40f976-d96c-4b20-ac20-d2403bd1d822
+[img-progress-pill]: https://github.com/user-attachments/assets/3b89b0e0-f4ee-4203-965b-4c467bd466b1
+[img-progress-shell]: https://github.com/user-attachments/assets/c749c7e6-db29-4000-a403-2e59d3d1db5b
+[img-progress-transcript]: https://github.com/user-attachments/assets/9ed57916-9da3-4fbb-accc-08e86335ae47

@@ -36,11 +36,11 @@ Wrap up pill.
 
 | Compact, start to end |
 | --- |
-| https://github.com/user-attachments/assets/dc39f29c-a76c-4868-97d1-4901e02c1527 |
+| https://github.com/user-attachments/assets/d0d12e0a-4206-4dd2-a63c-dacc3a7200d2 |
 
 | Auto handoff at the mark: countdown, clear, carry on |
 | --- |
-| https://github.com/user-attachments/assets/a9740889-69ca-4e2c-a89d-da1efda56407 |
+| https://github.com/user-attachments/assets/8f6c31b4-03c9-44c4-aebe-19d5b93c5e1e |
 
 ## Features
 
@@ -97,7 +97,7 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-wrap-up-card]: https://github.com/user-attachments/assets/b1b48ded-caae-497a-8e9d-ed8d3b385ddf
-[img-wrap-up-carried]: https://github.com/user-attachments/assets/4ae0461b-7b42-4bd1-a420-b55ece8285f9
-[img-wrap-up-compact]: https://github.com/user-attachments/assets/adac7fc9-dde9-44e1-8693-e594c0515418
-[img-wrap-up-countdown]: https://github.com/user-attachments/assets/15c7eeec-5036-4f28-ba0b-cdf6571118e6
+[img-wrap-up-card]: https://github.com/user-attachments/assets/60f54de5-ff21-49a1-9ac3-a50802ed9a9c
+[img-wrap-up-carried]: https://github.com/user-attachments/assets/e764b001-861a-4f2e-ae8a-3e521b8b94b7
+[img-wrap-up-compact]: https://github.com/user-attachments/assets/94846065-3657-4f7a-b662-64f91bd70e4a
+[img-wrap-up-countdown]: https://github.com/user-attachments/assets/07e15d22-8ba3-4a0c-ad39-e8fc9f919a19
