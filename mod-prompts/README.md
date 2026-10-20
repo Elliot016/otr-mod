@@ -30,6 +30,11 @@ Prompts pill.
 | --- |
 | https://github.com/user-attachments/assets/0cf0064f-0498-4f0a-85cc-18e5256cfcd3 |
 
+## Features
+
+- **Every prompt of the session:** A sidebar lists each prompt you sent, with the full text in a card. A button jumps the transcript back to it. A long prompt is cut short, and Show less cuts it back after Show all.
+- **Command hooks:** On SessionStart, a small shell hook appends the event's JSON as one line to `~/.claude/mods-data/mod-prompts/bridge/<session id>.jsonl` (under `$CLAUDE_CONFIG_DIR` when that is set), and the mod reads the file every 250 ms. A record can hold the session id, the working folder and the transcript path. SessionEnd deletes the session's file, and SessionStart deletes files older than 7 days. The hooks need a POSIX shell (Git Bash on Windows). Without one they write nothing, and the mod falls back to what it can find on its own. Some plans block plugin hooks on these events; the mod then falls back the same way.
+
 ## Settings
 
 Change them with `/mod-prompts settings` or the gear pill.

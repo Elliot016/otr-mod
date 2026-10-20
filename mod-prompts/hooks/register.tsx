@@ -2,6 +2,7 @@
 // Registers the mod: wires the prompts sidebar, timeline, settings, jumps and toasts.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
+import { bridgeOn, endBridge, startBridge, type BridgeRecord } from './bridge'
 import { cardSpace, HEAD_ROWS, stickyCard } from './card'
 import { isTipMessage, type EntryMessage, type EntryProps, type Tip } from './entry'
 import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, subpill, withMark, type IconMode } from './look'
@@ -164,6 +165,17 @@ async function pruneTranscripts($: EngineInterface) {
   } catch {
     // Old entries stay until the next start.
   }
+}
+
+// Only the SessionStart record names the transcript, and the bridge delivers it; kept per session so a reload finds it again.
+async function sessionStarted($: EngineInterface, record: BridgeRecord) {
+  const session = String(record.session_id ?? '')
+  const path = String(record.transcript_path ?? '')
+  if (!session || !path) return
+  // A compact keeps the same session and transcript, and the prompts learned since the read are already here.
+  if (session !== listSession || path !== transcript) startList(session, path)
+  await $.store.set(`transcript:${session}`, { path, at: await $.clock.now() }).catch(() => {})
+  $.ui.invalidate('ui.render')
 }
 
 // Asking the id on every row would cost a round trip each, so rows ask after a session.end, or once this long has passed.
@@ -421,6 +433,8 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     try {
+      bridgeOn('SessionStart', record => sessionStarted($, record))
+      await startBridge($, 'mod-prompts')
       await loadLook($)
       await $.command.register({ name: 'mod-prompts', description: text.commandDescription, argumentHint: '[settings]' })
       await pruneTranscripts($)
@@ -435,18 +449,10 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Only the settings hook event names the transcript; kept per session so a reload finds it again.
-  on('classic.SessionStart', async ($, e, next) => {
-    // A compact keeps the same session and transcript, and the prompts learned since the read are already here.
-    if (e.session_id !== listSession || e.transcript_path !== transcript) startList(e.session_id, e.transcript_path)
-    await $.store.set(`transcript:${e.session_id}`, { path: e.transcript_path, at: await $.clock.now() }).catch(() => {})
-
-    return next(e)
-  })
-
   // A /resume or /clear ends this session; the next row asks for the id at once.
   on('session.end', async ($, e, next) => {
     sessionCheckedAt = 0
+    await endBridge($, e.sessionId)
 
     return next(e)
   })

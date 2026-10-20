@@ -42,12 +42,15 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
   const scrolled: string[] = []
   const spawned: string[] = []
   const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
-  on('classic.SessionStart', () => ({}))
+  on('session.start', () => ({ cwd: '/w' }))
+  on('command.register', () => ({ value: undefined }))
+  on('store.keys', () => ({ value: [] }))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
   on('fs.read', (_$, e) => {
+    if (neutral(e.path).endsWith('/bridge/s1.jsonl')) return { value: `${JSON.stringify({ session_id: 's1', transcript_path: '/t/s1.jsonl', hook_event_name: 'SessionStart', source: 'startup' })}\n` }
     spawned.push(neutral(e.path))
     return { value: TRANSCRIPT }
   })
@@ -58,13 +61,15 @@ test('the timeline lists prompts and the turn of the open one, a click opens a s
     scrolled.push(String((e as { to?: { requestId?: string } }).to?.requestId))
     return { value: {} } as never
   })
-  mock.clock(on)
-  on('ui.render', ($$, e) => {
-    const { Text } = $$.ui.resolve(e)
+  mock.env(on, { USERPROFILE: '/home/u' })
+  const clock = mock.clock(on)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
     return <Text>base</Text>
   })
 
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  await clock.advance(250)
   await $.command.run({ command: 'mod-prompts' } as never)
 
   // Claude Code draws the first prompt's row under a split-row id that keeps the uuid's first four groups.
@@ -618,23 +623,27 @@ test('transcript paths untouched for 30 days are deleted at session start, a bar
 })
 
 test('a store that fails on the transcript path still lets the session start and the list load', async ($, on) => {
-  on('classic.SessionStart', () => ({}))
+  on('session.start', () => ({ cwd: '/w' }))
+  on('command.register', () => ({ value: undefined }))
+  on('store.keys', () => ({ value: [] }))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => {
     throw new Error('store unavailable')
   })
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: TRANSCRIPT }))
+  on('fs.read', (_$, e) => ({ value: e.path.replace(/\\/g, '/').endsWith('/bridge/s1.jsonl') ? `${JSON.stringify({ session_id: 's1', transcript_path: '/t/s1.jsonl', hook_event_name: 'SessionStart', source: 'startup' })}\n` : TRANSCRIPT }))
   on('ui.panes', () => ({ value: [] }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  mock.clock(on)
+  mock.env(on, { USERPROFILE: '/home/u' })
+  const clock = mock.clock(on)
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>base</Text>
   })
 
-  expect(await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)).toEqual({})
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as never)
+  await clock.advance(250)
   await $.command.run({ command: 'mod-prompts' } as never)
   const ui = await $.ui.mount({ plugin: 'mod-prompts', surface: 'terminal', component: 'Pane', requestId: 'prompts', props: { title: 'Prompts', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } } as never)
   expect(JSON.stringify(await ui.drawn({ in: 'prompts-tab' }))).toContain('3')
