@@ -3,8 +3,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { mix, THEME } from '../hooks/theme'
 
-import { displayName, withEffort } from '../hooks/levels'
+import { displayName, withEffort, withModel } from '../hooks/levels'
 import Meter from '../hooks/meter'
+import { bridgeStubs, feed, HOME } from './feed'
 
 // The host's test types omit `pointer` and a drawn element's `children`.
 const pointer = (ui: object, event: object) => (ui as { pointer: (event: object) => Promise<void> }).pointer(event)
@@ -239,6 +240,38 @@ test('a click on the model name lists the models used before, and a pick switche
   await ui.unmount()
 })
 
+test('a model joins the menu only once a request with it is answered', async ($, on) => {
+  const store: Record<string, unknown> = { models: ['claude-opus-5-5'] }
+  on('settings.read', () => ({ value: {} }))
+  on('store.get', (_$, e) => ({ value: store[e.key] }))
+  on('store.set', (_$, e) => {
+    store[e.key] = e.value
+    return { value: undefined }
+  })
+  on('turn.step', async function* ($$, e) {
+    const usage = e.model === 'claude-nonexistent-9' ? null : { model: e.model }
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: null, usage } as never
+  })
+  const step = async (model: string) => {
+    const stream = $.turn.step({ turnId: 't1', index: 0, model, effort: 'medium', messageCount: 1 } as never)
+    while ((await stream.next()).done !== true);
+  }
+
+  await step('claude-nonexistent-9')
+  expect(store.models).toEqual(['claude-opus-5-5'])
+  await step('claude-sonnet-5-5')
+  expect(store.models).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5'])
+  // The 1M id is the same model: it moves the plain entry up instead of adding a second one.
+  await step('claude-opus-5-5[1m]')
+  expect(store.models).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+})
+
+test('withModel folds a [1m] id into its plain id, saved before or new', () => {
+  expect(withModel(['claude-opus-5-5[1m]', 'claude-opus-5-5', 'claude-haiku-5-5'], 'claude-sonnet-5-5')).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5'])
+  expect(withModel(['claude-opus-5-5'], 'claude-opus-5-5[1M]')).toEqual(['claude-opus-5-5'])
+  expect(displayName('claude-opus-5-5[1m]')).toBe('Opus 5.5')
+})
+
 test('displayName shortens a model id and drops its date', () => {
   expect(displayName('claude-opus-5-5')).toBe('Opus 5.5')
   expect(displayName('claude-haiku-4-5-20251001')).toBe('Haiku 4.5')
@@ -364,8 +397,8 @@ test('the settings pane footer shows the tip of the hovered tab', { options: { i
   await pane.unmount()
 })
 
-// What Claude Code passes its classic PostModelSwitch hook when /model or the picker moves to `to`.
-const switched = (to: string) => ({ from_model: 'claude-opus-5-5', to_model: to, requested_model: to, source: 'command', context_tokens: 0, prompt_cache_warm: false, cache_ttl: '5m', estimated_cache_write_usd: 0, pricing: 'catalog' }) as never
+// What Claude Code passes its PostModelSwitch hook when /model or the picker moves to `to`, as the command hook appends it.
+const switched = (to: string) => ({ from_model: 'claude-opus-5-5', to_model: to, requested_model: to, source: 'command' })
 
 // One request on a model and level, which leaves the pill on them. It registers its own turn.step, so the other stubs go first.
 async function firstRequest($: any, on: any, model: string, effort: string) {
@@ -379,19 +412,25 @@ async function firstRequest($: any, on: any, model: string, effort: string) {
 
 test('a model switch through /model or the picker shows on the pill at once, at the level saved for that model', { options: { icons: 'safe' } }, async ($, on) => {
   const store: Record<string, unknown> = {}
-  band(on as never)
+  const clock = mock.clock(on)
+  const bridge = bridgeStubs(on)
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
   on('settings.read', () => ({ value: { modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' }, 'claude-sonnet-5-5': { effortLevel: 'low' } } } }))
   on('store.get', (_$, e) => ({ value: store[e.key] }))
   on('store.set', (_$, e) => {
     store[e.key] = e.value
     return { value: undefined }
   })
-  on('classic.PostModelSwitch', () => ({}) as never)
   await firstRequest($, on, 'claude-opus-5-5', 'medium')
+  await $.session.start({ cwd: '/w' } as never)
   const ui = await $.ui.mount(BAND)
   expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(' Opus 5.5 ')
 
-  await $.classic.PostModelSwitch(switched('claude-sonnet-5-5'))
+  await feed(clock, bridge, 'PostModelSwitch', switched('claude-sonnet-5-5'))
   await ui.redraw()
   const drawn = JSON.stringify(await ui.drawn({ in: 'meter' }))
   expect(drawn).toContain(' Sonnet 5.5 ')
@@ -457,50 +496,53 @@ test('without ConfigChange, a redraw picks up a level changed in the settings, a
 
 test('an effort saved by Alt+P or /effort shows on the pill at once; a project settings change does not', { options: { icons: 'safe' } }, async ($, on) => {
   const settings = { modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' } } }
-  band(on as never)
+  const clock = mock.clock(on)
+  const bridge = bridgeStubs(on)
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
   on('settings.read', () => ({ value: settings }))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
-  on('classic.ConfigChange', () => ({}) as never)
+  let shown: string | undefined
+  on('state.set', (_$: any, e: any, next: any) => {
+    if (e.key === 'current') shown = e.value.effort
+    return next(e)
+  })
+  const level = async () => shown
   await firstRequest($, on, 'claude-opus-5-5', 'medium')
-  const ui = await $.ui.mount(BAND)
-  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('◐ ')
+  await $.session.start({ cwd: '/w' } as never)
+  // Nothing draws until the end, so a render's own check of the saved level cannot stand in for the record.
 
   settings.modelSettings['claude-opus-5-5'].effortLevel = 'high'
-  await $.classic.ConfigChange({ source: 'user_settings', file_path: '/h/.claude/settings.json' } as never)
-  await ui.redraw()
-  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('● ')
+  await feed(clock, bridge, 'ConfigChange', { source: 'user_settings', file_path: '/h/.claude/settings.json' })
+  expect(await level()).toBe('high')
 
   settings.modelSettings['claude-opus-5-5'].effortLevel = 'low'
-  await $.classic.ConfigChange({ source: 'project_settings', file_path: '/w/.claude/settings.json' } as never)
-  await ui.redraw()
-  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('● ')
-  await ui.unmount()
+  await feed(clock, bridge, 'ConfigChange', { source: 'project_settings', file_path: '/w/.claude/settings.json' })
+  expect(await level()).toBe('high')
 })
 
 test('a clicked level holds on the pill while the saved level is the one before it, and yields to any other', { options: { icons: 'safe' } }, async ($, on) => {
-  const files: Record<string, string> = { '/h/.claude/settings.json': JSON.stringify({ modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' } } }) }
-  const neutral = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+  const settingsPath = `${HOME}/.claude/settings.json`
+  const files: Record<string, string> = { [settingsPath]: JSON.stringify({ modelSettings: { 'claude-opus-5-5': { effortLevel: 'medium' } } }) }
   const saveLevel = (effort: string) => {
-    files['/h/.claude/settings.json'] = JSON.stringify({ modelSettings: { 'claude-opus-5-5': { effortLevel: effort } } })
+    files[settingsPath] = JSON.stringify({ modelSettings: { 'claude-opus-5-5': { effortLevel: effort } } })
   }
-  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? '/h' : undefined }))
-  on('fs.read', (_$, e) => ({ value: files[neutral(e.path)] ?? '' }))
-  on('fs.write', (_$, e) => {
-    files[neutral(e.path)] = e.text
-    return { value: undefined }
-  })
-  on('settings.read', () => ({ value: JSON.parse(files['/h/.claude/settings.json']!) }))
+  const clock = mock.clock(on)
+  const bridge = bridgeStubs(on, files)
+  on('settings.read', () => ({ value: JSON.parse(files[settingsPath]!) }))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
-  on('classic.ConfigChange', () => ({}) as never)
-  mock.clock(on)
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>base</Text>
   })
   await firstRequest($, on, 'claude-opus-5-5', 'medium')
+  await $.session.start({ cwd: '/w' } as never)
   const ui = await $.ui.mount(BAND)
   await pointer(ui, { in: 'meter', type: 'move', x: 1, y: 0 })
   await pointer(ui, { in: 'meter', type: 'down', button: 'left', x: 18, y: 0 })
@@ -509,13 +551,13 @@ test('a clicked level holds on the pill while the saved level is the one before 
 
   // Alt+P saves medium, the level before the click: the clicked max still rides on the requests.
   saveLevel('medium')
-  await $.classic.ConfigChange({ source: 'user_settings' } as never)
+  await feed(clock, bridge, 'ConfigChange', { source: 'user_settings' })
   await ui.redraw()
   expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain('◈ ')
 
   // Alt+P saves high, another level: the pill shows it and the clicked level is dropped.
   saveLevel('high')
-  await $.classic.ConfigChange({ source: 'user_settings' } as never)
+  await feed(clock, bridge, 'ConfigChange', { source: 'user_settings' })
   await ui.redraw()
   const drawn = JSON.stringify(await ui.drawn({ in: 'meter' }))
   expect(drawn).toContain('● ')
@@ -524,19 +566,25 @@ test('a clicked level holds on the pill while the saved level is the one before 
 })
 
 test('a settings read that fails leaves the model switch whole', { options: { icons: 'safe' } }, async ($, on) => {
-  const passed: string[] = []
+  const clock = mock.clock(on)
+  const bridge = bridgeStubs(on)
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('ui.render', ($$: any, e: any) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>base</Text>
+  })
   on('settings.read', () => {
     throw new Error('unreadable')
   })
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
-  on('classic.PostModelSwitch', (_$, e) => {
-    passed.push(e.to_model)
-    return {} as never
-  })
   await firstRequest($, on, 'claude-opus-5-5', 'medium')
-  await $.classic.PostModelSwitch(switched('claude-sonnet-5-5'))
-  expect(passed).toEqual(['claude-sonnet-5-5'])
+  await $.session.start({ cwd: '/w' } as never)
+  const ui = await $.ui.mount(BAND)
+  await feed(clock, bridge, 'PostModelSwitch', switched('claude-sonnet-5-5'))
+  await ui.redraw()
+  expect(JSON.stringify(await ui.drawn({ in: 'meter' }))).toContain(' Opus 5.5 ')
+  await ui.unmount()
 })
 
 test('before the first request the pill shows this session\'s model, not the last session\'s', async ($, on) => {

@@ -2,7 +2,8 @@
 // Registers the mod: wires the meter, settings pane, commands, toasts and model switching.
 import type { ConfigValue, EngineInterface, Register, RenderElement } from 'claude-code'
 
-import { displayName, LEVEL_LOOK, LEVELS, withEffort, withModel } from './levels'
+import { bridgeOn, endBridge, startBridge, type BridgeRecord } from './bridge'
+import { displayName, LEVEL_LOOK, LEVELS, plainModel, withEffort, withModel } from './levels'
 import { entryCells, isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, type IconMode, withMark } from './look'
 import { meterCells, type MeterMessage } from './meter'
@@ -153,7 +154,6 @@ async function savedEffort($: EngineInterface, model: string) {
 async function setCurrent($: EngineInterface, model: string, effort: string) {
   await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model, effort })
   await $.store.set('model', model)
-  await $.store.set('models', withModel(await $.store.get('models'), model))
   $.ui.invalidate('ui.render')
 }
 
@@ -181,11 +181,57 @@ async function followSavedLevel($: EngineInterface) {
   $.ui.invalidate('ui.render')
 }
 
+// A reload makes the bridge replay the last record of each event once. The first record of an event after this module started is skipped when it is the one already handled, so a replayed old switch never moves the pill back.
+const replayChecked = new Set<string>()
+const REPLAY_KEPT_MS = 30 * 24 * 60 * 60 * 1000
+const replayKey = (session: string, event: string) => `bridge-last:${session}:${event}`
+
+async function isReplay($: EngineInterface, record: BridgeRecord) {
+  const key = replayKey(String(record.session_id ?? ''), String(record.hook_event_name ?? ''))
+  const raw = JSON.stringify(record)
+  const isFirst = !replayChecked.has(key)
+  replayChecked.add(key)
+  const kept = (await $.store.get(key).catch(() => undefined)) as { raw?: unknown } | undefined
+  await $.store.set(key, { raw, at: await $.clock.now() }).catch(() => undefined)
+  return isFirst && kept?.raw === raw
+}
+
+// Keys of sessions long gone leave the store.
+async function pruneReplays($: EngineInterface) {
+  try {
+    const now = await $.clock.now()
+    for (const key of await $.store.keys()) {
+      if (key.startsWith('bridge-last:') && Number(((await $.store.get(key)) as { at?: unknown } | null)?.at) < now - REPLAY_KEPT_MS) await $.store.delete(key)
+    }
+  } catch {
+    // Old entries stay until the next start.
+  }
+}
+
+// /model and the Alt+P picker switch without a request, so the pill follows at once. A failed read never blocks the switch.
+async function modelSwitched($: EngineInterface, record: BridgeRecord) {
+  try {
+    if (await isReplay($, record)) return
+    if (typeof record.to_model === 'string' && record.to_model) await followModel($, record.to_model)
+  } catch {
+    // The next request shows the model and level.
+  }
+}
+
+// Alt+P and /effort save the level to the user settings; any other source leaves the pill alone.
+async function configChanged($: EngineInterface, record: BridgeRecord) {
+  try {
+    if (record.source === 'user_settings') await followSavedLevel($)
+  } catch {
+    // The next request shows the level.
+  }
+}
+
 // The level last seen in the settings for the pill's model, and whether a check of it is already waiting.
 let lastSaved: { model: string; effort: string | null } | undefined
 let isCheckingLevel = false
 
-// ConfigChange never reaches a plugin, so a render looks for a changed saved level. Only a change counts, so a level a request downgraded stays.
+// The ConfigChange record can fail to arrive, so a render looks for a changed saved level. Only a change counts, so a level a request downgraded stays.
 async function followSavedChange($: EngineInterface) {
   const current = (await $.state.get({ plugin: 'mod-model-effort', key: 'current' })).value
   if (!current) return
@@ -255,7 +301,7 @@ function modelMenu(elements: Elements, currentId: string, columns: number) {
   // Stacked, the others start with blanks as wide as the ✓ subpill, so every name lines up.
   const blank = ' '.repeat([...ok].length + 2)
   const models: [string, string, Omit<EntryProps, 'id' | 'bg'>][] = menuModels.map((id, index) =>
-    id === currentId
+    currentId && id === plainModel(currentId)
       ? [`effort-model-${index}`, THEME.surface3, { label: displayName(id), isOpen: live, idle: THEME.muted, subLead: ok, subLeadColor: THEME.ok, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }]
       : [`effort-model-${index}`, THEME.surface2, { label: displayName(id), isOpen: live, idle: THEME.muted, tip: { glyph: ok, label: displayName(id), text: text.tipModelEntry } }],
   )
@@ -331,6 +377,11 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
+    // The classic hooks never reach a mod, so the command hooks in hooks.json hand these over through the bridge.
+    bridgeOn('PostModelSwitch', record => modelSwitched($, record))
+    bridgeOn('ConfigChange', record => configChanged($, record))
+    await startBridge($, 'mod-model-effort')
+    await pruneReplays($)
     await loadLook($)
     await $.command.register({ name: 'mod-model-effort', description: text.commandDescription, argumentHint: '[settings]' })
     await $.state.set({ plugin: 'mod-model-effort', key: 'pane' }, await isPaneOpen($))
@@ -341,6 +392,14 @@ export const register: Register = (on, options) => {
       const effort = await savedEffort($, model)
       if (effort) await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model, effort })
     }
+
+    return next(e)
+  })
+
+  on('session.end', async ($, e, next) => {
+    // What the ended session's file still holds is delivered before the session id changes under it.
+    await endBridge($, e.sessionId)
+    for (const event of ['PostModelSwitch', 'ConfigChange']) await $.store.delete(replayKey(e.sessionId, event)).catch(() => undefined)
 
     return next(e)
   })
@@ -369,27 +428,6 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // /model and the Alt+P picker switch without a request, so the pill follows at once. A failed read never blocks the switch.
-  on('classic.PostModelSwitch', async ($, e, next) => {
-    try {
-      await followModel($, e.to_model)
-    } catch {
-      // The next request shows the model and level.
-    }
-    return next(e)
-  })
-
-  on('classic.ConfigChange', async ($, e, next) => {
-    if (e.source === 'user_settings') {
-      try {
-        await followSavedLevel($)
-      } catch {
-        // The next request shows the level.
-      }
-    }
-    return next(e)
-  })
-
   // Each main request carries the real model id and effort, so the meter always shows what went out.
   on('turn.step', async function* ($, e, next) {
     if (e.agentId || typeof e.effort !== 'string') return yield* next(e)
@@ -405,10 +443,13 @@ export const register: Register = (on, options) => {
     if (current?.model !== e.model || current?.effort !== effort) {
       await $.state.set({ plugin: 'mod-model-effort', key: 'current' }, { model: e.model, effort })
       await $.store.set('model', e.model)
-      await $.store.set('models', withModel(await $.store.get('models'), e.model))
     }
 
-    return yield* next(effort === e.effort ? e : { ...e, effort: effort as typeof e.effort })
+    const result = yield* next(effort === e.effort ? e : { ...e, effort: effort as typeof e.effort })
+    // Only a model the API answered joins the menu, so a mistyped or retired id never stays there.
+    const models = await $.store.get('models')
+    if (result.usage && !(Array.isArray(models) && models[0] === plainModel(e.model))) await $.store.set('models', withModel(models, e.model))
+    return result
   })
 
   on('ui.message', async ($, e, next) => {
@@ -494,7 +535,7 @@ export const register: Register = (on, options) => {
     const { Box, Client, Text } = $.ui.resolve(e)
     const current = await $.state.get({ plugin: 'mod-model-effort', key: 'current' })
     let shown = current.value
-    // Some organizations block classic hooks from plugins, so PostModelSwitch never arrives and the session's model is the signal.
+    // The PostModelSwitch record can fail to arrive, so the session's model is the signal too.
     const live = await $.session.model().catch(() => undefined)
     if (typeof live === 'string' && displayName(live) !== live) {
       // Only a change of the session's model counts: a request on a fallback model leaves the pill as it went out.
