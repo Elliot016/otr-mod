@@ -2,11 +2,13 @@
 // Tests background shells and monitors: start from a tool result, owner card, end by TaskStop, notification and Stop, clock, pill count.
 import { expect, mock, test } from 'claude-code/testing'
 
-import { addBg, appendTail, bandSummary, outputRoom, bgIdOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, formatClock, hasRunningBg, resyncBg, stripControl, type Snap } from '../hooks/progress'
+import { addBg, appendTail, bandSummary, outputRoom, wrappedRows, bgIdOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, formatClock, hasRunningBg, resyncBg, stripControl, type Snap } from '../hooks/progress'
 import { cardFill } from '../hooks/look'
 import { THEME } from '../hooks/theme'
 
 const norm = (path: string) => path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+
+const BRIDGE_FILE = '/home/u/.claude/mods-data/mod-progress/bridge/sid-1.jsonl'
 
 type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1]
 
@@ -38,7 +40,10 @@ function stubEngine(on: On, agents: unknown[] = [], files: Record<string, string
     store.set(e.key, e.value)
     return { value: undefined } as never
   })
+  // The bridge file the command hooks append to; a test that sets `bridge.on` before session.start gets the poll.
+  const bridge = { on: false, text: '' }
   on('fs.read', (_$, e) => {
+    if (norm(e.path) === BRIDGE_FILE) return { value: bridge.text }
     if (norm(e.path) in files) return { value: files[norm(e.path)]! }
     throw new Error('ENOENT')
   })
@@ -49,7 +54,12 @@ function stubEngine(on: On, agents: unknown[] = [], files: Record<string, string
   })
   on('fs.exists', () => ({ value: false }))
   on('fs.list', () => ({ value: [] }))
-  on('env.get', () => ({ value: undefined }))
+  on('env.get', (_$, e) => ({ value: bridge.on && (e as { name?: string }).name === 'USERPROFILE' ? '/home/u' : undefined }))
+  on('store.delete', (_$, e) => {
+    store.delete(e.key)
+    return { value: undefined } as never
+  })
+  on('store.keys', () => ({ value: [...store.keys()] }))
   on('ui.panes', () => ({ value: [{ id: 'progress', isPlaced: true }] }) as never)
   on('session.start', () => ({ cwd: '/w' }))
   on('command.register', () => ({ value: { command: 'mod-progress' } }))
@@ -68,9 +78,12 @@ function stubEngine(on: On, agents: unknown[] = [], files: Record<string, string
     return { result: {} } as never
   })
   on('prompt.submit', (_$, e) => ({ text: e.text }))
-  on('classic.Stop', () => ({}) as never)
-  on('classic.SubagentStop', () => ({}) as never)
-  return { store, clock, states, reads, ids, took }
+  // Hands one record to the mod the way the command hook does: appended to the session's file, read by the next poll.
+  const feed = async (event: string, body: object = {}) => {
+    bridge.text += `${JSON.stringify({ session_id: ids.sid, hook_event_name: event, ...body })}\n`
+    await clock.advance(250)
+  }
+  return { store, clock, states, reads, ids, took, bridge, feed }
 }
 
 const shellCall = (command: string, agentId?: string) => ({ tool: 'Bash', command, run_in_background: true, ...(agentId ? { agentId } : {}) }) as never
@@ -162,7 +175,8 @@ test('TaskStop ends the task it names as failed, and the notification marks it d
 })
 
 test('a Stop lists what still runs, so a task it leaves out has finished; a subagent stop settles only its own tasks', async ($, on) => {
-  const { store } = stubEngine(on, [AGENT])
+  const { store, bridge, feed } = stubEngine(on, [AGENT])
+  bridge.on = true
   await $.session.start({ cwd: '/w' } as never)
   await $.tool.call(shellCall('sleep 10'))
   await $.tool.call(shellCall('sleep 20'))
@@ -171,22 +185,95 @@ test('a Stop lists what still runs, so a task it leaves out has finished; a suba
     const snap = store.get('snap:sid-1') as Snap
     return [snap.main.bg!.map(task => task.endedAt !== undefined), snap.agents.a1!.bg!.map(task => task.endedAt !== undefined)]
   }
-  await $.classic.Stop(stopBody([{ id: 'bg2', status: 'running' }]))
+  await feed('Stop', stopBody([{ id: 'bg2', status: 'running' }]))
   expect(state()).toEqual([[true, false], [false]])
-  await $.classic.SubagentStop(stopBody([], { agent_id: 'a1' }))
+  await feed('SubagentStop', stopBody([], { agent_id: 'a1' }))
   expect(state()).toEqual([[true, false], [true]])
-  await $.classic.Stop({} as never)
+  await feed('Stop')
   expect(state()).toEqual([[true, false], [true]])
 })
 
+test('a helper agent\'s SubagentStop with an empty type and no turn ends only its own tasks, and a record naming no tasks changes nothing', async ($, on) => {
+  const { store, bridge, feed } = stubEngine(on, [AGENT])
+  bridge.on = true
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('sleep 10'))
+  await $.tool.call(shellCall('sleep 30', 'a1'))
+  const ended = () => {
+    const snap = store.get('snap:sid-1') as Snap
+    return [snap.main.bg!.map(task => task.endedAt !== undefined), snap.agents.a1!.bg!.map(task => task.endedAt !== undefined)]
+  }
+  await feed('SubagentStop', { agent_id: 'helper-9', agent_type: '', background_tasks: [] })
+  expect(ended()).toEqual([[false], [false]])
+  await feed('SubagentStop', { agent_id: 'a1', agent_type: '', background_tasks: [] })
+  expect(ended()).toEqual([[false], [true]])
+})
+
+// A reload: the store and the host's state outlive the module, and the bridge's first read replays the last record of each event.
+function reloaded(store: Map<string, unknown>, states: Map<string, unknown>, handled: object | null) {
+  const snap = emptySnap('sid-1')
+  addBg(snap, undefined, 'bg-live', { kind: 'shell', command: 'sleep 99' }, 0)
+  store.set('snap:sid-1', snap)
+  states.set('mod-progress.booted', true)
+  if (handled) store.set('bridge-last:sid-1:Stop', { raw: JSON.stringify(handled), at: START })
+}
+
+test('a Stop replayed after a reload does not end a task that began after it', async ($, on) => {
+  const { store, states, bridge } = stubEngine(on)
+  bridge.on = true
+  const old = { session_id: 'sid-1', hook_event_name: 'Stop', background_tasks: [] }
+  reloaded(store, states, old)
+  bridge.text = `${JSON.stringify(old)}\n`
+  await $.session.start({ cwd: '/w' } as never)
+  expect((store.get('snap:sid-1') as Snap).main.bg![0]!.endedAt).toBeUndefined()
+})
+
+test('the same Stop is handled when this module never saw it, and a new Stop after a replay is handled too', async ($, on) => {
+  const { store, states, bridge, feed } = stubEngine(on)
+  bridge.on = true
+  const old = { session_id: 'sid-1', hook_event_name: 'Stop', background_tasks: [] }
+  reloaded(store, states, null)
+  bridge.text = `${JSON.stringify(old)}\n`
+  await $.session.start({ cwd: '/w' } as never)
+  expect((store.get('snap:sid-1') as Snap).main.bg![0]!.endedAt).toBeDefined()
+
+  await $.tool.call(shellCall('sleep 5'))
+  await feed('Stop', { background_tasks: [{ id: 'bg1', status: 'running' }] })
+  expect((store.get('snap:sid-1') as Snap).main.bg!.map(task => task.endedAt !== undefined)).toEqual([true, false])
+})
+
+test('after a reload the replay is skipped, and the next Stop that comes is handled', async ($, on) => {
+  const { store, states, bridge, feed } = stubEngine(on)
+  bridge.on = true
+  const old = { session_id: 'sid-1', hook_event_name: 'Stop', background_tasks: [] }
+  reloaded(store, states, old)
+  bridge.text = `${JSON.stringify(old)}\n`
+  await $.session.start({ cwd: '/w' } as never)
+  expect((store.get('snap:sid-1') as Snap).main.bg![0]!.endedAt).toBeUndefined()
+  await feed('Stop', { background_tasks: [] })
+  expect((store.get('snap:sid-1') as Snap).main.bg![0]!.endedAt).toBeDefined()
+})
+
+test('a session.end delivers a Stop the poll has not read yet, before the shells are wiped', async ($, on) => {
+  const { store, bridge } = stubEngine(on)
+  bridge.on = true
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('sleep 10'))
+  bridge.text = `${JSON.stringify({ session_id: 'sid-1', hook_event_name: 'Stop', background_tasks: [] })}\n`
+  await $.session.end({ reason: 'clear', sessionId: 'sid-1', resume: {} } as never)
+  expect((store.get('carry-bg') as unknown[]) ?? []).toEqual([])
+  expect(store.has('bridge-last:sid-1:Stop')).toBe(false)
+})
+
 test('a finished task keeps its line, and a failed one takes the alert color', async ($, on) => {
-  const { store } = stubEngine(on)
+  const { store, bridge, feed } = stubEngine(on)
+  bridge.on = true
   await $.session.start({ cwd: '/w' } as never)
   await $.tool.call(shellCall('sleep 1'))
   await $.tool.call(shellCall('sleep 2'))
   await $.tool.call(shellCall('sleep 3'))
   await $.tool.call({ tool: 'TaskStop', task_id: 'bg2' } as never)
-  await $.classic.Stop(stopBody([{ id: 'bg3', status: 'running' }]))
+  await feed('Stop', stopBody([{ id: 'bg3', status: 'running' }]))
   expect((store.get('snap:sid-1') as Snap).main.bg!.map(task => task.end)).toEqual(['done', 'failed', undefined])
   const pane = await $.ui.mount(PANE)
   const text = JSON.stringify(await pane.drawn({ in: 'loops' }))
@@ -212,11 +299,12 @@ test('a task line is cut to the room by the renderer, and a session with no task
 })
 
 test('icons=nerd draws the Nerd spinner and done glyphs on task lines', { options: { icons: 'nerd' } }, async ($, on) => {
-  stubEngine(on)
+  const { bridge, feed } = stubEngine(on)
+  bridge.on = true
   await $.session.start({ cwd: '/w' } as never)
   await $.tool.call(shellCall('sleep 1'))
   await $.tool.call(shellCall('sleep 2'))
-  await $.classic.Stop(stopBody([{ id: 'bg2', status: 'running' }]))
+  await feed('Stop', stopBody([{ id: 'bg2', status: 'running' }]))
   const pane = await $.ui.mount(PANE)
   const drawn = JSON.stringify(await pane.drawn({ in: 'loops' }))
   expect(drawn).toContain(String.fromCodePoint(0xf110))
@@ -225,11 +313,12 @@ test('icons=nerd draws the Nerd spinner and done glyphs on task lines', { option
 })
 
 test('icons=safe draws plain glyphs on task lines', { options: { icons: 'safe' } }, async ($, on) => {
-  stubEngine(on)
+  const { bridge, feed } = stubEngine(on)
+  bridge.on = true
   await $.session.start({ cwd: '/w' } as never)
   await $.tool.call(shellCall('sleep 1'))
   await $.tool.call(shellCall('sleep 2'))
-  await $.classic.Stop(stopBody([{ id: 'bg2', status: 'running' }]))
+  await feed('Stop', stopBody([{ id: 'bg2', status: 'running' }]))
   const pane = await $.ui.mount(PANE)
   const drawn = JSON.stringify(await pane.drawn({ in: 'loops' }))
   expect(drawn).toContain('↻')
@@ -825,3 +914,84 @@ test('icons=safe draws plain arrows on the output control, the fold toggle and t
   expect(await drawnIn(pane, 'output-more')).toContain('▴')
   await pane.unmount()
 })
+
+const LONG = (tag: string) => `${tag} ${'x'.repeat(100)}`
+const longLines = (n: number) => Array.from({ length: n }, (_, at) => LONG(`row${at + 1}`)).join('\n') + '\n'
+const wrapsOf = async (pane: unknown) => (await (pane as { findAll: (query: unknown) => Promise<{ props: { wrap?: string } }[]> }).findAll({ type: 'Text', text: /^row\d+ x+$/ })).map(node => node.props.wrap)
+
+test('a few short lines show no control', async ($, on) => {
+  stubEngine(on, [], { '/tmp/bg1.output': numbered(3) })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('sleep 30'))
+  const pane = await $.ui.mount(PANE)
+  await clickIn(pane, 'loops', 3, TASK_LINE)
+  await pane.redraw()
+  expect(await pane.findAll({ type: 'Text', text: /^line \d+$/ })).toHaveLength(3)
+  expect(await pane.find({ key: 'output-more' })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('a few long lines show Show all, which wraps each line in full and Show less cuts them again', async ($, on) => {
+  stubEngine(on, [], { '/tmp/bg1.output': longLines(3) })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('sleep 30'))
+  const pane = await $.ui.mount(PANE)
+  await clickIn(pane, 'loops', 3, TASK_LINE)
+  await pane.redraw()
+  expect(await wrapsOf(pane)).toEqual(['truncate-end', 'truncate-end', 'truncate-end'])
+  expect(await drawnIn(pane, 'output-more')).toContain('Show all')
+  expect(await drawnIn(pane, 'output-more')).toContain('▾')
+  await hoverIn(pane, 'output-more')
+  expect((await pane.find({ type: 'Text', text: /shows every line/ }))?.text).toContain('shows every line')
+  await clickIn(pane, 'output-more')
+  await pane.redraw()
+  expect(await wrapsOf(pane)).toEqual(['wrap', 'wrap', 'wrap'])
+  expect(await drawnIn(pane, 'output-more')).toContain('Show less')
+  expect(await drawnIn(pane, 'output-more')).toContain('▴')
+  await clickIn(pane, 'output-more')
+  await pane.redraw()
+  expect(await wrapsOf(pane)).toEqual(['truncate-end', 'truncate-end', 'truncate-end'])
+  expect(await drawnIn(pane, 'output-more')).toContain('Show all')
+  await pane.unmount()
+})
+
+test('a long output of long lines keeps the line count on its control and wraps its lines when open', async ($, on) => {
+  stubEngine(on, [], { '/tmp/bg1.output': longLines(30) })
+  await $.session.start({ cwd: '/w' } as never)
+  await $.tool.call(shellCall('sleep 30'))
+  const pane = await $.ui.mount(PANE)
+  await clickIn(pane, 'loops', 3, TASK_LINE)
+  await pane.redraw()
+  expect(await drawnIn(pane, 'output-more')).toContain('10 more lines')
+  expect(await wrapsOf(pane)).toHaveLength(20)
+  await clickIn(pane, 'output-more')
+  await pane.redraw()
+  const open = await wrapsOf(pane)
+  expect(open).toHaveLength(30)
+  expect(new Set(open)).toEqual(new Set(['wrap']))
+  await clickIn(pane, 'output-more')
+  await pane.redraw()
+  expect(new Set(await wrapsOf(pane))).toEqual(new Set(['truncate-end']))
+  await pane.unmount()
+})
+
+test('wrappedRows counts the rows each line takes at a width, one at least', () => {
+  expect(wrappedRows(['', 'abc', 'x'.repeat(10), 'x'.repeat(11)], 5)).toBe(1 + 1 + 2 + 3)
+})
+
+for (const icons of ['nerd', 'safe'] as const) {
+  test(`icons=${icons} draws the arrows of a Show all control on a few long lines`, { options: { icons } }, async ($, on) => {
+    stubEngine(on, [], { '/tmp/bg1.output': longLines(2) })
+    await $.session.start({ cwd: '/w' } as never)
+    await $.tool.call(shellCall('sleep 30'))
+    const pane = await $.ui.mount(PANE)
+    await clickIn(pane, 'loops', 3, TASK_LINE)
+    await pane.redraw()
+    expect(await drawnIn(pane, 'output-more')).toContain(icons === 'nerd' ? String.fromCodePoint(0xf0d7) : '▾')
+    expect(await drawnIn(pane, 'output-more')).toContain('Show all')
+    await clickIn(pane, 'output-more')
+    await pane.redraw()
+    expect(await drawnIn(pane, 'output-more')).toContain(icons === 'nerd' ? String.fromCodePoint(0xf0d8) : '▴')
+    await pane.unmount()
+  })
+}

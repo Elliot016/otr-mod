@@ -35,6 +35,7 @@ export default {
   "outputUnreadable": "Output file not readable (over 4 MiB or gone)",
   "commandLead": "$",
   "moreLines": "{n} more lines",
+  "showAll": "Show all",
   "showLess": "Show less",
   "tipShowAll": "shows every line",
   "tipShowLess": "shows the last lines only",

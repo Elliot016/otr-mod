@@ -40,8 +40,10 @@ Progress pill.
 
 ## Features
 
-- **The gates view:** A card per loop with its gates ticked off, and a band count of every gate in the session. Gates come from `GATES.md` files written by your own skill or script, not from the model. The rest of the mod works without them.
-- **GATES.md format:** The ledger is `GATES.md` plus every `gates/<name>.md` in `~/.claude/gates/<repo>/<session id>/` (or under `GATES_HOME`). A gate is a line `- [ ] G1: what must hold`, with an indented `EVIDENCE:` line under it. It counts as met only when its box is `[x]` and its evidence is not `pending`. A line starting `ABANDON: G1 reason` gives that gate up. A `gates/<name>.md` file also belongs to the agent of that name.
+- **Shell output:** A background shell shows its command and live output. A cut line wraps in full, so nothing is lost at the edge. Show all opens the whole output, and Show less folds it back.
+- **The gates view:** A card per loop with its gates ticked off, and a band count of every gate in the session. Gates come from `GATES.md` files written by your own script or tool, not from the model. The rest of the mod works without them.
+- **GATES.md format:** This is the mod's own plan format; nothing else has to produce it. The ledger is `GATES.md` plus every `gates/<name>.md` in `~/.claude/gates/<repo>/<session id>/`, where `<repo>` is the folder name of the session's repo (or of its working folder). Set `GATES_HOME` to read `<GATES_HOME>/<repo>/<session id>/` instead. A gate is a line `- [ ] G1: what must hold`, with an indented `EVIDENCE:` line under it. It counts as met only when its box is `[x]` and its evidence is not `pending`. A line starting `ABANDON: G1 reason` gives that gate up. A `gates/<name>.md` file also belongs to the agent of that name.
+- **Command hooks:** On SessionStart, Stop, SubagentStop and StopFailure, a small shell hook appends the event's JSON as one line to `~/.claude/mods-data/mod-progress/bridge/<session id>.jsonl` (under `$CLAUDE_CONFIG_DIR` when that is set), and the mod reads the file every 250 ms. A record can hold the session id, the working folder and the transcript path, and for Stop-type events the last assistant message. SessionEnd deletes the session's file, and SessionStart deletes files older than 7 days. The hooks need a POSIX shell (Git Bash on Windows). Without one they write nothing, and the mod falls back to what it can find on its own. Some plans block plugin hooks on these events; the mod then falls back the same way.
 
 ## Settings
 

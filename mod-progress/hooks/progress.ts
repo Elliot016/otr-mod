@@ -268,10 +268,16 @@ export function appendTail(tail: Tail, chunk: string, size: number, keep = TAIL_
   return { from: size, lines, partial: stripControl(partial) }
 }
 
+// The columns a card's lines have: the pane's padding, then the card's border and padding.
+export const cardWidth = (bodyColumns: number) => Math.max(1, bodyColumns - 6)
+
+// The rows these lines take wrapped at `width`, one at least each.
+export const wrappedRows = (lines: string[], width: number) => lines.reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / width)), 0)
+
 // How many output lines the page has room for: the body less the back pill row, the command card (border, a gap above, its wrapped lines), the output card's border and gap, and the rows the footer keeps free; never under one.
 export function outputRoom(bodyRows: number, bodyColumns: number, command: string, lead: string, footerRows: number) {
-  const width = Math.max(1, bodyColumns - 6)
-  const commandRows = command.split(/\r?\n/).reduce((sum, line, at) => sum + Math.max(1, Math.ceil(((at === 0 ? lead : ' ').length + 1 + line.length) / width)), 0)
+  const width = cardWidth(bodyColumns)
+  const commandRows = wrappedRows(command.split(/\r?\n/).map((line, at) => `${at === 0 ? lead : ' '} ${line}`), width)
   return Math.max(1, bodyRows - (1 + 3 + commandRows + 3 + footerRows))
 }
 

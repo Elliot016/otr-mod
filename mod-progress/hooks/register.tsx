@@ -2,11 +2,12 @@
 // Registers the mod: wires the band pill, pane, settings, stop line and loop tracking.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
+import { bridgeOn, endBridge, startBridge, type BridgeRecord } from './bridge'
 import { entryCells, isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { cardFill, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, withMark, type IconMode } from './look'
 import { foldTip, layoutLoops, type LoopsMessage, type LoopsProps } from './loops'
 import { labelsOf, menuEntry, PILL, pill, pillRow, splitRow, tabRow, tipLine } from './pills'
-import { addBg, appendTail, applyCall, applyStep, applyTask, bandSummary, bgIdOf, bgOutputOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, finishAgent, findBg, firstLine, gatesStemIn, HELD_LINES, hasRunningBg, isGatesPath, MAIN_GATES, outputRoom, pageOf, parseGates, resyncBg, settle, stemOf, TAIL_LINES, wipeBg, type AgentLite, type BgTask, type Gate, type Snap, type Tail, type Usage, type UsageLite } from './progress'
+import { addBg, appendTail, applyCall, applyStep, applyTask, bandSummary, bgIdOf, bgOutputOf, bgStartOf, buildRows, emptySnap, endBg, endOfStatus, finishAgent, findBg, firstLine, gatesStemIn, cardWidth, HELD_LINES, hasRunningBg, isGatesPath, MAIN_GATES, outputRoom, pageOf, parseGates, resyncBg, settle, stemOf, TAIL_LINES, wipeBg, type AgentLite, type BgTask, type Gate, type Snap, type Tail, type Usage, type UsageLite } from './progress'
 import { stopLine, stopOf } from './stop'
 import { settingChoice, settingsBody } from './settings'
 import text from './text'
@@ -82,7 +83,7 @@ function loadLook($: EngineInterface) {
 const PANE = 'progress'
 const OUTPUT_MORE = 'output-more'
 // Lines the open page hides while closed, kept from its last draw for the tip that replaces the control on a click.
-let outputHidden = 0
+let outputClosedLabel = ''
 const SETTINGS = 'progress-settings'
 
 let note = ''
@@ -150,6 +151,7 @@ async function pruneSnaps($: EngineInterface) {
     const now = await $.clock.now()
     for (const key of await $.store.keys()) {
       if (key === 'snap') await $.store.delete(key)
+      if (key.startsWith('bridge-last:') && Number(((await $.store.get(key)) as { at?: unknown } | null)?.at) < now - REPLAY_KEPT_MS) await $.store.delete(key)
       if (!key.startsWith('snap:')) continue
       const savedAt = Number(((await $.store.get(key)) as { savedAt?: unknown } | null)?.savedAt)
       if (Number.isFinite(savedAt) && savedAt < now - SNAP_KEEP_MS) await $.store.delete(key)
@@ -337,6 +339,67 @@ async function resync($: EngineInterface, agentId: string | undefined, listed: {
   }
 }
 
+// A reload makes the bridge replay the last record of each event once. The first record of an event after this module started is skipped when it is the one already handled, so a replay never sets a stale stop line or ends a task that began after it.
+const replayChecked = new Set<string>()
+const REPLAY_KEPT_MS = 30 * 24 * 60 * 60 * 1000
+const BRIDGE_EVENTS = ['Stop', 'SubagentStop', 'StopFailure']
+const replayKey = (session: string, event: string) => `bridge-last:${session}:${event}`
+
+async function isReplay($: EngineInterface, record: BridgeRecord) {
+  const key = replayKey(String(record.session_id ?? ''), String(record.hook_event_name ?? ''))
+  const raw = JSON.stringify(record)
+  const isFirst = !replayChecked.has(key)
+  replayChecked.add(key)
+  const kept = (await $.store.get(key).catch(() => undefined)) as { raw?: unknown } | undefined
+  await $.store.set(key, { raw, at: await $.clock.now() }).catch(() => undefined)
+  return isFirst && kept?.raw === raw
+}
+
+const tasksOf = (record: BridgeRecord) => (Array.isArray(record.background_tasks) ? (record.background_tasks as { id: string; status: string }[]) : undefined)
+const agentOf = (record: BridgeRecord) => (typeof record.agent_id === 'string' && record.agent_id ? record.agent_id : undefined)
+
+// The main turn's Stop lists the background work still running; whatever it no longer lists has finished.
+async function mainStopped($: EngineInterface, record: BridgeRecord) {
+  try {
+    if (await isReplay($, record)) return
+    await resync($, undefined, tasksOf(record))
+  } catch {
+    // The figures stay as they were.
+  }
+}
+
+async function subagentStopped($: EngineInterface, record: BridgeRecord) {
+  try {
+    if (await isReplay($, record)) return
+    await resync($, agentOf(record), tasksOf(record))
+  } catch {
+    // The figures stay as they were.
+  }
+}
+
+// The turn ended on an API error. A subagent's failure is its own turn, so it leaves the main line alone.
+async function stopFailed($: EngineInterface, record: BridgeRecord) {
+  try {
+    if (await isReplay($, record)) return
+    const agentId = agentOf(record)
+    const current = await loadSnap($)
+    if (agentId) {
+      if (finishAgent(current, agentId, await $.clock.now(), true)) {
+        await saveSnap($)
+        $.ui.invalidate('ui.render')
+      }
+    } else {
+      const usage = await $.session.usage().catch(() => undefined)
+      current.stop = stopOf(String(record.error ?? ''), await $.clock.now(), usage?.rateLimits ?? [])
+      ageStop($, current)
+      await saveSnap($)
+      $.ui.invalidate('ui.render')
+    }
+  } catch {
+    // The figures stay as they were.
+  }
+}
+
 const isOpen = async ($: EngineInterface, id = PANE) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
 // The command and the bar entry both toggle. An unplaced pane is waiting, not open.
@@ -401,6 +464,11 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     try {
+      // The classic Stop events never reach a mod, so the command hooks in hooks.json hand them over through the bridge.
+      bridgeOn('Stop', record => mainStopped($, record))
+      bridgeOn('SubagentStop', record => subagentStopped($, record))
+      bridgeOn('StopFailure', record => stopFailed($, record))
+      await startBridge($, 'mod-progress')
       await loadLook($)
       await $.command.register({ name: 'mod-progress', description: text.commandDescription, argumentHint: '[settings]' })
       const current = await loadSnap($)
@@ -428,8 +496,11 @@ export const register: Register = (on, options) => {
 
   // A /resume or /clear ends this session; the next call asks for the id at once.
   on('session.end', async ($, e, next) => {
+    // What the ended session's file still holds is delivered before the session id changes under it.
+    await endBridge($, e.sessionId)
     sessionCheckedAt = 0
     try {
+      for (const event of BRIDGE_EVENTS) await $.store.delete(replayKey(e.sessionId, event)).catch(() => undefined)
       // A /clear leaves the shells running in the same process; any other end takes them with it.
       if (snap && e.reason === 'clear') await $.store.set('carry-bg', JSON.parse(JSON.stringify((snap.main.bg ?? []).filter(task => task.endedAt === undefined))))
       else if (snap && wipeBg(snap)) await saveBackground($, snap)
@@ -564,29 +635,6 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // The main turn ended on an API error. A subagent's failure is its own turn, so it leaves the main line alone.
-  on('classic.StopFailure', async ($, e, next) => {
-    try {
-      if (e.agent_id) {
-        const current = await loadSnap($)
-        if (finishAgent(current, e.agent_id, await $.clock.now(), true)) {
-          await saveSnap($)
-          $.ui.invalidate('ui.render')
-        }
-      } else {
-        const current = await loadSnap($)
-        const usage = await $.session.usage().catch(() => undefined)
-        current.stop = stopOf(e.error, await $.clock.now(), usage?.rateLimits ?? [])
-        ageStop($, current)
-        await saveSnap($)
-        $.ui.invalidate('ui.render')
-      }
-    } catch {
-      // The figures stay as they were.
-    }
-    return next(e)
-  })
-
   // Tasks come from each loop's own TaskCreate and TaskUpdate; gates files change through Write, Edit or the gate checker run by Bash.
   on('tool.call', async ($, e, next) => {
     try {
@@ -617,25 +665,6 @@ export const register: Register = (on, options) => {
       // The figures stay as they were.
     }
     return result
-  })
-
-  // The main turn's Stop lists the background work still running; whatever it no longer lists has finished.
-  on('classic.Stop', async ($, e, next) => {
-    try {
-      await resync($, undefined, e.background_tasks)
-    } catch {
-      // The figures stay as they were.
-    }
-    return next(e)
-  })
-
-  on('classic.SubagentStop', async ($, e, next) => {
-    try {
-      await resync($, e.agent_id, e.background_tasks)
-    } catch {
-      // The figures stay as they were.
-    }
-    return next(e)
   })
 
   // A task's notification reaches the session as a prompt of its own, whether or not anything draws it.
@@ -729,7 +758,7 @@ export const register: Register = (on, options) => {
       const isOpening = !(await isOutputOpen($, id))
       await $.state.set(OUTPUT_KEY, isOpening ? id : '')
       // The click swaps the control for its opposite under the pointer, and the old one never posts its leave.
-      const label = isOpening ? text.showLess : fill(text.moreLines, { n: outputHidden })
+      const label = isOpening ? text.showLess : outputClosedLabel
       paneTip = { type: 'tip', id: OUTPUT_MORE, glyph: isOpening ? look.glyph.less : look.glyph.more, label, text: isOpening ? text.tipShowLess : text.tipShowAll }
       $.ui.invalidate('ui.render')
     }
@@ -820,13 +849,17 @@ export const register: Register = (on, options) => {
         const room = Math.min(TAIL_LINES, outputRoom(e.props.scroll.bodyRows, e.props.bodyColumns, page.command, text.commandLead, FOOTER_ROWS))
         const held = tail ? [...tail.lines, ...(tail.partial ? [tail.partial] : [])] : []
         const hidden = Math.max(0, held.length - room)
-        const isFull = hidden > 0 && (await isOutputOpen($, pageId))
+        // A line wider than the card counts as hidden too: its control opens the lines wrapped in full.
+        const width = cardWidth(e.props.bodyColumns)
+        const isCut = hidden > 0 || held.slice(-room).some(line => line.length > width)
+        const isFull = isCut && (await isOutputOpen($, pageId))
         const shown = isFull ? held : held.slice(-room)
-        const moreLabel = isFull ? text.showLess : fill(text.moreLines, { n: hidden })
+        const closedLabel = hidden > 0 ? fill(text.moreLines, { n: hidden }) : text.showAll
+        const moreLabel = isFull ? text.showLess : closedLabel
         const moreArrow = isFull ? look.glyph.less : look.glyph.more
         const moreProps = { id: OUTPUT_MORE, label: moreLabel, lead: moreArrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreArrow, label: moreLabel, text: isFull ? text.tipShowLess : text.tipShowAll } } satisfies EntryProps
         const moreControl = <Client key="output-more" module="./entry.tsx" width={entryCells(moreProps)} height={1} props={moreProps} />
-        outputHidden = hidden
+        outputClosedLabel = closedLabel
         const status = fill(text.taskStatus, { kind: page.kind === 'shell' ? text.taskShell : text.taskMonitor, sep: MARK.sep, status: page.status === 'running' ? text.taskRunning : page.status === 'done' ? text.taskDone : text.taskFailed, elapsed: page.elapsed })
         const back = [{ id: 'progress-back', label: text.paneTitle, icon: look.glyph.back, isOpen: false, tip: { glyph: look.glyph.back, label: text.paneTitle, text: text.tipBack } }]
         const empty = !page.output ? text.noOutputFile : unreadable.has(pageId) ? text.outputUnreadable : text.noOutputYet
@@ -846,8 +879,8 @@ export const register: Register = (on, options) => {
             {section({ Box, Text }, look, 'task-output', '', '', (
               <Box key="task-output-lines" flexDirection="column">
                 {shown.length === 0 ? <Text key="output-empty" color={THEME.muted}>{empty}</Text> : shown.map((line, at) => {
-                  const row = <Text key={`output-${at}`} wrap="truncate-end" color={THEME.muted}>{line || ' '}</Text>
-                  return hidden > 0 && at === shown.length - 1 ? (
+                  const row = <Text key={`output-${at}`} wrap={isFull ? 'wrap' : 'truncate-end'} color={THEME.muted}>{line || ' '}</Text>
+                  return isCut && at === shown.length - 1 ? (
                     <Box key="output-last-row" flexDirection="row">
                       <Box key="output-last-text" flexShrink={1}>{row}</Box>
                       <Box key="output-last-gap" flexGrow={1} />

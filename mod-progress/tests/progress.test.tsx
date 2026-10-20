@@ -58,7 +58,8 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 46, tokens: 92000 }, rateLimits: windows } }))
   on('agent.list', () => ({ value: agents }) as never)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
-  on('classic.StopFailure', () => ({}) as never)
+  // The bridge file the command hooks append to; a test that sets `bridge.on` before session.start gets the poll.
+  const bridge = { on: false, text: '' }
   on('store.get', (_$, e) => ({ value: store.get(e.key) }))
   on('store.set', (_$, e) => {
     if (world.storeDown?.is) throw new Error('store unavailable')
@@ -73,6 +74,7 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
   // With no HOME and no repo, the folder is /.claude/gates/<cwd name>/<session id>.
   const folder = `/.claude/gates/${world.repo ?? 'w'}/sid-1`
   on('fs.read', (_$, e) => {
+    if (neutral(e.path) === '/home/u/.claude/mods-data/mod-progress/bridge/sid-1.jsonl') return { value: bridge.text }
     world.reads?.push(neutral(e.path))
     const path = neutral(e.path).replace(`${folder}/`, '')
     if (path in files) return { value: files[path]! }
@@ -86,7 +88,7 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
         ? Object.keys(files).filter(path => path.startsWith('gates/')).map(path => ({ name: path.slice('gates/'.length), kind: 'file', size: 0, mtimeMs: 0, isLink: false }))
         : [],
   }))
-  on('env.get', () => ({ value: undefined }))
+  on('env.get', (_$, e) => ({ value: bridge.on && (e as { name?: string }).name === 'USERPROFILE' ? '/home/u' : undefined }))
   on('ui.panes', () => ({ value: [] }))
   on('session.start', () => ({ cwd: '/w' }))
   on('command.register', () => ({ value: { command: 'mod-progress' } }))
@@ -95,7 +97,12 @@ function stubEngine(on: On, agents: unknown[] = [AGENT], opened: string[] = [], 
     return { value: { isPlaced: true } }
   })
   on('state.set', () => ({ value: undefined } as never))
-  return { store, clock }
+  // Hands one record to the mod the way the command hook does: appended to the session's file, read by the next poll.
+  const feed = async (event: string, body: object = {}) => {
+    bridge.text += `${JSON.stringify({ session_id: 'sid-1', hook_event_name: event, ...body })}\n`
+    await clock.advance(250)
+  }
+  return { store, clock, bridge, feed }
 }
 
 const PANE = { plugin: 'mod-progress', surface: 'terminal', component: 'Pane', requestId: 'progress', props: { title: 'Progress', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as never
@@ -461,11 +468,12 @@ test('a usage limit names the reset of the full window that clears last, in loca
 })
 
 test('each StopFailure kind shows its line under the hint in its tone, and the next turn clears it', async ($, on) => {
-  stubEngine(on)
+  const { bridge, feed } = stubEngine(on)
+  bridge.on = true
   await $.session.start({ cwd: '/w' } as never)
   const pane = await $.ui.mount(PANE)
   for (const [error, reason, tone] of STOPS) {
-    await $.classic.StopFailure({ error, error_details: 'details' } as never)
+    await feed('StopFailure', { error, error_details: 'details' })
     await pane.redraw()
     const line = await pane.find({ type: 'Text', text: /Stopped 0s ago/ })
     expect(line?.text).toBe(`! Stopped 0s ago: ${reason}.`)
@@ -482,14 +490,15 @@ test('a usage limit shows the reset of the full window, ages with the clock, and
     { kind: 'five_hour', percentUsed: 100, resetsAt: new Date(2026, 9, 8, 19, 33).toISOString() },
     { kind: 'seven_day', percentUsed: 40, resetsAt: new Date(2026, 9, 12, 9, 0).toISOString() },
   ]
-  const { clock } = stubEngine(on, [AGENT], [], { now: new Date(2026, 9, 8, 19, 20).getTime(), windows })
+  const { clock, bridge, feed } = stubEngine(on, [AGENT], [], { now: new Date(2026, 9, 8, 19, 20).getTime(), windows })
+  bridge.on = true
   await $.session.start({ cwd: '/w' } as never)
   const pane = await $.ui.mount(PANE)
-  await $.classic.StopFailure({ error: 'rate_limit', agent_id: 'a1' } as never)
+  await feed('StopFailure', { error: 'rate_limit', agent_id: 'a1' })
   await pane.redraw()
   expect(await pane.find({ type: 'Text', text: /Stopped/ })).toBeUndefined()
 
-  await $.classic.StopFailure({ error: 'rate_limit' } as never)
+  await feed('StopFailure', { error: 'rate_limit' })
   await pane.redraw()
   expect((await pane.find({ type: 'Text', text: /Stopped/ }))?.text).toBe('! Stopped 0s ago: usage limit reached. Resume after 7:33pm.')
 
@@ -500,13 +509,14 @@ test('a usage limit shows the reset of the full window, ages with the clock, and
 })
 
 test('the band pill tip carries the stop line while the turn is stopped, and its age keeps up while hovered', async ($, on) => {
-  const { clock } = stubEngine(on)
+  const { clock, bridge, feed } = stubEngine(on)
+  bridge.on = true
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>other mod</Text>
   })
   await $.session.start({ cwd: '/w' } as never)
-  await $.classic.StopFailure({ error: 'billing_error' } as never)
+  await feed('StopFailure', { error: 'billing_error' })
   const band = await $.ui.mount(BAND)
   await pointerOn(band, { in: 'menu-entry-progress', type: 'enter', x: 1, y: 0, button: 'left' })
   expect((await band.find({ type: 'Text', text: /Stopped 0s ago/ }))?.text).toBe(' Stopped 0s ago: billing problem.')
@@ -517,18 +527,20 @@ test('the band pill tip carries the stop line while the turn is stopped, and its
 })
 
 test('icons=nerd leads the stop line with the Nerd warning glyph', { options: { icons: 'nerd' } }, async ($, on) => {
-  stubEngine(on)
+  const { bridge, feed } = stubEngine(on)
+  bridge.on = true
   await $.session.start({ cwd: '/w' } as never)
-  await $.classic.StopFailure({ error: 'overloaded' } as never)
+  await feed('StopFailure', { error: 'overloaded' })
   const pane = await $.ui.mount(PANE)
   expect((await pane.find({ type: 'Text', text: /Stopped/ }))?.text).toBe(`${String.fromCodePoint(0xea6c)} Stopped 0s ago: server overloaded.`)
   await pane.unmount()
 })
 
 test('icons=safe leads the stop line with a plain bang', { options: { icons: 'safe' } }, async ($, on) => {
-  stubEngine(on)
+  const { bridge, feed } = stubEngine(on)
+  bridge.on = true
   await $.session.start({ cwd: '/w' } as never)
-  await $.classic.StopFailure({ error: 'overloaded' } as never)
+  await feed('StopFailure', { error: 'overloaded' })
   const pane = await $.ui.mount(PANE)
   expect((await pane.find({ type: 'Text', text: /Stopped/ }))?.text).toBe('! Stopped 0s ago: server overloaded.')
   await pane.unmount()
@@ -633,7 +645,8 @@ test('a running card shows its latest call in place of its description, and the 
 
 test('a failing store never stops a turn, a stop or a session start from reaching the next hook', async ($, on) => {
   const storeDown = { is: false }
-  stubEngine(on, [AGENT], [], { storeDown })
+  const { bridge, feed } = stubEngine(on, [AGENT], [], { storeDown })
+  bridge.on = true
   let reached = 0
   on('agent.spawn', () => ({ model: 'claude-haiku-4-5', agentId: 'zz' }) as never)
   on('turn.complete', () => {
@@ -645,7 +658,7 @@ test('a failing store never stops a turn, a stop or a session start from reachin
   expect(await $.turn.start({ text: '', turnId: 'turn-x' } as never)).toEqual({ turnId: 'turn-x' })
   await $.turn.complete({ text: '' } as never)
   expect(reached).toBe(1)
-  await $.classic.StopFailure({ error: 'overloaded' } as never)
+  await feed('StopFailure', { error: 'overloaded' })
   expect(await $.session.start({ cwd: '/w' } as never)).toEqual({ cwd: '/w' })
   const spawned = await $.agent.spawn({ tool_use_id: 't', prompt: 'p', description: 'd', subagentType: 'general-purpose', provider: { plugin: 'x', tier: 'user' }, parentModel: 'm' } as never)
   expect(spawned).toEqual({ model: 'claude-haiku-4-5', agentId: 'zz' })
@@ -754,4 +767,56 @@ test('the pane groups a workflow run\'s agents under a line that counts how many
   expect(list).toContain('editor-2')
   expect(list.indexOf('leaf-1.1.1')).toBeLessThan(list.indexOf('Workflow abc123'))
   await ui.unmount()
+})
+
+test('a subagent that fails ends its workflow row as failed and leaves the main line alone, and a second failure changes nothing', async ($, on) => {
+  const { store, bridge, feed } = stubEngine(on, [])
+  bridge.on = true
+  store.set('snap:sid-1', emptySnap('sid-1'))
+  on('agent.spawn', () => ({ model: 'claude-haiku-4-5', agentId: 'w1' }) as never)
+  await $.session.start({ cwd: '/w' } as never)
+  await $.agent.spawn({ tool_use_id: '', prompt: 'p', description: 'Find', name: 'finder-1', subagentType: 'general-purpose', provider: { plugin: 'x', tier: 'user' }, parentModel: 'm', workflow: { runId: 'wf_abc123def', agentIndex: 1 } } as never)
+  await feed('StopFailure', { error: 'overloaded', agent_id: 'w1' })
+  const saved = store.get('snap:sid-1') as Snap
+  expect([saved.agents.w1?.endedAt, saved.agents.w1?.isFailed, saved.stop]).toEqual([14 * 60 * 1000 + 250, true, undefined])
+  await feed('StopFailure', { error: 'overloaded', agent_id: 'w1' })
+  expect((store.get('snap:sid-1') as Snap).agents.w1?.endedAt).toBe(14 * 60 * 1000 + 250)
+})
+
+test('a StopFailure replayed after a reload sets no stale banner, and a new failure after it does', async ($, on) => {
+  const { store, bridge, feed } = stubEngine(on)
+  bridge.on = true
+  const old = { session_id: 'sid-1', hook_event_name: 'StopFailure', error: 'rate_limit' }
+  store.set('bridge-last:sid-1:StopFailure', { raw: JSON.stringify(old), at: 0 })
+  bridge.text = `${JSON.stringify(old)}\n`
+  await $.session.start({ cwd: '/w' } as never)
+  expect((store.get('snap:sid-1') as Snap).stop).toBeUndefined()
+  await feed('StopFailure', { error: 'overloaded' })
+  expect((store.get('snap:sid-1') as Snap).stop?.error).toBe('overloaded')
+})
+
+test('a replayed SubagentStop does not reopen a finished row, and a StopFailure never seen by this module is handled once', async ($, on) => {
+  const { store, bridge, feed } = stubEngine(on, [])
+  bridge.on = true
+  const snap = emptySnap('sid-1')
+  snap.agents.w1 = { tokens: 1, context: 1, spawnedAt: 1000, endedAt: 5000, workflow: WORKFLOW }
+  store.set('snap:sid-1', snap)
+  const old = { session_id: 'sid-1', hook_event_name: 'StopFailure', error: 'overloaded', agent_id: 'w1' }
+  bridge.text = `${JSON.stringify(old)}\n${JSON.stringify({ session_id: 'sid-1', hook_event_name: 'SubagentStop', agent_id: 'w1', agent_type: '' })}\n`
+  await $.session.start({ cwd: '/w' } as never)
+  expect([(store.get('snap:sid-1') as Snap).agents.w1?.endedAt, (store.get('snap:sid-1') as Snap).agents.w1?.isFailed]).toEqual([5000, undefined])
+  await feed('SubagentStop', { agent_id: 'w1', agent_type: '', background_tasks: [] })
+  expect((store.get('snap:sid-1') as Snap).agents.w1?.endedAt).toBe(5000)
+})
+
+test('without any stop record, the turn ending alone clears busy, drops the step and settles an agent the list reports done', async ($, on) => {
+  const { store } = stubEngine(on, [{ ...AGENT, status: 'completed' }])
+  on('turn.complete', () => ({ text: '' }) as never)
+  const before = seeded()
+  before.main.step = 'Read(a.ts)'
+  store.set('snap:sid-1', before)
+  await $.session.start({ cwd: '/w' } as never)
+  await $.turn.complete({ turnId: 't', reason: 'answer' } as never)
+  const saved = store.get('snap:sid-1') as Snap
+  expect([saved.busy, saved.main.step, saved.agents.a1?.endedAt]).toEqual([false, undefined, 14 * 60 * 1000])
 })
