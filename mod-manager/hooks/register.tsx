@@ -13,7 +13,7 @@ import { labelsOf, menuEntry, pill, pillRow, splitRow, tabRow, tipLine } from '.
 import { TOAST_MS, ToastList, toastCards } from './toasts'
 import { cardFill, cardGap, detectNerd, FOOTER_ROWS, lookFor, paneFooter, section, type IconMode, type Reveal, withMark } from './look'
 import { actionReveals, choiceBar, settingChoice, settingsBody, type Action } from './settings'
-import { cardSpace, stickyCard } from './card'
+import { cardSpace, HEAD_ROWS, stickyCard } from './card'
 import { costPill } from './cost'
 import { readSpend, resetSpend, spendLine, type Spend } from './spend'
 import { type ListMessage, type ListProps } from './list'
@@ -145,6 +145,10 @@ const pending = new Map<string, boolean>()
 let page = -1
 // The mod under the pointer in the list, whose description shows in a card at the bottom of the pane.
 let hovering = -1
+// The row whose cut description keeps its card after the pointer left the row, so the pointer can reach the card's control.
+let heldCard = -1
+// The mod whose card shows every line; pointing at another row or control clears it.
+let fullCard = ''
 let note = ''
 // The page's Features card shows every line in full.
 let featuresOpen = false
@@ -414,6 +418,31 @@ const ICON_MODES = ['auto', 'nerd', 'safe'] as const
 
 // The hover card's own rows, border included.
 const CARD_ROWS = 5
+const TEXT_ROWS = CARD_ROWS - 3
+const CARD_MORE = 'manager-card-more'
+
+// The rows a text takes at this width, wrapped at spaces, a word wider than the width breaking across rows.
+const wrapRows = (value: string, width: number) =>
+  value.split('\n').flatMap(line => {
+    const rows = ['']
+    let used = 0
+    for (const word of line.split(' ')) {
+      const chars = [...word]
+      if (used > 0 && used + 1 + chars.length <= width) {
+        rows[rows.length - 1] += ` ${word}`
+        used += 1 + chars.length
+        continue
+      }
+      if (used > 0) rows.push('')
+      rows[rows.length - 1] = chars.slice(0, width).join('')
+      used = Math.min(chars.length, width)
+      for (let at = width; at < chars.length; at += width) {
+        rows.push(chars.slice(at, at + width).join(''))
+        used = Math.min(chars.length - at, width)
+      }
+    }
+    return rows
+  })
 
 // The share of green left in the on count's pill, as the legend pills tint theirs.
 const COUNT_WASH = 0.72
@@ -581,6 +610,12 @@ export const register: Register = (on, options) => {
       paneTip = tip.id && !isToast ? { glyph: tip.glyph ?? '', label: tip.label ?? '', text: tip.text ?? '' } : null
       // The list's tip carries the row under the pointer, whose card shows above the list.
       hovering = tip.id?.startsWith('manager-row-') ? Number(tip.id.slice('manager-row-'.length)) : -1
+      if (hovering >= 0 && mods[hovering]?.name !== fullCard) fullCard = ''
+      // Leaving a row for empty cells or for the card's own control keeps the held card; any other control drops it.
+      if (hovering >= 0 || (tip.id && tip.id !== CARD_MORE)) {
+        heldCard = -1
+        if (hovering < 0) fullCard = ''
+      }
       $.ui.invalidate('ui.render')
       return next(e)
     }
@@ -591,6 +626,11 @@ export const register: Register = (on, options) => {
     }
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry' && message.id === 'manager') await openingPane($)
+    if (message?.type === 'menu-entry' && message.id === CARD_MORE) {
+      const shown = mods[hovering >= 0 ? hovering : heldCard]
+      if (shown) fullCard = fullCard === shown.name ? '' : shown.name
+      $.ui.invalidate('ui.render')
+    }
     if (message?.type === 'menu-entry' && message.id === 'manager-features') {
       featuresOpen = !featuresOpen
       $.ui.invalidate('ui.render')
@@ -621,6 +661,8 @@ export const register: Register = (on, options) => {
     }
     if (message?.type === 'select') {
       hovering = -1
+      heldCard = -1
+      fullCard = ''
       paneTip = null
       openPage($, message.index)
     }
@@ -813,13 +855,30 @@ export const register: Register = (on, options) => {
     const onCount = mods.filter(isOn).length
 
     // The sticky card above the list keeps its space while nothing is hovered, so the list never jumps.
+    const shownAt = hovering >= 0 ? hovering : heldCard
+    const hovered = mods[shownAt]
+    // The card's text is the pane's width less its border and padding; a description past its rows gives the last one to the control.
+    const wrapped = hovered ? wrapRows(hovered.description || text.noDescription, Math.max(10, e.props.bodyColumns - 6)) : []
+    const isClipped = wrapped.length > TEXT_ROWS
+    // A cut description keeps its card once the pointer leaves the row, so the pointer can reach the control.
+    if (hovering >= 0) heldCard = isClipped ? hovering : -1
+    const isFull = isClipped && hovered !== undefined && fullCard === hovered.name
+    // Opened, the card grows to every row, as far as the pane has room for it.
+    const roomRows = Math.max(TEXT_ROWS, e.props.scroll.bodyRows - HEAD_ROWS - FOOTER_ROWS - 4)
+    const textShown = isFull ? Math.min(wrapped.length, roomRows) : TEXT_ROWS
+    const cardRows = CARD_ROWS + (textShown - TEXT_ROWS)
+    const shownRows = wrapped.slice(0, textShown)
+    const moreLabel = isFull ? text.showLess : text.showAll
+    const moreArrow = isFull ? look.glyph.less : look.glyph.more
+    const moreControl = (
+      <Client key={CARD_MORE} module="./entry.tsx" width={[...moreLabel].length + 4} height={1} props={{ id: CARD_MORE, label: moreLabel, lead: moreArrow, leadColor: THEME.accent, isOpen: false, bg: cardFill(), idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreArrow, label: moreLabel, text: isFull ? text.tipShowLess : text.tipShowAll } } satisfies EntryProps} />
+    )
     const hoverCard = () => {
-      const hovered = mods[hovering]
       return stickyCard(
         { Box, Text },
         e.props.scroll.offset,
         e.props.bodyColumns,
-        CARD_ROWS,
+        cardRows,
         hovered ? (
           <Box key="hover-card" flexDirection="column">
             <Box key="hover-card-title" flexDirection="row" flexShrink={0}>
@@ -828,8 +887,18 @@ export const register: Register = (on, options) => {
               </Box>
               <Text key="hover-card-folder" color={THEME.muted} wrap="truncate-end">{` ${MARK.sep} ${hovered.name}`}</Text>
             </Box>
-            <Box key="hover-card-text" height={CARD_ROWS - 3} overflow="hidden" flexShrink={0}>
-              <Text color={THEME.muted}>{hovered.description || text.noDescription}</Text>
+            <Box key="hover-card-text" height={shownRows.length} flexDirection="column" overflow="hidden" flexShrink={0}>
+              {shownRows.map((row, at) =>
+                isClipped && at === shownRows.length - 1 ? (
+                  <Box key={`card-row-${at}`} flexDirection="row">
+                    <Box key="card-row-text" flexShrink={1}><Text color={THEME.muted} wrap="truncate-end">{row || ' '}</Text></Box>
+                    <Box key="card-row-gap" flexGrow={1} />
+                    <Box key="card-row-more" flexShrink={0}>{moreControl}</Box>
+                  </Box>
+                ) : (
+                  <Text key={`card-row-${at}`} color={THEME.muted} wrap="truncate-end">{row || ' '}</Text>
+                ),
+              )}
             </Box>
           </Box>
         ) : (
@@ -977,7 +1046,7 @@ export const register: Register = (on, options) => {
         {pill({ Box, Text }, look.nerd, mix(THEME.ok, THEME.bg, COUNT_WASH), <Text color={THEME.ok}>{look.nerd ? fill(text.onCount, { on: onCount }) : ` ${fill(text.onCount, { on: onCount })} `}</Text>, 'on-count', THEME.bg)}
       </Box>,
       <Text key="list-note" wrap="truncate-end" color={statusColor(note)}>{withMark(look, note) || fill(text.listHint, { sep: MARK.sep })}</Text>,
-      cardSpace({ Box }, CARD_ROWS),
+      cardSpace({ Box }, cardRows),
       mods.length === 0 ? <Text key="list-empty" color={THEME.muted}>{text.noMods}</Text> : null,
       group('dir', text.sectionYours, 'mod'),
       group('installed', text.sectionInstalled, 'installed'),

@@ -1,0 +1,6 @@
+{
+  "features": [
+    { "title": "Mods", "detail": "Installs, turns on and off, and updates mods, and edits their settings, from one panel." },
+    { "title": "Hover cards", "detail": "Pointing at a mod shows its description cut to two lines. Show all grows the card to the full description, and Show less cuts it back. The same switch opens a mod's whole feature list." }
+  ]
+}

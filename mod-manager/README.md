@@ -34,6 +34,11 @@ The gear pill, or `/mod-manager`.
 | --- |
 | https://github.com/user-attachments/assets/0b6e9237-5ee7-4640-a150-dea2b42d0b3b |
 
+## Features
+
+- **Mods:** Installs, turns on and off, and updates mods, and edits their settings, from one panel.
+- **Hover cards:** Pointing at a mod shows its description cut to two lines. Show all grows the card to the full description, and Show less cuts it back. The same switch opens a mod's whole feature list.
+
 ## Settings
 
 Change them with `/mod-manager settings` or the gear pill.
