@@ -26,6 +26,7 @@ import { copyChoices, copyText, type CopyChoice } from './clip'
 import { markPieces, type Piece } from './mark'
 import { callTime, commandOf, diffStat, elapsed, isPrompt, rowKey, timeOfDay, toolLabel, turnKinds, turnLine, turnThoughts, TurnLog, type Turn } from './turns'
 import { apiErrorAction, completeLines, hexColors, questionsOf, reportOf, senderTaskOf, statusesOf, withNotice, type Notice, type Report } from './rows'
+import { bridgeOn, endBridge, startBridge, type BridgeRecord } from './bridge'
 import { bytesOf, CHUNK_BYTES, chunkArgv, utf8Length } from './tail'
 
 let transcript = ''
@@ -247,6 +248,33 @@ async function readMore($: EngineInterface) {
 }
 
 const FEED_SLICE = 2000
+
+// Only the SessionStart record names the transcript, and the bridge delivers it; the store keeps it per session so a reload finds it again.
+async function sessionStarted($: EngineInterface, record: BridgeRecord) {
+  const session = String(record.session_id ?? '')
+  const path = String(record.transcript_path ?? '')
+  if (!session) return
+  // A compact keeps the same session and file, which the log already holds; so does a read that found the file by its id before this record came, in slashes of its own.
+  const isNew = session !== logSession || path.replace(/\\/g, '/') !== transcript.replace(/\\/g, '/') || !isLoaded
+  if (isNew) startLog(session, path)
+  await $.store.set(`transcript:${session}`, { path, at: await $.clock.now() }).catch(() => {})
+  if (isNew) await loadAWhile($)
+  // SessionStart comes between turns, so whatever the transcript holds has ended.
+  markEnded()
+}
+
+// A replay after a reload hands over the last record again; a set holds the id once.
+function permissionDenied($: EngineInterface, record: BridgeRecord) {
+  if (typeof record.tool_use_id !== 'string' || !record.tool_use_id) return
+  declined.add(record.tool_use_id)
+  $.ui.invalidate('ui.render')
+}
+
+// The reply row draws the failure only where its text matches, so a replayed record changes nothing.
+function stopFailed($: EngineInterface, record: BridgeRecord) {
+  apiFailure = { error: record.error as ModelApiError, details: String(record.error_details ?? ''), text: String(record.last_assistant_message ?? '').trim() }
+  $.ui.invalidate('ui.render')
+}
 
 // For /mod-transcript debug: how long the last transcript read and feed took.
 let lastRead = ''
@@ -582,7 +610,7 @@ const MORE = 'more:'
 
 // The expand control: the arrow, then a muted label, on the fill it sits on; a click flips `id`.
 function moreToggle({ Client }: Pick<Rows, 'Client'>, id: string, isOpen: boolean, hidden: number, bg: string) {
-  const label = isOpen ? text.showLess : fill(text.previewMore, { n: hidden })
+  const label = isOpen ? text.showLess : hidden > 0 ? fill(text.previewMore, { n: hidden }) : text.showAll
   const arrow = isOpen ? look.glyph.less : look.glyph.more
   return (
     <Client
@@ -737,7 +765,10 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
   const preview = (call: Turn['tools'][number], n: number) => {
     const more = call.preview?.more ?? 0
     const moreId = `preview:${call.id}`
-    const isAll = more > 0 && flips.tools.includes(moreId)
+    const lineOf = (previewLine: { kind: string; text: string }) => `${previewLine.kind === 'add' ? '+ ' : previewLine.kind === 'del' ? '- ' : previewLine.kind === 'same' ? '  ' : ''}${previewLine.text}`
+    // A line wider than the card counts as hidden too: its control opens every line wrapped in full.
+    const isCut = more > 0 || (call.preview?.lines ?? []).some(previewLine => cells(lineOf(previewLine)) > width - 10)
+    const isAll = isCut && flips.tools.includes(moreId)
     const shown = [...(call.preview?.lines ?? []), ...(isAll ? (call.preview?.rest ?? []) : [])]
     // The call line cuts a long command, so the open call shows it whole first.
     const command = call.name === 'Bash' ? String(call.input?.command ?? '').split('\n').flatMap(commandLine => wrapWords(commandLine, width - 14)) : []
@@ -756,15 +787,14 @@ function chipSection({ Box, Client, Text }: Rows, turn: Turn, openTools: string[
         {sent.map((sentLine, at) => <Text key={`sent-${at}`} color={THEME.onSurface}>{sentLine || ' '}</Text>)}
         {shown.length === 0 ?<Text key="none" color={THEME.muted}>{text.previewEmpty}</Text> : null}
         {shown.map((previewLine, at) => {
-          const mark = previewLine.kind === 'add' ? '+ ' : previewLine.kind === 'del' ? '- ' : previewLine.kind === 'same' ? '  ' : ''
           const background = previewLine.kind === 'add' ? { backgroundColor: THEME.addBg } : previewLine.kind === 'del' ? { backgroundColor: THEME.delBg } : {}
           const body = (
-            <Text key={`line-${at}`} color={previewLine.kind === 'out' ? THEME.muted : THEME.onSurface} wrap="truncate-end" {...background}>
-              {cut(`${mark}${previewLine.text}`, width - 10) || ' '}
+            <Text key={`line-${at}`} color={previewLine.kind === 'out' ? THEME.muted : THEME.onSurface} wrap={isAll ? 'wrap' : 'truncate-end'} {...background}>
+              {(isAll ? lineOf(previewLine) : cut(lineOf(previewLine), width - 10)) || ' '}
             </Text>
           )
           // The control sits on the last preview row, pinned right.
-          return more > 0 && at === shown.length - 1 ? rowWithMore({ Box }, `more-row-${call.id}`, body, moreToggle({ Client }, moreId, isAll, more, THEME.surface1)) : body
+          return isCut && at === shown.length - 1 ? rowWithMore({ Box }, `more-row-${call.id}`, body, moreToggle({ Client }, moreId, isAll, more, THEME.surface1)) : body
         })}
       </Box>
     )
@@ -975,6 +1005,10 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
+    bridgeOn('SessionStart', record => sessionStarted($, record))
+    bridgeOn('PermissionDenied', record => permissionDenied($, record))
+    bridgeOn('StopFailure', record => stopFailed($, record))
+    await startBridge($, 'mod-transcript')
     try {
       await loadLook($)
       await $.command.register({
@@ -1119,37 +1153,10 @@ export const register: Register = (on, options) => {
   // A plugin's switch to an agent's transcript is heard before it lands, so rows never draw the main turns' bubbles first.
   on('ui.view', async ($, e, next) => announceView(e, next))
 
-  // Only the settings hook event names the transcript; kept per session so a reload finds it again.
-  on('classic.SessionStart', async ($, e, next) => {
-    // A compact keeps the same session and file, which the log already holds.
-    if (e.session_id !== logSession || e.transcript_path !== transcript || !isLoaded) {
-      startLog(e.session_id, e.transcript_path)
-      await $.store.set(`transcript:${e.session_id}`, { path: e.transcript_path, at: await $.clock.now() }).catch(() => {})
-      await loadAWhile($)
-    }
-    // SessionStart comes between turns, so whatever the transcript holds has ended.
-    markEnded()
-
-    return next(e)
-  })
-
-  on('classic.PermissionDenied', async ($, e, next) => {
-    declined.add(e.tool_use_id)
-    $.ui.invalidate('ui.render')
-
-    return next(e)
-  })
-
-  on('classic.StopFailure', async ($, e, next) => {
-    apiFailure = { error: e.error, details: e.error_details ?? '', text: (e.last_assistant_message ?? '').trim() }
-    $.ui.invalidate('ui.render')
-
-    return next(e)
-  })
-
-  // A /resume or /clear ends this session; the next row asks for the id at once.
+  // A /resume or /clear ends this session; what its bridge file still holds is delivered, and the next row asks for the id at once.
   on('session.end', async ($, e, next) => {
     sessionCheckedAt = 0
+    await endBridge($, e.sessionId)
 
     return next(e)
   })

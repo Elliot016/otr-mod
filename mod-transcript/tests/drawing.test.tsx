@@ -7,6 +7,7 @@ import Copy from '../hooks/copy'
 import Dot from '../hooks/dot'
 import Fold from '../hooks/fold'
 import { mix, THEME } from '../hooks/theme'
+import { feed, reading, sessionStarted } from './bridge-feed'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
@@ -40,23 +41,23 @@ const TWO_TURNS = [
 
 // Mounts rows the way the engine draws them, once the transcript `text` is read.
 async function open($: any, on: any, text = '', reads: () => string = () => text) {
-  on('classic.SessionStart', () => ({}))
-  on('classic.PermissionDenied', () => ({}))
-  on('classic.StopFailure', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: text.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: reads() }))
-  mock.clock(on)
-  mock.env(on, {})
+  on('fs.read', reading(() => ({ value: reads() })))
+  const clock = mock.clock(on)
+  on('session.start', () => ({ cwd: '/w' }))
+  mock.env(on, { USERPROFILE: '/home' })
   on('ui.render', ($$: any, e: any) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
-  return (component: string, requestId: string, props: object, columns = 120) =>
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
+  const mount = (component: string, requestId: string, props: object, columns = 120) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns, rows: 40 }, props } as never)
+  // A hook event, as the command hook writes it into the bridge file.
+  return Object.assign(mount, { hook: (record: Record<string, unknown>) => feed($, clock, { session_id: 's1', ...record }) })
 }
 
 const prompt = (text: string, isExpanded = false) => ({ text, origin: { kind: 'composer' }, isExpanded })
@@ -112,7 +113,7 @@ test('a typed prompt is lifted over the margin Claude Code adds, and a plugin\'s
 
 test('a call refused by a hook draws neutral with "declined", not in the failure color', { options: { expand_live: false } }, async ($, on) => {
   const mount = await open($, on)
-  await $.classic.PermissionDenied({ tool_name: 'WebFetch', tool_input: {}, tool_use_id: 'toolu_web', reason: 'blocked' } as never)
+  await mount.hook({ hook_event_name: 'PermissionDenied', tool_name: 'WebFetch', tool_input: {}, tool_use_id: 'toolu_web', reason: 'blocked' })
   const tool = await mount('ToolUse', 'toolu_web', { tool_use_id: 'toolu_web', tool: 'WebFetch', input: { url: 'https://example.com' }, isRunning: false, isErrored: true, isInterrupted: false, output: 'blocked' })
   expect((await tool.find({ type: 'Client', key: 'toggle-tool-chip' }))?.props.props.color).toBe(THEME.muted)
   expect(await labelText(tool, 'toggle-tool-colored')).toMatch(/declined/)
@@ -168,7 +169,7 @@ test('AskUserQuestion draws its question lines with the Nerd search glyph in Ner
 
 test('an API error the engine retries ends the reply as one muted line, not a warning', async ($, on) => {
   const mount = await open($, on)
-  await $.classic.StopFailure({ error: 'rate_limit', error_details: 'retry in 20s', last_assistant_message: 'API Error: Rate limit reached' } as never)
+  await mount.hook({ hook_event_name: 'StopFailure', error: 'rate_limit', error_details: 'retry in 20s', last_assistant_message: 'API Error: Rate limit reached' })
   const reply = await mount('AssistantMessage', ID(7), { text: 'API Error: Rate limit reached', isFirstOfReply: true })
   expect(await reply.find({ type: 'Text', text: /rate limit reached · Claude Code retries · retry in 20s/ })).toBeDefined()
   expect((await reply.find({ type: 'Text', text: /rate limit reached/ }))?.props.color).toBe(THEME.muted)
@@ -187,7 +188,7 @@ test('a reply naming hex colors gets a strip of colored squares under it, and on
 
 test('an API error that needs the person is one red line that says so', async ($, on) => {
   const mount = await open($, on)
-  await $.classic.StopFailure({ error: 'billing_error', last_assistant_message: 'API Error: Billing' } as never)
+  await mount.hook({ hook_event_name: 'StopFailure', error: 'billing_error', last_assistant_message: 'API Error: Billing' })
   const reply = await mount('AssistantMessage', ID(7), { text: 'API Error: Billing', isFirstOfReply: true })
   expect(await reply.find({ type: 'Text', text: /billing problem · you must act/ })).toBeDefined()
   expect((await reply.find({ type: 'Text', text: /billing problem/ }))?.props.color).toBe(THEME.alert)
@@ -246,6 +247,61 @@ test('an open call\'s preview pins the expand control at the right of its last r
   expect(await labelText(head, control)).toBe(' ▴ Show less ')
   await clickLabel(head, control)
   expect(await head.find({ type: 'Text', text: 'out 8' })).toBeUndefined()
+})
+
+const turnWriting = (lines: string[]) => [
+  row(1, 'user', { message: { role: 'user', content: 'list it' } }),
+  said(2, [{ type: 'tool_use', id: 'toolu_l', name: 'Write', input: { file_path: '/repo/a.txt', content: lines.join('\n') } }]),
+  answered(3, 'toolu_l', { toolUseResult: {} }),
+  said(4, [{ type: 'text', text: 'Done.' }]),
+  row(5, 'system', { subtype: 'turn_duration', durationMs: 1000 }),
+  row(6, 'user', { message: { role: 'user', content: 'next' } }),
+].join('\n') + '\n'
+
+const openPreview = async ($: any, on: any, lines: string[]) => {
+  const mount = await open($, on, turnWriting(lines))
+  const head = await mount('UserMessage', ID(1), prompt('list it'))
+  await clickLabel(head, 'toggle-turn-colored')
+  await head.pointer({ in: 'toggle-chips-line', type: 'down', button: 'left', x: 1, y: 0 })
+  await clickLabel(head, 'toggle-call-0-colored')
+  return head
+}
+const previewWraps = async (head: any) => (await head.findAll({ type: 'Text' })).filter((node: any) => /^\+ row\d+ w/.test(textOf(node))).map((node: any) => node.props.wrap)
+const WIDE = (n: number) => Array.from({ length: n }, (_, at) => `row${at} ${'w'.repeat(300)}`)
+
+test('a few short preview lines show no control', { options: { expand_live: false, icons: 'safe' } }, async ($, on) => {
+  const head = await openPreview($, on, ['out 0', 'out 1'])
+  expect(await head.find({ type: 'Text', text: 'out 1' })).toBeDefined()
+  expect(await head.find({ key: 'more-row-toolu_l-gap' })).toBeUndefined()
+})
+
+for (const icons of ['safe', 'nerd'] as const) {
+  test(`icons=${icons}: a few long preview lines show Show all, which wraps each line in full and Show less cuts it again`, { options: { expand_live: false, icons } }, async ($, on) => {
+    const head = await openPreview($, on, WIDE(3))
+    const control = 'toggle-more-preview:toolu_l'
+    expect(await head.find({ key: 'more-row-toolu_l-gap' })).toBeDefined()
+    expect(await labelText(head, control)).toBe(icons === 'safe' ? ' ▾ Show all ' : ` ${String.fromCodePoint(0xf0d7)} Show all `)
+    expect(await previewWraps(head)).toEqual(['truncate-end', 'truncate-end', 'truncate-end'])
+    await clickLabel(head, control)
+    expect(await labelText(head, control)).toBe(icons === 'safe' ? ' ▴ Show less ' : ` ${String.fromCodePoint(0xf0d8)} Show less `)
+    expect(await previewWraps(head)).toEqual(['wrap', 'wrap', 'wrap'])
+    const full = (await head.findAll({ type: 'Text' })).map((node: any) => textOf(node)).join('\n')
+    expect(full).toContain('w'.repeat(300))
+    expect(full).not.toContain('…')
+    await clickLabel(head, control)
+    expect(await previewWraps(head)).toEqual(['truncate-end', 'truncate-end', 'truncate-end'])
+  })
+}
+
+test('a long preview of long lines keeps "N more lines" on its control and wraps every line when open', { options: { expand_live: false, icons: 'safe' } }, async ($, on) => {
+  const head = await openPreview($, on, WIDE(11))
+  const control = 'toggle-more-preview:toolu_l'
+  expect(await labelText(head, control)).toBe(' ▾ 3 more lines ')
+  await clickLabel(head, control)
+  expect(await labelText(head, control)).toBe(' ▴ Show less ')
+  const wraps = await previewWraps(head)
+  expect(wraps).toHaveLength(11)
+  expect(new Set(wraps)).toEqual(new Set(['wrap']))
 })
 
 test('a message from another session wraps its long paragraphs in full instead of cutting them', async ($, on) => {

@@ -6,6 +6,7 @@ import { copyText, type CopyChoice } from '../hooks/clip'
 import Copy from '../hooks/copy'
 import { markPieces, type Piece } from '../hooks/mark'
 import { THEME } from '../hooks/theme'
+import { reading, sessionStarted } from './bridge-feed'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
@@ -57,19 +58,20 @@ test('marks: what a choice leaves stays markdown, in order, and a choice marking
 })
 
 async function mountReply($: any, on: any) {
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: TRANSCRIPT }))
+  on('fs.read', reading(() => ({ value: TRANSCRIPT })))
   on('ui.copy', () => ({ value: { isCopied: true } }))
-  mock.clock(on)
+  const clock = mock.clock(on)
+  mock.env(on, { USERPROFILE: '/home' })
+  on('session.start', () => ({ cwd: '/w' }))
   on('ui.render', ($$: any, e: any) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   return {

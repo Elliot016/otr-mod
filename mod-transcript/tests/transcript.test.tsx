@@ -6,6 +6,7 @@ import { cells } from '../hooks/cells'
 import { copyChoices, copyText } from '../hooks/clip'
 import { mix, THEME, WASH } from '../hooks/theme'
 import { callTime, commandOf, elapsed, previewOf, rowKey, timeOfDay, turnLine, TurnLog } from '../hooks/turns'
+import { reading, sessionStarted } from './bridge-feed'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
@@ -183,22 +184,21 @@ const TIMED = [
 async function mountTimed($: any, on: any, text = TIMED, isLive = false, startsTurn = true) {
   let written = isLive ? '' : text
   on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: written.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: written }))
-  mock.clock(on)
+  on('fs.read', reading(() => ({ value: written })))
+  const clock = mock.clock(on)
   on('session.start', (_$: unknown, e: unknown) => e)
   on('command.register', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
-  mock.env(on, {})
+  mock.env(on, { USERPROFILE: '/home' })
   on('ui.render', ($$: any, e: any) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
   written = text
   if (isLive && startsTurn) await $.turn.start({ turnId: 't1' } as never)
   // A reload fires session.start, not turn.start.
@@ -467,25 +467,28 @@ test('rows drawn before the transcript is read already fold, so none changes hei
 
 test('the transcript is read once, and once more for its unfinished last line; rows drawn later join their turn and fold at the next prompt', async ($, on) => {
   let reads = 0
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => {
+  // Only the named file holds the transcript: the read session.start makes before its SessionStart arrives finds nothing.
+  on('fs.read', reading((_$: unknown, e: { path: string }) => {
+    if (e.path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '') !== '/t/s1.jsonl') throw new Error('ENOENT')
     reads += 1
     return { value: TRANSCRIPT }
-  })
+  }))
   on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
-  mock.clock(on)
+  const clock = mock.clock(on)
+  mock.env(on, { USERPROFILE: '/home' })
+  on('session.start', () => ({ cwd: '/w' }))
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
   // A compact keeps the same transcript, so it is not read again.
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'compact', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'compact')
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const toolProps = { tool_use_id: 'toolu_new', tool: 'Bash', input: { command: 'ls' }, isRunning: false, isErrored: false, isInterrupted: false, output: {} }
@@ -524,7 +527,7 @@ test('a new session, whose transcript is not written yet, folds its turns; a gro
   on('command.register', () => ({ value: undefined } as never))
   on('ui.panes', () => ({ value: [] }))
   on('session.start', () => ({ cwd: '/w' }))
-  mock.clock(on)
+  const clock = mock.clock(on)
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{e.component === 'ToolGroup' ? 'Thought for 6s, ran 2 shell commands' : `base ${e.component}`}</Text>
@@ -559,19 +562,20 @@ test('a new session, whose transcript is not written yet, folds its turns; a gro
 })
 
 test('a finished turn folds under its prompt, keeps its reply, and a click unfolds it', async ($, on) => {
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: TRANSCRIPT }))
-  mock.clock(on)
+  on('fs.read', reading(() => ({ value: TRANSCRIPT })))
+  const clock = mock.clock(on)
+  mock.env(on, { USERPROFILE: '/home' })
+  on('session.start', () => ({ cwd: '/w' }))
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
 
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
 
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
@@ -624,18 +628,19 @@ test('a finished turn folds under its prompt, keeps its reply, and a click unfol
 })
 
 test('an open turn shows a chip per kind in order of first use, Thought first, one open at a time', async ($, on) => {
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: TRANSCRIPT }))
-  mock.clock(on)
+  on('fs.read', reading(() => ({ value: TRANSCRIPT })))
+  const clock = mock.clock(on)
+  mock.env(on, { USERPROFILE: '/home' })
+  on('session.start', () => ({ cwd: '/w' }))
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{e.component === 'ToolGroup' ? 'Thought for 56s, read 1 file, edited 1 file' : `base ${e.component}`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
 
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
@@ -667,19 +672,20 @@ test('an open turn shows a chip per kind in order of first use, Thought first, o
 })
 
 test('with fold_turns off, finished turns start open and the line folds them', { options: { fold_turns: false } }, async ($, on) => {
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: TRANSCRIPT.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: TRANSCRIPT }))
-  mock.clock(on)
+  on('fs.read', reading(() => ({ value: TRANSCRIPT })))
+  const clock = mock.clock(on)
+  mock.env(on, { USERPROFILE: '/home' })
+  on('session.start', () => ({ cwd: '/w' }))
   on('ui.render', ($$, e) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
 
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
 
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
@@ -725,7 +731,8 @@ test('/mod-transcript settings opens its own panel: a click saves a setting, an 
     return { text: '' }
   })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
-  mock.clock(on)
+  const clock = mock.clock(on)
+  on('session.start', () => ({ cwd: '/w' }))
 
   await $.command.run({ command: 'mod-transcript', args: 'settings' } as never)
   const ui = await $.ui.mount({
@@ -816,22 +823,23 @@ test('copy: text drops the marks, table rebuilds clean markdown, links list URLs
 })
 
 async function mountCopying($: any, on: any, copied: string[]) {
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: COPYING.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: COPYING }))
+  on('fs.read', reading(() => ({ value: COPYING })))
   on('ui.copy', (_$: unknown, e: { text: string }) => {
     copied.push(e.text)
     return { value: { isCopied: true } }
   })
-  mock.clock(on)
+  const clock = mock.clock(on)
+  mock.env(on, { USERPROFILE: '/home' })
+  on('session.start', () => ({ cwd: '/w' }))
   on('ui.render', ($$: any, e: any) => {
     const { Text } = $$.ui.resolve(e)
     return <Text>{`base ${e.component}`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   return {
@@ -912,19 +920,20 @@ test('with copy_pill off, the reply keeps a plain bottom edge', { options: { cop
 })
 
 test('hovering a copy choice or the fold chip shows its tip in the band tip row, and leaving clears it', async ($, on) => {
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: COPYING.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: COPYING }))
-  mock.clock(on)
+  on('fs.read', reading(() => ({ value: COPYING })))
+  const clock = mock.clock(on)
+  mock.env(on, { USERPROFILE: '/home' })
+  on('session.start', () => ({ cwd: '/w' }))
   on('ui.render', ($$: any, e: any) => {
     const { Box, Text } = $$.ui.resolve(e)
     if (e.component === 'AbovePrompt') return <Box key="menu-rows" flexDirection="column"><Box key="menu-row" flexDirection="row"><Text key="pill">Files</Text></Box></Box>
     return <Text>{`base ${e.component}`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
   const mount = (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: 120, rows: 40 }, props } as never)
   const band = await $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } } as never)
@@ -951,12 +960,13 @@ test('this mod draws its own toasts as cards in the band, the × shows its tip, 
   on('store.get', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: '' }))
+  on('fs.read', reading(() => ({ value: '' })))
   on('fs.list', () => ({ value: [] }))
   on('env.get', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
   on('ui.open', () => ({ value: { isPlaced: false, reason: 'too narrow' } }))
-  mock.clock(on)
+  const clock = mock.clock(on)
+  on('session.start', () => ({ cwd: '/w' }))
   on('ui.render', ($$: any, e: any) => {
     const { Box, Text } = $$.ui.resolve(e)
     if (e.component === 'AbovePrompt') return <Box key="menu-rows" flexDirection="column"><Box key="menu-row" flexDirection="row"><Text key="pill">Files</Text></Box></Box>
@@ -1007,23 +1017,22 @@ test('a prompt\x27s number is its place among the live prompts, as the Prompts p
 })
 
 const mountNumbered = async ($: any, on: any, requestId: string, text: string) => {
-  on('classic.SessionStart', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: NUMBERED.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: NUMBERED }))
-  mock.clock(on)
+  on('fs.read', reading(() => ({ value: NUMBERED })))
+  const clock = mock.clock(on)
   on('session.start', (_$: unknown, e: unknown) => e)
   on('command.register', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
-  mock.env(on, {})
+  mock.env(on, { USERPROFILE: '/home' })
   on('ui.render', ($$: any, e: any) => {
     const { Box, Text } = $$.ui.resolve(e)
     if (e.component === 'AbovePrompt') return <Box key="menu-rows" flexDirection="column"><Box key="menu-row" flexDirection="row"><Text key="pill">Files</Text></Box></Box>
     return <Text>{`base ${e.component}`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
   return $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component: 'UserMessage', requestId, viewport: { columns: 120, rows: 40 }, props: { text, origin: { kind: 'composer' }, isExpanded: false } } as never)
 }
 

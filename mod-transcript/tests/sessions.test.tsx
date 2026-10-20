@@ -3,6 +3,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { TurnLog } from '../hooks/turns'
+import { reading, sessionStarted } from './bridge-feed'
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object, parent: string | null = ID(n - 1)) => JSON.stringify({ type, uuid: ID(n), parentUuid: parent, ...extra })
@@ -79,13 +80,13 @@ function world($: any, on: any, init: Partial<World> = {}) {
     if (text === undefined) throw new Error('ENOENT')
     return { value: { kind: 'file', size: text.length, mtimeMs: 0, isLink: false } }
   })
-  on('fs.read', async (_$: unknown, e: { path: string }) => {
+  on('fs.read', reading(async (_$: unknown, e: { path: string }) => {
     const text = fileAt(e.path) ?? ''
     // The host rejects a read over 4 MiB.
     if (w.readFails || text.length > 4 * 1024 * 1024) throw new Error('too big')
     if (w.held && plain(e.path) === w.held.path) await w.held.until
     return { value: text }
-  })
+  }))
   // tail.ts's POSIX form: sh -c '...' sh <path> <from + 1> <length>, answered as base64.
   on('process.run', (_$: unknown, e: { argv: string[] }) => {
     w.spawned!.push([...e.argv])
@@ -102,7 +103,6 @@ function world($: any, on: any, init: Partial<World> = {}) {
   on('fs.list', (_$: unknown, e: { path: string }) => ({ value: plain(e.path) === `${w.configDir?.replace(/\/$/, '') ?? '/home/.claude'}/projects` ? [{ name: 'proj', kind: 'dir' }] : [] }))
   on('fs.exists', (_$: unknown, e: { path: string }) => ({ value: fileAt(e.path) !== undefined }))
   on('session.messages', () => ({ value: [] }))
-  on('classic.SessionStart', () => ({}))
   on('session.start', () => ({ cwd: '/w' }))
   on('command.register', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
@@ -125,7 +125,7 @@ function world($: any, on: any, init: Partial<World> = {}) {
   }
   const start = async (session: string, path: string, source: string) => {
     await switchTo(session)
-    await $.classic.SessionStart({ session_id: session, transcript_path: path, source, hook_event_name: 'SessionStart', cwd: '/w' } as never)
+    await sessionStarted($, clock, session, path, source)
   }
   const mount = async (component: string, requestId: string, props: object) => {
     await mounted.get(requestId)?.unmount()

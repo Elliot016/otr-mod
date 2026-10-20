@@ -3,6 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { capture, expectPreview, stacked, type Expand } from './previews-kit'
 import { snapshot } from './previews.snapshot'
+import { reading, sessionStarted } from './bridge-feed'
 
 const COLUMNS = 56
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
@@ -28,22 +29,20 @@ const TURN =
 
 // The host draws the prompt, the reply and the tool rows the mod does not own, so they are stood in by their text.
 async function open($: any, on: any) {
-  on('classic.SessionStart', () => ({}))
-  on('classic.PermissionDenied', () => ({}))
-  on('classic.StopFailure', () => ({}))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('fs.stat', () => ({ value: { kind: 'file', size: TURN.length, mtimeMs: 0, isLink: false } }))
-  on('fs.read', () => ({ value: TURN }))
-  mock.clock(on)
-  mock.env(on, {})
+  on('fs.read', reading(() => ({ value: TURN })))
+  const clock = mock.clock(on)
+  on('session.start', () => ({ cwd: '/w' }))
+  mock.env(on, { USERPROFILE: '/home' })
   on('ui.render', ($$: any, e: any) => {
     const { Box, Text } = $$.ui.resolve(e)
     if (e.component === 'UserMessage') return <Box key="host-prompt" flexDirection="column"><Text key="host-gap"> </Text><Text key="host-text">{`❯ ${e.props.text}`}</Text></Box>
     return <Text>{e.props.text ?? `${e.props.tool}(${e.props.input?.file_path ?? ''})`}</Text>
   })
-  await $.classic.SessionStart({ session_id: 's1', transcript_path: '/t/s1.jsonl', source: 'startup', hook_event_name: 'SessionStart', cwd: '/w' } as never)
+  await sessionStarted($, clock, 's1', '/t/s1.jsonl', 'startup')
   return (component: string, requestId: string, props: object) =>
     $.ui.mount({ plugin: 'mod-transcript', surface: 'terminal', component, requestId, viewport: { columns: COLUMNS, rows: 40 }, props } as never)
 }

@@ -51,6 +51,7 @@ export default {
   "tipCopyChoiceLabel": "Copy {what}",
   "tipCopyChoice": { "reply": "copies the whole reply", "code": "copies the code blocks", "text": "copies the reply as plain text", "table": "copies the tables", "links": "copies the links" },
   "previewMore": "{n} more lines",
+  "showAll": "Show all",
   "showLess": "Show less",
   "tipShowAll": "shows every line",
   "tipShowLess": "shows the first lines only",
