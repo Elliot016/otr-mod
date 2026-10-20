@@ -66,8 +66,5 @@ export function badge(tag: string, nerd: boolean) {
   return `${caps[0]}${body}${caps[1]}${PAD.repeat(nameWidth() - name.length)}`
 }
 
-export const stripBadges = (text: string) =>
-  TAG_ORDER.flatMap(tag => [badge(tag, true), badge(tag, false)]).reduce((rest, each) => rest.split(`${each} `).join(''), text)
-
 // The typeahead draws the name and description only, so the badge rides on the description.
 export const markDescription = (description: string, tag: string, nerd: boolean) => `${badge(tag, nerd)} ${description}`

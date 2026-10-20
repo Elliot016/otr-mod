@@ -3,7 +3,7 @@
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
 import { layoutCloud, type CloudGroup, type CloudMessage, type CloudProps } from './cloud'
-import { groupSkills, markDescription, readFrontmatter, stripBadges, type Skill } from './tags'
+import { groupSkills, markDescription, readFrontmatter, type Skill } from './tags'
 import { fill, MARK, statusColor, THEME } from './theme'
 import text from './text'
 import { tagName } from './tags'
@@ -307,9 +307,6 @@ export const register: Register = (on, options) => {
 
     return { ...answer, description: markDescription(answer.description, tag, look.nerd) }
   })
-
-  // The model reads the same descriptions in its skill list; the badge is only for the typeahead.
-  on('prompt.attachment', { type: 'skill_listing' }, async ($, e, next) => next({ ...e, text: stripBadges(e.text) }))
 
   on('command.run', { command: 'mod-skill-panel' }, async ($, e) => {
     if ((e.args ?? '').trim() === 'settings') await toggleSettings($)

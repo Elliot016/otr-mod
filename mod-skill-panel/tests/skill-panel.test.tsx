@@ -5,7 +5,7 @@ import { expect, mock, test, type TestBody } from 'claude-code/testing'
 import { lookFor } from '../hooks/look'
 import style from '../hooks/style'
 import { decodeAll, MARK, THEME } from '../hooks/theme'
-import { groupSkills, markDescription, readFrontmatter, stripBadges, swatchFor } from '../hooks/tags'
+import { groupSkills, markDescription, readFrontmatter, swatchFor } from '../hooks/tags'
 
 type Pointer = { pointer: (event: object) => Promise<unknown> }
 // The host types leave `pointer` off a mounted UI.
@@ -63,8 +63,6 @@ test('tags: default personal, explicit tag, unknown fallback, malformed skipped'
   expect(safe).toContain(`${REVIEW_HUE} ∴ review `)
   expect(safe.endsWith(' Does X')).toBe(true)
   expect(markDescription('Does X', 'review', true)).toContain(String.fromCodePoint(0xe0b6))
-  const listing = ['- a: ' + safe, '- c: ' + markDescription('Does Y', 'mods', true), '- b: Plain [x] text'].join('\n')
-  expect(stripBadges(listing)).toBe('- a: Does X\n- c: Does Y\n- b: Plain [x] text')
 })
 
 test('describe marks personal skills and leaves other commands alone', async ($, on) => {
