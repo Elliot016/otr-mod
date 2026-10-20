@@ -21,8 +21,6 @@ const BAND = bandOf()
 const GIT_SAFETY = '--no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null'
 
 const ASK = '\u26a0\ufe0f Destructive operation detected: Recursive deletion (rm -r/rm -rf)\n\nCommand:\nrm -rf build'
-// The ask_prefixes setting: empty by default, so a test that wants a card to answer a hook's ask names its prefix.
-const HOOK_ASK = { ask_prefixes: 'Destructive operation detected' }
 const RULES_PATH = 'C:/Users/me/.claude/mods-data/mod-blast-radius/rules.json'
 const LONG = 'C:/Users/me/blast-radius-demonstration-folder/drafts-of-the-quarterly-report/archive'
 
@@ -855,84 +853,17 @@ test('where a surface draws, tool.check leaves the verdict alone', async ($, on)
   expect(verdict.decision).toBe('allow')
 })
 
-test('one prompt: a hook\u2019s ask, carried as the tool.check verdict, is answered after Run and not before', { options: HOOK_ASK }, async ($, on) => {
+// Claude Code shows a settings hook's ask even when a tool.check hook answers allow, so Run never tries to answer it.
+test('after Run, another hook’s ask on the call is left to the permission prompt', async ($, on) => {
   const { seen } = world(on, { verdict: 'ask', verdictReason: ASK })
-  const before = await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })
-  expect(before.decision).toBe('ask')
-
-  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build', tool_use_id: 'tu-1' } as never)
   await holding(seen)
   const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
   await click(band, 'blast-run')
   await call
   await band.unmount()
 
-  expect(await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })).toEqual({ decision: 'allow' })
-  expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf elsewhere' } })).decision).toBe('ask')
-})
-
-test('one prompt: an ask with any other reason is never answered', { options: HOOK_ASK }, async ($, on) => {
-  const { seen } = world(on, { verdict: 'ask', verdictReason: 'Blocked: this command is not allowed.' })
-  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
-  await holding(seen)
-  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
-  await click(band, 'blast-run')
-  await call
-  await band.unmount()
-
-  expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })).decision).toBe('ask')
-})
-
-test('the ask is recognized with text before it', { options: HOOK_ASK }, async ($, on) => {
-  const { seen } = world(on, { verdict: 'ask', verdictReason: `Hook says: ${ASK}` })
-  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
-  await holding(seen)
-  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
-  await click(band, 'blast-run')
-  await call
-  await band.unmount()
-
-  expect(await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })).toEqual({ decision: 'allow' })
-})
-
-async function askAfterRun($: any, on: any) {
-  const { seen } = world(on, { verdict: 'ask', verdictReason: ASK })
-  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
-  await holding(seen)
-  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
-  await click(band, 'blast-run')
-  await call
-  await band.unmount()
-  return (await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })).decision
-}
-
-test('ask_prefixes empty (the default): an approved card never answers another hook’s ask', async ($, on) => {
-  expect(await askAfterRun($, on)).toBe('ask')
-})
-
-test('ask_prefixes with a matching prefix: the approved card answers the ask', { options: HOOK_ASK }, async ($, on) => {
-  expect(await askAfterRun($, on)).toBe('allow')
-})
-
-test('ask_prefixes with a prefix that does not match leaves the ask', { options: { ask_prefixes: 'Blocked by policy' } }, async ($, on) => {
-  expect(await askAfterRun($, on)).toBe('ask')
-})
-
-test('ask_prefixes takes several prefixes between vertical bars, trimmed, and ignores empty ones', { options: { ask_prefixes: ' Blocked by policy || Destructive operation detected |' } }, async ($, on) => {
-  expect(await askAfterRun($, on)).toBe('allow')
-})
-
-test('ask_prefixes with only separators and spaces counts as empty, and the mod still holds', { options: { ask_prefixes: ' | || |  ' } }, async ($, on) => {
-  expect(await askAfterRun($, on)).toBe('ask')
-})
-
-test('the settings panel shows the ask_prefixes row with its title and its value', { options: HOOK_ASK }, async ($, on) => {
-  const row = { key: 'mod-blast-radius.ask_prefixes', label: 'Hook asks Run answers', description: 'Separate several with a vertical bar', kind: 'text', value: 'Destructive operation detected', provider: { kind: 'plugin', name: PLUGIN } }
-  world(on, { configRows: [row] })
-  const settings = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...SETTINGS })
-  expect(await settings.find({ type: 'Text', text: /Hook asks Run answers/ })).toBeDefined()
-  expect(await settings.find({ type: 'Text', text: /Destructive operation detected/ })).toBeDefined()
-  await settings.unmount()
+  expect(await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' }, tool_use_id: 'tu-1' } as never)).toEqual({ decision: 'ask', reason: ASK })
 })
 
 test('the card draws on desktop too, so the hold works there', async ($, on) => {
@@ -1314,20 +1245,6 @@ test('the mod’s own toasts are drawn as its cards every time and never reach C
   expect((await band.find({ type: 'Text', text: /none is held now/ }))).toBeDefined()
   await band.unmount()
   expect(seen.toasts).toEqual([])
-})
-
-test('what Run approved is keyed by tool_use_id: the same command under another id is asked again', { options: HOOK_ASK }, async ($, on) => {
-  const { seen } = world(on, { verdict: 'ask', verdictReason: ASK })
-  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build', tool_use_id: 'tu-1' } as never)
-  await holding(seen)
-  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
-  await click(band, 'blast-run')
-  await call
-  await band.unmount()
-
-  const input = { command: 'rm -rf build' }
-  expect(await $.tool.check({ tool: 'Bash', input, tool_use_id: 'tu-1' } as never)).toEqual({ decision: 'allow' })
-  expect((await $.tool.check({ tool: 'Bash', input, tool_use_id: 'tu-2' } as never)).decision).toBe('ask')
 })
 
 // A rule whose reason makes a sentence far longer than two rows at any width the band draws.

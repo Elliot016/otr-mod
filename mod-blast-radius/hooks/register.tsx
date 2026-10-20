@@ -41,7 +41,6 @@ const FULL_ROWS_OPEN = 400
 let isEnabled = true
 // Opt-in, off by default: no held command is sent to Haiku: the card keeps the rule's words and the preview.
 let isExplaining = false
-let askPrefixes: string[] = []
 let iconMode: IconMode = 'auto'
 let look: Look = lookFor(false)
 
@@ -211,23 +210,6 @@ async function canDraw($: EngineInterface) {
   const surfaces = await $.session.surfaces().catch(() => ['terminal' as const])
   return surfaces.some(surface => surface === 'terminal' || surface === 'desktop')
 }
-
-// What Run approved, by tool_use_id, so a PreToolUse hook's ask is not repeated; command text only stands in when the check carries no id.
-const approved = new Set<string>()
-const approvedCommands = new Set<string>()
-
-const hasId = (id: unknown) => typeof id === 'string' && id !== ''
-const isApproved = (id: unknown, command: unknown) => (hasId(id) ? approved.has(id as string) : approvedCommands.has(String(command)))
-
-// The ask_prefixes setting, one string with "|" between prefixes (the settings panel cannot show a list); anything else counts as empty.
-const askPrefixesOf = (value: unknown): string[] =>
-  (typeof value === 'string' ? value : '')
-    .split('|')
-    .map(prefix => prefix.trim())
-    .filter(Boolean)
-
-// A PreToolUse hook's ask whose reason holds one of the person's prefixes, wherever the engine carries it; matched loosely because a mark may precede its text.
-const isAnswerableAsk = (ask: unknown) => typeof ask === 'string' && askPrefixes.some(prefix => ask.includes(prefix))
 
 const isPaneOpen = async ($: EngineInterface, id: string) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
@@ -479,7 +461,7 @@ async function saveSetting($: EngineInterface, key: string, value: ConfigValue) 
 }
 
 // Judged risky: everything from here to the verdict fails closed. Returns 'run' or a deny.
-async function holdRisky($: EngineInterface, e: { tool_use_id?: unknown }, next: { signal: AbortSignal }, risk: Risk, command: string): Promise<'run' | { deny: string }> {
+async function holdRisky($: EngineInterface, next:{ signal: AbortSignal }, risk: Risk, command: string): Promise<'run' | { deny: string }> {
   // Without a surface that draws, nothing could answer a hold: tool.check puts the call to the permission system instead.
   if (!(await canDraw($))) return 'run'
 
@@ -529,13 +511,7 @@ async function holdRisky($: EngineInterface, e: { tool_use_id?: unknown }, next:
   }
 
   if (mine.decision === 'run') {
-    if (!isSilent) {
-      if (hasId(e.tool_use_id)) approved.add(e.tool_use_id as string)
-      approvedCommands.add(command)
-      if (approved.size > 100) approved.delete(approved.values().next().value as string)
-      if (approvedCommands.size > 100) approvedCommands.delete(approvedCommands.values().next().value as string)
-      toast($, text.ui.running)
-    }
+    if (!isSilent) toast($, text.ui.running)
     return 'run'
   }
   return { deny: `Blast radius held this command and did not run it: ${refusal(mine.decision)}. Reason: ${mine.risk.reason}. It would have: ${mine.report?.summary ?? mine.risk.label}. Do not retry it unless the person asks you to.` }
@@ -571,7 +547,6 @@ export const register: Register = (on, options) => {
 
   isEnabled = options.enabled !== false
   isExplaining = options.explain === true
-  askPrefixes = askPrefixesOf(options.ask_prefixes)
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
@@ -602,7 +577,7 @@ export const register: Register = (on, options) => {
     if (!judged.risk) return next(e)
     let outcome: 'run' | { deny: string }
     try {
-      outcome = await holdRisky($, e, next, judged.risk, judged.command)
+      outcome = await holdRisky($, next, judged.risk, judged.command)
     } catch {
       outcome = { deny: 'Blast radius hit an error while checking this command and did not run it. Do not retry it unless the person asks you to.' }
     }
@@ -610,12 +585,10 @@ export const register: Register = (on, options) => {
     return outcome === 'run' ? next(e) : outcome
   })
 
-  // A PreToolUse hook's ask arrives here as the verdict; with no surface that draws, a hold cannot be answered, so the permission system asks.
+  // With no surface that draws, a hold cannot be answered, so the permission system asks.
   on('tool.check', { tool: 'Bash' }, async ($, e, next) => {
     const verdict = await next(e)
     const command = (e.input as { command?: unknown } | null)?.command
-    const answered = isApproved(e.tool_use_id, command) && verdict.decision === 'ask' && isAnswerableAsk(verdict.reason)
-    if (answered) return { decision: 'allow' }
     if (!isEnabled || verdict.decision === 'deny' || (await canDraw($))) return verdict
     const { risk } = await judge($, command)
 
@@ -652,8 +625,6 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId) {
       working = false
-      approved.clear()
-      approvedCommands.clear()
       $.ui.invalidate('ui.render')
     }
 
