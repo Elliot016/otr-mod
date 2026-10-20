@@ -1,1 +1,11 @@
-{ "modules": ["./register.tsx"] }
+{
+  "modules": ["./register.tsx"],
+  "hooks": {
+    "SessionStart": [{ "hooks": [
+      { "type": "command", "command": "exec 2>/dev/null; IN=$(cat); D=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/mods-data/mod-file-tree/bridge\"; S=$(printf '%s' \"$IN\" | sed -n 's/.*\"session_id\":\"\\([^\"]*\\)\".*/\\1/p'); [ -n \"$S\" ] && mkdir -p \"$D\" && printf '%s\\n' \"$IN\" >> \"$D/$S.jsonl\" && find \"$D\" -name '*.jsonl' -type f -mtime +7 -exec rm -f {} + >/dev/null 2>&1; exit 0" }
+    ] }],
+    "SessionEnd": [{ "hooks": [
+      { "type": "command", "command": "exec 2>/dev/null; IN=$(cat); D=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/mods-data/mod-file-tree/bridge\"; S=$(printf '%s' \"$IN\" | sed -n 's/.*\"session_id\":\"\\([^\"]*\\)\".*/\\1/p'); [ -n \"$S\" ] && rm -f \"$D/$S.jsonl\" >/dev/null 2>&1; exit 0" }
+    ] }]
+  }
+}

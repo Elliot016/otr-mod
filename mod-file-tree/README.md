@@ -39,6 +39,7 @@ Files pill.
 - **File tree:** Only the files Claude read, edited, wrote or created this session, in folders you can fold, with +/- line counts for edits.
 - **Live marker:** The file Claude is on lights up and says what it is doing: reading, editing, writing or creating.
 - **Replay:** Prev and Next step through the last turn's edits, one diff at a time. Click a file in the tree to open its latest diff.
+- **Command hooks:** On SessionStart, a small shell hook appends the event's JSON as one line to `~/.claude/mods-data/mod-file-tree/bridge/<session id>.jsonl` (under `$CLAUDE_CONFIG_DIR` when that is set), and the mod reads the file every 250 ms. A record can hold the session id, the working folder and the transcript path. SessionEnd deletes the session's file, and SessionStart deletes files older than 7 days. The hooks need a POSIX shell (Git Bash on Windows). Without one they write nothing, and the mod falls back to what it can find on its own. Some plans block plugin hooks on these events; the mod then falls back the same way.
 
 ## Settings
 

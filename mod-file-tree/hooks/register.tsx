@@ -2,6 +2,7 @@
 // Registers the files sidebar: pane, pill, command, toasts and settings wiring with the engine.
 import type { ConfigValue, EngineInterface, Register } from 'claude-code'
 
+import { bridgeOn, endBridge, startBridge, type BridgeRecord } from './bridge'
 import { NAME_COLOR, OPEN_CELLS, type ListMessage, type Row as ListRow } from './list'
 import { detectNerd, FOOTER_ROWS, heading, lookFor, section, paneFooter, subpill, withIcon, type IconMode, type Look, withMark } from './look'
 import { isTipMessage, mix, type EntryMessage, type EntryProps, type Tip } from './entry'
@@ -208,6 +209,25 @@ async function load($: EngineInterface, session: string) {
   $.ui.invalidate('ui.render')
   // A pane render can be what started the read, and a render may not write state.
   $.clock.after(0, () => void save($))
+}
+
+// Only the SessionStart record names the transcript, and the bridge delivers it. A compact keeps the same file and the log already holds it, so only a new transcript is read.
+async function sessionStarted($: EngineInterface, record: BridgeRecord) {
+  const session = String(record.session_id ?? '')
+  const path = String(record.transcript_path ?? '')
+  if (!session || !path) return
+  try {
+    if (session !== logSession || path !== transcript || !log) {
+      startLog(session, path)
+      await $.state.set({ plugin: 'mod-file-tree', key: 'cleared' }, cleared)
+      await $.store.set(`transcript:${session}`, { path, at: await $.clock.now() })
+      // The state may hold another session's log, which this one must not reuse.
+      await $.state.set({ plugin: 'mod-file-tree', key: 'session' }, '')
+      await hydrate($)
+    }
+  } catch {
+    // The tree stays as it was.
+  }
 }
 
 function viewOf(current: Log): Log {
@@ -587,6 +607,8 @@ export const register: Register = (on, options) => {
   look = lookFor(iconMode === 'nerd')
 
   on('session.start', async ($, e, next) => {
+    bridgeOn('SessionStart', record => sessionStarted($, record))
+    await startBridge($, 'mod-file-tree')
     try {
       await loadLook($)
       await $.command.register({
@@ -705,27 +727,10 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Only the settings hook event names the transcript. A compact keeps the same file and the log already holds it, so only a new transcript is read.
-  on('classic.SessionStart', async ($, e, next) => {
-    try {
-      if (e.session_id !== logSession || e.transcript_path !== transcript || !log) {
-        startLog(e.session_id, e.transcript_path)
-        await $.state.set({ plugin: 'mod-file-tree', key: 'cleared' }, cleared)
-        await $.store.set(`transcript:${e.session_id}`, { path: e.transcript_path, at: await $.clock.now() })
-        // The state may hold another session's log, which this one must not reuse.
-        await $.state.set({ plugin: 'mod-file-tree', key: 'session' }, '')
-        await hydrate($)
-      }
-    } catch {
-      // The tree stays as it was.
-    }
-
-    return next(e)
-  })
-
   // A /resume or /clear ends this session; the next hook asks for the id at once.
   on('session.end', async ($, e, next) => {
     sessionCheckedAt = 0
+    await endBridge($, e.sessionId)
 
     return next(e)
   })

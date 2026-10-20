@@ -752,7 +752,8 @@ function sessions(on: Parameters<TestBody>[1], files: Record<string, string>) {
   on('fs.list', () => ({ value: [{ name: 'p', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
   on('fs.exists', (_$, e) => ({ value: idOf(e.path) in w.files }))
   on('fs.read', async (_$, e) => {
-    if (w.held) await w.held
+    // Only the transcript read is slow; the bridge file is a small local read.
+    if (w.held && !e.path.replace(/\\/g, '/').includes('/bridge/')) await w.held
     return { value: w.files[idOf(e.path)] ?? '' }
   })
   on('ui.panes', () => ({ value: [] }))
