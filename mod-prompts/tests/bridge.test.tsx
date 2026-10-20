@@ -121,12 +121,15 @@ test('the bridge reads under HOME when HOME and USERPROFILE differ, where the co
   expect((await foldersFor($, on, { HOME: '/home/h', USERPROFILE: '/home/u' })).map(plain)).toEqual(['/home/h/.claude/mods-data/mod-prompts'])
 })
 
+// Off Windows the test kit opens a drive path as relative to the mod folder, so the folder starts at the drive.
+const fromDrive = (path: string) => path.slice(Math.max(0, path.search(/[A-Za-z]:\//)))
+
 test('with only USERPROFILE set the bridge reads under USERPROFILE, a backslash path with its slashes turned', async ($, on) => {
-  expect(await foldersFor($, on, { USERPROFILE: 'C:\\Users\\u\\' })).toEqual(['C:/Users/u/.claude/mods-data/mod-prompts'])
+  expect((await foldersFor($, on, { USERPROFILE: 'C:\\Users\\u\\' })).map(fromDrive)).toEqual(['C:/Users/u/.claude/mods-data/mod-prompts'])
 })
 
 test('a Git Bash HOME such as /c/Users/h is opened as C:/Users/h', async ($, on) => {
-  expect(await foldersFor($, on, { HOME: '/c/Users/h', USERPROFILE: 'D:\\x' })).toEqual(['C:/Users/h/.claude/mods-data/mod-prompts'])
+  expect((await foldersFor($, on, { HOME: '/c/Users/h', USERPROFILE: 'D:\\x' })).map(fromDrive)).toEqual(['C:/Users/h/.claude/mods-data/mod-prompts'])
 })
 
 test('CLAUDE_CONFIG_DIR is used before HOME and USERPROFILE', async ($, on) => {
