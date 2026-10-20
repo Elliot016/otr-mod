@@ -886,7 +886,7 @@ export const register: Register = (on, options) => {
       sharedChoiceBar({ Box, Button, Client, Text }, look, key, THEME.bg, options.map(option => ({
         key: option.id,
         isOn: option.isOn,
-        props: { id: option.id, label: option.label, still, ...(option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}), tip: { glyph: look.glyph.icon[option.icon ?? ''] ?? look.glyph.title, label: option.label, text: option.tip } },
+        props: { id: option.id, label: option.label, still, nerd: look.nerd, ...(option.icon ? iconLead(option.icon, option.isOn ? THEME.accent : THEME.muted) : {}), tip: { glyph: look.glyph.icon[option.icon ?? ''] ?? look.glyph.title, label: option.label, text: option.tip } },
       })))
 
     const emptyText = (legit: string) => (loadError ? fill(text.unreadableWhy, { reason: loadError }) : legit)

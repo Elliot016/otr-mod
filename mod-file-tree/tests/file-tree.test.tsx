@@ -357,6 +357,9 @@ test('icons=nerd leads the kinds and the title with Nerd icons', { options: { ic
   const replayTab = JSON.stringify(await ui.drawn({ in: 'tab-replay' }))
   expect(replayTab).toContain(nf(0xea82))
   expect(replayTab).toContain(' Replay ')
+  // An idle option's icon is capped like the chosen one's, never a padded square.
+  expect(replayTab).toContain(nf(0xe0b6))
+  expect(replayTab).not.toContain(` ${nf(0xea82)} `)
   const list = JSON.stringify(await ui.drawn({ in: 'list-0' }))
   expect(list).toContain(`"color":"${THEME.accent}","backgroundColor":"${THEME.surface3}"},"children":["↗"]`)
   expect(list).toContain(nf(0xe0b6))
