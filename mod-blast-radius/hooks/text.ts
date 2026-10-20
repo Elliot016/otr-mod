@@ -22,7 +22,9 @@ export default {
   "tips": {
     "cancel": "stops the command from running",
     "details": "opens the full breakdown of this command",
-    "run": "runs the command as it is"
+    "run": "runs the command as it is",
+    "showAll": "shows the whole sentence",
+    "showLess": "cuts the sentence back to two rows"
   },
   "atLeast": "at least ",
   "orMore": " or more",
@@ -127,7 +129,10 @@ export default {
     "verdictCheck": "Open Details to be sure",
     "verdict": "{lead}: {why}",
     "cancel": "Cancel",
-    "details": "Details",    "explaining": "Explaining…"
+    "details": "Details",
+    "showAll": "Show all",
+    "showLess": "Show less",
+    "explaining": "Explaining…"
   },
   "verdict": {
     "nothingMeasured": "nothing could be measured before it runs",
@@ -304,5 +309,5 @@ export default {
   "tipTabDetails": "shows the command held right now",
   "tipTabSettings": "shows this mod's settings",
   "tipToast": {"label":"Dismiss","text":"hides this message"},
-  "settingTips": {"enabled":"risky Bash waits for your choice","explain":"Haiku words the card; off, no call"}
+  "settingTips": {"enabled":"risky Bash waits for your choice","explain":"Haiku words the card; off, no call","ask_prefixes":"hook asks an approved card also answers"}
 }

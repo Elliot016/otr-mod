@@ -39,7 +39,8 @@ export type Risk = {
   source?: 'hook' | 'blast' | 'rules' | 'error'
 }
 
-export type UserRule = { re: RegExp; reason: string }
+// action pass: a matching step skips the checks and the hold rules, unless a critical check marks it.
+export type UserRule = { re: RegExp; reason: string; action?: 'pass' }
 
 type Redirect = { target: string; append: boolean }
 type Segment = { words: string[]; redirects: Redirect[] }
@@ -474,7 +475,7 @@ export function stripTempSafeDeletes(text: string) {
 // ---- Built-in CHECKS, in order so the sharper reason wins ----
 
 // cmd: the command word a check applies to; unmasked: it reads quoted operands, which are its targets.
-type Check = { label: string; pattern: RegExp; reason: string; source: 'normalized' | 'raw' | 'temp'; kinds: RiskKind[]; kind?: RiskKind; cmd?: RegExp; viaXargs?: boolean; unmasked?: boolean }
+type Check = { label: string; pattern: RegExp; reason: string; source: 'normalized' | 'raw' | 'temp'; kinds: RiskKind[]; kind?: RiskKind; cmd?: RegExp; viaXargs?: boolean; unmasked?: boolean; critical?: boolean }
 
 // Directories that should never be recursively deleted, grouped as the hook groups them.
 const CRITICAL_DIR_NAMES = [
@@ -490,6 +491,7 @@ export const CHECKS: Check[] = [
     unmasked: true,
     pattern: /\brm\s+.*(-[a-zA-Z]*[rf][a-zA-Z]*\s+|(-[a-zA-Z]*\s+)*)(~|\$HOME|\.\.|\s+\/\s*$|\s+\/[^tv])/,
     reason: words.reasons.rootDelete,
+    critical: true,
     source: 'temp',
     kinds: ['rm'],
   },
@@ -499,6 +501,7 @@ export const CHECKS: Check[] = [
     unmasked: true,
     pattern: new RegExp(String.raw`\brm\s+.*(-r|-R|--recursive).*\s+(${CRITICAL_DIRS})(/|$|\s)`),
     reason: words.reasons.criticalDelete,
+    critical: true,
     source: 'temp',
     kinds: ['rm'],
   },
@@ -841,9 +844,42 @@ function innerOf(step: Step) {
   return undefined
 }
 
+// A path that is a whole place: the root, home, a drive, or anything that climbs to a parent.
+const WHOLE_PLACE = /^(?:\/\*?|~\/?\*?|\$\{?HOME\}?\/?\*?|[A-Za-z]:[\\/]?\*?|\/[A-Za-z]\/?\*?)$/
+
+const isCriticalStep = (step: Step) =>
+  CHECKS.some(check => check.critical && (!check.cmd || check.cmd.test(step.cmd)) && check.pattern.test(step.line)) ||
+  operands(step.args).some(path => WHOLE_PLACE.test(path) || path.includes('..'))
+
+function passes(rule: UserRule, text: string) {
+  try {
+    rule.re.lastIndex = 0
+    return rule.re.test(text)
+  } catch {
+    return false
+  }
+}
+
+// The command without the steps a pass rule matches, or null when none matches. A step a critical check marks, one that hands text to a shell, and one with a substitution always stay.
+function withoutPassed(command: string, rules: UserRule[]) {
+  const passRules = rules.filter(rule => rule.action === 'pass')
+  if (!passRules.length) return null
+  const kept: string[] = []
+  let dropped = false
+  for (const line of normalizeSteps(command, false).split(/\r\n|\r|\n/)) {
+    const step = stepsOf(line)[0]
+    const isPassed = step && !innerOf(step) && !/\$\(|`/.test(step.line) && !isCriticalStep(step) && passRules.some(rule => passes(rule, step.line.trim()))
+    if (isPassed) dropped = true
+    else kept.push(line)
+  }
+  return dropped ? kept.join('\n') : null
+}
+
 // The first risky thing in a command line, or null: the built-in checks, then what shells run, then this mod's extras, then the person's rules.
 export function classify(original: string, rules: UserRule[] = [], depth = 0): Risk | null {
   const command = stripHeredocs(original)
+  const rest = withoutPassed(command, rules)
+  if (rest !== null) return classify(rest, rules.filter(rule => rule.action !== 'pass'), depth)
   // Temp logic reads whole lines, so `$(mktemp -d)` stays in one piece; the checks read the steps with substitutions split out.
   const lineText = normalizeSteps(command, false)
   const normalized = normalizeSteps(command)
@@ -884,7 +920,7 @@ export function classify(original: string, rules: UserRule[] = [], depth = 0): R
 
   if (found && !found.isPreviewOnly) return found
 
-  for (const rule of rules) {
+  for (const rule of rules.filter(rule => rule.action !== 'pass')) {
     try {
       rule.re.lastIndex = 0
       if (rule.re.test(command)) return { ...RULE, label: words.labels.yourRule, reason: rule.reason, pattern: rule.re.source, source: 'rules' }
@@ -910,7 +946,7 @@ export function evaluate(value: unknown, rules: UserRule[] = []): { risk: Risk |
 // A longer pattern is skipped: it runs on every Bash call, and a huge one can stall the hook.
 const MAX_PATTERN = 500
 
-// rules.json: an array of { pattern, reason, flags? }. A bad entry is skipped with a note; the built-in checks never depend on it.
+// rules.json: an array of { pattern, reason, flags?, action? }, where action is "pass" or the default "hold". A bad entry is skipped with a note; the built-in checks never depend on it.
 export function compileRules(text: string): { rules: UserRule[]; notes: string[] } {
   let data: unknown
   try {
@@ -922,8 +958,8 @@ export function compileRules(text: string): { rules: UserRule[]; notes: string[]
   const rules: UserRule[] = []
   const notes: string[] = []
   data.forEach((entry, index) => {
-    const item = entry as { pattern?: unknown; reason?: unknown; flags?: unknown } | null
-    if (!item || typeof item.pattern !== 'string' || typeof item.reason !== 'string' || (item.flags !== undefined && typeof item.flags !== 'string')) {
+    const item = entry as { pattern?: unknown; reason?: unknown; flags?: unknown; action?: unknown } | null
+    if (!item || typeof item.pattern !== 'string' || typeof item.reason !== 'string' || (item.flags !== undefined && typeof item.flags !== 'string') || (item.action !== undefined && typeof item.action !== 'string')) {
       notes.push(fill(words.rulesNotes.needsFields, { n: index + 1 }))
       return
     }
@@ -932,7 +968,7 @@ export function compileRules(text: string): { rules: UserRule[]; notes: string[]
       return
     }
     try {
-      rules.push({ re: new RegExp(item.pattern, (item.flags ?? '').replace(/[gy]/g, '')), reason: item.reason })
+      rules.push({ re: new RegExp(item.pattern, (item.flags ?? '').replace(/[gy]/g, '')), reason: item.reason, ...(item.action === 'pass' ? { action: 'pass' as const } : {}) })
     } catch (error) {
       notes.push(fill(words.rulesNotes.skipped, { n: index + 1, why: String((error as Error).message).slice(0, 60) }))
     }

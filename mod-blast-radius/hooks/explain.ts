@@ -254,8 +254,11 @@ export function fitHeading(plain: Plain, width: number) {
 export type CardRow = { kind: 'head' | 'does' | 'path' | 'line' | 'note' | 'verdict'; text: string; stats?: string; isOk?: boolean }
 
 // Heading, figures, sentence, then its second row, as many as the band holds; the command stays in Details.
-export function cardRows(plain: Plain, report: Report, width: number, bodyRows: number): CardRow[] {
-  const wrapped = wrapRows(plain.does, width, 2)
+// Open, the sentence keeps every row it needs up to this many, as far as the band lets the card grow.
+export const DOES_ROWS_OPEN = 12
+
+export function cardRows(plain: Plain, report: Report, width: number, bodyRows: number, isOpen = false): CardRow[] {
+  const wrapped = wrapRows(plain.does, width, isOpen ? Math.min(DOES_ROWS_OPEN, Math.max(2, bodyRows - 1)) : 2)
   const facts = report.facts
   const items = facts?.items ?? []
   const candidates: { order: number; priority: number; row: CardRow }[] = [{ order: 0, priority: 0, row: { kind: 'head', text: fitHeading(plain, width - 3) } }]
@@ -274,14 +277,20 @@ export function cardRows(plain: Plain, report: Report, width: number, bodyRows: 
     const more = rest > 0 ? fill(text.card.andMore, { n: rest }) : ''
     candidates.push({ order: 10, priority: 1, row: { kind: 'line', text: `${cutEnd(group.lines[0]!, Math.max(8, width - more.length))}${more}` } })
   }
-  candidates.push({ order: 1, priority: 2, row: { kind: 'does', text: wrapped[0]! } })
-  if (wrapped[1]) candidates.push({ order: 2, priority: 5, row: { kind: 'does', text: wrapped[1] } })
+  // Open, every sentence row outranks the paths and the verdict; shut, the second row is the first to go.
+  wrapped.forEach((row, index) => candidates.push({ order: 1 + index / 100, priority: isOpen ? 0.5 : index === 0 ? 2 : 5, row: { kind: 'does', text: row } }))
   if (plain.verdict) {
     const line = fill(text.card.verdict, { lead: plain.verdict.isOk ? text.card.verdictOk : text.card.verdictCheck, why: plain.verdict.why })
     candidates.push({ order: 20, priority: 1.5, row: { kind: 'verdict', text: cutEnd(line, width - 2), isOk: plain.verdict.isOk } })
   }
   const chosen = [...candidates].sort((a, b) => a.priority - b.priority).slice(0, Math.max(1, bodyRows))
   return chosen.sort((a, b) => a.order - b.order).map(candidate => candidate.row)
+}
+
+// Whether opening the sentence draws rows the shut card does not: it is cut, or the band dropped its second row.
+export function canOpenDoes(plain: Plain, report: Report, width: number, bodyRows: number) {
+  const doesRows = (isOpen: boolean) => cardRows(plain, report, width, bodyRows, isOpen).filter(row => row.kind === 'does').length
+  return doesRows(true) > doesRows(false)
 }
 
 // The digit that presses each action from an empty prompt, drawn as a keycap before its label.

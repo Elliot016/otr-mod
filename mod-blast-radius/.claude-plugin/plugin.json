@@ -15,6 +15,12 @@
       "description": "Entries shimmer while they wait. Hover colors also fade. Off, everything draws still",
       "default": true
     },
+    "ask_prefixes": {
+      "type": "string",
+      "title": "Hook asks Run answers",
+      "description": "When one of your own PreToolUse hooks asks about a command you already approved on this mod's card, you are asked only once if the hook's reason starts with one of these. Separate several with a vertical bar (|). Empty (the default), another hook's ask always reaches the permission prompt",
+      "default": ""
+    },
     "enabled": {
       "type": "boolean",
       "title": "Hold risky commands",

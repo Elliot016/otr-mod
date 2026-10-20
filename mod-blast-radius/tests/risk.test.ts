@@ -420,6 +420,68 @@ test('a user pattern over 500 characters is skipped with a note, and a 500 chara
   expect(notes[0]).toContain('over 500 characters')
 })
 
+const PLAIN_RM = String.raw`^\s*rm(?!.*\s(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)(\s|$))\s`
+const passing = (...extra: object[]) => compileRules(JSON.stringify([{ pattern: PLAIN_RM, reason: 'Decided elsewhere', action: 'pass' }, ...extra]))
+
+test('a pass entry lets a matching plain rm through, and an rm it does not match is still held', () => {
+  const { rules, notes } = passing()
+  expect(notes).toEqual([])
+  expect(classify('rm a.txt', rules)).toBe(null)
+  expect(classify('rm -f a.txt b.txt', rules)).toBe(null)
+  expect(classify('cd sub && rm a.txt', rules)).toBe(null)
+  expect(classify('rm -r build', rules)!.reason).toBe(RECURSIVE)
+  expect(classify('rm -rf build', rules)!.reason).toBe(RECURSIVE)
+  expect(classify('rm --recursive build', rules)!.reason).toBe(RECURSIVE)
+  expect(classify('rm a.txt', [])!.reason).toBe(FILE)
+})
+
+test('a pass never lets through a step the built-in checks mark critical', () => {
+  const { rules } = passing({ pattern: '.', reason: 'anything', action: 'pass' })
+  for (const command of ['rm ~', 'rm ~/a.txt', 'rm $HOME/a.txt', 'rm ../a.txt', 'rm /', 'rm /c', 'rm -rf /c', 'rm -rf ~', 'rm -rf ..', 'rm -r src', 'rm -rf .git']) {
+    const risk = classify(command, rules)
+    expect(risk, command).not.toBe(null)
+    expect([ROOT, CRITICAL, FILE], command).toContain(risk!.reason)
+  }
+})
+
+test('only the steps a pass matches are skipped; the rest of the command is still judged', () => {
+  const { rules } = passing()
+  expect(classify('rm a.txt && rm -rf ~', rules)!.reason).toBe(ROOT)
+  expect(classify('rm -rf ~ ; rm a.txt', rules)!.reason).toBe(ROOT)
+  expect(classify('rm a.txt && git reset --hard', rules)!.reason).toBe(FORCE)
+  expect(classify('rm a.txt && rm b.txt', rules)).toBe(null)
+  expect(classify('rm a.txt | tee log && echo "x y"', rules)).toBe(null)
+})
+
+test('a pass does not cover what a step hands to a shell or substitutes', () => {
+  const { rules } = passing({ pattern: 'rm', reason: 'loose', action: 'pass' })
+  expect(classify('bash -c "rm -rf ~"', rules)).not.toBe(null)
+  expect(classify('rm a.txt $(rm -rf build)', rules)).not.toBe(null)
+  expect(classify('echo "$(rm -rf ~)"', rules)).not.toBe(null)
+})
+
+test('a pass entry with a bad or too long pattern is skipped with a note and changes nothing', () => {
+  const bad = compileRules(JSON.stringify([{ pattern: '(', reason: 'bad', action: 'pass' }, { pattern: 'r'.repeat(501), reason: 'huge', action: 'pass' }]))
+  expect(bad.rules).toEqual([])
+  expect(bad.notes).toHaveLength(2)
+  expect(bad.notes[0]).toContain('rule 1 skipped')
+  expect(bad.notes[1]).toContain('over 500 characters')
+  expect(classify('rm a.txt', bad.rules)!.reason).toBe(FILE)
+})
+
+test('an entry without an action, or with action hold, holds as before', () => {
+  const { rules } = compileRules(JSON.stringify([{ pattern: 'terraform\\s+destroy', reason: 'Destroys infrastructure' }, { pattern: 'kubectl delete', reason: 'Deletes cluster objects', action: 'hold' }, { pattern: 'helm', reason: 'Unknown action', action: 'other' }]))
+  expect(classify('terraform destroy', rules)!.reason).toBe('Destroys infrastructure')
+  expect(classify('kubectl delete pod x', rules)!.reason).toBe('Deletes cluster objects')
+  expect(classify('helm uninstall x', rules)!.reason).toBe('Unknown action')
+  expect(classify('rm x', rules)!.reason).toBe(FILE)
+})
+
+test('a pass entry is not a hold rule: a command only it matches is not held', () => {
+  const { rules } = compileRules(JSON.stringify([{ pattern: 'kubectl get', reason: 'fine', action: 'pass' }]))
+  expect(classify('kubectl get pods', rules)).toBe(null)
+})
+
 test('a user rule that throws when it runs is skipped, never failing the whole check', () => {
   const broken = { get lastIndex() { return 0 }, set lastIndex(_: number) { throw new Error('boom') }, test: () => true, source: 'x' } as unknown as RegExp
   expect(classify('echo hi', [{ re: broken, reason: 'broken' }])).toBe(null)

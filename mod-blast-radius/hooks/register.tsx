@@ -6,7 +6,7 @@ import { cardFill, cardGap, detectNerd, FOOTER_ROWS, lookFor, paneFooter, sectio
 import { isTipMessage, tipText, type EntryMessage, type EntryProps, type Tip, type TipMessage } from './entry'
 import { pill, pillRow, splitRow, tabRow, tipLine } from './pills'
 import { TOAST_MS, ToastList, toastCards } from './toasts'
-import { ACTION_EXTRA, ACTION_GAP, actionLabels, cardRows, HOTKEY, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
+import { ACTION_EXTRA, ACTION_GAP, actionLabels, canOpenDoes, cardRows, HOTKEY, plainFor, segmentsOf, stepsView, whyOf, type Plain } from './explain'
 import { describePrompt, parseDescribed, SYSTEM, verdictOf, type Described } from './haiku'
 import { colorLines, colorStep, LEGEND, wrapSpans, type Role, type Span } from './syntax'
 import { measure, tilde, type Io, type Report } from './preview'
@@ -21,7 +21,6 @@ const LIST_PANE = 'blast-radius-list'
 const DETAILS_TAB = 'mod-blast-radius-details-tab'
 const SETTINGS_TAB = 'mod-blast-radius-settings-tab'
 const RULES_FILE = '.claude/mods-data/mod-blast-radius/rules.json'
-const DESTRUCTIVE_ASK = 'Destructive operation detected'
 const BUILT_IN = [...new Set(CHECKS.map(check => check.reason))]
 
 type Unit = { one: string; many: string }
@@ -29,10 +28,11 @@ const plural = (count: number, unit: Unit) => fill(count === 1 ? unit.one : unit
 
 type Decision = 'run' | 'cancel' | 'interrupted' | 'error'
 // isDescribing: Haiku is still writing the card's words.
-// isFull: the Details pane shows the whole command, not its first rows.
-type Held = { command: string; risk: Risk; report: Report | null; plain: Plain | null; decision: Decision | null; described?: Described; isDescribing?: boolean; isFull?: boolean }
+// isFull: the Details pane shows the whole command, not its first rows; isDoesOpen: the card shows its whole sentence, not two rows.
+type Held = { command: string; risk: Risk; report: Report | null; plain: Plain | null; decision: Decision | null; described?: Described; isDescribing?: boolean; isFull?: boolean; isDoesOpen?: boolean }
 
 const MORE = 'blast-more'
+const DOES_MORE = 'blast-does-more'
 // The Details pane's full command: this many rows closed, and at most this many opened.
 const FULL_ROWS = 12
 const FULL_ROWS_OPEN = 400
@@ -41,6 +41,7 @@ const FULL_ROWS_OPEN = 400
 let isEnabled = true
 // Opt-in, off by default: no held command is sent to Haiku: the card keeps the rule's words and the preview.
 let isExplaining = false
+let askPrefixes: string[] = []
 let iconMode: IconMode = 'auto'
 let look: Look = lookFor(false)
 
@@ -218,8 +219,15 @@ const approvedCommands = new Set<string>()
 const hasId = (id: unknown) => typeof id === 'string' && id !== ''
 const isApproved = (id: unknown, command: unknown) => (hasId(id) ? approved.has(id as string) : approvedCommands.has(String(command)))
 
-// A PreToolUse hook's ask with this reason, wherever the engine carries it; matched loosely because a prefix may precede its text.
-const isDestructiveAsk = (ask: unknown) => typeof ask === 'string' && ask.includes(DESTRUCTIVE_ASK)
+// The ask_prefixes setting, one string with "|" between prefixes (the settings panel cannot show a list); anything else counts as empty.
+const askPrefixesOf = (value: unknown): string[] =>
+  (typeof value === 'string' ? value : '')
+    .split('|')
+    .map(prefix => prefix.trim())
+    .filter(Boolean)
+
+// A PreToolUse hook's ask whose reason holds one of the person's prefixes, wherever the engine carries it; matched loosely because a mark may precede its text.
+const isAnswerableAsk = (ask: unknown) => typeof ask === 'string' && askPrefixes.some(prefix => ask.includes(prefix))
 
 const isPaneOpen = async ($: EngineInterface, id: string) => (await $.ui.panes()).some(pane => pane.id === id && pane.isPlaced)
 
@@ -360,8 +368,20 @@ function spansText(Text: Elements['Text'], spans: Span[], key: string) {
 function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: any) => RenderElement }, state: Held, columns: number, maxRows: number, onKey: (id: string) => unknown) {
   const width = Math.max(20, columns - 4)
   // The card's rows are what is left after its border, its action row and the pill row below.
-  const rows = cardRows(state.plain!, state.report!, width, Math.max(1, maxRows - 2 - 3))
-  const labels = actionLabels(state.plain!, width)
+  const bodyRows = Math.max(1, maxRows - 2 - 3)
+  const isOpen = state.isDoesOpen === true
+  // The expand standard: arrow, then a muted label, bottom right on the action row; with no room beside the actions it takes a row of its own below them.
+  const moreLabel = isOpen ? text.card.showLess : text.card.showAll
+  const moreWidth = [...moreLabel].length + 4
+  const reserve = moreWidth + ACTION_GAP
+  const fitsBeside = (labels: ReturnType<typeof actionLabels>) => labels.cancel.length + labels.details.length + labels.run.length + 3 * ACTION_EXTRA + 2 * ACTION_GAP + reserve <= width
+  // The run label says what the command does, so the control never shortens it: it sits beside the actions only where they keep their full labels.
+  const beside = actionLabels(state.plain!, width)
+  const isBeside = fitsBeside(beside)
+  const ownRowBody = Math.max(1, bodyRows - 1)
+  const hasControl = canOpenDoes(state.plain!, state.report!, width, isBeside ? bodyRows : ownRowBody)
+  const rows = cardRows(state.plain!, state.report!, width, hasControl && !isBeside ? ownRowBody : bodyRows, isOpen)
+  const labels = hasControl && isBeside ? beside : actionLabels(state.plain!, width)
   const body = rows.map((row, index) => {
     const key = `hold-row-${index}`
     if (row.kind === 'head') return <Text key={key} color={THEME.alert} bold>{`${look.glyph.warn} ${row.text}`}</Text>
@@ -388,6 +408,10 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
     return <Text key={key} color={THEME.muted}>{row.text}</Text>
   })
   const fill = cardFill(THEME.alert)
+  const moreGlyph = isOpen ? look.glyph.less : look.glyph.more
+  const moreControl = (
+    <Client key={DOES_MORE} module="./entry.tsx" width={moreWidth} height={1} props={{ id: DOES_MORE, label: moreLabel, lead: moreGlyph, leadColor: THEME.accent, isOpen: false, bg: fill, idle: THEME.muted, still, nerd: look.nerd, tip: { glyph: moreGlyph, label: moreLabel, text: isOpen ? text.tips.showLess : text.tips.showAll } } satisfies EntryProps} />
+  )
   // The entry draws the action; a Button nobody sees carries its digit, since only a Button takes a hotkey and a visible one inverts under the pointer.
   const entry = (id: string, label: string, hotkey: string, tipLabel: string, tipBody: string, tipGlyph: string, color?: string) => (
     <Box key={`${id}-pad`} flexDirection="row">
@@ -405,13 +429,23 @@ function holdCard({ Box, Button, Client, Text }: Elements & { Button: (props: an
         {entry('blast-cancel', labels.cancel, HOTKEY.cancel, labels.cancel, text.tips.cancel, bare(look.glyph.close))}
         {entry('blast-details', labels.details, HOTKEY.details, labels.details, text.tips.details, bare(look.glyph.mark.shell ?? ''))}
         {entry('blast-run', labels.run, HOTKEY.run, labels.run, text.tips.run, bare(look.glyph.go), THEME.alert)}
+        {hasControl && isBeside ? (
+          <Box key="hold-more-row" flexGrow={1} justifyContent="flex-end">
+            {moreControl}
+          </Box>
+        ) : null}
         {/* While Haiku writes the plain words, a shimmer on the right says they are coming; only where the row has room. */}
-        {state.isDescribing && labels.cancel.length + labels.details.length + labels.run.length + 3 * ACTION_EXTRA + 3 * ACTION_GAP + text.card.explaining.length + 2 <= width ? (
+        {state.isDescribing && !hasControl && labels.cancel.length + labels.details.length + labels.run.length + 3 * ACTION_EXTRA + 3 * ACTION_GAP + text.card.explaining.length + 2 <= width ? (
           <Box key="hold-explaining-row" flexGrow={1} justifyContent="flex-end">
             <Client key="hold-explaining" module="./entry.tsx" height={1} props={{ id: 'hold-explaining', label: text.card.explaining, isOpen: false, bg: fill, isBusy: true, still }} />
           </Box>
         ) : null}
       </Box>
+      {hasControl && !isBeside ? (
+        <Box key="hold-more-own-row" flexDirection="row" justifyContent="flex-end">
+          {moreControl}
+        </Box>
+      ) : null}
     </Box>
   )
 }
@@ -537,6 +571,7 @@ export const register: Register = (on, options) => {
 
   isEnabled = options.enabled !== false
   isExplaining = options.explain === true
+  askPrefixes = askPrefixesOf(options.ask_prefixes)
   iconMode = (options.icons as IconMode | undefined) ?? 'auto'
   // A forced mode needs no detection; auto loads the saved answer, then checks the terminal font beside the hooks.
   look = lookFor(iconMode === 'nerd')
@@ -579,7 +614,7 @@ export const register: Register = (on, options) => {
   on('tool.check', { tool: 'Bash' }, async ($, e, next) => {
     const verdict = await next(e)
     const command = (e.input as { command?: unknown } | null)?.command
-    const answered = isApproved(e.tool_use_id, command) && verdict.decision === 'ask' && isDestructiveAsk(verdict.reason)
+    const answered = isApproved(e.tool_use_id, command) && verdict.decision === 'ask' && isAnswerableAsk(verdict.reason)
     if (answered) return { decision: 'allow' }
     if (!isEnabled || verdict.decision === 'deny' || (await canDraw($))) return verdict
     const { risk } = await judge($, command)
@@ -777,6 +812,10 @@ export const register: Register = (on, options) => {
     const message = e.data as EntryMessage
     if (message?.type === 'menu-entry') await choose($, message.id)
     // The Details pane's expand control only changes how much of the command it draws; the card's Run and Cancel never read it.
+    if (message?.type === 'menu-entry' && message.id === DOES_MORE && held) {
+      held.isDoesOpen = !held.isDoesOpen
+      $.ui.invalidate('ui.render')
+    }
     if (message?.type === 'menu-entry' && message.id === MORE && held) {
       held.isFull = !held.isFull
       $.ui.invalidate('ui.render')

@@ -1,6 +1,7 @@
 // mod-blast-radius / tests/hold.test.tsx, by v-amorim
 // Tests holding a command, the Haiku prompt and reply parsing, and the settings and details panes.
 import { expect, mock, test } from 'claude-code/testing'
+import { actionLabels, canOpenDoes, cardRows } from '../hooks/explain'
 import { describePrompt, parseDescribed, verdictOf } from '../hooks/haiku'
 
 const PLUGIN = 'mod-blast-radius'
@@ -20,6 +21,8 @@ const BAND = bandOf()
 const GIT_SAFETY = '--no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null'
 
 const ASK = '\u26a0\ufe0f Destructive operation detected: Recursive deletion (rm -r/rm -rf)\n\nCommand:\nrm -rf build'
+// The ask_prefixes setting: empty by default, so a test that wants a card to answer a hook's ask names its prefix.
+const HOOK_ASK = { ask_prefixes: 'Destructive operation detected' }
 const RULES_PATH = 'C:/Users/me/.claude/mods-data/mod-blast-radius/rules.json'
 const LONG = 'C:/Users/me/blast-radius-demonstration-folder/drafts-of-the-quarterly-report/archive'
 
@@ -63,6 +66,8 @@ type World = {
   envThrows?: boolean
   // The command itself fails when it runs.
   callThrows?: boolean
+  // The mod's own /config rows, as the engine lists them.
+  configRows?: Record<string, unknown>[]
 }
 
 // Everything the engine would answer, plus a record of what the hold did.
@@ -138,7 +143,7 @@ function world(on: (event: string, handler: (...args: any[]) => unknown) => void
     return { value: {} }
   })
   on('state.set', () => ({ value: { isSet: true, version: 1 } }))
-  on('config.list', () => ({ value: [] }))
+  on('config.list', () => ({ value: setup.configRows ?? [] }))
   on('tool.check', () => ({ decision: setup.verdict ?? 'allow', ...(setup.verdictReason ? { reason: setup.verdictReason } : {}) }))
   on('tool.call', () => {
     seen.ran++
@@ -806,6 +811,36 @@ test('with no surface that draws, the call is not held: tool.check asks and the 
   expect(safe.decision).toBe('allow')
 })
 
+const PASS_PLAIN_RM = JSON.stringify([{ pattern: String.raw`^\s*rm(?!.*\s(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)(\s|$))\s`, reason: 'Decided elsewhere', action: 'pass' }])
+
+test('a pass entry lets a plain rm through with no card, and rm -rf ~ in the same command is still held', async ($, on) => {
+  const { seen } = world(on, { rules: { text: PASS_PLAIN_RM, mtimeMs: 1 } })
+  await $.tool.call({ tool: 'Bash', command: 'rm a.txt' })
+  expect(seen.ran).toBe(1)
+
+  const call = $.tool.call({ tool: 'Bash', command: 'rm a.txt && rm -rf ~' })
+  await holding(seen)
+  await cancel($)
+  await call
+  expect(seen.ran).toBe(1)
+})
+
+test('with no surface that draws, tool.check follows the pass entry and its safety floor', async ($, on) => {
+  world(on, { surfaces: [], rules: { text: PASS_PLAIN_RM, mtimeMs: 1 } })
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm a.txt' } })).decision).toBe('allow')
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm -r build' } })).decision).toBe('ask')
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm ~/a.txt' } })).decision).toBe('ask')
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm a.txt && rm -rf ~' } })).decision).toBe('ask')
+})
+
+test('an entry with no action holds as before', async ($, on) => {
+  const { seen } = world(on, { rules: { text: JSON.stringify([{ pattern: '^rm ', reason: 'Mine' }]), mtimeMs: 1 } })
+  const call = $.tool.call({ tool: 'Bash', command: 'rm a.txt' })
+  await holding(seen)
+  await cancel($)
+  await call
+})
+
 test('a VS Code or mobile surface alone cannot draw the hold either', async ($, on) => {
   world(on, { surfaces: ['vscode', 'mobile'] })
   const risky = await $.tool.check({ tool: 'Bash', input: { command: 'git reset --hard' } })
@@ -820,7 +855,7 @@ test('where a surface draws, tool.check leaves the verdict alone', async ($, on)
   expect(verdict.decision).toBe('allow')
 })
 
-test('one prompt: a hook\u2019s ask, carried as the tool.check verdict, is answered after Run and not before', async ($, on) => {
+test('one prompt: a hook\u2019s ask, carried as the tool.check verdict, is answered after Run and not before', { options: HOOK_ASK }, async ($, on) => {
   const { seen } = world(on, { verdict: 'ask', verdictReason: ASK })
   const before = await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })
   expect(before.decision).toBe('ask')
@@ -836,7 +871,7 @@ test('one prompt: a hook\u2019s ask, carried as the tool.check verdict, is answe
   expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf elsewhere' } })).decision).toBe('ask')
 })
 
-test('one prompt: an ask with any other reason is never answered', async ($, on) => {
+test('one prompt: an ask with any other reason is never answered', { options: HOOK_ASK }, async ($, on) => {
   const { seen } = world(on, { verdict: 'ask', verdictReason: 'Blocked: this command is not allowed.' })
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
@@ -848,7 +883,7 @@ test('one prompt: an ask with any other reason is never answered', async ($, on)
   expect((await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })).decision).toBe('ask')
 })
 
-test('the ask is recognized with text before it', async ($, on) => {
+test('the ask is recognized with text before it', { options: HOOK_ASK }, async ($, on) => {
   const { seen } = world(on, { verdict: 'ask', verdictReason: `Hook says: ${ASK}` })
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   await holding(seen)
@@ -858,6 +893,46 @@ test('the ask is recognized with text before it', async ($, on) => {
   await band.unmount()
 
   expect(await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })).toEqual({ decision: 'allow' })
+})
+
+async function askAfterRun($: any, on: any) {
+  const { seen } = world(on, { verdict: 'ask', verdictReason: ASK })
+  const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  await click(band, 'blast-run')
+  await call
+  await band.unmount()
+  return (await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })).decision
+}
+
+test('ask_prefixes empty (the default): an approved card never answers another hook’s ask', async ($, on) => {
+  expect(await askAfterRun($, on)).toBe('ask')
+})
+
+test('ask_prefixes with a matching prefix: the approved card answers the ask', { options: HOOK_ASK }, async ($, on) => {
+  expect(await askAfterRun($, on)).toBe('allow')
+})
+
+test('ask_prefixes with a prefix that does not match leaves the ask', { options: { ask_prefixes: 'Blocked by policy' } }, async ($, on) => {
+  expect(await askAfterRun($, on)).toBe('ask')
+})
+
+test('ask_prefixes takes several prefixes between vertical bars, trimmed, and ignores empty ones', { options: { ask_prefixes: ' Blocked by policy || Destructive operation detected |' } }, async ($, on) => {
+  expect(await askAfterRun($, on)).toBe('allow')
+})
+
+test('ask_prefixes with only separators and spaces counts as empty, and the mod still holds', { options: { ask_prefixes: ' | || |  ' } }, async ($, on) => {
+  expect(await askAfterRun($, on)).toBe('ask')
+})
+
+test('the settings panel shows the ask_prefixes row with its title and its value', { options: HOOK_ASK }, async ($, on) => {
+  const row = { key: 'mod-blast-radius.ask_prefixes', label: 'Hook asks Run answers', description: 'Separate several with a vertical bar', kind: 'text', value: 'Destructive operation detected', provider: { kind: 'plugin', name: PLUGIN } }
+  world(on, { configRows: [row] })
+  const settings = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...SETTINGS })
+  expect(await settings.find({ type: 'Text', text: /Hook asks Run answers/ })).toBeDefined()
+  expect(await settings.find({ type: 'Text', text: /Destructive operation detected/ })).toBeDefined()
+  await settings.unmount()
 })
 
 test('the card draws on desktop too, so the hold works there', async ($, on) => {
@@ -1241,7 +1316,7 @@ test('the mod’s own toasts are drawn as its cards every time and never reach C
   expect(seen.toasts).toEqual([])
 })
 
-test('what Run approved is keyed by tool_use_id: the same command under another id is asked again', async ($, on) => {
+test('what Run approved is keyed by tool_use_id: the same command under another id is asked again', { options: HOOK_ASK }, async ($, on) => {
   const { seen } = world(on, { verdict: 'ask', verdictReason: ASK })
   const call = $.tool.call({ tool: 'Bash', command: 'rm -rf build', tool_use_id: 'tu-1' } as never)
   await holding(seen)
@@ -1253,4 +1328,123 @@ test('what Run approved is keyed by tool_use_id: the same command under another 
   const input = { command: 'rm -rf build' }
   expect(await $.tool.check({ tool: 'Bash', input, tool_use_id: 'tu-1' } as never)).toEqual({ decision: 'allow' })
   expect((await $.tool.check({ tool: 'Bash', input, tool_use_id: 'tu-2' } as never)).decision).toBe('ask')
+})
+
+// A rule whose reason makes a sentence far longer than two rows at any width the band draws.
+const WORDS = 'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu'
+const LONG_RULE = JSON.stringify([{ pattern: '^deploy-it', reason: `${WORDS} ${WORDS} ${WORDS} ZZEND` }])
+const LONG_WORLD: World = { rules: { text: LONG_RULE, mtimeMs: 1 } }
+const MORE_KEY = 'blast-does-more'
+const wordsOf = (node: unknown): string => (typeof node === 'string' ? node : Array.isArray(node) ? node.map(wordsOf).join('') : node ? wordsOf((node as { children?: unknown }).children) : '')
+const allText = async (band: any) => ((await band.findAll({ type: 'Text' })) as { text: string }[]).map(row => row.text).join('\n')
+// The sentence's rows are the ones made of lowercase words, or starting with the rule's lead-in.
+const rowsOfSentence = async (band: any) => ((await band.findAll({ type: 'Text' })) as { text: string }[]).filter(row => /^(Matches your rule|[a-z]+ [a-z]+ [a-z]+)/.test(row.text)).length
+
+for (const [mode, down, up] of [['safe', '▾', '▴'], ['nerd', String.fromCodePoint(0xf0d7), String.fromCodePoint(0xf0d8)]] as const) {
+  test(`Show all: a cut sentence shows the control on the action row beside the actions, and it opens and closes the sentence (icons ${mode})`, { options: { icons: mode } }, async ($, on) => {
+    await withCard($, on, 'deploy-it now', LONG_WORLD, async band => {
+      const tree = JSON.stringify(await band.drawn())
+      expect(tree).toContain(MORE_KEY)
+      expect(tree).not.toContain('hold-more-own-row')
+      // Cancel, Details and the run button come first, the control last, all inside the action row.
+      const at = (key: string) => tree.indexOf(key)
+      expect(at('hold-actions')).toBeGreaterThan(-1)
+      expect(at('hold-actions')).toBeLessThan(at('blast-cancel-pill'))
+      expect(at('blast-cancel-pill')).toBeLessThan(at('blast-details-pill'))
+      expect(at('blast-details-pill')).toBeLessThan(at('blast-run-pill'))
+      expect(at('blast-run-pill')).toBeLessThan(at('hold-more-row'))
+      expect(at('hold-more-row')).toBeLessThan(at(`"key":"${MORE_KEY}"`))
+      expect(wordsOf(await band.drawn({ in: MORE_KEY }))).toBe(` ${down} Show all `)
+      expect(await allText(band)).not.toContain('ZZEND')
+      const shut = await rowsOfSentence(band)
+      expect(await textOf(band, /…$/)).toMatch(/…$/)
+
+      await click(band, MORE_KEY)
+      expect(wordsOf(await band.drawn({ in: MORE_KEY }))).toBe(` ${up} Show less `)
+      expect(await allText(band)).toContain('ZZEND')
+      expect(await rowsOfSentence(band)).toBeGreaterThan(shut)
+      expect(await labelOf(band, 'blast-cancel')).toBe(' Cancel ')
+      expect(await labelOf(band, 'blast-details')).toBe(' Details ')
+      expect(await labelOf(band, 'blast-run')).toBe(' Run anyway ')
+
+      await click(band, MORE_KEY)
+      expect(wordsOf(await band.drawn({ in: MORE_KEY }))).toBe(` ${down} Show all `)
+      expect(await allText(band)).not.toContain('ZZEND')
+      expect(await rowsOfSentence(band)).toBe(shut)
+    }, bandOf(24, 120))
+  })
+}
+
+test('Show all: a sentence that fits has no control', async ($, on) => {
+  await withCard($, on, 'rm -rf build', {}, async band => {
+    expect(await band.find({ key: MORE_KEY })).toBeUndefined()
+    expect(JSON.stringify(await band.drawn())).not.toContain(MORE_KEY)
+  })
+})
+
+test('Show all: where the action row has no room beside the actions the control takes a row of its own, bottom right, and the actions stay', async ($, on) => {
+  await withCard($, on, 'deploy-it now', LONG_WORLD, async band => {
+    const tree = JSON.stringify(await band.drawn())
+    expect(tree).toContain('hold-more-own-row')
+    expect(tree.indexOf('hold-more-own-row')).toBeGreaterThan(tree.indexOf('blast-run-pill'))
+    expect(tree).not.toContain('hold-more-row')
+    await click(band, MORE_KEY)
+    expect(await allText(band)).toContain('ZZEND')
+    const rows = ((await band.findAll({ type: 'Text' })) as { text: string }[]).filter(row => !row.text.startsWith('▎'))
+    for (const row of rows) expect(row.text.length, row.text).toBeLessThanOrEqual(56)
+    expect(await labelOf(band, 'blast-cancel')).toBe(' Cancel ')
+    expect(await labelOf(band, 'blast-run')).toBe(' Run anyway ')
+  }, bandOf(24, 60))
+})
+
+test('Show all: never shortens the run label to fit beside the actions, the control takes its own row instead', async ($, on) => {
+  // What the three actions show with no control at this width.
+  const bare = `  ${actionLabels({ run: 'Run anyway' } as never, 60).run} `.trim()
+  await withCard($, on, 'deploy-it now', LONG_WORLD, async band => {
+    expect((await labelOf(band, 'blast-run')).trim()).toBe(bare)
+    expect(bare).toBe('Run anyway')
+    const tree = JSON.stringify(await band.drawn())
+    expect(tree).toContain('hold-more-own-row')
+    expect(tree).not.toContain('hold-more-row')
+  }, bandOf(24, 64))
+})
+
+test('Show all: the band row budget holds open, the sentence takes what the band gives and no control is offered where it would add nothing', () => {
+  const plain = { verb: 'Run it', run: 'Run anyway', does: `${WORDS} ${WORDS} ${WORDS} ZZEND`, undo: 'x' } as never
+  const report = { summary: '', groups: [], note: '' } as never
+  for (const bodyRows of [1, 2, 3, 5, 10, 30]) {
+    const open = cardRows(plain, report, 56, bodyRows, true)
+    expect(open.length, `body ${bodyRows}`).toBeLessThanOrEqual(Math.max(1, bodyRows))
+    expect(open[0]!.kind).toBe('head')
+  }
+  expect(cardRows(plain, report, 56, 10, true).filter(row => row.kind === 'does').length).toBeGreaterThan(cardRows(plain, report, 56, 10, false).filter(row => row.kind === 'does').length)
+  expect(canOpenDoes(plain, report, 56, 10)).toBe(true)
+  expect(canOpenDoes(plain, report, 56, 1)).toBe(false)
+  expect(canOpenDoes({ ...(plain as object), does: 'Short.' } as never, report, 56, 10)).toBe(false)
+})
+
+test('Show all: a band too short to grow shows no control', async ($, on) => {
+  await withCard($, on, 'deploy-it now', LONG_WORLD, async band => {
+    expect(await band.find({ key: MORE_KEY })).toBeUndefined()
+  }, bandOf(6, 120))
+})
+
+test('Show all: the run button answers the hold while the sentence is open', async ($, on) => {
+  const { seen } = world(on, LONG_WORLD)
+  const call = $.tool.call({ tool: 'Bash', command: 'deploy-it now' })
+  await holding(seen)
+  const band = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...bandOf(24, 120) })
+  await click(band, MORE_KEY)
+  expect(await allText(band)).toContain('ZZEND')
+  await click(band, 'blast-run')
+  await call
+  await band.unmount()
+  expect(seen.ran).toBe(1)
+})
+
+test('Show all: hovering the control posts its tip', async ($, on) => {
+  await withCard($, on, 'deploy-it now', LONG_WORLD, async band => {
+    await band.pointer({ type: 'move', x: 1, y: 0, in: MORE_KEY })
+    expect(await band.find({ type: 'Text', text: /shows the whole sentence/ })).toBeDefined()
+  }, bandOf(24, 120))
 })
