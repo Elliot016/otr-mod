@@ -364,11 +364,35 @@ Each mod's folder:
 ```
 <mod-name>/
   .claude-plugin/plugin.json     manifest
-  hooks/hooks.json               { "modules": ["./register.tsx"] }
+  hooks/hooks.json               { "modules": ["./register.tsx"] }, plus command hooks if the mod has any
   hooks/register.tsx             the hooks module
   tests/*.test.tsx               run by claude plugin test
   showcase.json                  optional: tagline, features, actions, example cards
 ```
+
+A mod's `hooks.json` always lists its `modules`. Seven mods also ship plain shell command hooks next to them:
+
+```json
+{
+  "modules": ["./register.tsx"],
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "…appends the payload to the bridge file…" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "…deletes the session's bridge file…" }] }]
+  }
+}
+```
+
+Each command hook appends the event's JSON payload as one line to `~/.claude/mods-data/<mod>/bridge/<session id>.jsonl`, or under `$CLAUDE_CONFIG_DIR/mods-data/` when that is set. The mod reads the file every 250 ms. A record can hold the session id, the working folder, the transcript path and, for Stop-type events, the last assistant message. SessionEnd deletes the session's file, and SessionStart deletes files older than 7 days. The hooks need a POSIX shell (Git Bash on Windows). Without one they write nothing, and the mod falls back to what it can find on its own.
+
+| Mod | Events it bridges |
+| --- | --- |
+| `mod-prompts`, `mod-heads-up`, `mod-file-tree` | SessionStart |
+| `mod-transcript` | SessionStart, PermissionDenied, StopFailure |
+| `mod-progress` | SessionStart, Stop, SubagentStop, StopFailure |
+| `mod-model-effort` | SessionStart, PostModelSwitch, ConfigChange |
+| `mod-wrap-up` | SessionStart, including the one after a compact |
+
+Every one of them also hooks SessionEnd, to delete its file. Some plans block plugin hooks on these events. The mods then run on what they can find on their own.
 
 </details>
 
