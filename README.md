@@ -257,7 +257,7 @@ Click a mod to open its video and a link to its full page.
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/4acef8c7-d1a0-48c1-bd01-d2a38c73cfb2 |
+| https://github.com/user-attachments/assets/187f612b-2783-4df1-8b77-57d38846460d |
 
 [Full page][doc-mod-transcript]
 

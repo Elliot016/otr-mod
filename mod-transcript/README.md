@@ -36,7 +36,7 @@ Automatic.
 
 | Unfolding a turn |
 | --- |
-| https://github.com/user-attachments/assets/4acef8c7-d1a0-48c1-bd01-d2a38c73cfb2 |
+| https://github.com/user-attachments/assets/187f612b-2783-4df1-8b77-57d38846460d |
 
 ## Features
 
@@ -72,7 +72,7 @@ Made by [Vinicius Amorim][doc-author], [MIT license][doc-license].
 [doc-license]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/LICENSE
 [doc-root]: https://github.com/v-amorim/moonlight-claude-mods/blob/main/README.md
 
-[img-transcript-colors]: https://github.com/user-attachments/assets/437b0f97-663b-4eab-96f2-063ad41ca9d2
-[img-transcript-copy]: https://github.com/user-attachments/assets/d8f1e5f6-7e4c-4f2d-84c4-947f4f03f988
-[img-transcript-folded]: https://github.com/user-attachments/assets/4f52eacd-e5fa-4144-b94e-2331b2da16f9
-[img-transcript-open]: https://github.com/user-attachments/assets/36a258c6-6e80-432b-8009-b7146c7ba32d
+[img-transcript-colors]: https://github.com/user-attachments/assets/81943904-ff5e-4c37-9916-276958925cf1
+[img-transcript-copy]: https://github.com/user-attachments/assets/d288094d-2af1-4da7-8ae8-38f140028871
+[img-transcript-folded]: https://github.com/user-attachments/assets/8f89e862-2566-4bd3-ad95-57959014e88b
+[img-transcript-open]: https://github.com/user-attachments/assets/7cad8bc5-02a1-4f36-8db7-4b5ad8f6ec97
