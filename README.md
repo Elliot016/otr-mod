@@ -64,7 +64,7 @@ Each mod works alone, with or without mod-manager.
 
 | Every terminal mod in 133 seconds |
 | --- |
-| https://github.com/user-attachments/assets/f5d44706-ee09-484c-8b7f-43c8d98898a9 |
+| https://github.com/user-attachments/assets/bac4a85b-5b92-454d-9e49-3d411e8374ae |
 
 <details>
 <summary>Narration</summary>
