@@ -531,27 +531,30 @@ function bashRow({ Box, Client, Text }: Rows, input: any, isRunning: boolean, is
   )
 }
 
-// The reply in pieces while a copy choice is hovered: copied characters on a background, the rest as markdown. The gutter stands in for Claude Code's bullet and indent.
+// What a hovered copy choice takes, like an editor selection; the rest of the reply dims.
+const MARKED = mix(THEME.accent, THEME.bg, 0.5)
+
+// The reply in pieces while a copy choice is hovered; gutter and top margin match Claude Code's row, since a row that shrinks moves the pill from under the pointer.
 function markedReply({ Box, Markdown, Text }: Pick<Rows, 'Box' | 'Text'> & { Markdown: (props: any) => RenderElement }, pieces: Piece[], isFirst: boolean) {
   return (
-    <Box key="toggle-marked" flexDirection="row">
+    <Box key="toggle-marked" flexDirection="row" marginTop={isFirst ? 1 : 0}>
       <Box key="toggle-marked-gutter" width={2} flexShrink={0}>
         <Text>{isFirst ? MARK.stopOpen : ' '}</Text>
       </Box>
       <Box key="toggle-marked-body" flexDirection="column" flexGrow={1} flexShrink={1}>
         {pieces.map((piece, n) =>
           piece.kind === 'markdown' ? (
-            <Box key={`toggle-piece-${n}`} marginTop={n ? 1 : 0}>
-              <Markdown text={piece.text} />
+            <Box key={`toggle-piece-${n}`} marginTop={n ? 1 : 0} {...(piece.isMarked ? { backgroundColor: MARKED } : {})}>
+              <Markdown text={piece.text} dimColor={!piece.isMarked} />
             </Box>
           ) : (
             <Box key={`toggle-piece-${n}`} marginTop={n ? 1 : 0}>
               <Text color={THEME.onSurface}>
                 {piece.parts.map((part, at) =>
                   part.isMarked ? (
-                    <Text key={`part-${at}`} backgroundColor={THEME.surface3} color={THEME.onSurface}>{part.text}</Text>
+                    <Text key={`part-${at}`} backgroundColor={MARKED} color={THEME.onSurface}>{part.text}</Text>
                   ) : (
-                    <Text key={`part-${at}`}>{part.text}</Text>
+                    <Text key={`part-${at}`} dimColor>{part.text}</Text>
                   ),
                 )}
               </Text>

@@ -5,8 +5,11 @@ import { expect, mock, test } from 'claude-code/testing'
 import { copyText, type CopyChoice } from '../hooks/clip'
 import Copy from '../hooks/copy'
 import { markPieces, type Piece } from '../hooks/mark'
-import { THEME } from '../hooks/theme'
+import { mix, THEME } from '../hooks/theme'
 import { reading, sessionStarted } from './bridge-feed'
+
+// The selection fill register.tsx gives what a hovered choice copies.
+const MARKED = mix(THEME.accent, THEME.bg, 0.5)
 
 const ID = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`
 const row = (n: number, type: string, extra: object) => JSON.stringify({ type, uuid: ID(n), parentUuid: n > 1 ? ID(n - 1) : null, ...extra })
@@ -34,7 +37,7 @@ const TRANSCRIPT = [
 ].join('\n') + '\n'
 
 const markedText = (pieces: Piece[] | null) =>
-  (pieces ?? []).flatMap(piece => (piece.kind === 'marked' ? piece.parts.filter(part => part.isMarked).map(part => part.text) : []))
+  (pieces ?? []).flatMap(piece => (piece.kind === 'marked' ? piece.parts.filter(part => part.isMarked).map(part => part.text) : piece.isMarked ? [piece.text] : []))
 
 test('marks: each choice marks the characters it copies', () => {
   expect(markedText(markPieces(REPLY, 'code')).join('\n\n')).toBe(copyText(REPLY, 'code'))
@@ -52,6 +55,9 @@ test('marks: what a choice leaves stays markdown, in order, and a choice marking
   expect(code[2]).toEqual({ kind: 'markdown', text: '| Name | Count |\n|:-----|------:|\n| apples | 3 |\n\nNothing else to say.' })
   const links = markPieces(REPLY, 'links')!
   expect(links.map(piece => piece.kind)).toEqual(['marked', 'markdown'])
+  // The whole reply draws as Claude Code draws it, so its fence lines never add rows under the pointer.
+  expect(markPieces(REPLY, 'reply')).toEqual([{ kind: 'markdown', text: REPLY, isMarked: true }])
+  expect(links[1]).toEqual({ kind: 'markdown', text: '```sh\nnpm run build && npm test\n```\n\n| Name | Count |\n|:-----|------:|\n| apples | 3 |\n\nNothing else to say.' })
   expect(markPieces('Just prose.', 'code')).toBeNull()
   expect(markPieces('Just prose.', 'table')).toBeNull()
   expect(markPieces('', 'reply')).toBeNull()
@@ -98,21 +104,25 @@ for (const icons of ['safe', 'nerd']) {
     const { prompt, reply, next } = await mountReply($, on)
     // At rest the row is what Claude Code draws, and no mark is in it.
     expect(await drawnOf(reply)).toContain('base AssistantMessage')
-    expect(await drawnOf(reply)).not.toContain(`"backgroundColor":"${THEME.surface3}"`)
+    expect(await drawnOf(reply)).not.toContain(`"backgroundColor":"${MARKED}"`)
     await point(reply, 'move', (await leadOf(reply)) + 1)
     await point(reply, 'move', await cellOf(reply, 1))
     for (const [at, what] of CHOICES.entries()) {
       await point(reply, 'move', await cellOf(reply, at))
       const drawn = await drawnOf(reply)
       expect(drawn).not.toContain('base AssistantMessage')
-      expect(drawn).toContain(THEME.surface3)
+      expect(drawn).toContain(MARKED)
       for (const text of markedText(markPieces(REPLY, what))) expect(drawn).toContain(JSON.stringify(text).slice(1, -1))
     }
     // The links choice leaves the code as markdown, which a marked Text would not be.
     expect(await drawnOf(reply)).toContain('Nothing else to say.')
+    // What the links choice leaves dims, so the marked characters stand out.
+    expect(await drawnOf(reply)).toContain('"dimColor":true')
+    // The first block keeps the blank line Claude Code draws above it, so the row keeps its height under the pointer.
+    expect(await drawnOf(reply)).toMatch(/"key":"toggle-marked"[^{}]*"marginTop":1|"marginTop":1[^{}]*"key":"toggle-marked"/)
     await point(reply, 'leave', 0)
     expect(await drawnOf(reply)).toContain('base AssistantMessage')
-    expect(await drawnOf(reply)).not.toContain(`"backgroundColor":"${THEME.surface3}"`)
+    expect(await drawnOf(reply)).not.toContain(`"backgroundColor":"${MARKED}"`)
     for (const ui of [prompt, reply, next]) await ui.unmount()
   })
 }
@@ -125,7 +135,7 @@ test('the mark holds while the copied note shows, and goes when the note ends', 
   await point(reply, 'down', at)
   expect(await pillOf(reply)).toContain('copied code')
   expect(await drawnOf(reply)).toContain('npm run build && npm test')
-  expect(await drawnOf(reply)).toContain(THEME.surface3)
+  expect(await drawnOf(reply)).toContain(MARKED)
   for (const ui of [prompt, reply, next]) await ui.unmount()
 })
 

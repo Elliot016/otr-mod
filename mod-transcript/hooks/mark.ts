@@ -2,8 +2,8 @@
 // Cuts a reply into the parts a copy choice copies and the parts it leaves, so the copied characters can be marked.
 import { linkSpans, pieces, plainLine, tableRanges, textOf, type CopyChoice } from './clip'
 
-// A leaf Claude Code draws as markdown, or text the mod draws itself with some characters marked.
-export type Piece = { kind: 'markdown'; text: string } | { kind: 'marked'; parts: { text: string; isMarked: boolean }[] }
+// A leaf Claude Code draws as markdown, marked whole or not, or text the mod draws itself with some characters marked.
+export type Piece = { kind: 'markdown'; text: string; isMarked?: boolean } | { kind: 'marked'; parts: { text: string; isMarked: boolean }[] }
 
 // The Markdown leaf takes at most this many characters.
 const LEAF_LIMIT = 10000
@@ -42,7 +42,8 @@ function linkedParagraph(lines: string[]): Piece | undefined {
 
 // The reply as pieces with the characters `what` copies marked; null when it marks none, so the reply draws as Claude Code draws it.
 export function markPieces(reply: string, what: CopyChoice): Piece[] | null {
-  if (what === 'reply') return reply.trim() ? [marked(reply)] : null
+  // The whole reply stays drawn as markdown: its source shows fence lines the drawing hides, so it would grow under the pointer.
+  if (what === 'reply') return reply.trim() && reply.length <= LEAF_LIMIT ? [{ kind: 'markdown', text: reply, isMarked: true }] : null
   if (what === 'text') {
     const plain = textOf(reply)
     return plain ? [marked(plain)] : null
@@ -56,11 +57,12 @@ export function markPieces(reply: string, what: CopyChoice): Piece[] | null {
   }
   const ranges = what === 'table' ? tableRanges(reply) : []
   for (const [index, part] of pieces(reply).entries()) {
+    // A fence's raw ends on its closing marks, and the prose after it may be rebuilt without its leading newlines.
     if (part.isCode) {
       if (what === 'code' && part.text) {
         flush()
         out.push(marked(part.text))
-      } else rest += part.raw
+      } else rest += `${part.raw}\n\n`
       continue
     }
     if (what === 'code') {
