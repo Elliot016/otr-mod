@@ -45,7 +45,15 @@ test('marks: each choice marks the characters it copies', () => {
   expect([...markedText(markPieces(REPLY, 'links'))].sort()).toEqual(copyText(REPLY, 'links').split('\n').sort())
   expect(markedText(markPieces(REPLY, 'table'))).toEqual(['| Name | Count |\n|:-----|------:|\n| apples | 3 |'])
   expect(markedText(markPieces(REPLY, 'reply'))).toEqual([REPLY])
-  expect(markedText(markPieces(REPLY, 'text'))).toEqual([copyText(REPLY, 'text')])
+  expect(markedText(markPieces('Just **prose**.\n\n- one', 'text'))).toEqual([copyText('Just **prose**.\n\n- one', 'text')])
+})
+
+test('marks: the text choice keeps each table drawn as markdown, so the reply keeps its height', () => {
+  const text = markPieces(REPLY, 'text')!
+  expect(text.map(piece => piece.kind)).toEqual(['marked', 'markdown', 'marked'])
+  expect(text[1]).toEqual({ kind: 'markdown', text: '| Name | Count |\n|:-----|------:|\n| apples | 3 |', isMarked: true })
+  expect(markedText([text[0]!])[0]).toContain('npm run build && npm test')
+  expect(markedText([text[2]!])).toEqual(['Nothing else to say.'])
 })
 
 test('marks: what a choice leaves stays markdown, in order, and a choice marking nothing draws no pieces', () => {
@@ -57,6 +65,10 @@ test('marks: what a choice leaves stays markdown, in order, and a choice marking
   expect(links.map(piece => piece.kind)).toEqual(['marked', 'markdown'])
   // The whole reply draws as Claude Code draws it, so its fence lines never add rows under the pointer.
   expect(markPieces(REPLY, 'reply')).toEqual([{ kind: 'markdown', text: REPLY, isMarked: true }])
+  // A table stays drawn as markdown too: as source text it loses the box Claude Code draws and changes height under the pointer.
+  const table = markPieces(REPLY, 'table')!
+  expect(table.find(piece => piece.kind === 'markdown' && piece.isMarked)).toEqual({ kind: 'markdown', text: '| Name | Count |\n|:-----|------:|\n| apples | 3 |', isMarked: true })
+  expect(table.some(piece => piece.kind === 'marked')).toBe(false)
   expect(links[1]).toEqual({ kind: 'markdown', text: '```sh\nnpm run build && npm test\n```\n\n| Name | Count |\n|:-----|------:|\n| apples | 3 |\n\nNothing else to say.' })
   expect(markPieces('Just prose.', 'code')).toBeNull()
   expect(markPieces('Just prose.', 'table')).toBeNull()

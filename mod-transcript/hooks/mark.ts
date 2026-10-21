@@ -40,14 +40,44 @@ function linkedParagraph(lines: string[]): Piece | undefined {
   return { kind: 'marked', parts }
 }
 
+// The text choice marks the plain text, but each table stays markdown: as plain lines it would lose its box and change height.
+function textPieces(reply: string): Piece[] | null {
+  const ranges = tableRanges(reply)
+  if (!ranges.length) {
+    const plain = textOf(reply)
+    return plain ? [marked(plain)] : null
+  }
+  const out: Piece[] = []
+  let rest = ''
+  const flush = () => {
+    const plain = textOf(rest)
+    if (plain) out.push(marked(plain))
+    rest = ''
+  }
+  for (const [index, part] of pieces(reply).entries()) {
+    if (part.isCode) {
+      rest += `${part.raw}\n\n`
+      continue
+    }
+    const lines = part.raw.split('\n')
+    let at = 0
+    for (const range of ranges.filter(each => each.part === index)) {
+      rest += lines.slice(at, range.from).join('\n') + '\n'
+      flush()
+      out.push({ kind: 'markdown', text: lines.slice(range.from, range.to).join('\n'), isMarked: true })
+      at = range.to
+    }
+    rest += lines.slice(at).join('\n')
+  }
+  flush()
+  return out.length ? out : null
+}
+
 // The reply as pieces with the characters `what` copies marked; null when it marks none, so the reply draws as Claude Code draws it.
 export function markPieces(reply: string, what: CopyChoice): Piece[] | null {
   // The whole reply stays drawn as markdown: its source shows fence lines the drawing hides, so it would grow under the pointer.
   if (what === 'reply') return reply.trim() && reply.length <= LEAF_LIMIT ? [{ kind: 'markdown', text: reply, isMarked: true }] : null
-  if (what === 'text') {
-    const plain = textOf(reply)
-    return plain ? [marked(plain)] : null
-  }
+  if (what === 'text') return textPieces(reply)
   const out: Piece[] = []
   let rest = ''
   const flush = () => {
@@ -75,7 +105,8 @@ export function markPieces(reply: string, what: CopyChoice): Piece[] | null {
       for (const range of ranges.filter(each => each.part === index)) {
         rest += lines.slice(at, range.from).join('\n') + '\n'
         flush()
-        out.push(marked(lines.slice(range.from, range.to).join('\n')))
+        // As markdown, like the whole reply: the source would lose the drawn table's box and change height.
+        out.push({ kind: 'markdown', text: lines.slice(range.from, range.to).join('\n'), isMarked: true })
         at = range.to
       }
       rest += lines.slice(at).join('\n')
@@ -90,6 +121,6 @@ export function markPieces(reply: string, what: CopyChoice): Piece[] | null {
     }
   }
   flush()
-  const isMarking = out.some(piece => piece.kind === 'marked')
+  const isMarking = out.some(piece => piece.kind === 'marked' || piece.isMarked)
   return isMarking && out.every(piece => piece.kind !== 'markdown' || piece.text.length <= LEAF_LIMIT) ? out : null
 }
