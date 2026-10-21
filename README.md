@@ -64,7 +64,7 @@ Each mod works alone, with or without mod-manager.
 
 | Every terminal mod in 133 seconds |
 | --- |
-| https://github.com/user-attachments/assets/bac4a85b-5b92-454d-9e49-3d411e8374ae |
+| https://github.com/user-attachments/assets/a693419b-9732-4a59-9bd6-07d550e30943 |
 
 <details>
 <summary>Narration</summary>
@@ -202,7 +202,7 @@ Click a mod to open its video and a link to its full page.
 
 | The first-run card, a mod's spend, and a toggle |
 | --- |
-| https://github.com/user-attachments/assets/26d06be9-429b-4cd3-8c1c-47b116ee2354 |
+| https://github.com/user-attachments/assets/362d6469-ed76-4465-a7f0-b6b4457a7f2d |
 
 [Full page][doc-mod-manager]
 
