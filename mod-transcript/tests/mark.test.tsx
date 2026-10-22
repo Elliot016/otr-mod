@@ -56,6 +56,19 @@ test('marks: the text choice keeps each table drawn as markdown, so the reply ke
   expect(markedText([text[2]!])).toEqual(['Nothing else to say.'])
 })
 
+test('marks: the links choice keeps a table drawn as markdown, marked whole when it holds a link', () => {
+  const linked = ['| Video | Why |', '| --- | --- |', '| [Talk](https://youtu.be/abc) (40 min) | the plan |'].join('\n')
+  const reply = ['Worth watching:', '', linked, '', 'Ask for more.'].join('\n')
+  const links = markPieces(reply, 'links')!
+  expect(links).toEqual([
+    { kind: 'markdown', text: 'Worth watching:' },
+    { kind: 'markdown', text: linked, isMarked: true },
+    { kind: 'markdown', text: 'Ask for more.' },
+  ])
+  // A table with no link stays with the unmarked markdown around it.
+  expect(markPieces(['| A | B |', '| --- | --- |', '| 1 | 2 |', '', 'See https://x.dev/y'].join('\n'), 'links')!.map(piece => piece.kind)).toEqual(['markdown', 'marked'])
+})
+
 test('marks: what a choice leaves stays markdown, in order, and a choice marking nothing draws no pieces', () => {
   const code = markPieces(REPLY, 'code')!
   expect(code.map(piece => piece.kind)).toEqual(['markdown', 'marked', 'markdown'])

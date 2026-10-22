@@ -85,7 +85,16 @@ export function markPieces(reply: string, what: CopyChoice): Piece[] | null {
     if (text) out.push({ kind: 'markdown', text })
     rest = ''
   }
-  const ranges = what === 'table' ? tableRanges(reply) : []
+  const ranges = what === 'table' || what === 'links' ? tableRanges(reply) : []
+  const prose = (text: string) => {
+    for (const run of paragraphsOf(text)) {
+      const linked = linkedParagraph(run)
+      if (linked) {
+        flush()
+        out.push(linked)
+      } else rest += run.join('\n') + '\n\n'
+    }
+  }
   for (const [index, part] of pieces(reply).entries()) {
     // A fence's raw ends on its closing marks, and the prose after it may be rebuilt without its leading newlines.
     if (part.isCode) {
@@ -112,13 +121,18 @@ export function markPieces(reply: string, what: CopyChoice): Piece[] | null {
       rest += lines.slice(at).join('\n')
       continue
     }
-    for (const run of paragraphsOf(part.raw)) {
-      const linked = what === 'links' ? linkedParagraph(run) : undefined
-      if (linked) {
+    let at = 0
+    for (const range of ranges.filter(each => each.part === index)) {
+      prose(lines.slice(at, range.from).join('\n'))
+      const table = lines.slice(range.from, range.to)
+      // A table holding a link is marked whole as markdown: as source lines it loses its box, as with the table and text choices.
+      if (table.some(line => linkSpans(plainLine(line)).length)) {
         flush()
-        out.push(linked)
-      } else rest += run.join('\n') + '\n\n'
+        out.push({ kind: 'markdown', text: table.join('\n'), isMarked: true })
+      } else rest += table.join('\n') + '\n\n'
+      at = range.to
     }
+    prose(lines.slice(at).join('\n'))
   }
   flush()
   const isMarking = out.some(piece => piece.kind === 'marked' || piece.isMarked)
